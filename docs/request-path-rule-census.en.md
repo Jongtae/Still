@@ -264,3 +264,16 @@ Owner decision 2026-11-14 ([#817](https://github.com/Jongtae/Still/issues/817), 
 ### Left as they were
 
 The worker CLI and code-run sandboxes, the completion and goal judgments, tool budgets, the turn-record envelope withholding for private stores, the web transcript's unverified-result label (B5), and the refusal of loopback and private-network destinations are outside #817. Known gaps each slice recorded (encoded owner data in a public address, #744; a restart dropping a waiting sign-in, #826) stay on those issues.
+
+## Condition checks amendment — #972
+
+[Condition checks](design/condition-checks-972.en.md) open the `code_run` sandbox to scheduled runs of a check the AI proved in a Work. They add no owner restriction. Each new condition below is a functional execution condition under C17, and none of them withholds owner data from the owner's AI or re-asks the owner. None serves any of the three restriction cases.
+
+| Rule | Where | Kind | Cost and reason |
+|---|---|---|---|
+| A check only reads: every request that is not a read is refused unsent, including a state change to a set's host and on a money set | `condition_checks.CheckRunner` (`approvals=None`), `code_run.CodeRunner._decide` | c (functional) | A check has no Work, so it has none of the dispatch claims and replay guard (`_claims`, `_effect_guard`) that make a state change from code safe to retry (C8). A check that acted would repeat its effect every interval. The cost is one wake: the woken run, which has a Work, takes the action under its row's existing rules. |
+| A check names no packages | `condition_checks.normalize` | bound (functional) | Packages install into each run's fresh directory, which takes up to `INSTALL_SECONDS`, longer than any check interval. The standard library and the set's saved functions remain. A reusable environment would widen the sandbox's read scope and needs its own review. |
+| A check must be proven: the same Work ran `code_run` with the same arguments, exit 0, no state change, no approval asked | `condition_checks.proven_check`, `code_run.CodeRunner._check_proof` | input validation | A check that never ran once would fail unattended, where nobody can fix it. No extra run happens: the Work's own run is the proof. |
+| An interval of 15 s or more, a timeout of at most the interval and `MAX_SECONDS`, one check run at a time, 10 active checks, 24 wakes per check per owner-local day, a pause after 3 failures in a row | `condition_checks`, `preparations.MAX_ACTIVE_CHECKS` | bound | Machine load, vendor rate limits and wake storms (owner decisions 2026-11-18 on #972). Every wake is charged to `scheduled_work_budget`; quiet runs start no Work and no model. |
+
+The woken run is an ordinary scheduled run of its row. Its payment, sign-in and delivery rules are unchanged, including payment autonomy for a row the owner accepted and no payment for a self-set row. It starts with exactly the outside-content mark that the same `code_run` output gives an ordinary run (`agent_runtime.result_outside_source`, owner decision 2026-11-18), so it is never narrower than a run that executed that code itself. `code_run` payment requests go through the payment-autonomy gate, which does not read that mark, as before. Tests: `tests/test_condition_checks_972.py`.

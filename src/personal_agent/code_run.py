@@ -325,6 +325,13 @@ def _arguments(args, declared=lambda host: False):
     return code, packages, hosts, names, max(1, min(seconds, MAX_SECONDS))
 
 
+def check_arguments_digest(code, hosts, names, timeout):
+    """#972: the identity of one run's arguments, as a condition check saves them and a proving run matched them."""
+    text = json.dumps({'code': code, 'hosts': sorted(hosts), 'secrets': sorted(names), 'timeout_seconds': int(timeout)},
+                      sort_keys=True, separators=(',', ':'))
+    return hashlib.sha256(text.encode()).hexdigest()
+
+
 def _library_argument(args, names):
     """#1486: the library module a run proposes for its one named secret set, or None."""
     from .procedures import MAX_SOURCE_BYTES
@@ -461,6 +468,9 @@ def _hostname(host):
 class CodeRunner:
     """One Work's sandboxed code runs; every request decision is made here."""
 
+    #: #1489: a run that worked on a set without saved functions says how to keep them (a check run does not, #972).
+    HINTS = True
+
     def __init__(self, store, work_id, *, popen=subprocess.Popen, node=None, interrupted=None,
                  install=ensure_runtime, clock=time.monotonic, approvals=None, provide_node=node_runtime.ensure):
         self.store, self.work_id = store, work_id
@@ -571,6 +581,7 @@ class CodeRunner:
         # Owner choice 2026-10-14 (clear signing): "label=FIELD[=meaning]; ..." the owner reads instead of the raw request.
         fields = args.get('approval_fields') if isinstance(args, dict) else None
         self._fields = parse_approval_fields(fields)
+        declared = timeout
         if seconds is not None:
             timeout = max(1, min(timeout, int(seconds)))
         masked, plain, set_hosts = self.secret_sets(names, hosts)
@@ -624,12 +635,33 @@ class CodeRunner:
         # functions says, once it worked, how to keep them.
         unsaved = [name for name in names if name not in libraries and name not in self._hinted] \
             if callable(getattr(self.store, 'db', None)) else []
-        if unsaved and not outcome.get('timed_out') and outcome.get('exit_status') == 0:
+        if self.HINTS and unsaved and not outcome.get('timed_out') and outcome.get('exit_status') == 0:
             from .procedures import module_name
             self._hinted.add(unsaved[0])
             result['library_hint'] = LIBRARY_HINT.format(set=unsaved[0], module=module_name(unsaved[0]))
+        proof = self._check_proof(code, packages, hosts, names, declared, libraries, outcome)
+        if proof:
+            result['check_proof'] = proof
         self._settle(outcome, result)
         return result
+
+    def _check_proof(self, code, packages, hosts, names, timeout, libraries, outcome):
+        """#972: what a condition check of exactly these arguments may pin, when this run proves one, else None.
+
+        A run proves a check when it ended on its own with exit status 0, installed no packages, sent no
+        state change and asked the owner nothing.  Each named set's library is pinned to the version
+        this run imported (a proposal this run kept as its candidate included); a library that was
+        not kept leaves nothing to pin, so the run proves no check.
+        """
+        if packages or outcome.get('timed_out') or outcome.get('exit_status') != 0 or self._claims or self._asked:
+            return None
+        pinned = {}
+        for name, item in libraries.items():
+            version = (item.get('row') or {}).get('id') or item.get('id')
+            if not version:
+                return None
+            pinned[name] = version
+        return {'digest': check_arguments_digest(code, hosts, names, timeout), 'libraries': pinned}
 
     def _approval_runs(self):
         try:
@@ -721,6 +753,8 @@ class CodeRunner:
                 kept[name] = {'module': item['module'], 'state': 'not_saved', 'reason': problem}
                 continue
             row_id = store.propose(self.work_id, name, item['source'], report['functions'])
+            # #972: the candidate a check proven by this run pins.
+            item['id'] = row_id
             store.record_calls(row_id, calls)
             functions = clean_functions(report['functions'])
             kept[name] = {'module': item['module'], 'state': 'saved_if_fulfilled',
@@ -1117,7 +1151,7 @@ def evidence(result):
     and the ones waiting for the owner (``refused_because``), by method, host and path only.
     """
     kept = {key: result.get(key) for key in ('exit_status', 'timed_out', 'packages', 'hosts', 'secrets', 'sandbox', 'code_digest',
-                                             'failed_phase', 'effects', 'effect') if key in result}
+                                             'failed_phase', 'effects', 'effect', 'check_proof') if key in result}
     if result.get('approval_requested'):
         kept['refused_because'] = 'owner-approval-requested'
         kept['approval_requested'] = result['approval_requested']

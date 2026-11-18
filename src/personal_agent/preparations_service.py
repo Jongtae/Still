@@ -167,7 +167,8 @@ class PreparationsService:
         normalisers.  ``refused_watch(goal)`` is the tool's check that a refused watch is not split.
         """
         service=self.service
-        has_window=args.get('every_minutes') not in (None,'') or args.get('until') not in (None,'')
+        has_check=args.get('check') not in (None,'')
+        has_window=not has_check and (args.get('every_minutes') not in (None,'') or args.get('until') not in (None,''))
         kind=args.get('kind')
         if kind not in prep.KINDS:raise prep.PreparationRefusal('invalid_kind')
         # Pilot boundary 1: a stored secret never becomes goal text.
@@ -190,7 +191,10 @@ class PreparationsService:
         # #719: a watch - every N minutes from due until a deadline, bounded.
         window=None
         requested_until=None
-        if has_window:
+        if has_check:
+            # #972: a check row uses the window columns: its interval, the window end and max_runs counting wakes.
+            window=self.check_window(args,kind,due_at,timezone,now,recurrence)
+        elif has_window:
             window=prep.normalize_window(args.get('every_minutes'),args.get('until'),args.get('max_runs'),
                                          due_at,timezone,now,recurrence=recurrence)
             requested_until=prep.parse_due(args.get('until'),timezone,timezone,now)[0]
@@ -202,6 +206,30 @@ class PreparationsService:
         return {'kind':kind,'goal':goal,'title':title,'offer':offer,'due_at':due_at,'timezone':timezone,
                 'recurrence':recurrence,'window':window,'delivery_mode':delivery_mode,'window_terms':terms,
                 'report_every_minutes':report_every_minutes,'requested_until':requested_until}
+
+    def check_window(self, args, kind, due_at, timezone, now, recurrence):
+        """``(every_seconds, until_at, max_runs)`` of a check row (#972), or a typed refusal."""
+        from . import condition_checks as cc
+        if kind!=prep.KIND_PREPARE or recurrence is not None or args.get('every_minutes') not in (None,'') \
+                or args.get('report_every_minutes') not in (None,''):
+            raise prep.PreparationRefusal('invalid_check',msg('checks.window_only'))
+        every=cc.normalize(args.get('check'),self.declared_host)[4]
+        if args.get('until') in (None,''):
+            raise prep.PreparationRefusal('invalid_window',msg('preparations.window_until_missing',value=repr(args.get('until'))))
+        until_at=prep.parse_due(args.get('until'),timezone,timezone,now)[0]
+        if until_at<=due_at or until_at-due_at>prep.MAX_WINDOW_SECONDS:
+            raise prep.PreparationRefusal('invalid_window',msg('preparations.window_until_span',value=repr(args.get('until')),
+                                          due=prep.iso(due_at),days=prep.MAX_WINDOW_SECONDS//86400))
+        cap=cc.DAILY_WAKES*max(1,-(-int(until_at-due_at)//86400))
+        runs=cap if args.get('max_runs') in (None,'') else prep._whole_number(args.get('max_runs'))
+        if runs is None or not 1<=runs<=cap:raise prep.PreparationRefusal('invalid_max_runs')
+        return every,until_at,runs
+
+    def declared_host(self, host):
+        """#209: a declared intranet host, as ``code_run`` reads it."""
+        from . import intranet
+        from .code_run import _hostname
+        return intranet.host_declared(self.service.store,_hostname(host))
 
     def preparation_channel(self, job, kind, delivery):
         """Where a preparation's results go (#306 review): the surface ``job`` came from, or kept in Still.
@@ -238,6 +266,12 @@ class PreparationsService:
             planning=self.day_plan_run(job) and self.day_plan_on()
             steers=service.owner_steer_words(job)
             steered=bool(service.unattended_work(job) and not planning and steers)
+            check=args.get('check') not in (None,'')
+            if check and service.unattended_work(job) and not planning \
+                    and args.get('replaces') not in (None,'') and args.get('replaces')==prep.preparation_of(job.get('request_key')):
+                # #972 D6: the run of a check row replaces its own check (proven here, never wider).
+                try:return service.condition_checks.replace_own(job,args['check'],self.declared_host)
+                except prep.PreparationRefusal as exc:raise not_run(ToolError(str(exc),exc.code)) from None
             if service.unattended_work(job) and not planning and not steered:
                 # #619: a scheduled run leaves no proposal waiting; it says what it would schedule.
                 raise not_run(ToolError(UNATTENDED_APPROVAL_TEXT,'unattended_run'))  # #618: Still refused it, ran: false
@@ -255,6 +289,12 @@ class PreparationsService:
                 detail=service._redact_known_secrets(str(exc))[:600]+' '+json.dumps(window_args,ensure_ascii=False)
                 raise not_run(ToolError(detail,exc.code)) from None
             kind,goal,title,offer=fields['kind'],fields['goal'],fields['title'],fields['offer']
+            spec=None
+            if check:
+                # #972: the exact arguments of a successful code_run of this Work, with its pinned libraries.
+                from . import condition_checks as cc
+                try:spec=cc.proven_check(service.store,job['id'],args['check'],self.declared_host)
+                except prep.PreparationRefusal as exc:raise not_run(ToolError(str(exc),exc.code)) from None
             due_at,timezone,recurrence,window=fields['due_at'],fields['timezone'],fields['recurrence'],fields['window']
             delivery_mode=fields['delivery_mode']
             # #780: what a plan run wants the owner to hear goes where the owner last talked to Still.
@@ -309,7 +349,7 @@ class PreparationsService:
                                              accepted_by=accepted_by,accepted_from=accepted_from,
                                              window=window,delivery_mode=delivery_mode,title=title,offer=offer,
                                              report_every_minutes=fields['report_every_minutes'],line_id=line_id,
-                                             requested_until=fields['requested_until'])
+                                             requested_until=fields['requested_until'],check=spec)
                 # #574: another Work's identical proposal is this one; the owner's own Work accepts it.
                 already=bool(row.get('already_proposed'))
                 if already and accepted:row=service.preparations.accept(row['id'],accepted_by,accepted_from=accepted_from)
@@ -336,6 +376,11 @@ class PreparationsService:
                     'recurrence':row['recurrence'] or 'none','delivery':service.preparation_delivery(row),
                     'accepted_by':row['accepted_by'],'accepted_from':row.get('accepted_from'),'next_step':next_step}
             if row.get('line_id'):result['line_id']=row['line_id']
+            if spec is not None:
+                result['check']={'every_seconds':spec['every_seconds'],'hosts':spec['hosts'],'secrets':spec['secrets'],
+                                 'timeout_seconds':spec['timeout_seconds'],'check':spec['digest'][:16],
+                                 'wakes_per_day':cc.DAILY_WAKES}
+                result['next_step']+=' '+msg('checks.scheduled_next_step')
             if scheduled and replaces not in (None,'') and replaces!=row['id']:
                 stopped=service.cancel_preparation(replaces)
                 LOG.info('preparation replaced id=%s by=%s work=%s changed=%s',replaces,row['id'],job['id'],stopped['changed'])
@@ -634,6 +679,15 @@ class PreparationsService:
             if (not row or row['state'] == prep.STATE_CANCELLED
                     or service.preparations.notice_channel(row, db) != notification['surface']):
                 return None
+            from . import condition_checks as cc
+            if kind.startswith(cc.PAUSED_NOTICE_PREFIX):
+                # #972: a check paused itself; told while it stays paused for that reason.
+                status = cc.status_of(dict(row))
+                if row['state'] != prep.STATE_PAUSED or not status.get('paused'):
+                    return None
+                title = service._redact_known_secrets(prep.owner_title(dict(row)))
+                return msg('checks.notice_paused', title=title,
+                           reason=msg('checks.paused_' + status['paused'].replace('-', '_')))
             if kind.startswith(prep.BLOCKED_NOTICE_PREFIX):
                 job = db.execute('SELECT status FROM jobs WHERE id=?', (notification['job_id'],)).fetchone()
                 latest = db.execute('SELECT id FROM telegram_notifications WHERE job_id=? AND kind GLOB ? '
@@ -875,6 +929,9 @@ class PreparationsService:
             local=lambda slot:prep.local_text(slot,row['timezone'])
             schedule=(msg('preparations.run_next',due=local(following)) if following is not None
                       else msg('preparations.run_last'))
+            if row.get('check_spec'):
+                # #972: a check row has no slots; its runs start from its check's wakes.
+                schedule=service.condition_checks.run_fact(row)
             if row.get('until_at') is not None:
                 schedule+=msg('preparations.run_end',end=local(row['until_at']))
             terms=prep.stored_window_terms(row)
@@ -978,6 +1035,11 @@ class PreparationsService:
         if row and row.get('line_id'):
             # #798: the line's current brief (its standing rules) and its earlier outcomes.
             content+='\n\n'+self.line_run_input(job,row)
+        handoff=service.condition_checks.handoff(job) if row and row.get('check_spec') else None
+        if handoff:
+            # #972: what the check just saw (or why it failed), as data after the brief.
+            from . import condition_checks as cc
+            content+='\n\n'+cc.handoff_text(handoff,row.get('timezone'))
         rows.append({'role':'user','content':content,'job_id':job['id'],'channel':job.get('channel'),'qualifier':None,
                      'request_key':job.get('request_key'),'created':job.get('created')})
         return rows
@@ -1153,7 +1215,15 @@ class PreparationsService:
             row['state'] in prep.ACTIVE_STATES or row.get('accepted_by')==prep.ACCEPTED_DREAM
             and row['state'] in (prep.STATE_DELIVERED,prep.STATE_FAILED,prep.STATE_UNKNOWN))]
         if not rows:return None
-        return (msg('notice.preparation_scheduled')+'\n'+'\n'.join(service._redact_known_secrets(prep.proposal_summary(row,service.home_zone(),brief=False)) for row in rows)
+        def summary(row):
+            text=prep.proposal_summary(row,service.home_zone(),brief=False)
+            spec=row.get('check_spec') and json.loads(row['check_spec'])
+            if spec:
+                # #972 D7: how often the check runs, until when, what it reaches, and that it wakes only on a find.
+                text+='\n'+msg('checks.setup_line',every=spec['every_seconds'],until=prep.local_text(row['until_at'],row['timezone']),
+                                hosts=', '.join(spec['hosts']) or '-',secrets=', '.join(spec['secrets']) or '-')
+            return service._redact_known_secrets(text)
+        return (msg('notice.preparation_scheduled')+'\n'+'\n'.join(summary(row) for row in rows)
                 +'\n'+msg('notice.preparation_cancel_hint'))
 
     def offered_proposals(self, notification):
@@ -1249,7 +1319,9 @@ class PreparationsService:
                          'last_decision':row.get('last_decision'),'last_decision_reason':row.get('last_decision_reason'),
                          # #798: the entrusted line this row works for, by its task sentence.
                          'line_id':row.get('line_id'),'line_task':lines.get(row.get('line_id')),
-                         'line_account':row.get('origin')==prep.ORIGIN_LINE_ACCOUNT})
+                         'line_account':row.get('origin')==prep.ORIGIN_LINE_ACCOUNT,
+                         # #972 D7: the check's interval, end, last run, today's counts and hosts, and its code.
+                         'check':service.condition_checks.view(row)})
         # #575: the page uses the same catalog in its selected language.
         labels={**{'budget_'+key:'scheduled_budget.'+key for key in ('label','help')}, 'save':'label.save', 'accept':'button.preparation_accept','decline':'button.preparation_decline',
                 **{'delivery_'+mode:'preparations.delivery_'+mode for mode in ('send','keep','when_needed')},
@@ -2010,7 +2082,14 @@ class PreparationsService:
         """``entrusted_line`` list: one entry per active line, then the stopped ones marked; text the AI may quote."""
         entries=[self.line_entry(brief) for brief in self.service.lines.lines()]
         if not entries:return {'lines':[],'text':msg('lines.list_none')}
-        return {'lines':entries,'text':'\n'.join(el.entry_text(entry) for entry in entries)}
+        checks=self.service.condition_checks
+        for entry in entries:
+            # #972 D7: the line's active checks, as the owner sees them in Settings.
+            found=[checks.summary(row) for row in self.line_rows(entry['line_id'])
+                   if row['state'] in prep.ACTIVE_STATES and row.get('check_spec')]
+            if found:entry['checks']=found
+        return {'lines':entries,'text':'\n'.join(el.entry_text(entry)+''.join('\n  '+line for line in entry.get('checks',()))
+                                                for entry in entries)}
 
     def line_read(self, line_id):
         """``entrusted_line`` read: one line's brief and latest outcomes, for a related answer."""
@@ -2169,14 +2248,18 @@ class PreparationsService:
         service.preparations.edit(row['id'],rrule=el.account_rule(after['account_every_days']),
                                   due=datetime.fromtimestamp(due,prep.zone(row['timezone'])).isoformat())
 
-    def account_period_start(self, row):
-        """When the current period of a line's account began: its last run's slot, else when the row was set up."""
+    def account_period_start(self, row, exclude=None):
+        """When the current period of a line's account began: its last run's slot, else when the row was set up.
+
+        ``exclude`` (#972): the request key of the account's own current run, which does not end its period.
+        """
         start=row['created_at']
         prefix=prep.REQUEST_KEY_PREFIX+row['id']+':'
         with self.service.store.db() as db:
             keys=[item['request_key'] for item in db.execute('SELECT request_key FROM jobs WHERE request_key LIKE ?',(prefix+'%',))]
         # A run's request key names its slot in whole seconds (``request_key``); a continuation keeps it.
         for key in keys:
+            if exclude is not None and prep.slot_key(key)==prep.slot_key(exclude):continue
             slot=prep.slot_key(key)[len(prefix):]
             if slot.isdigit():start=max(start,float(slot))
         return start
@@ -2422,6 +2505,13 @@ class PreparationsService:
         outcomes=self.line_outcomes(row['line_id'],exclude=job['id'])
         if row.get('origin')==prep.ORIGIN_LINE_ACCOUNT:
             lead=msg('lines.account_input')
+            since=self.account_period_start(row,exclude=job.get('request_key'))
+            counts=[(item,service.condition_checks.counts_since(item,since)) for item in self.line_rows(row['line_id'])
+                    if item.get('check_spec')]
+            if counts:
+                # #972 D7: the line's check runs and wakes since the last account (owner-local days).
+                lead+='\n'+'\n'.join(msg('checks.account_line',title=service._redact_known_secrets(prep.owner_title(item)),
+                                           runs=runs,wakes=wakes) for item,(runs,wakes) in counts)
         else:
             lead=msg('lines.run_input')
         return lead+'\n'+el.brief_text(brief)+'\n'+el.outcomes_text(outcomes,row.get('timezone'))

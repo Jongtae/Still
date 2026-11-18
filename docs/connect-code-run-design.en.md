@@ -177,11 +177,29 @@ Each code-run secret set can keep a function library: verified procedural memory
 - **Generality:** owner-chosen, undisclosed holdout services.
 - Merges, tests or a connection receipt alone never close #1380.
 
+## Checks (#972)
+
+A condition check is the one way code runs without a Work. Design: [condition checks](design/condition-checks-972.en.md).
+
+- **What runs:** the exact arguments (`code`, `hosts`, `secrets`, `timeout_seconds`) of one `code_run` the AI already ran in the Work that sets the check up. That run must have ended on its own with exit status 0, installed no packages, sent no state change and asked the owner nothing. Evidence keeps a `check_proof` digest for such a run, and scheduling matches it.
+- **Same sandbox, same scope:** a check run is `CodeRunner.run` with the saved arguments. Secret sets are resolved from the current slot at each run, and the intranet and work-mode rules, `_decide`, the output cap and secret redaction all apply unchanged.
+- **The differences from a Work's run:**
+  - The runner is constructed with `approvals=None`, so every request that is not a read is refused unsent, including one to a set's host and on a money set.
+  - Each named set's library is the version the proving run imported (pinned by its id), never `for_run`. A forgotten pinned version pauses the check; it never runs another version.
+  - No library is proposed, saved or counted, and no library hint is given.
+  - No packages.
+  - `CHECK_STATE_FILE`, a JSON object of at most 16 KB, holds the check's own state between runs. It is encrypted, bound to the check's digest, redacted like a set's run state and discarded when the check is replaced or ends.
+- **Output protocol:**
+  - Exit 0 with nothing on stdout is quiet.
+  - Exit 0 with output is a hit, and the output wakes the preparation's run as its handoff.
+  - A non-zero exit, a timeout or a refused run is a failure.
+- **Bounds:** an interval of 15 seconds or more (default 60), a timeout of at most the interval and `MAX_SECONDS`, one check run at a time across Still, and at most 10 active checks.
+
 ## Non-goals
 
 - No shell tool for the worker.
 - No access to owner files from runs.
-- No background or scheduled runs.
+- No background runs outside a check (#972).
 - No vendor SDK bundled by Still.
 - No service-specific code, prompt or skill.
 - Windows support is not part of this pilot.

@@ -19,6 +19,9 @@ PREFIX = 'api_credential:'
 #: #1380: one code-run secret set's run state (for example an access token and its expiry),
 #: encrypted with the same key and bound to the set's exact metadata.
 STATE_PREFIX = 'api_credential_state:'
+#: #972: a condition check's state between its runs, under the same prefix (so it is redacted like a
+#: set's run state); no set name starts with ``~``.
+CHECK_STATE_PREFIX = STATE_PREFIX + '~check:'
 MAX_STATE_BYTES = 16 * 1024
 #: State strings at least this long (tokens) are redacted; shorter ones (dates, times) are not.
 STATE_REDACT_CHARS = 24
@@ -205,14 +208,18 @@ class ApiCredentials:
 
     def read_state(self, name, slot):
         """The set's saved run state text, or '' when none, unreadable or saved for other metadata."""
-        token = self.store.secret(STATE_PREFIX + name)
+        return self.read_bound_state(STATE_PREFIX + name, fingerprint(name, slot))
+
+    def read_bound_state(self, key, binding):
+        """The run state saved under ``key`` for ``binding``, or '' (a set's, or a condition check's, #972)."""
+        token = self.store.secret(key)
         if not token:
             return ''
         try:
             payload = json.loads(self._cipher().decrypt(token.encode()))
         except Exception:
             return ''
-        if not isinstance(payload, dict) or payload.get('version') != 1 or payload.get('binding') != fingerprint(name, slot):
+        if not isinstance(payload, dict) or payload.get('version') != 1 or payload.get('binding') != binding:
             return ''
         state = payload.get('state')
         return state if isinstance(state, str) else ''
@@ -234,26 +241,39 @@ class ApiCredentials:
 
         Raises when the saved state cannot be read, so its ciphertext is never dropped unretired.
         """
-        return self.store.swap_secret(STATE_PREFIX + name, None, self._state_strings, origin='state')
+        return self.discard_bound_state(STATE_PREFIX + name)
+
+    def discard_bound_state(self, key):
+        """``discard_state`` for the state saved under ``key`` (#972: a condition check's)."""
+        return self.store.swap_secret(key, None, self._state_strings, origin='state')
 
     def write_state(self, name, slot, text):
         """Save the run state (a JSON object of at most ``MAX_STATE_BYTES``); False when refused."""
+        return self.write_bound_state(STATE_PREFIX + name, fingerprint(name, slot), text,
+                                      current=lambda: self.assert_current(name, slot))
+
+    def write_bound_state(self, key, binding, text, current=None):
+        """Save the run state under ``key`` for ``binding`` (#972: also a condition check's); False when refused.
+
+        ``current`` raises when the binding no longer holds (a set's metadata changed), checked before the write.
+        """
         if not isinstance(text, str) or not text.strip():
             try:
-                self.discard_state(name)
+                self.discard_bound_state(key)
             except Exception:
                 return False  # Codex review on #259: an unreadable state is kept, never dropped unretired
             return True
         try:
             if len(text.encode()) > MAX_STATE_BYTES or not isinstance(json.loads(text), dict):
                 return False
-            self.assert_current(name, slot)
-            payload = {'version': 1, 'binding': fingerprint(name, slot), 'state': text}
+            if current is not None:
+                current()
+            payload = {'version': 1, 'binding': binding, 'state': text}
             encoded = json.dumps(payload, separators=(',', ':')).encode()
             # The old state's values are retired and the new state written under one lock (Codex review).
             # #778: a value the new state declares plain is not retired, and its earlier mark is dropped.
             plain = set(plain_state_values(text))
-            self.store.swap_secret(STATE_PREFIX + name, self._cipher(create=True).encrypt(encoded).decode(),
+            self.store.swap_secret(key, self._cipher(create=True).encrypt(encoded).decode(),
                                    lambda old: [value for value in self._state_strings(old) if value not in plain],
                                    release=sorted(plain), origin='state')
         except Exception:

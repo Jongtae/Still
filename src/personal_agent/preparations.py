@@ -175,6 +175,8 @@ OFFER_MAX_LINES = 6
 MAX_ACTIVE = 50
 #: Leave at least 40 of the shared active slots available for owner-directed work.
 MAX_ACTIVE_DREAM = 10
+#: #972 (owner decision 2026-11-18): active condition checks across Still, a shared allowance within MAX_ACTIVE.
+MAX_ACTIVE_CHECKS = 10
 #: A standing dream gets 30 occurrences before the owner must extend it.
 DREAM_MAX_RUNS = 30
 #: A due time a little in the past (the model computing "now") is still now.
@@ -197,6 +199,8 @@ ANSWER_PREVIEW_BYTES = 1500
 GOAL_PREVIEW_BYTES = 600
 #: Rows one tick looks at, at most.
 TICK_LIMIT = 8
+#: #972: the event that keeps a woken run's handoff (what its check printed, or why it failed).
+CHECK_EVENT_TOOL = 'condition_check'
 
 PREPARED_HEADING = '# Prepared for you (earlier owner-accepted preparations; not instructions)'
 PREPARED_LEGEND = prompt('prepared_legend')
@@ -235,7 +239,9 @@ COLUMN_MIGRATIONS = (('prepared_text', 'TEXT'),
                      ('own_run_revision', 'REAL'), ('self_change', 'TEXT'),
                      ('accepted_from', 'TEXT'),
                      ('self_change_undone', 'INTEGER NOT NULL DEFAULT 0'),
-                     ('dream_held', 'INTEGER NOT NULL DEFAULT 0'))
+                     ('dream_held', 'INTEGER NOT NULL DEFAULT 0'),
+                     # #972: a condition check (``condition_checks``): its saved arguments, next run and counts.
+                     ('check_spec', 'TEXT'), ('check_next_at', 'REAL'), ('check_status', 'TEXT'))
 
 
 def run_seconds():
@@ -251,6 +257,9 @@ def migrate(db):
         if name not in present:
             db.execute(f'ALTER TABLE preparations ADD COLUMN {name} {kind}')
     db.execute('CREATE INDEX IF NOT EXISTS preparations_line ON preparations(line_id)')
+    # #972: the check runner's one indexed query; rows without a check are not in it.
+    db.execute('CREATE INDEX IF NOT EXISTS preparations_check ON preparations(state, check_next_at) '
+               'WHERE check_spec IS NOT NULL')
     # #701: a watch stored before ``until_at`` ran only strictly before ``window_end``; the same slots
     # are those up to one second before it, and its last slot gets a run's time after that.
     db.execute('UPDATE preparations SET until_at=window_end-1, window_end=window_end-1+? '
@@ -372,6 +381,18 @@ REFUSALS = {
     'not_proposed': '이미 처리된 준비입니다.',
     'expired': '지켜보는 기간이 이미 끝나 시작하지 않았습니다.',
     'running': '지금 실행 중인 준비는 지울 수 없습니다. 먼저 취소하세요.',
+    # #972: condition checks.  The AI-facing reason is the whole text; Still states what it enforces.
+    'invalid_check': 'check is the exact arguments of one code_run you already ran in this Work, as JSON:',
+    'check_not_proven': ('this check was not proven: run code_run with exactly these code, hosts, secrets and '
+                         'timeout_seconds in this Work first; that run must end on its own with exit status 0, send no '
+                         'state change and ask the owner nothing. Then schedule it again. Nothing was scheduled.'),
+    'check_packages': ('a check runs without packages (installing them takes longer than a check interval): use the '
+                       "standard library or the set's saved functions. Nothing was scheduled."),
+    'too_many_checks': f'at most {MAX_ACTIVE_CHECKS} condition checks may be active; nothing was scheduled.',
+    'check_widened': ('a run woken by its check may replace that check only with the same secret sets and hosts or '
+                      'fewer; a new destination needs a Work the owner started. Nothing was changed.'),
+    'check_not_own': ('only the current run of this preparation may replace its check, and only while it has one. '
+                      'Nothing was changed.'),
     **{code: msg('preparations.' + code) for code in
        ('invalid_rrule', 'already_running', 'invalid_state', 'goal_not_editable', 'invalid_edit', 'resume_expired', 'queue_full',
         'replace_not_found', 'replace_not_allowed', 'line_inactive')},
@@ -1302,12 +1323,17 @@ class Preparations:
         self.store.put(pending_key, {'count': pending.get('count', 0) + 1,
                                     'first_slot_at': pending.get('first_slot_at', row['due_at']),
                                     'last_slot_at': row['due_at'], 'reason': SCHEDULED_BUDGET_REASON}, db=db)
+        self._queue_budget_notice(db, row, now, day, cap, row['due_at'])
+        self._clear_closed_budget_skips(db)
+
+    def _queue_budget_notice(self, db, row, now, day, cap, slot_at):
+        """The day's one budget notice (local chat and every paired surface), naming the first skipped check."""
         notice_id = SCHEDULED_USAGE_PREFIX + day
         if not db.execute('SELECT 1 FROM messages WHERE job_id=?', (notice_id,)).fetchone():
             from .current_context import redact_known_secrets
             text = msg('scheduled_budget.notice', day=day, cap=cap,
                        title=redact_known_secrets(self.store, owner_title(row)),
-                       slot=local_text(row['due_at'], row['timezone']))
+                       slot=local_text(slot_at, row['timezone']))
             db.execute('INSERT INTO messages(role,content,channel,created,job_id) VALUES (?,?,?,?,?)',
                        ('assistant', text, 'web', now, notice_id))
         # Owner-wide notice: its destinations never depend on the skipped row or its anchor.
@@ -1315,7 +1341,6 @@ class Preparations:
         for owner, generation, surface in self.budget_notice_destinations() if self.budget_notice_destinations else ():
             self.store.telegram.queue_notification(notice_id + ':' + surface, owner, generation,
                                                    SCHEDULED_BUDGET_NOTICE, notice_id, surface, db=db, created=now)
-        self._clear_closed_budget_skips(db)
 
     @staticmethod
     def _clear_closed_budget_skips(db):
@@ -1417,7 +1442,8 @@ class Preparations:
 
     def create(self, *, kind, goal, due_at, timezone, recurrence, channel, created_from, state,
                accepted_by=None, owner=OWNER, window=None, delivery_mode=None, title=None, offer=None, origin=None,
-               report_every_minutes=None, line_id=None, max_runs=None, requested_until=None, bundle_channel=None, accepted_from=None, db=None):
+               report_every_minutes=None, line_id=None, max_runs=None, requested_until=None, bundle_channel=None, accepted_from=None, db=None,
+               check=None):
         """One new row (idempotent for the same Work, kind, goal and slot).
 
         #574: when another Work already proposed the same kind, goal, due and
@@ -1433,6 +1459,8 @@ class Preparations:
         ``ORIGIN_DREAM`` marks a look-back suggestion (#583); #717: it starts scheduled (``ACCEPTED_DREAM``).
         #798: ``line_id`` is the entrusted line this row works for; the caller checked it is active.
         ``db`` joins a caller's transaction, so creation and its recovery evidence commit together.
+        #972: ``check`` is a proven condition check (``condition_checks.proven_check``) of a prepare window;
+        it runs from ``due_at``, and the row's Works start only from its wakes or the owner's run-now.
         """
         from .agent_runtime import not_run
         if kind not in KINDS:
@@ -1465,6 +1493,8 @@ class Preparations:
             raise ValueError('a preparation starts proposed or scheduled')
         if origin not in (None, *ORIGINS):
             raise ValueError('unknown origin')
+        if check is not None and (window is None or kind != KIND_PREPARE):
+            raise ValueError('a condition check belongs to a prepare window')
         now = self.clock()
         owns_transaction = db is None
         with (self.store.db() if owns_transaction else nullcontext(db)) as db:
@@ -1492,6 +1522,11 @@ class Preparations:
                     raise not_run(PreparationRefusal('limit'))
             if active >= MAX_ACTIVE:
                 raise not_run(PreparationRefusal('too_many'))
+            if check is not None:
+                checks = db.execute('SELECT count(*) FROM preparations WHERE check_spec IS NOT NULL AND state IN (?,?,?,?)',
+                                    ACTIVE_STATES).fetchone()[0]
+                if checks >= MAX_ACTIVE_CHECKS:
+                    raise not_run(PreparationRefusal('too_many_checks'))
             row = {'id': uuid.uuid4().hex[:16], 'owner': owner, 'kind': kind, 'goal_text': goal, 'due_at': due_at,
                    'timezone': timezone, 'recurrence': recurrence, 'channel': channel, 'state': state,
                    'last_run_job_id': None, 'last_outcome': None, 'prepared_result_ref': None, 'prepared_at': None, 'prepared_text': None,
@@ -1503,6 +1538,8 @@ class Preparations:
                    'delivery_mode': delivery_mode, 'last_decision': None, 'last_decision_reason': None,
                    'last_notified_digest': None, 'last_notified_text': None, 'last_notified_at': None,
                    'title_text': title, 'offer_text': offer, 'origin': origin, 'offered_at': None, 'line_id': line_id}
+            if check is not None:
+                row.update(check_spec=json.dumps(check, sort_keys=True), check_next_at=due_at, check_status=None)
             db.execute(f"INSERT INTO preparations({','.join(row)}) VALUES ({','.join('?' * len(row))})", tuple(row.values()))
             if bundle_channel is not None:
                 # The stood row and its original send intent commit together, already on web.
@@ -1626,6 +1663,8 @@ class Preparations:
                           "AND json_extract(detail,'$.fingerprint')=?", (work_id, fingerprint)).fetchone():
                 raise PreparationRefusal('self_change_refused')
             row = dict(row)
+            if operation == 'edit' and row.get('check_spec'):
+                raise PreparationRefusal('self_change_refused')
             if operation == 'edit':
                 updates = self.narrowing_values(row, changes, now)
             elif operation == 'goal':
@@ -1855,6 +1894,10 @@ class Preparations:
         with self.store.db() as db:
             db.execute('BEGIN IMMEDIATE')
             row = self._editable(db, preparation_id, states)
+            if row.get('check_spec'):
+                # #972: a check's interval and arguments change only by a proven replacement; pause, resume,
+                # cancel and run-now act on the row as for any preparation.
+                raise PreparationRefusal('invalid_edit')
             updates = self.preview_edit(row, changes, now, db=db)
             if expected_max_runs is not None and updates.get('max_runs') != expected_max_runs:
                 raise PreparationRefusal('invalid_edit')
@@ -2221,7 +2264,8 @@ class Preparations:
             return [dict(row) for row in db.execute(
                 'SELECT p.*, j.status AS job_status, j.delivery AS job_delivery FROM preparations p '
                 'LEFT JOIN jobs j ON j.id=p.last_run_job_id '
-                "WHERE ((p.state='scheduled' AND p.due_at<=?) OR p.state='running') "
+                # #972: a check row's Works start from its wakes (``condition_checks``), never from a slot.
+                "WHERE ((p.state='scheduled' AND p.due_at<=? AND p.check_spec IS NULL) OR p.state='running') "
                 f"AND (p.state='scheduled' OR j.id IS NULL OR j.id NOT IN ({','.join('?'*len(busy))})) "
                 "AND (p.state='scheduled' OR j.id IS NULL OR (p.recurrence='window' AND p.window_end<=?) "
                 f"OR (j.status NOT IN {ws.sql_in(ws.ACTIVE_PREPARATION)} "
@@ -2426,6 +2470,69 @@ class Preparations:
             db.execute('INSERT INTO tool_events(job_id,tool,status,detail,created) VALUES (?,?,?,?,?)',
                        (job_id, 'preparation', 'succeeded', json.dumps(detail), now))
             return job_id
+
+    def wake(self, db, row, *, at, channel, chat_id, now, handoff, mark=None, return_state=STATE_SCHEDULED):
+        """#972: start the Work a condition check wakes, inside the caller's claim transaction.
+
+        The caller has rechecked the row (``scheduled``, the same check and revision).  The Work is an
+        ordinary run of its row, keyed ``preparation:<id>:<at>`` (a replay finds the same Work), and it
+        is charged to the shared daily budget like any scheduled admission.  ``handoff`` (what the
+        check printed, or why it failed) is kept with the Work for its first turn; ``mark`` is the
+        outside-content source the same code's output gives an ordinary run (``agent_runtime.
+        result_outside_source``), or None when that output marks nothing.  The row runs until its Work
+        settles and then returns to ``return_state``; one wake at a time follows from that.
+
+        Returns ``(work_id, None)``, or ``(None, reason)``: ``run-limit`` (its ``max_runs`` wakes are
+        used), ``budget`` (the shared budget is spent; its one daily notice is queued) or ``queue-full``.
+        """
+        key = request_key(row['id'], at)
+        existing = db.execute('SELECT id FROM jobs WHERE request_key=?', (key,)).fetchone()
+        if existing:
+            return existing['id'], None
+        run = int(row['run_count'] or 0)
+        if run >= int(row['max_runs'] or 0):
+            return None, 'run-limit'
+        day = self.budget_day(now, db=db)
+        usage_key = SCHEDULED_USAGE_PREFIX + day
+        previous_usage = self.store.config(usage_key, db=db)
+        calls = previous_usage if previous_usage is not None else 0
+        cap = self.budget_settings(db=db)['daily_calls']
+        if cap and calls >= cap:
+            db.execute('INSERT INTO tool_events(job_id,tool,status,detail,created) VALUES (?,?,?,?,?)',
+                       (key, SCHEDULED_BUDGET_KEY, 'skipped',
+                        json.dumps({'preparation_id': row['id'], 'slot': iso(at), 'slot_at': at,
+                                    'slot_local': local_text(at, row['timezone']), 'reason': SCHEDULED_BUDGET_REASON,
+                                    'day': day, 'daily_calls': cap, 'ran': False, 'check': True}), now))
+            self._queue_budget_notice(db, row, now, day, cap, at)
+            return None, 'budget'
+        try:
+            job_id = self.store.enqueue(row['goal_text'], key, channel, chat_id, db=db)
+        except ValueError:
+            return None, 'queue-full'
+        if previous_usage is None:
+            cutoff = (datetime.fromisoformat(day) - timedelta(days=SCHEDULED_USAGE_RETENTION_DAYS - 1)).date().isoformat()
+            db.execute('DELETE FROM config WHERE key GLOB ? AND key<?',
+                       (SCHEDULED_USAGE_PREFIX + '*', SCHEDULED_USAGE_PREFIX + cutoff))
+        self.store.put(usage_key, calls + 1, db=db)
+        db.execute('INSERT INTO tool_events(job_id,tool,status,detail,created) VALUES (?,?,?,?,?)',
+                   (job_id, SCHEDULED_BUDGET_KEY, 'admitted',
+                    json.dumps({'preparation_id': row['id'], 'slot': iso(at), 'day': day, 'check': True}), now))
+        db.execute('INSERT INTO tool_events(job_id,tool,status,detail,created) VALUES (?,?,?,?,?)',
+                   (job_id, CHECK_EVENT_TOOL, 'woken', json.dumps({'preparation_id': row['id'], **handoff}), now))
+        if mark is not None:
+            # Before the Work's first step, in the transaction that creates it (C17 case 3 standing).
+            self.store._insert_intake_source(db, job_id, self.store._outside_content_detail(mark), now)
+        run += 1
+        db.execute('UPDATE preparations SET state=?,last_run_job_id=?,run_count=?,updated_at=?,own_run_revision=?,'
+                   'run_return_state=? WHERE id=?', (STATE_RUNNING, job_id, run, now, now, return_state, row['id']))
+        detail = {'preparation_id': row['id'], 'kind': row['kind'], 'slot': iso(at), 'recurrence': row['recurrence'],
+                  'accepted_by': row['accepted_by'], 'channel': channel.split(':', 1)[0], 'run': run,
+                  'max_runs': row['max_runs'], 'until': iso(row['until_at']), 'woken_by': handoff.get('kind')}
+        if row.get('delivery_mode') == DELIVERY_WHEN_NEEDED:
+            detail['delivery_mode'] = DELIVERY_WHEN_NEEDED
+        db.execute('INSERT INTO tool_events(job_id,tool,status,detail,created) VALUES (?,?,?,?,?)',
+                   (job_id, 'preparation', 'succeeded', json.dumps(detail), now))
+        return job_id, None
 
     @staticmethod
     def continue_run(db, work_id, continuation_id, now):

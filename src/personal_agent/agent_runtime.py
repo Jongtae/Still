@@ -444,6 +444,13 @@ SCHEDULE_PREPARATION_ARGUMENTS={
  'replaces':('The id (from settings_read preparations) of an active preparation this one takes the place of, when the owner changes what an existing watch or schedule does (another target, a new plan, a different time) (#766). '
   'In a Work the owner started, Still stops it once this one is scheduled, so the two never run side by side and the new one need not wait for the old to end; say in your answer what was stopped. '
   'A scheduled run the owner steered may replace its own preparation this way. Omit it for an additional preparation.'),
+ 'check':('#972: for a watch that must react within seconds or minutes, a condition check instead of every_minutes: a JSON '
+  'object of the exact code, hosts, secrets and timeout_seconds of one code_run you already ran in this Work (it must have '
+  'ended with exit status 0, sent no state change and installed no packages), plus every_seconds (15 to 43200, default 60). '
+  'Still runs that code at the interval without a model until until; output on stdout wakes this preparation\'s run with '
+  'it, and a run that prints nothing is quiet, so print only what the run should act on. Keep hold times and what was '
+  'already reported in the JSON object at the path in CHECK_STATE_FILE. A check only reads; the woken run acts. A run woken '
+  'by its check may replace it (replaces set to its own preparation id) with the same secret sets and hosts or fewer.'),
  'line':('The id of the entrusted line (entrusted_line) this preparation does the work of (#798): the line you opened for a '
   'continuing responsibility, or an existing one when the owner starts the same work again; continue it instead of opening '
   'another. A replacement keeps its line by itself.'),
@@ -610,7 +617,7 @@ DEFINITIONS=[
  schema('calendar_query','List the owner\'s calendar events between two RFC3339 timestamps that both carry an explicit UTC offset, from every calendar the owner shows in Google Calendar; each event names its calendar. Use this to answer what is scheduled. Read-only: to create, change or delete an event, use api_request with the google-calendar slot (Google Calendar API v3).',{'start':STRING,'end':STRING,'timezone':STRING},['start','end','timezone']),
  schema('weather',WEATHER_DESCRIPTION,{'city':STRING,'country':STRING,'location_ref':STRING}),
  schema('propose_current_state',PROPOSE_CURRENT_STATE_DESCRIPTION,described({'predicate':{'type':'string','enum':['current_place','work_mode','availability_hint']},'value':STRING,'place_ref':STRING,'source':STRING,'until':STRING,'supersedes':STRING},PROPOSE_CURRENT_STATE_ARGUMENTS),['predicate']),
- schema('schedule_preparation',SCHEDULE_PREPARATION_DESCRIPTION,described({'kind':{'type':'string','enum':['reminder','prepare']},'goal':STRING,'due':STRING,'timezone':STRING,'recurrence':{'type':'string','enum':['daily','weekdays','weekly']},'rrule':STRING,'every_minutes':STRING,'until':STRING,'max_runs':STRING,'report_every_minutes':STRING,'delivery':{'type':'string','enum':['send','keep','when_needed']},'title':STRING,'offer':STRING,'replaces':STRING,'line':STRING},SCHEDULE_PREPARATION_ARGUMENTS),['kind','goal','due']),
+ schema('schedule_preparation',SCHEDULE_PREPARATION_DESCRIPTION,described({'kind':{'type':'string','enum':['reminder','prepare']},'goal':STRING,'due':STRING,'timezone':STRING,'recurrence':{'type':'string','enum':['daily','weekdays','weekly']},'rrule':STRING,'every_minutes':STRING,'until':STRING,'max_runs':STRING,'report_every_minutes':STRING,'delivery':{'type':'string','enum':['send','keep','when_needed']},'title':STRING,'offer':STRING,'replaces':STRING,'line':STRING,'check':STRING},SCHEDULE_PREPARATION_ARGUMENTS),['kind','goal','due']),
  schema('entrusted_line',ENTRUSTED_LINE_DESCRIPTION,described({'action':{'type':'string','enum':['list','read','open','revise','undo','stop','restart']},'line':STRING,'task':STRING,'report_promise':STRING,'rules':STRING,'rule':STRING,'drop_rule':STRING,'open_matters':STRING,'expected_version':STRING,'version':STRING,'account_every_days':STRING},ENTRUSTED_LINE_ARGUMENTS),['action']),
  schema('tell_owner',TELL_OWNER_DESCRIPTION,{'text':STRING},['text']),
  schema('ask_location',ASK_LOCATION_DESCRIPTION,described({'reason':STRING,'button_label':STRING,'mode':{'type':'string','enum':['ask','with_answer']}},ASK_LOCATION_ARGUMENTS),['reason']),
@@ -2039,15 +2046,28 @@ def refused_before_hand_off(execute):
  run.__name__,run.__qualname__,run.__doc__=execute.__name__,execute.__qualname__,execute.__doc__ or run.__doc__
  return run
 
+def outside_source(action,name,args):
+ """The outside-content source a call of ``action`` records on its Work (``record_outside_result``)."""
+ source={'operation':action or name, 'category':PRIVATE_PROVENANCE.get(action,UNATTRIBUTED_PROVENANCE)}
+ source.update({key:args[key] for key in ('url','slot','root_id','path','agent_id','peer_id') if isinstance(args,dict) and key in args})
+ return source
+
+def result_outside_source(action,args=None):
+ """The mark a successful result of ``action`` gives its Work, or None when such a result marks nothing.
+
+ #972 (owner decision 2026-11-18): a run a condition check wakes starts with exactly the standing the
+ same code's output has inside an ordinary run, so it is never narrower (or wider) than a run that
+ executed that ``code_run`` itself: the rule below is ``record_outside_result``'s own.
+ """
+ return None if action in OWNER_ONLY_RESULT_ACTIONS else outside_source(action,action,args or {})
+
 def record_outside_result(execute):
  """Persist intake before results OR dispatched errors leave either worker route."""
  @wraps(execute)
  def run(self,name,args):
   action=(self.tools.get(name) or {}).get('host_action')
   def mark():
-   source={'operation':action or name, 'category':PRIVATE_PROVENANCE.get(action,UNATTRIBUTED_PROVENANCE)}
-   source.update({key:args[key] for key in ('url','slot','root_id','path','agent_id','peer_id') if isinstance(args,dict) and key in args})
-   self.store.mark_outside_content(self.job_id,source)
+   self.store.mark_outside_content(self.job_id,outside_source(action,name,args))
   try:result=execute(self,name,args)
   except Exception as exc:
    # The inner hand-off guard has already identified Still's own refusals.

@@ -721,6 +721,9 @@ class AgentService:
         # #798: entrusted lines (one continuing responsibility each) on the preparations' clock.
         from .entrusted_lines import EntrustedLines
         self.lines=EntrustedLines(store,clock=lambda:self.preparations.clock())
+        # #972: condition checks - the AI's own code run on a short interval, waking a run only on a hit.
+        from .condition_checks import ConditionChecks
+        self.condition_checks=ConditionChecks(self)
         # #805: post-Work owner-model upkeep, claimed by the same loop when idle
         # and run off the work thread, one at a time.
         self.owner_model=om.Upkeep(store)
@@ -9866,9 +9869,13 @@ class AgentService:
             while not self.stop.is_set():
                 self.receive_polled_surfaces()
                 self.stop.wait(interval)
+        from . import condition_checks
         self.threads=[threading.Thread(target=work,daemon=True),threading.Thread(target=poll,daemon=True),
                       threading.Thread(target=acknowledge,daemon=True),
-                      threading.Thread(target=poll_surfaces,daemon=True,name='agentos-surface-poll')]
+                      threading.Thread(target=poll_surfaces,daemon=True,name='agentos-surface-poll'),
+                      # #972: one check thread, store-wide, apart from the work loop (a sandbox run takes seconds).
+                      threading.Thread(target=condition_checks.loop,args=(self.condition_checks,self.stop),daemon=True,
+                                       name='agentos-condition-checks')]
         for thread in self.threads:thread.start()
 
     def healthy(self):
