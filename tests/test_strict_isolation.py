@@ -174,7 +174,7 @@ class StrictLaunchArguments(unittest.TestCase):
         browser = ',mcp__agentos__browser_open,mcp__agentos__browser_read,mcp__agentos__browser_find,' \
                   'mcp__agentos__browser_click,mcp__agentos__browser_type,mcp__agentos__browser_sign_in'
         # #774: trusted-local also pre-approves the owner-state tools its service relays.
-        owner_state = (',mcp__agentos__calendar_query,'
+        owner_state = (',mcp__agentos__public_download,mcp__agentos__calendar_query,'
                        'mcp__agentos__list_memory,mcp__agentos__search_memory,mcp__agentos__search_conversation,mcp__agentos__save_memory,mcp__agentos__schedule_preparation,'
                        # #798: the owner's entrusted lines, relayed the same way.
                        'mcp__agentos__entrusted_line,'

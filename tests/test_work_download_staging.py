@@ -6,6 +6,7 @@ import pytest
 
 from personal_agent import work_download
 from personal_agent.agent_runtime import Capabilities, ToolError, WorkBudget, WorkLedger
+from personal_agent.bounded_execution import AgentOSMcpTools
 from personal_agent.local_tools import LocalTools
 from personal_agent.public_download import DownloadedRange
 from personal_agent.quickstart_store import QuickStore
@@ -60,6 +61,17 @@ def test_host_call_uses_verified_offset_and_projects_only_public_fields(download
     result = caps.execute('public_download', {'operation': 'preview', 'offset': 0})
     assert result['content'] == '********'
     assert store.read_checkpoint(work_id)['received'] == 8
+
+
+def test_mcp_facade_accepts_integer_offsets_for_fetch_and_preview(download):
+    _, _, _, caps, calls = download
+    tools = AgentOSMcpTools(caps)
+    first = tools.call('public_download', {'operation': 'fetch', 'url': URL, 'offset': 0})
+    preview = tools.call('public_download', {'operation': 'preview', 'offset': 0})
+    assert first['received'] == 4
+    assert preview['artifact'] == first['artifact']
+    assert preview['content'] == '****'
+    assert calls == [(0, None, None)]
 
 
 def test_uncommitted_tail_is_not_visible_and_is_replaced(download):

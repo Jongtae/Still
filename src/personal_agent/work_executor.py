@@ -2051,11 +2051,12 @@ class WorkExecutor:
             report=service.scrub_work_text(job['id'],report) if report else report
         # Tool reads of a failed run are also read back from its
         # durable tool events; this records what was declared so far
-        # plus the run-time labels of a worker that had started.
+        # plus the run-time labels of a worker that had started. The writer scope
+        # fences this separate write; the terminal transaction rechecks its own admission.
+        service.record_work_sources(job['id'],run.work_sources|set(getattr(run.work_capabilities[0],'private_provenance',()) or ()))
         with service.store.db() as db:
             db.execute('BEGIN IMMEDIATE')
             if not self._read_checkpoint_can_settle(run, db=db):return False
-            service.record_work_sources(job['id'],run.work_sources|set(getattr(run.work_capabilities[0],'private_provenance',()) or ()),db=db)
             # #787 review: an unknown effect recorded while the report was built still wins.
             if run.outcome=='failed' and service._work_has_unknown_effect(job['id']):
                 run.outcome,report='unknown',None

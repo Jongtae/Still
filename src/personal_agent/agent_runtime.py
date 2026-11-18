@@ -1746,7 +1746,7 @@ def outbound_evidence(capabilities,action,args,result):
  out={'outbound_comparison':'deferred'}
  if action=='public_download':
   hosts=result.get('destinations',[])
-  return {**out,'contacted':bool(hosts),'sources':hosts} if hosts else {}
+  if hosts:out.update(contacted=True,sources=hosts)
  if action=='browser_open':
   hosts=list(dict.fromkeys(host for host in (_url_parts((args or {}).get('url'))[1],_url_parts((result or {}).get('url'))[1]) if host))
   if hosts:out['destination']=hosts[0][:253]
