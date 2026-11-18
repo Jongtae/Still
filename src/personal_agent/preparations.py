@@ -173,6 +173,8 @@ MAX_PENDING_PIECES = 10
 PIECE_LEAD_SECONDS = MIN_EVERY_MINUTES * 60
 #: States in which a piece has not started yet: its parent run may still replace it (D6).
 PIECE_PENDING_STATES = (STATE_PROPOSED, STATE_SCHEDULED, STATE_PAUSED)
+#: #1005: how many of a line's finished pieces Settings lists under the line's one entry.
+FINISHED_PIECES_SHOWN = 10
 #: #821: a waiting run's continuation refused because its preparation changed while it waited.
 WAIT_CHANGED = 'preparation-changed'
 
@@ -2302,14 +2304,46 @@ class Preparations:
             return db.execute(f'UPDATE preparations SET state=?,updated_at=? WHERE {where}',
                               (STATE_EXPIRED, now, *params)).rowcount
 
-    def rows(self, limit=100):
-        """Every row with its last run's Work status and delivery, active first."""
+    def rows(self, limit=100, finished_pieces=True):
+        """Every row with its last run's Work status and delivery, active first.
+
+        ``finished_pieces`` False leaves out the line pieces (#938) that no longer run, which
+        ``finished_pieces_by_line`` returns grouped instead (#1005): a busy line ends up to
+        ``LINE_PIECES_PER_DAY`` of them a day, and they would take up ``limit``.
+        """
+        where, values = '', ()
+        if not finished_pieces:
+            where = (f"WHERE NOT (COALESCE(p.origin,'')=? AND p.state NOT IN ({','.join('?' * len(ACTIVE_STATES))})) ")
+            values = (ORIGIN_LINE_PIECE, *ACTIVE_STATES)
         with self.store.db() as db:
             return [self._schedule_row(row, db) for row in db.execute(
                 'SELECT p.*, j.status AS last_status, j.delivery AS last_delivery, j.response AS last_response '
-                'FROM preparations p LEFT JOIN jobs j ON j.id=p.last_run_job_id '
+                'FROM preparations p LEFT JOIN jobs j ON j.id=p.last_run_job_id ' + where +
                 "ORDER BY CASE p.state WHEN 'proposed' THEN 0 WHEN 'running' THEN 1 WHEN 'scheduled' THEN 2 WHEN 'paused' THEN 3 ELSE 4 END, "
-                'p.due_at LIMIT ?', (int(limit),))]
+                'p.due_at LIMIT ?', (*values, int(limit)))]
+
+    def finished_pieces_by_line(self, shown=FINISHED_PIECES_SHOWN):
+        """#1005: each line's pieces that no longer run, as counts by state and the newest ``shown`` rows.
+
+        Returns ``{line_id: {'count': n, 'states': {state: n}, 'rows': [newest first]}}``.
+        """
+        marks = ','.join('?' * len(ACTIVE_STATES))
+        with self.store.db() as db:
+            groups = {}
+            for row in db.execute(f'SELECT line_id, state, COUNT(*) AS n FROM preparations WHERE origin=? AND state NOT IN ({marks}) '
+                                  'AND line_id IS NOT NULL GROUP BY line_id, state', (ORIGIN_LINE_PIECE, *ACTIVE_STATES)):
+                group = groups.setdefault(row['line_id'], {'count': 0, 'states': {}, 'rows': []})
+                group['count'] += row['n']
+                group['states'][row['state']] = row['n']
+            for row in db.execute(
+                    'SELECT * FROM (SELECT p.*, j.status AS last_status, j.delivery AS last_delivery, j.response AS last_response, '
+                    'ROW_NUMBER() OVER (PARTITION BY p.line_id ORDER BY p.updated_at DESC, p.id DESC) AS newest '
+                    f'FROM preparations p LEFT JOIN jobs j ON j.id=p.last_run_job_id WHERE p.origin=? AND p.state NOT IN ({marks}) '
+                    'AND p.line_id IS NOT NULL) WHERE newest<=? ORDER BY line_id, newest', (ORIGIN_LINE_PIECE, *ACTIVE_STATES, int(shown))):
+                row = dict(row)
+                row.pop('newest')
+                groups[row['line_id']]['rows'].append(row)
+        return groups
 
     # -- the tick ----------------------------------------------------------
 
