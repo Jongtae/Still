@@ -25,7 +25,7 @@ from test_payment_autonomy_662 import Mode
 from test_preparations import call
 
 OWNER_ROOTS = (prep.ACCEPTED_OWNER_REQUEST, prep.ACCEPTED_OWNER_BUTTON, prep.ACCEPTED_OWNER_SETTINGS,
-               prep.ACCEPTED_OWNER_ANSWER)
+               prep.ACCEPTED_OWNER_ANSWER, prep.ACCEPTED_OWNER_STEER)
 PAY = {'slot': 'money', 'url': 'https://pay.test/pay', 'method': 'POST', 'body': '{"amount":"10"}', 'effect': 'payment'}
 
 
@@ -215,6 +215,16 @@ class Payment(_PieceCase):
         self.assertFalse(self.service.self_set_run(job))
         self.assertEqual(self.paid(job), (1, None))
         self.assert_receipt(job['id'], 'api_request')
+
+    def test_a_piece_of_an_owner_steer_row_follows_payment_autonomy_like_other_owner_accepted_roots(self):
+        # #984: work a steered run started is owner-accepted (``owner-steer``); its pieces are too.
+        self.assertEqual(prep.piece_standing(prep.ACCEPTED_OWNER_STEER), prep.ACCEPTED_LINE_PIECE_OWNER)
+        save_slot(self.store, 'money', ['pay.test'], 'secret-key-value-123456789', money=True)
+        job = self.piece_job(prep.ACCEPTED_OWNER_STEER)
+        self.assertFalse(self.service.self_set_run(job))
+        self.assertEqual(self.paid(job), (0, 'unattended_run'))  # autonomy off by default
+        self.switch(True)
+        self.assertEqual(self.paid(job), (1, None))
 
     def test_with_autonomy_off_an_owner_accepted_lines_piece_cannot_pay_and_asks_no_approval(self):
         save_slot(self.store, 'money', ['pay.test'], 'secret-key-value-123456789', money=True)
