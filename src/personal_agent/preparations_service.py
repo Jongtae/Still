@@ -996,7 +996,7 @@ class PreparationsService:
     def queue_preparation_proposal(self, job):
         """Offer this Work's unaccepted preparations to the paired owner once (#659).
 
-        #1455: the ones the owner's own request scheduled get a message of their own with a cancel button,
+        #1455, #984: work scheduled from an owner request or steer gets a message with a cancel button,
         so a reservation is managed in the conversation, not in Settings first.
         """
         service=self.service
@@ -1004,7 +1004,8 @@ class PreparationsService:
         if rows:service.queue_notification(job,'preparation_proposed',fingerprint=prep.digest(prep.proposal_page(rows)[0]))
         with service.store.db() as db:
             scheduled=[row['id'] for row in db.execute("SELECT id FROM preparations WHERE created_from=? AND state='scheduled' "
-                                                      "AND accepted_by IN (?,?) ORDER BY created_at",(job['id'],prep.ACCEPTED_OWNER_REQUEST,prep.ACCEPTED_OWNER_WORK))]
+                                                      "AND accepted_by IN (?,?,?) ORDER BY created_at",
+                                                      (job['id'],prep.ACCEPTED_OWNER_REQUEST,prep.ACCEPTED_OWNER_WORK,prep.ACCEPTED_OWNER_STEER))]
         if scheduled:service.queue_notification(job,'preparation_scheduled',fingerprint=PREPARED_IDS_PREFIX+','.join(scheduled))
 
     def suggest_preparations(self, anchor_id, items, judgments=None):

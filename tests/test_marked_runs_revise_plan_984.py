@@ -5,6 +5,7 @@ from unittest import mock
 
 from personal_agent import agent_runtime as runtime, browser_session as bs, entrusted_lines as el, preparations as prep
 from personal_agent.decision import BinaryDecision, FixtureDecisionEngine, OUTCOME_DECIDED, fixture_confidence
+from personal_agent.work_execution import WorkRun
 from test_owner_settings_conversation import CHAT, GENERATION
 from test_payment_autonomy_662 import Mode
 from test_run_revises_own_plan_968 import _RunCase, GOAL, NEW_GOAL
@@ -154,6 +155,49 @@ class SteerStartsWork(_RunCase):
     def schedule(self, run):
         return self.service.preparation_scheduler(run, '')({'kind': 'prepare', 'goal': 'New work',
             'due': prep.iso(self.clock[0] + 3600, 'UTC'), 'recurrence': 'daily'})
+
+    def test_post_work_announces_owner_steer_schedule_once_with_working_cancel(self):
+        row = self.preps.create(kind='prepare', goal=GOAL, due_at=self.clock[0], timezone='UTC',
+                                recurrence='daily', channel=prep.CHANNEL_TELEGRAM, created_from=None,
+                                state=prep.STATE_SCHEDULED, accepted_by=prep.ACCEPTED_OWNER_REQUEST)
+        work = self.preps.start(row, channel=f'telegram:{GENERATION}', chat_id=CHAT, now=self.clock[0])
+        with self.store.db() as db:
+            db.execute("UPDATE jobs SET status='running' WHERE id=?", (work,))
+        run = self.store.job(work)
+        source = self.steer(run, 'Start the new work too')
+        result = self.schedule(run)
+        new = self.preps.get(result['preparation_id'])
+        self.assertEqual((new['accepted_by'], new['accepted_from'], new['created_from']),
+                         (prep.ACCEPTED_OWNER_STEER, source, work))
+
+        # The real post-work pass must queue the announcement, even though this
+        # Work began as an unattended preparation rather than a typed request.
+        with self.store.db() as db:
+            db.execute("UPDATE jobs SET status='succeeded',delivery='none' WHERE id=?", (work,))
+        finished = WorkRun(self.store.job(work), self.clock[0])
+        finished.outcome = 'succeeded'
+        self.service._after_work(finished)
+        notice = self.store.notification_of(work, 'preparation_scheduled')
+        self.assertIsNotNone(notice)
+        self.assertTrue(self.service.deliver_notification())
+        [body] = [body for method, body in self.telegram if method == 'sendMessage']
+        self.assertEqual(body['chat_id'], CHAT)
+        self.assertIn(new['goal_text'], body['text'])
+        [[button]] = body['reply_markup']['inline_keyboard']
+        self.assertTrue(button['callback_data'].endswith(':cancel'))
+        sent = self.store.notification_of(work, 'preparation_scheduled')
+        self.assertEqual(sent['state'], 'sent')
+
+        # Repeating either queueing entry point never sends the reservation twice.
+        self.service.queue_preparation_proposal(finished.job)
+        self.service._after_work(finished)
+        self.assertFalse(self.service.deliver_notification())
+        self.assertEqual(len([b for method, b in self.telegram if method == 'sendMessage']), 1)
+        self.service.ingest_callback({
+            'id': 'cancel-steered-work', 'from': {'id': CHAT}, 'data': button['callback_data'],
+            'message': {'message_id': sent['message_id'], 'chat': {'id': CHAT, 'type': 'private'}}}, GENERATION)
+        self.assertEqual(self.preps.get(new['id'])['state'], prep.STATE_CANCELLED)
+        self.assertEqual(self.preps.get(row['id'])['state'], prep.STATE_RUNNING)
 
     def test_only_delivered_authenticated_steer_can_start_work(self):
         row, run = self.running()
