@@ -9,6 +9,7 @@ The implementation is a separate change in slices (*Implementation slices*). Sli
 ## Owner outcome
 
 - A message the owner types is never queued behind scheduled runs. It starts within one work-loop tick when no other Work of the owner's is running in that conversation.
+- A command Still answers itself, such as the AI-route listing, is answered at once, never after a running Work (D2a).
 - A scheduled run starts at its slot, not after whatever Work happens to be running. A long mail or calendar Work no longer holds back unrelated scheduled runs.
 - Two Works that could step on each other never run at the same time: runs of the same entrusted line, Works of the same request chain, owner Works in the same conversation unless the owner's AI judged the new message independent, and Works that need the owner-logged-in browser profile.
 - Nothing runs twice and no consequential effect happens twice because Works now overlap (C8).
@@ -22,6 +23,7 @@ Read only, from the owner's store with `sqlite3 -readonly`. Counts and durations
 | Owner-typed Works | 4. Queue wait (`response_timing` stage `queue_wait`): mean 142 s, max 543 s. Ahead of the 543 s one were two scheduled runs, queued 2 s before it; they ran one after the other for 3.6 and 5.3 min |
 | Scheduled runs (`preparation:` request keys) | 20. Queue wait mean 11 s, max 221 s. Active time mean 5.4 min, max 9.5 min. 17 of 19 finished runs took over 4 min |
 | The five-minute row | 14 runs. Three slots started 193 s, 234 s and 483 s after their due time. Gaps between starts of 10, 13 and 14 min |
+| An explicit command | At 10:33 the owner typed a command Still answers itself (the AI-route listing, provider `builtin`, no model turn). It waited 96 s in the queue behind a scheduled run, then answered at once |
 | Side answers (#17) | No `side_answer` event in the store's whole history. 40 `owner_steer` receipts |
 
 The queue-wait stage under-reports the scheduled delay. A slot's Work is only created by the preparation tick, and the tick runs on the same thread as the Work (`_work_iteration`: `run_due_preparation`, then `run_one`). While a Work runs, no tick runs, so a late slot shows up as a late start (193 to 483 s), not as queue wait.
@@ -73,6 +75,16 @@ All paths are under `src/personal_agent/` at the main revision this document was
 - **Order.** The claim reads owner-class rows first, then background rows, each by `created`.
 - **Reserve.** Background Works may hold at most `N − 1` lanes. With the default, two scheduled runs can run at once, and one lane is always free for the owner.
 - **Effect on the live cases.** The 543 s wait would have been one tick. The 9.5-min mail and calendar Work would have held one lane, not the work loop.
+
+### D2a. Commands Still answers itself never wait for a lane
+
+An owner-explicit command (`IntentClassifier.explicit`: `/start`, `/help`, `/settings`, `/ai`, `/dev`, `/notes`, `/note`, `/knowledge`, `/workspace-search`) is routed literally and answered by `_run_rule_intent` with no model (#1389). Explicit forms are terminal there: they never fall through to the worker (#606 T4). Such a command does not belong in the tool-capable queue.
+
+- **Command class.** At the claim, a Work is in the command class when it is owner-typed, its message is an explicit form, it has no photo, and its request chain has length 1. This is the eligibility test `start_side_answer` already applies, read in the same claim transaction. No model is asked and only the exact command forms are read.
+- **The command lane.** One extra thread, outside the `N` lanes and outside the reserve. The dispatcher claims command-class Works before every other class and hands them to it. Commands run one at a time, in order, on the unchanged `run_one` path. The dispatcher thread itself never runs a Work, so a slow store read in a command cannot stall the ticks.
+- **No conversation key and no steer judgment.** A command does not wait for the conversation's running Work, and `consider_steer` skips an explicit form (`has_local_candidate`), as continuity already does. A command is never folded into another Work as a steer.
+- **Why it is safe beside a running Work.** A command's writes are the same owner-settings writes the web Settings routes already make on HTTP threads while a Work runs. A Work keeps the route snapshot it took at its start (`_prepare_worker_turn`: "a later owner switch applies to new Work and never redirects this request mid-turn"). A `/settings` text only drafts; the owner's confirmation settles it, as today. Only a message the owner typed may switch the Main AI (#1017), unchanged.
+- **With `work_lanes` = 1** the command lane still exists. The 96 s wait above is removed in slice 1, before any tool-capable concurrency.
 
 ### D3. Keys: what stays serialized
 
@@ -160,6 +172,7 @@ Nothing is added and nothing is loosened.
 |---|---|---|
 | Lanes | **3** (owner decision 1) | New `work_lanes` setting. `1` is today's behaviour, plus owner-first order |
 | Lanes background Works may hold | **N − 1** | New reserve (D2) |
+| Command lane | 1 thread, explicit commands only, one at a time | New (D2a). Outside `N` and the reserve |
 | Runs of one line at once | 1 | New `line:` key |
 | Owner Works of one conversation at once | 1, unless judged beside | New `conv:` key, released by the D6 judgment |
 | Browser profile holders | 1 | Existing; wait of up to **120 s** for another Work (owner decision 4) |
@@ -219,7 +232,8 @@ Acceptance is by scenario, on injected runners and fake clocks, not by test coun
 3. **Same line.** A line's next slot comes due while its previous run is still running. It does not start, and it is settled as today when the run ends.
 4. **Same conversation.** A second owner message while the first runs: judged steer, it reaches the named Work; judged beside, it runs at once in a free lane; judged wait or unavailable, it runs after the first and the owner sees the waiting state.
 5. **Browser.** Two Works need the browser. The second waits up to the bound, then runs or gets `browser_busy`. Stop ends the wait.
-6. **Restart.** Three Works in flight. After restart all three are `interrupted`, none is re-run, no reply or notice is sent twice.
+6. **Command.** An explicit command while all lanes hold Works, including one in the same conversation. It is answered within one tick, with no model call, and the running Works are unaffected.
+7. **Restart.** Three Works in flight. After restart all three are `interrupted`, none is re-run, no reply or notice is sent twice.
 
 ### Race and negative tests the implementation must carry
 
@@ -228,6 +242,8 @@ Acceptance is by scenario, on injected runners and fake clocks, not by test coun
 - Background Works never hold more than `N − 1` lanes. An owner Work is never behind a background Work in claim order.
 - Early plan, budget and `current_work_id` of two concurrent Works never cross (each Work's decision records carry its own id).
 - A steer goes only to the Work the judgment named.
+- Only owner-typed, photo-free explicit forms with a chain of length 1 enter the command lane. A natural-language message, a photo, a retry or a scheduled run never does, and an explicit form is never steered into a running Work.
+- A Main AI switch by command while a Work runs leaves that Work on the route it started with.
 - `sweep_after_work` never runs the tail of a Work still in a lane.
 - With `work_lanes` = 1, the existing suite for the single worker passes, including the side-answer tests.
 - Each concurrent Work's Grants, information-use record and approvals are exactly those it has when run alone.
@@ -241,7 +257,7 @@ Acceptance is by scenario, on injected runners and fake clocks, not by test coun
 
 ## Implementation slices
 
-1. **Dispatcher, no concurrency.** D1 with `work_lanes` = 1, the D2 claim order, the D4 state moves, the pre-claim steps in the dispatcher tick, the lane registry for the sweep, a `database is locked` counter. Deliveries and preparation ticks no longer wait for a running Work. No escalated review.
+1. **Dispatcher and command lane, no tool-capable concurrency.** D1 with `work_lanes` = 1, the D2 claim order, the D2a command lane, the D4 state moves, the pre-claim steps in the dispatcher tick, the lane registry for the sweep, a `database is locked` counter. Deliveries, preparation ticks and explicit commands no longer wait for a running Work. No escalated review: a command is model-free and tool-free, and its writes are the ones web Settings already makes beside a running Work.
 2. **Lanes and keys.** `work_lanes` = 3, the reserve, the D3 keys in the claim, the D8 race tests, the browser wait. Escalated review.
 3. **Beside.** The D6 judgment over the conversation's running Works, the `beside` receipt, the waiting state. Measured on a small scenario set before and after, as a judgment change.
 
