@@ -2365,7 +2365,7 @@ class PreparationsService:
         # A run's request key names its slot in whole seconds (``request_key``); a continuation keeps it.
         for key in keys:
             if exclude is not None and prep.slot_key(key)==prep.slot_key(exclude):continue
-            slot=prep.slot_key(key)[len(prefix):]
+            slot=prep.slot_key(key)[len(prefix):].split('~',1)[0]
             if slot.isdigit():start=max(start,float(slot))
         return start
 

@@ -291,7 +291,7 @@ UNATTENDED_SETTINGS_TEXT = ('No owner is present in this scheduled run, so no se
 #: #619: the timezone an edit's wall-clock values were resolved in, bound in its draft (not an edit).
 BOUND_TIMEZONE = "bound_timezone"
 #: #619: what each preparation operation authorizes, and so what its draft binds (Codex P1 on #626).
-_PREPARATION_IDENTITY = ('id', 'kind', 'goal_text')
+_PREPARATION_IDENTITY = ('id', 'kind', 'goal_text', 'check_spec')
 _PREPARATION_RUN = (*_PREPARATION_IDENTITY, 'title_text', 'offer_text', 'delivery_mode', 'channel')
 _PREPARATION_SCHEDULE = (*_PREPARATION_RUN, 'due_at', 'timezone', 'recurrence', 'rule_start', 'every_seconds',
                          'window_end', 'max_runs')

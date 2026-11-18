@@ -873,9 +873,14 @@ def next_due(due_at, timezone_name, recurrence, now, rule_start=None, run_count=
     raise AssertionError('recurrence has no slot within 16 days')  # pragma: no cover - unreachable
 
 
-def request_key(preparation_id, due_at):
+def request_key(preparation_id, due_at, *, check_spec=None):
     """The Work request key of one slot: the idempotency key of a run."""
-    return f'{REQUEST_KEY_PREFIX}{preparation_id}:{int(due_at)}'
+    key = f'{REQUEST_KEY_PREFIX}{preparation_id}:{int(due_at)}'
+    # Keep the full-spec binding in the slot component, not the preparation id
+    # or a continuation suffix: replacement wakes must keep their own handoff.
+    if check_spec is not None:
+        key += '~' + hashlib.sha256(check_spec.encode()).hexdigest()
+    return key
 
 
 def slot_key(work_request_key):
@@ -1504,7 +1509,7 @@ class Preparations:
                accepted_by=None, owner=OWNER, window=None, delivery_mode=None, title=None, offer=None, origin=None,
                report_every_minutes=None, line_id=None, max_runs=None, requested_until=None, bundle_channel=None, accepted_from=None,
                piece_of=None, db=None, check=None):
-        """One new row (idempotent for the same Work, kind, goal and slot).
+        """One new row (idempotent for the same Work, kind, goal, slot and full check spec).
 
         #574: when another Work already proposed the same kind, goal, due and
         recurrence (and window) and the owner has not answered it yet, that row
@@ -1568,6 +1573,9 @@ class Preparations:
             raise ValueError('unknown origin')
         if check is not None and (window is None or kind != KIND_PREPARE):
             raise ValueError('a condition check belongs to a prepare window')
+        # Compare exactly what is persisted, including proof provenance and future fields,
+        # not just the code/digest. NULL also distinguishes ordinary watches from checks.
+        check_spec = json.dumps(check, sort_keys=True) if check is not None else None
         now = self.clock()
         owns_transaction = db is None
         with (self.store.db() if owns_transaction else nullcontext(db)) as db:
@@ -1581,7 +1589,8 @@ class Preparations:
                             'piece_replaced': True}
             same = None if piece_of is not None else db.execute(
                               'SELECT * FROM preparations WHERE created_from=? AND kind=? AND goal_text=? AND due_at=? '
-                              'AND state IN (?,?,?,?)', (created_from, kind, goal, due_at, *ACTIVE_STATES)).fetchone()
+                              'AND check_spec IS ? AND state IN (?,?,?,?)',
+                              (created_from, kind, goal, due_at, check_spec, *ACTIVE_STATES)).fetchone()
             if same:
                 return dict(same)
             # #574: another Work's identical proposal still waiting for the owner is that same proposal,
@@ -1590,9 +1599,9 @@ class Preparations:
             proposed = None if piece_of is not None else db.execute(
                                   'SELECT * FROM preparations WHERE state=? AND created_from IS NOT ? AND kind=? AND goal_text=? '
                                   'AND due_at=? AND recurrence IS ? AND every_seconds IS ? AND window_end IS ? AND max_runs IS ? AND window_terms IS ? '
-                                  'ORDER BY created_at LIMIT 1',
+                                  'AND check_spec IS ? ORDER BY created_at LIMIT 1',
                                   (STATE_PROPOSED, created_from, kind, goal, due_at, recurrence,
-                                   every_seconds, window_end, max_runs, terms)).fetchone()
+                                   every_seconds, window_end, max_runs, terms, check_spec)).fetchone()
             if proposed:
                 return {**dict(proposed), 'already_proposed': True}
             active = db.execute('SELECT count(*) FROM preparations WHERE state IN (?,?,?,?)', ACTIVE_STATES).fetchone()[0]
@@ -1623,7 +1632,7 @@ class Preparations:
                    'title_text': title, 'offer_text': offer, 'origin': origin, 'offered_at': None, 'line_id': line_id,
                    'piece_of': piece_of}
             if check is not None:
-                row.update(check_spec=json.dumps(check, sort_keys=True), check_next_at=due_at, check_status=None)
+                row.update(check_spec=check_spec, check_next_at=due_at, check_status=None)
             db.execute(f"INSERT INTO preparations({','.join(row)}) VALUES ({','.join('?' * len(row))})", tuple(row.values()))
             if bundle_channel is not None:
                 # The stood row and its original send intent commit together, already on web.
@@ -1895,6 +1904,8 @@ class Preparations:
                 raise PreparationRefusal('resume_expired')
             updates.update(state=return_state,
                            run_return_state=None, due_at=following)
+            if row.get('check_spec') and return_state == STATE_SCHEDULED:
+                updates['check_next_at'] = following
         db.execute(f"UPDATE preparations SET {','.join(k + '=?' for k in updates)} WHERE id=?",
                    (*updates.values(), row['id']))
         return dict(db.execute('SELECT * FROM preparations WHERE id=?', (row['id'],)).fetchone())
@@ -1988,8 +1999,9 @@ class Preparations:
                     following = next_due(following, row['timezone'], row['recurrence'], now, row.get('rule_start'), row.get('run_count', 0))
                 if following is None or following <= now:
                     raise PreparationRefusal('resume_expired')
-                db.execute('UPDATE preparations SET state=?,due_at=?,updated_at=? WHERE id=?',
-                           (STATE_SCHEDULED, following, revision, row['id']))
+                db.execute('UPDATE preparations SET state=?,due_at=?,updated_at=?, '
+                           'check_next_at=CASE WHEN check_spec IS NOT NULL THEN ? ELSE check_next_at END WHERE id=?',
+                           (STATE_SCHEDULED, following, revision, following, row['id']))
         return self.get(preparation_id)
 
     def edit(self, preparation_id, *, states=(STATE_PROPOSED, STATE_SCHEDULED, STATE_PAUSED), expected_max_runs=None, **changes):
@@ -2017,6 +2029,8 @@ class Preparations:
 
     def preview_edit(self, row, changes, now, *, db=None):
         """Use the same recorded slots for a Settings preview and the atomic edit."""
+        if row.get('check_spec'):
+            raise PreparationRefusal('invalid_edit')
         if db is None:
             with self.store.db() as db:
                 return self.preview_edit(row, changes, now, db=db)
@@ -2512,6 +2526,7 @@ class Preparations:
             elif not current or current['state'] != STATE_SCHEDULED or current['due_at'] != row['due_at']:
                 return None
             current = dict(current)
+            key = request_key(current['id'], slot, check_spec=current.get('check_spec'))
             existing = db.execute('SELECT id FROM jobs WHERE request_key=?', (key,)).fetchone()
             if immediate and existing:
                 return existing['id']
@@ -2623,7 +2638,7 @@ class Preparations:
         """#972: start the Work a condition check wakes, inside the caller's claim transaction.
 
         The caller has rechecked the row (``scheduled``, the same check and revision).  The Work is an
-        ordinary run of its row, keyed ``preparation:<id>:<at>`` (a replay finds the same Work), and it
+        ordinary run of its row, keyed by row, time and full check spec (a replay finds the same Work), and it
         is charged to the shared daily budget like any scheduled admission.  ``handoff`` (what the
         check printed, or why it failed) is kept with the Work for its first turn; ``mark`` is the
         outside-content source the same code's output gives an ordinary run (``agent_runtime.
@@ -2633,7 +2648,8 @@ class Preparations:
         Returns ``(work_id, None)``, or ``(None, reason)``: ``run-limit`` (its ``max_runs`` wakes are
         used), ``budget`` (the shared budget is spent; its one daily notice is queued) or ``queue-full``.
         """
-        key = request_key(row['id'], at)
+        # A replacement can hit in the same second as the previous spec.
+        key = request_key(row['id'], at, check_spec=row['check_spec'])
         existing = db.execute('SELECT id FROM jobs WHERE request_key=?', (key,)).fetchone()
         if existing:
             return existing['id'], None

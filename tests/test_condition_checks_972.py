@@ -1108,5 +1108,299 @@ class RecoveryAndRedaction(_Base):
         self.assertEqual(result['library']['example-broker']['reason'], '[redacted]')
 
 
+
+class CheckSpecLifecycle(_Base):
+    """#981 P1: full specifications survive every admission and lifecycle boundary."""
+
+    schedule = Setup.schedule
+
+    def variations(self, spec):
+        changes = {'code': spec['code'] + '# changed\n', 'hosts': ['other.example.org'],
+                   'secrets': [], 'timeout_seconds': 12, 'every_seconds': 45,
+                   'libraries': {'example-broker': 'another-version'}, 'proven_in': 'another-work',
+                   'digest': 'another-digest', 'future_field': {'nested': ['value']}}
+        for field, value in changes.items():
+            yield field, {**spec, field: value}
+
+    def create(self, spec, **changes):
+        return self.service.preparations.create(**{
+            'kind': 'prepare', 'goal': 'same goal', 'due_at': self.now, 'timezone': 'UTC',
+            'recurrence': None, 'channel': 'web', 'created_from': 'creator',
+            'state': prep.STATE_PROPOSED, 'window': (15, self.now + 3600, 24),
+            'check': spec, **changes})
+
+    def test_same_work_and_cross_work_dedup_compare_every_spec_field(self):
+        job, args = self.proven()
+        spec = cc.proven_check(self.store, job['id'], args)
+        for cross_work in (False, True):
+            for field, changed in self.variations(spec):
+                with self.subTest(cross_work=cross_work, field=field):
+                    first = self.create(spec)
+                    second = self.create(changed, created_from='other' if cross_work else 'creator')
+                    self.assertNotEqual(first['id'], second['id'])
+                    self.assertEqual(cc.spec_of(self.row(second['id'])), changed)
+                    # Key order is not identity; an exact retry returns the changed row.
+                    retry = self.create(dict(reversed(list(changed.items()))),
+                                        created_from='other' if cross_work else 'creator')
+                    self.assertEqual(retry['id'], second['id'])
+                    for row in (first, second):
+                        self.service.preparations.delete(row['id'])
+        first = self.create(spec)
+        retry = self.create(spec, created_from='other')
+        self.assertEqual(first['id'], retry['id'])
+        self.assertTrue(retry['already_proposed'])
+        ordinary = self.create(None)
+        self.assertNotEqual(first['id'], ordinary['id'])
+        self.assertIsNone(cc.spec_of(ordinary))
+
+    def test_owner_replacement_same_goal_and_due_keeps_new_spec_and_cancels_old(self):
+        job, args = self.proven()
+        first = self.schedule(job, args)
+        changed = {**args, 'code': args['code'] + '# replacement\n', 'hosts': 'public.example.org', 'secrets': '',
+                   'every_seconds': 45}
+        self.code_run(job, changed)
+        second = self.schedule(job, changed, replaces=first['preparation_id'])
+        self.assertNotEqual(first['preparation_id'], second['preparation_id'])
+        self.assertEqual(self.row(first['preparation_id'])['state'], prep.STATE_CANCELLED)
+        saved = cc.spec_of(self.row(second['preparation_id']))
+        self.assertEqual(saved, cc.proven_check(self.store, job['id'], changed))
+        self.assertEqual(second['check']['check'], saved['digest'][:16])
+
+    def test_reproving_same_arguments_uses_latest_successful_library_versions(self):
+        library = ProcedureLibrary(self.store)
+        job, args = self.proven()
+        first = self.schedule(job, args)
+        library.propose('later', 'example-broker', 'def value():\n    """Value."""\n',
+                        [{'name': 'value', 'doc': 'Value.'}])
+        library.settle('later', True)
+        self.code_run(job, args)
+        second = self.schedule(job, args)
+        self.assertNotEqual(first['preparation_id'], second['preparation_id'])
+        self.assertEqual(cc.spec_of(self.row(second['preparation_id']))['libraries'],
+                         {'example-broker': library.current('example-broker')['id']})
+        self.assertEqual(cc.spec_of(self.row(first['preparation_id']))['libraries'], {})
+
+    def test_accept_preserves_exact_spec_and_runs_it(self):
+        job, args = self.proven(hosts='public.example.org', secrets='')
+        spec = cc.proven_check(self.store, job['id'], args)
+        row = self.create(spec)
+        self.service.preparation_request({'operation': 'accept', 'id': row['id']})
+        self.assertEqual(cc.spec_of(self.row(row['id'])), spec)
+        with mock.patch.object(self.checks, '_run', wraps=self.checks._run) as run:
+            self.tick(0)
+        self.assertEqual(run.call_args.args[1], spec)
+
+    def test_replacement_interval_survives_pause_resume_and_restore(self):
+        row = self.check_row()
+        self.hit()
+        self.tick(0)
+        job = self.store.job(self.row(row['id'])['last_run_job_id'])
+        args = self.check_args(code=CHECK_CODE + '# fixed\n', every_seconds=45)
+        self.code_run(job, args)
+        self.checks.replace_own(job, args)
+        spec = cc.proven_check(self.store, job['id'], args)
+        self.settle(row['id'])
+        for stop, resume in (('pause', 'resume'), ('cancel', 'restore')):
+            with self.subTest(stop=stop):
+                self.service.preparation_request({'operation': stop, 'id': row['id']})
+                self.assertEqual(cc.spec_of(self.row(row['id'])), spec)
+                self.assertFalse(self.checks.run_due())
+                self.service.preparation_request({'operation': resume, 'id': row['id']})
+                current = self.row(row['id'])
+                self.assertEqual(cc.spec_of(current), spec)
+                self.assertEqual(current['every_seconds'], 45)
+                self.assertEqual(current['due_at'], self.now + 45)
+                self.assertEqual(current['check_next_at'], current['due_at'])
+                self.assertFalse(self.checks.run_due())
+                self.tick(45)
+                self.assertEqual(self.row(row['id'])['check_next_at'], self.now + 45)
+
+    def test_settings_bindings_compare_every_spec_field_for_each_operation(self):
+        from personal_agent.settings_orchestrator import SettingsOrchestrator, PREPARATION_BINDINGS
+        settings = SettingsOrchestrator(self.store, service=self.service)
+        row = self.check_row()
+        spec = cc.spec_of(row)
+        for operation in PREPARATION_BINDINGS:
+            value = json.dumps({'id': row['id']}) if operation == 'edit' else row['id']
+            for field, changed in self.variations(spec):
+                with self.subTest(operation=operation, field=field):
+                    with self.store.db() as db:
+                        db.execute('UPDATE preparations SET check_spec=? WHERE id=?', (row['check_spec'], row['id']))
+                    before = settings._before('preparations', operation, value, {})
+                    with self.store.db() as db:
+                        db.execute('UPDATE preparations SET check_spec=? WHERE id=?', (json.dumps(changed, sort_keys=True), row['id']))
+                    self.assertNotEqual(before, settings._before('preparations', operation, value, {}))
+
+    def test_changed_spec_cannot_claim_pause_or_wake_from_stale_result(self):
+        row = self.check_row()
+        spec = cc.spec_of(row)
+        for field, changed in self.variations(spec):
+            with self.subTest(field=field):
+                with self.store.db() as db:
+                    db.execute('UPDATE preparations SET check_spec=? WHERE id=?', (json.dumps(changed, sort_keys=True), row['id']))
+                self.assertIsNone(self.checks._claim(row, self.now))
+                self.checks._pause(row, spec, cc.PAUSED_NOT_READY, self.now)
+                self.checks._commit(row, spec, {'result': {'exit_status': 0, 'stdout': 'stale hit'}}, self.now)
+                current = self.row(row['id'])
+                self.assertEqual(current['state'], prep.STATE_SCHEDULED)
+                self.assertEqual(cc.spec_of(current), changed)
+                self.assertEqual(self.woken(row['id']), [])
+                self.assertIsNone(current['check_status'])
+
+    def test_stop_and_forget_during_check_drop_hit_and_preserve_spec(self):
+        from personal_agent.owner_forget import OwnerForget
+        for operation in ('cancel', 'pause', 'delete', 'line_stop', 'line_forget'):
+            with self.subTest(operation=operation):
+                line = self.service.lines.open('w', task='keep watch', report_promise='when it moves')
+                row = self.check_row(line_id=line['line_id'])
+                spec = cc.spec_of(row)
+                self.assertIsNotNone(self.checks._claim(row, self.now))
+                if operation == 'line_stop':
+                    self.service.preparations_service.stop_line(line['line_id'])
+                elif operation == 'line_forget':
+                    receipt = OwnerForget(self.store).forget('local-owner', 'line:' + line['line_id'])
+                    OwnerForget(self.store).undo('local-owner', receipt['receipt'])
+                    self.assertEqual(self.row(row['id'])['state'], prep.STATE_CANCELLED)
+                else:
+                    self.service.preparation_request({'operation': operation, 'id': row['id']})
+                self.checks._commit(row, spec, {'result': {'exit_status': 0, 'stdout': 'late hit'}}, self.now)
+                self.assertEqual(self.woken(row['id']), [])
+                current = self.row(row['id'])
+                if current:
+                    self.assertEqual(cc.spec_of(current), spec)
+                    self.assertNotEqual(current['state'], prep.STATE_SCHEDULED)
+
+    def test_run_now_preserves_full_check_spec(self):
+        row = self.check_row()
+        self.service.preparation_request({'operation': 'run_now', 'id': row['id']})
+        self.assertEqual(cc.spec_of(self.row(row['id'])), cc.spec_of(row))
+        self.assertEqual(len(self.woken(row['id'])), 1)
+
+    def test_same_second_wakes_bind_full_spec_and_handoff_survives_continuation(self):
+        row = self.check_row()
+        spec = cc.spec_of(row)
+        jobs = []
+        for field, changed in [('original', spec), *self.variations(spec)]:
+            with self.subTest(field=field):
+                with self.store.db() as db:
+                    db.execute('UPDATE preparations SET state=?,check_spec=? WHERE id=?',
+                               (prep.STATE_SCHEDULED, json.dumps(changed, sort_keys=True), row['id']))
+                current = self.row(row['id'])
+                with self.store.db() as db:
+                    db.execute('BEGIN IMMEDIATE')
+                    first = self.service.preparations.wake(db, current, at=self.now, channel='web', chat_id=None,
+                                                          now=self.now, handoff={'kind': cc.HIT, 'output': field})
+                    again = self.service.preparations.wake(db, current, at=self.now, channel='web', chat_id=None,
+                                                          now=self.now, handoff={'kind': cc.HIT, 'output': field})
+                self.assertEqual(first, again)
+                work = self.store.job(first[0])
+                self.assertNotIn(work['id'], jobs)
+                jobs.append(work['id'])
+                self.assertEqual(prep.preparation_of(work['request_key']), row['id'])
+                continued = {**work, 'request_key': work['request_key'] + '/loc:answer'}
+                self.assertEqual(self.checks.handoff(continued)['output'], field)
+                self.settle(row['id'])
+        self.assertEqual(len(self.woken(row['id'])), len(jobs))
+
+    def test_old_claim_and_failure_cannot_pause_a_resumed_revision(self):
+        row = self.check_row()
+        self.service.preparations.pause(row['id'])
+        self.service.preparations.resume(row['id'])
+        self.now += 15
+        self.assertIsNone(self.checks._claim(row, self.now))
+        self.checks._pause(row, cc.spec_of(row), cc.PAUSED_NOT_READY, self.now)
+        self.assertEqual(self.row(row['id'])['state'], prep.STATE_SCHEDULED)
+        self.assertIsNone(self.row(row['id'])['check_status'])
+
+    def test_forgetting_running_check_then_undo_does_not_restart_it(self):
+        from personal_agent.owner_forget import OwnerForget
+        line = self.service.lines.open('w', task='keep watch', report_promise='when it moves')
+        row = self.check_row(line_id=line['line_id'])
+        self.hit()
+        self.tick(0)
+        forget = OwnerForget(self.store)
+        receipt = forget.forget('local-owner', 'line:' + line['line_id'])
+        forget.undo('local-owner', receipt['receipt'])
+        self.settle(row['id'])
+        self.assertEqual(self.row(row['id'])['state'], prep.STATE_CANCELLED)
+        self.assertEqual(cc.spec_of(self.row(row['id'])), cc.spec_of(row))
+        self.assertFalse(self.checks.run_due())
+
+    def test_check_schedule_edit_preview_is_refused_without_changing_spec(self):
+        row = self.check_row()
+        with self.assertRaises(prep.PreparationRefusal) as caught:
+            self.service.preparations.preview_edit(row, {'max_runs': 2}, self.now)
+        self.assertEqual(caught.exception.code, 'invalid_edit')
+        self.assertEqual(cc.spec_of(self.row(row['id'])), cc.spec_of(row))
+
+    def test_run_now_after_spec_replacement_does_not_reuse_same_second_work(self):
+        row = self.check_row()
+        first = self.service.preparations.run_now(row['id'], channel='web', chat_id=None)
+        self.settle(row['id'])
+        changed = {**cc.spec_of(row), 'libraries': {'example-broker': 'new-version'}}
+        with self.store.db() as db:
+            db.execute('UPDATE preparations SET check_spec=? WHERE id=?', (json.dumps(changed, sort_keys=True), row['id']))
+        second = self.service.preparations.run_now(row['id'], channel='web', chat_id=None)
+        self.assertNotEqual(first, second)
+        self.assertEqual(cc.spec_of(self.row(row['id'])), changed)
+
+    def test_line_stop_between_claim_and_cancel_cannot_wake(self):
+        from personal_agent import entrusted_lines as el
+        line = self.service.lines.open('w', task='keep watch', report_promise='when it moves')
+        row = self.check_row(line_id=line['line_id'])
+        self.assertIsNotNone(self.checks._claim(row, self.now))
+        self.service.lines.write(line['line_id'], None, None, 'stopped', lambda brief: {**brief, 'state': el.STATE_STOPPED})
+        self.checks._commit(row, cc.spec_of(row), {'result': {'exit_status': 0, 'stdout': 'late hit'}}, self.now)
+        self.assertEqual(self.woken(row['id']), [])
+        self.assertIsNone(self.row(row['id'])['check_status'])
+
+    def test_replacement_refuses_a_spec_or_revision_changed_during_proof_lookup(self):
+        row = self.check_row()
+        self.hit()
+        self.tick(0)
+        job = self.store.job(self.row(row['id'])['last_run_job_id'])
+        args = self.check_args(code=CHECK_CODE + '# new\n')
+        self.code_run(job, args)
+        proven_check = cc.proven_check
+        for field, changed in self.variations(cc.spec_of(row)):
+            with self.subTest(field=field):
+                def change_while_proving(*a, **kw):
+                    with self.store.db() as db:
+                        db.execute('UPDATE preparations SET check_spec=? WHERE id=?', (json.dumps(changed, sort_keys=True), row['id']))
+                    return proven_check(*a, **kw)
+                with self.store.db() as db:
+                    db.execute('UPDATE preparations SET check_spec=? WHERE id=?', (row['check_spec'], row['id']))
+                with mock.patch.object(cc, 'proven_check', side_effect=change_while_proving):
+                    with self.assertRaises(prep.PreparationRefusal) as caught:
+                        self.checks.replace_own(job, args)
+                self.assertEqual(caught.exception.code, 'check_not_own')
+                self.assertEqual(cc.spec_of(self.row(row['id'])), changed)
+
+    def test_own_pause_undo_preserves_spec_and_resumes_check_at_returned_time(self):
+        row = self.check_row(every=45)
+        self.hit()
+        self.tick(0)
+        job = self.store.job(self.row(row['id'])['last_run_job_id'])
+        self.service.preparations.change_own(row['id'], job['id'], 'pause')
+        self.settle(row['id'])
+        self.assertEqual(self.row(row['id'])['state'], prep.STATE_PAUSED)
+        current = self.service.preparations.resume(row['id'])
+        self.assertEqual(cc.spec_of(current), cc.spec_of(row))
+        self.assertEqual(current['check_next_at'], current['due_at'])
+        self.assertFalse(self.checks.run_due())
+        self.tick(45)
+        self.assertEqual(len(self.runs), 2)
+
+    def test_check_slot_time_is_read_without_losing_spec_bound_handoff(self):
+        row = self.check_row()
+        self.hit()
+        self.tick(30)
+        [job] = self.woken(row['id'])
+        self.assertEqual(self.service.preparations_service.account_period_start(row), self.now)
+        self.assertEqual(self.service.preparations_service.account_period_start(row, exclude=job['request_key']),
+                         row['created_at'])
+        self.assertEqual(self.checks.handoff(job)['output'], 'level held 180 s')
+
+
 if __name__ == '__main__':
     unittest.main()

@@ -97,7 +97,9 @@ def proof_of(store, work_id, digest):
     ended on its own with exit 0, no packages, no state change and no approval asked).
     """
     with store.db() as db:
-        rows = db.execute("SELECT detail FROM tool_events WHERE job_id=? AND status='succeeded'", (work_id,)).fetchall()
+        # Identical arguments may have been re-proven with a newer library in this Work.
+        rows = db.execute("SELECT detail FROM tool_events WHERE job_id=? AND status='succeeded' ORDER BY id DESC",
+                          (work_id,)).fetchall()
     for row in rows:
         try:
             detail = json.loads(row['detail'] or '{}')
@@ -305,7 +307,8 @@ class ConditionChecks:
             current = db.execute('SELECT * FROM preparations WHERE id=?', (row['id'],)).fetchone()
             current = dict(current) if current else None
             if (not current or current['state'] != prep.STATE_SCHEDULED
-                    or current['check_spec'] != row['check_spec'] or (current['check_next_at'] or 0) > now):
+                    or current['check_spec'] != row['check_spec'] or current['updated_at'] != row['updated_at']
+                    or (current['check_next_at'] or 0) > now):
                 return None
             if spec is None:
                 # An unreadable saved check never runs; it is not retried every pass either.
@@ -426,7 +429,7 @@ class ConditionChecks:
             current = db.execute('SELECT * FROM preparations WHERE id=?', (row['id'],)).fetchone()
             current = dict(current) if current else None
             if (not current or current['state'] != prep.STATE_SCHEDULED or current['check_spec'] != row['check_spec']
-                    or current['updated_at'] != row['updated_at']):
+                    or current['updated_at'] != row['updated_at'] or prep.line_refusal(db, current.get('line_id'))):
                 # D10: the row changed during the run (paused, cancelled, replaced, run now): its result is dropped.
                 return
             status = status_of(current)
@@ -531,7 +534,8 @@ class ConditionChecks:
             db.execute('BEGIN IMMEDIATE')
             current = db.execute('SELECT * FROM preparations WHERE id=?', (row['id'],)).fetchone()
             current = dict(current) if current else None
-            if not current or current['state'] != prep.STATE_SCHEDULED or current['check_spec'] != row['check_spec']:
+            if (not current or current['state'] != prep.STATE_SCHEDULED or current['check_spec'] != row['check_spec']
+                    or current['updated_at'] != row['updated_at']):
                 return
             status = status_of(current)
             status.update(paused=reason, last_run_at=now, last_result=FAILURE)
@@ -600,7 +604,7 @@ class ConditionChecks:
             db.execute('BEGIN IMMEDIATE')
             current = db.execute('SELECT * FROM preparations WHERE id=?', (row['id'],)).fetchone()
             if not (current and self.preparations.owns_running(dict(current), job)
-                    and current['check_spec'] == row['check_spec']):
+                    and current['check_spec'] == row['check_spec'] and current['updated_at'] == row['updated_at']):
                 raise prep.PreparationRefusal('check_not_own')
             status = status_of(dict(current))
             paused = status.pop('paused', None)
@@ -608,7 +612,8 @@ class ConditionChecks:
             status.pop('last_error', None)
             status['state_reset'] = True
             status['replaced'] = {'at': now, 'work_id': job['id'], 'from': before['digest'][:16], 'to': spec['digest'][:16]}
-            updates = {'check_spec': json.dumps(spec, sort_keys=True), 'check_next_at': now,
+            updates = {'check_spec': json.dumps(spec, sort_keys=True), 'every_seconds': spec['every_seconds'],
+                       'check_next_at': now,
                        'check_status': json.dumps(status, sort_keys=True),
                        'updated_at': max(now, math.nextafter(current['updated_at'], math.inf))}
             if paused == PAUSED_FAILURES and current['run_return_state'] == prep.STATE_PAUSED:

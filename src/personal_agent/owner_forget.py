@@ -309,12 +309,13 @@ class OwnerForget:
         for row in rows:
             db.execute('UPDATE procedure_versions SET state=? WHERE id=?', (FORGOTTEN, row['id']))
         self.lines.suppress_pending_bundles(line_id, db)
-        # #938 (D4): the line's pieces that have not started are cancelled in this transaction.  They are
+        # #938/#972 (D4): pending pieces and active checks are cancelled in this transaction. They are
         # not receipt items: an undo puts the brief versions back, and the owner restarts the work by asking.
         from . import preparations as prep
-        db.execute(f"UPDATE preparations SET state=?,updated_at=? WHERE line_id=? AND origin=? "
-                   f"AND state IN ({','.join('?' * len(prep.PIECE_PENDING_STATES))})",
-                   (prep.STATE_CANCELLED, now, line_id, prep.ORIGIN_LINE_PIECE, *prep.PIECE_PENDING_STATES))
+        db.execute(f"UPDATE preparations SET state=?,updated_at=? WHERE line_id=? AND "
+                   f"((origin=? AND state IN ({','.join('?' * len(prep.PIECE_PENDING_STATES))})) OR "
+                   f"(check_spec IS NOT NULL AND state IN ({','.join('?' * len(prep.ACTIVE_STATES))})))",
+                   (prep.STATE_CANCELLED, now, line_id, prep.ORIGIN_LINE_PIECE, *prep.PIECE_PENDING_STATES, *prep.ACTIVE_STATES))
         prep.Preparations._clear_closed_budget_skips(db)
         return {'rows': [{'table': 'procedure_versions', 'id': row['id'], 'prior': row['state']} for row in rows],
                 'line': line_id}
