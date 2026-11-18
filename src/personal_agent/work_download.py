@@ -110,7 +110,7 @@ def checkpoint_judgment(store, ledger, purpose, facts, note, call, redact, *, sn
         if not checkpoint or snapshot is None:
             return None
         if not store._read_checkpoint_ready(db, work_id, checkpoint, eligible or (lambda *_: True),
-                                            expected_epoch=ledger.epoch):
+                                            expected_epoch=ledger.epoch, for_judgment=True):
             return None
         if checkpoint_snapshot(store, work_id, db=db) != snapshot:
             return None

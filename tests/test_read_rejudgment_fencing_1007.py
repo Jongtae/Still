@@ -9,7 +9,7 @@ from unittest import mock
 
 import pytest
 
-from personal_agent.agent_runtime import (Capabilities, WORK_MODEL_TURNS, WORK_STOP_KEY, LedgerSuperseded,
+from personal_agent.agent_runtime import (Capabilities, WORK_MODEL_TURNS, WORK_STOP_KEY, WORK_TOOL_ATTEMPTS, LedgerSuperseded,
                                           WorkBudget, WorkLedger, run_agent)
 from personal_agent.conversation_handoff import Judgment
 from personal_agent.decision import RoutedDecisionEngine
@@ -349,7 +349,6 @@ def block(case, barrier, monkeypatch):
         row = case.store.config(case.budget.ledger.key)
         case.store.put(case.budget.ledger.key, {**row, 'active': False, 'remaining_seconds': 60})
     elif barrier in ('turns', 'attempts'):
-        from personal_agent.agent_runtime import WORK_MODEL_TURNS, WORK_TOOL_ATTEMPTS
         row = case.store.config(case.budget.ledger.key)
         case.store.put(case.budget.ledger.key, {**row, barrier: WORK_MODEL_TURNS if barrier == 'turns' else WORK_TOOL_ATTEMPTS})
     elif barrier == 'expired': case.now[0] += 10000
@@ -372,7 +371,7 @@ def block(case, barrier, monkeypatch):
     for boundary in ('judgment', 'recover', 'claim')
     for barrier in ('stop', 'paused', 'expired', 'revoked', 'unknown', 'owner_wait', 'turns', 'attempts',
                     'mode', 'missing_staging')
-    if boundary != 'judgment' or barrier not in ('mode', 'missing_staging')
+    if boundary != 'judgment' or barrier not in ('attempts', 'mode', 'missing_staging')
 ])
 def test_existing_boundaries_block_reuse_and_auto_resume(case, barrier, boundary, monkeypatch):
     assert case.judge(lambda: {'winner': 'prior'}) == {'winner': 'prior'}
@@ -389,6 +388,28 @@ def test_existing_boundaries_block_reuse_and_auto_resume(case, barrier, boundary
     else:
         assert case.service._claim_queued_work() is True
         assert case.store.job(case.id)['status'] == 'interrupted'
+
+
+def test_exhausted_tool_attempts_allow_outcome_judgment_but_block_auto_resume(case, monkeypatch):
+    block(case, 'attempts', monkeypatch)
+    before = case.budget.ledger.counts()
+    engine = goal_engine()
+    case.service.use_decision_engine(engine)
+    orch = orchestration(case)
+    with case.service.work_decision_scope(case.id, case.budget):
+        assert orch.evaluate_answer('The comparison.', 'Verified observations.', final=True) == REACHED
+    assert len(engine.asked) == 1
+    after = case.budget.ledger.counts()
+    assert after['turns'] == before['turns'] + 1
+    assert after['attempts'] == WORK_TOOL_ATTEMPTS
+    with case.store.db() as db:
+        judgment = db.execute('SELECT result FROM work_read_judgments WHERE job_id=?', (case.id,)).fetchone()
+    assert json.loads(judgment['result'])['outcome'] == 'yes'
+
+    assert case.service.can_resume_read_checkpoint(case.id, case.store.read_checkpoint(case.id))
+    case.store.recover(can_resume_checkpoint=case.service.can_resume_read_checkpoint)
+    assert case.store.job(case.id)['status'] == 'interrupted'
+    assert not case.service._claim_queued_work()
 
 
 def make_run(case, work, budget, answer):
