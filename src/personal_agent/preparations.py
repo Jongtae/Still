@@ -1102,22 +1102,30 @@ def brief_preview(row):
     return goal[:BRIEF_PREVIEW_CHARS] + ('…' if len(goal) > BRIEF_PREVIEW_CHARS else '')
 
 
-def changed_spans(before, after, context=80, limit=BRIEF_PREVIEW_CHARS):
-    """#968: ``(before, after)`` cut to where two briefs differ, with some context each side (``difflib``).
+def changed_hunks(before, after, context=60):
+    """#968: every place two briefs differ, as ``[(before_piece, after_piece), ...]`` (``difflib``).
 
-    A rewritten brief can differ in one number deep inside it; the owner's receipt shows that part.
+    Each piece is complete, with up to ``context`` characters around it; nearby changes merge into
+    one place.  Nothing changed is left out, so a judgment or receipt built from these sees all of it.
     """
     before, after = str(before or ''), str(after or '')
     changed = [op for op in difflib.SequenceMatcher(None, before, after, autojunk=False).get_opcodes() if op[0] != 'equal']
-    if not changed:
-        return before[:limit], after[:limit]
+    groups = []
+    for _tag, i1, i2, j1, j2 in changed:
+        if groups and i1 - groups[-1][1] <= 2 * context and j1 - groups[-1][3] <= 2 * context:
+            groups[-1] = (groups[-1][0], i2, groups[-1][2], j2)
+        else:
+            groups.append((i1, i2, j1, j2))
 
-    def cut(text, start, end):
-        start, end = max(0, start - context), min(len(text), end + context)
-        piece = text[start:end]
-        more = end < len(text) or len(piece) > limit
-        return ('…' if start else '') + piece[:limit] + ('…' if more else '')
-    return (cut(before, changed[0][1], changed[-1][2]), cut(after, changed[0][3], changed[-1][4]))
+    def cut(text, start, stop):
+        start, stop = max(0, start - context), min(len(text), stop + context)
+        return ('…' if start else '') + text[start:stop] + ('…' if stop < len(text) else '')
+    return [(cut(before, i1, i2), cut(after, j1, j2)) for i1, i2, j1, j2 in groups]
+
+
+def hunks_text(hunks):
+    """The places of ``changed_hunks`` as one plain text: ``[n] before -> after`` per place."""
+    return '\n'.join(f'[{number}] {was} -> {now}' for number, (was, now) in enumerate(hunks, 1))
 
 
 def accepted_offer(row):

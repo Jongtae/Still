@@ -1329,7 +1329,8 @@ class ConversationJudgments:
                                                          'recent_conversation': conversation or 'none',
                                                          'owner_rules': owner_rules or 'none',
                                                          'proposed_change': change},
-                                uncut=('owner_message', 'recent_conversation'), work_id=work_id)
+                                # #968: Still writes the whole change; none of it may be cut from the judgment.
+                                uncut=('owner_message', 'recent_conversation', 'proposed_change'), work_id=work_id)
         decision = self.engine.judge(context, LINE_CHANGE_PROPOSITION)
         verdict = self.policy.binary(decision)
         return Judgment(JUDGMENT_UNAVAILABLE if verdict == 'unknown' else verdict,

@@ -533,14 +533,23 @@ class PreparationsService:
                **event.get('snapshot', {})}
         operation = event['target'].split('.')[-1]
         lang = owner_language(self.service.store) or 'ko'
-        # #968: a rewritten goal is shown where it changed, before and after; a schedule change leaves it out.
-        spans = (dict(zip(('before', 'after'), prep.changed_spans(event['before']['goal_text'], event['after']['goal_text'])))
-                 if 'goal_text' in event.get('after', {}) and 'goal_text' in event.get('before', {}) else None)
+        # #968: a rewritten goal is shown at every place it changed, before and after (none left out:
+        # past a bound the receipt counts the rest and points to the whole goal in Settings).
+        hunks = (prep.changed_hunks(event['before']['goal_text'], event['after']['goal_text'])
+                 if 'goal_text' in event.get('after', {}) and 'goal_text' in event.get('before', {}) else [])
+        shown, used = [], 0
+        for hunk in hunks:
+            if shown and used + len(hunk[0]) + len(hunk[1]) > prep.BRIEF_PREVIEW_CHARS * 2:break
+            shown.append(hunk)
+            used += len(hunk[0]) + len(hunk[1])
         def summary(side):
             schedule = {**row, **event[side]}
             text = prep.proposal_summary(schedule, self.service.home_zone(), brief=False, lang=lang)
-            if spans:
-                text += '\n' + msg('preparations.proposal_brief', lang, goal=spans[side])
+            if shown:
+                pieces = ' / '.join(f'[{number}] {hunk[0 if side == "before" else 1]}' for number, hunk in enumerate(shown, 1))
+                text += '\n' + msg('preparations.proposal_brief', lang, goal=pieces)
+                if len(hunks) > len(shown):
+                    text += '\n' + msg('preparations.self_change_more', lang, count=len(hunks) - len(shown))
             if schedule.get('state') == prep.STATE_CANCELLED:
                 text += '\n' + msg('preparations.self_change_cancel', lang)
             elif schedule.get('run_return_state') == prep.STATE_PAUSED or schedule.get('state') == prep.STATE_PAUSED:
@@ -2170,8 +2179,9 @@ class PreparationsService:
         if not own or own['id']!=row['id'] or own['kind']!=prep.KIND_PREPARE:return False
         if service.owner_steer_words(job):
             if not service.store.outside_content_sources(job['id']):return True
-            was,now=prep.changed_spans(before,after)
-            return self.steer_asked(job,f'the scheduled work\'s own instruction: {was} -> {now}')
+            # Every changed place, complete: what is judged is everything that would be saved.
+            return self.steer_asked(job,'the scheduled work\'s own instruction, changed at these places:\n'
+                                    +prep.hunks_text(prep.changed_hunks(before,after)))
         return self.line_run_row(job) is not None
 
     def own_line_authority(self, job, action, line_id):
@@ -2211,6 +2221,12 @@ class PreparationsService:
                 authority=self.own_line_authority(job,action,args.get('line'))
                 if authority is None:raise refused('unattended_run')
                 if action=='revise':return self._line_revise(job,args,authority)
+                current=service.lines.current(args.get('line'))
+                if (current is not None and service.store.outside_content_sources(job['id'])
+                        and not self.steer_asked(job,'stop this entrusted work and everything under it: '+current['task'],
+                                                 self.line_owner_rules(current))):
+                    # After outside content a stop, too, is only what the owner's words asked for.
+                    raise refused('line_change_needs_owner')
                 return self._line_stop(job,args)
             except el.LineConflict as exc:
                 raise refused('line_version_conflict',str(exc.current_version)) from None

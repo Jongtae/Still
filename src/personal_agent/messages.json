@@ -11608,6 +11608,12 @@
   "ja": "次回以降に使う自分の指示文を書き直しました",
   "zh": "改写了此后运行使用的自身指令"
  },
+ "preparations.self_change_more": {
+  "en": "and {count} more changed places; the whole goal is in Settings under this preparation.",
+  "ko": "그 밖에 {count}곳이 더 바뀌었어요. 전체 지시문은 설정의 이 준비에서 볼 수 있어요.",
+  "ja": "ほかに {count} か所が変わりました。指示文の全体は設定のこの準備で確認できます。",
+  "zh": "另有 {count} 处更改；完整指令可在设置中的此准备事项下查看。"
+ },
  "scheduled_budget.label": {
   "ko": "예약 작업 일일 총 한도",
   "en": "Daily total for scheduled work",
