@@ -1,0 +1,442 @@
+"""#938: a run of an entrusted line schedules the next piece of its work.
+
+Evidence class: model-free, fixture transports, as ``test_entrusted_lines_798``: a scripted
+compatible-API model, a recording Telegram transport, a FixtureDecisionEngine and a fake clock;
+the real QuickStore, ``AgentService``, ``run_agent``, ``Capabilities``, ``ApiRequests`` and
+``OwnerForget`` run unchanged.  No live model, Telegram, provider or payment is contacted, and none
+is claimed.
+
+Owner decision 2026-11-18 (#938, tracker #973): a piece of a line whose root row the owner accepted
+follows the owner's payment autonomy as that row does; a piece of a row Still set up on its own
+never pays.  Both are stamped from the parent row, never from the call.
+"""
+import json
+from unittest import mock
+
+from personal_agent import entrusted_lines as el
+from personal_agent import preparations as prep
+from personal_agent.agent_runtime import ToolError
+from personal_agent.api_requests import ApiRequests, save_slot
+from personal_agent.messages import msg
+from personal_agent.owner_forget import OwnerForget
+
+from test_entrusted_lines_798 import PROMISE, TASK, _LineCase, tool_results
+from test_payment_autonomy_662 import Mode
+from test_preparations import call
+
+OWNER_ROOTS = (prep.ACCEPTED_OWNER_REQUEST, prep.ACCEPTED_OWNER_BUTTON, prep.ACCEPTED_OWNER_SETTINGS,
+               prep.ACCEPTED_OWNER_ANSWER)
+PAY = {'slot': 'money', 'url': 'https://pay.test/pay', 'method': 'POST', 'body': '{"amount":"10"}', 'effect': 'payment'}
+
+
+class _PieceCase(Mode, _LineCase):
+    def setUp(self):
+        super().setUp()
+        self.line_id = self.service.lines.open('owner-work', task=TASK, report_promise=PROMISE)['line_id']
+
+    def line_row(self, accepted_by=prep.ACCEPTED_OWNER_REQUEST, *, line=True, origin=None, kind='prepare',
+             recurrence=None, channel='web', delivery_mode=None, goal='root'):
+        """A row of the line, as the owner's own Work (or Settings, or the look back) left it."""
+        return self.service.preparations.create(
+            kind=kind, goal=goal, due_at=self.now + 60, timezone='Asia/Seoul', recurrence=recurrence, channel=channel,
+            created_from='owner-work', state=prep.STATE_SCHEDULED, accepted_by=accepted_by, origin=origin,
+            delivery_mode=delivery_mode, line_id=self.line_id if line is True else line or None)
+
+    def running(self, row, suffix=''):
+        """The current run of ``row`` (``suffix`` is a continuation of its slot, #774)."""
+        key = prep.request_key(row['id'], row['due_at']) + suffix
+        work = self.store.enqueue(row['goal_text'], key)
+        with self.store.db() as db:
+            db.execute('UPDATE preparations SET state=?,last_run_job_id=? WHERE id=?', (prep.STATE_RUNNING, work, row['id']))
+            db.execute("UPDATE jobs SET status='running' WHERE id=?", (work,))
+        return self.store.job(work)
+
+    def schedule(self, job, seconds=600, **args):
+        args = {'kind': 'prepare', 'goal': '다음 단계: 확인한 상태에서 이어 보기', 'due': self.due_iso(seconds), **args}
+        return self.service.preparation_scheduler(job, '')(args)
+
+    def refused(self, job, code, **args):
+        with self.assertRaises(ToolError) as refused:
+            self.schedule(job, **args)
+        self.assertEqual(refused.exception.code, code)
+        return refused.exception
+
+    def pieces(self, line_id=None):
+        with self.store.db() as db:
+            return [dict(row) for row in db.execute('SELECT * FROM preparations WHERE origin=? AND line_id=? ORDER BY created_at',
+                                                    (prep.ORIGIN_LINE_PIECE, line_id or self.line_id))]
+
+    def piece_run(self, piece):
+        """Start the piece through the scheduler's own claim (``Preparations.start``)."""
+        work = self.service.preparations.start(self.service.preparations.get(piece['id']), channel='web', chat_id=None,
+                                               now=piece['due_at'])
+        self.assertIsNotNone(work)
+        return self.store.job(work)
+
+
+class WhoMaySchedule(_PieceCase):
+    def test_a_qualifying_run_schedules_one_piece_that_inherits_its_line_channel_delivery_and_standing(self):
+        for accepted_by, standing in ([(value, prep.ACCEPTED_LINE_PIECE_OWNER) for value in OWNER_ROOTS]
+                                      + [(prep.ACCEPTED_OWNER_WORK, prep.ACCEPTED_LINE_PIECE)]):
+            with self.subTest(accepted_by=accepted_by):
+                root = self.line_row(accepted_by, channel='telegram', delivery_mode=prep.DELIVERY_WHEN_NEEDED, goal='root ' + accepted_by)
+                job = self.running(root)
+                result = self.schedule(job, delivery='send', title='제목')
+                piece = self.service.preparations.get(result['preparation_id'])
+                self.assertEqual((piece['origin'], piece['accepted_by'], piece['state'], piece['kind'], piece['line_id']),
+                                 (prep.ORIGIN_LINE_PIECE, standing, prep.STATE_SCHEDULED, prep.KIND_PREPARE, self.line_id))
+                self.assertEqual((piece['channel'], piece['delivery_mode']), ('telegram', prep.DELIVERY_WHEN_NEEDED))
+                self.assertEqual((piece['recurrence'], piece['piece_of'], piece['created_from']),
+                                 (None, prep.slot_key(job['request_key']), job['id']))
+                self.assertEqual((result['accepted_by'], result['line_id'], result['scheduled']), (standing, self.line_id, True))
+                # The piece's own run continues the chain with the same standing.
+                grand = self.service.preparations.get(self.schedule(self.running(piece), seconds=1200)['preparation_id'])
+                self.assertEqual((grand['accepted_by'], grand['piece_of']), (standing, prep.request_key(piece['id'], piece['due_at'])))
+
+    def test_other_unattended_runs_stay_refused(self):
+        stood = self.service.lines.stand('look-back-anchor', {'task': '돌아보기 일', 'report_promise': PROMISE},
+                                         {'change': 'stood', 'by': 'look-back', 'stand_key': 'look-back:a:b'})
+        cases = {
+            'ordinary scheduled run': self.line_row(prep.ACCEPTED_OWNER_SETTINGS, line=False, goal='ordinary'),
+            'look-back row': self.line_row(prep.ACCEPTED_DREAM, origin=prep.ORIGIN_DREAM, goal='dream'),
+            'daily-plan row': self.line_row(prep.ACCEPTED_DAY_PLAN, origin=prep.ORIGIN_DAY_PLAN, goal='day plan'),
+            'row a daily plan set up': self.line_row(prep.ACCEPTED_DAY_PLAN, goal='set up by the plan'),
+            'periodic account': self.line_row(prep.ACCEPTED_OWNER_WORK, origin=prep.ORIGIN_LINE_ACCOUNT, recurrence='daily', goal='account'),
+            'look-back line': self.line_row(prep.ACCEPTED_OWNER_REQUEST, line=stood['line_id'], goal='stood line'),
+            'no acceptance': self.line_row(None, goal='unknown acceptance'),
+        }
+        for name, row in cases.items():
+            with self.subTest(name):
+                # Naming the row's own line: a piece, never a schedule of another kind.
+                self.refused(self.running(row), 'unattended_run', **({'line': row['line_id']} if row['line_id'] else {}))
+        # Only the slot's current Work: an earlier run of the row, after the slot moved on, is refused.
+        row = self.line_row(goal='moved on')
+        earlier = self.running(row)
+        self.running(row, suffix='/loc:1')
+        self.refused(earlier, 'unattended_run')
+        self.assertEqual(self.pieces(), [])
+        self.assertEqual(self.pieces(stood['line_id']), [])
+
+    def test_a_piece_is_only_one_prepare_of_the_same_line(self):
+        other = self.service.lines.open('owner-work', task='다른 일', report_promise=PROMISE)['line_id']
+        job = self.running(self.line_row())
+        cases = {'reminder': {'kind': 'reminder'}, 'another line': {'line': other}, 'recurrence': {'recurrence': 'daily'},
+                 'rrule': {'rrule': 'FREQ=DAILY;COUNT=2'}, 'window': {'every_minutes': '30', 'until': self.due_iso(7200)},
+                 'max_runs': {'max_runs': '3'}, 'report': {'report_every_minutes': '60'},
+                 'replaces': {'replaces': self.line_row(goal='owner row')['id']}}
+        for name, args in cases.items():
+            with self.subTest(name):
+                self.refused(job, 'line_piece_invalid', **args)
+        self.assertEqual(self.pieces(), [])
+        self.assertEqual(self.pieces(other), [])
+        # Without a line argument the piece is the run's own line, never a row outside any line.
+        piece = self.service.preparations.get(self.schedule(job)['preparation_id'])
+        self.assertEqual(piece['line_id'], self.line_id)
+
+    def test_an_owner_typed_work_is_unchanged_and_sets_up_no_piece(self):
+        def step(body):
+            return {'content': None, 'tool_calls': [call('s', 'schedule_preparation', kind='prepare', goal='첫 확인',
+                                                          due=self.due_iso(3600), line=self.line_id)]}
+        self.script = [step, {'content': '예약했어요.'}]
+        self.receive('이 일 한 시간 뒤에 확인해 줘')
+        [row] = [row for row in self.work_rows(self.line_id) if row['goal_text'] == '첫 확인']
+        self.assertIsNone(row['origin'])
+        self.assertIsNone(row['piece_of'])
+        self.assertIn(row['accepted_by'], (prep.ACCEPTED_OWNER_REQUEST, prep.ACCEPTED_OWNER_WORK))
+
+
+class Standing(_PieceCase):
+    def test_a_piece_cannot_raise_its_standing_or_mark_itself_owner_accepted(self):
+        root = self.line_row(prep.ACCEPTED_OWNER_WORK)
+        job = self.running(root)
+        result = self.schedule(job, accepted_by=prep.ACCEPTED_OWNER_REQUEST, origin=None, state='scheduled')
+        piece = self.service.preparations.get(result['preparation_id'])
+        self.assertEqual(piece['accepted_by'], prep.ACCEPTED_LINE_PIECE)
+        piece_job = self.running(piece)
+        self.assertTrue(self.service.self_set_run(piece_job))
+        self.assertFalse(self.service.owner_accepted_run(piece_job))
+        # Down the chain it stays self-set.
+        grand = self.service.preparations.get(self.schedule(piece_job, seconds=1200, accepted_by='owner-settings')['preparation_id'])
+        self.assertEqual(grand['accepted_by'], prep.ACCEPTED_LINE_PIECE)
+        # Standing is inherited only: the look back, the daily plan or an unknown value give none.
+        for parent in (prep.ACCEPTED_DREAM, prep.ACCEPTED_DAY_PLAN, None, 'owner', 'line-piece-owner '):
+            with self.subTest(parent=parent):
+                self.assertIsNone(prep.piece_standing(parent))
+        # A piece exists only with the run it was scheduled from, and only as a scheduled prepare of its line.
+        with self.assertRaises(ValueError):
+            self.line_row(prep.ACCEPTED_LINE_PIECE_OWNER, origin=prep.ORIGIN_LINE_PIECE, goal='forged')
+        with self.assertRaises(ValueError):
+            self.service.preparations.create(kind='prepare', goal='forged', due_at=self.now + 600, timezone='Asia/Seoul',
+                                             recurrence=None, channel='web', created_from='x', state=prep.STATE_SCHEDULED,
+                                             accepted_by=prep.ACCEPTED_OWNER_REQUEST, origin=prep.ORIGIN_LINE_PIECE,
+                                             line_id=self.line_id, piece_of='preparation:x:1')
+
+    def test_a_piece_never_takes_up_another_works_waiting_proposal(self):
+        due = self.now + 900
+        proposal = self.service.preparations.create(kind='prepare', goal='같은 목표', due_at=due, timezone='Asia/Seoul',
+                                                    recurrence=None, channel='web', created_from='other-work',
+                                                    state=prep.STATE_PROPOSED, line_id=self.line_id)
+        job = self.running(self.line_row())
+        result = self.schedule(job, seconds=900, goal='같은 목표')
+        self.assertNotEqual(result['preparation_id'], proposal['id'])
+        self.assertEqual(self.service.preparations.get(proposal['id'])['state'], prep.STATE_PROPOSED)
+
+    def test_a_piece_cannot_write_the_brief(self):
+        piece = self.service.preparations.get(self.schedule(self.running(self.line_row()))['preparation_id'])
+        job = self.running(piece)
+        for action in ('revise', 'open', 'stop', 'restart', 'undo'):
+            with self.subTest(action=action), self.assertRaises(ToolError) as refused:
+                self.service.line_handler(job)({'action': action, 'line': self.line_id, 'expected_version': '1',
+                                                'rule': '한도 없이', 'task': TASK, 'report_promise': PROMISE, 'version': '1'})
+            self.assertEqual(refused.exception.code, 'unattended_run')
+        self.assertEqual(self.service.lines.current(self.line_id)['version'], 1)
+
+
+class Payment(_PieceCase):
+    def piece_job(self, root_accepted_by):
+        piece = self.service.preparations.get(self.schedule(self.running(self.line_row(root_accepted_by, goal='root ' + str(root_accepted_by))))['preparation_id'])
+        return self.running(piece)
+
+    def paid(self, job):
+        sent = []
+        api = ApiRequests(self.store, job['id'], approvals=self.service.browser_approvals_for(job),
+                          transport=lambda *a, **k: sent.append(a) or (200, {}, b'{}'))
+        try:
+            api.call(PAY)
+            code = None
+        except ToolError as exc:
+            code = exc.code
+        return len(sent), code
+
+    def test_a_piece_of_an_owner_accepted_line_follows_payment_autonomy(self):
+        save_slot(self.store, 'money', ['pay.test'], 'secret-key-value-123456789', money=True)
+        self.switch(True)
+        job = self.piece_job(prep.ACCEPTED_OWNER_REQUEST)
+        self.assertFalse(self.service.self_set_run(job))
+        self.assertEqual(self.paid(job), (1, None))
+        self.assert_receipt(job['id'], 'api_request')
+
+    def test_with_autonomy_off_an_owner_accepted_lines_piece_cannot_pay_and_asks_no_approval(self):
+        save_slot(self.store, 'money', ['pay.test'], 'secret-key-value-123456789', money=True)
+        # Payment autonomy is off until the owner turns it on.
+        job = self.piece_job(prep.ACCEPTED_OWNER_REQUEST)
+        self.assertEqual(self.paid(job), (0, 'unattended_run'))
+        self.assertEqual(self.receipts(job['id']), [])
+        self.assertIsNone(self.service._browser_request(job['id']))
+
+    def test_a_piece_of_a_row_still_set_up_on_its_own_never_pays_even_with_autonomy_on(self):
+        save_slot(self.store, 'money', ['pay.test'], 'secret-key-value-123456789', money=True)
+        self.switch(True)
+        job = self.piece_job(prep.ACCEPTED_OWNER_WORK)
+        self.assertTrue(self.service.self_set_run(job))
+        self.assertIsNone(self.service._authorize_payment_autonomy(job, None, 'pay'))
+        self.assertEqual(self.paid(job), (0, 'unattended_run'))
+        # Its own piece in turn: still self-set.
+        grand = self.service.preparations.get(self.schedule(job, seconds=1200)['preparation_id'])
+        grand_job = self.running(grand)
+        self.assertEqual(self.paid(grand_job), (0, 'unattended_run'))
+        self.assertEqual(self.receipts(job['id']) + self.receipts(grand_job['id']), [])
+        # The look back's and the daily plan's rows schedule no piece at all, so none of theirs can pay.
+        for accepted_by, origin in ((prep.ACCEPTED_DREAM, prep.ORIGIN_DREAM), (prep.ACCEPTED_DAY_PLAN, prep.ORIGIN_DAY_PLAN),
+                                    (prep.ACCEPTED_DAY_PLAN, None)):
+            with self.subTest(accepted_by=accepted_by, origin=origin):
+                self.refused(self.running(self.line_row(accepted_by, origin=origin, goal=f'{accepted_by} {origin}')), 'unattended_run',
+                             line=self.line_id)
+        self.assertEqual([piece['accepted_by'] for piece in self.pieces()], [prep.ACCEPTED_LINE_PIECE, prep.ACCEPTED_LINE_PIECE])
+
+
+class OutsideText(_PieceCase):
+    def test_a_child_of_a_marked_run_starts_marked_and_down_the_chain(self):
+        root = self.line_row()
+        job = self.running(root)
+        piece = self.service.preparations.get(self.schedule(job)['preparation_id'])
+        # The page is read after the piece was scheduled; the piece starts with the mark all the same.
+        self.store.mark_outside_content(job['id'], {'category': 'outside-content', 'operation': 'public_page_read'})
+        piece_job = self.piece_run(piece)
+        [source] = self.store.outside_content_sources(piece_job['id'])
+        self.assertEqual((source['operation'], source['source_work_id']), ('line-piece', job['id']))
+        grand = self.service.preparations.get(self.schedule(piece_job, seconds=1200)['preparation_id'])
+        self.assertTrue(self.store.outside_content_sources(self.piece_run(grand)['id']))
+
+    def test_a_continuations_mark_reaches_the_child_and_an_unmarked_run_gives_an_unmarked_child(self):
+        root = self.line_row()
+        first = self.running(root)
+        continuation = self.running(root, suffix='/loc:1')
+        self.store.mark_outside_content(continuation['id'], {'category': 'outside-content', 'operation': 'web_search'})
+        piece = self.service.preparations.get(self.schedule(continuation)['preparation_id'])
+        self.assertEqual(piece['piece_of'], prep.slot_key(first['request_key']))
+        self.assertTrue(self.store.outside_content_sources(self.piece_run(piece)['id']))
+        clean_root = self.line_row(goal='clean')
+        clean = self.service.preparations.get(self.schedule(self.running(clean_root))['preparation_id'])
+        self.assertEqual(self.store.outside_content_sources(self.piece_run(clean)['id']), [])
+
+    def test_a_marked_run_cannot_widen_what_it_schedules(self):
+        other = self.service.lines.open('owner-work', task='다른 일', report_promise=PROMISE)['line_id']
+        owner_row = self.line_row(goal='owner row')
+        job = self.running(self.line_row(prep.ACCEPTED_OWNER_WORK))
+        self.store.mark_outside_content(job['id'], {'category': 'outside-content', 'operation': 'public_page_read'})
+        for args in ({'line': other}, {'replaces': owner_row['id']}, {'recurrence': 'daily'}, {'accepted_by': 'owner-request'}):
+            with self.subTest(args=args):
+                if 'accepted_by' in args:
+                    piece = self.service.preparations.get(self.schedule(job, **args)['preparation_id'])
+                    self.assertEqual(piece['accepted_by'], prep.ACCEPTED_LINE_PIECE)
+                else:
+                    self.refused(job, 'line_piece_invalid', **args)
+        self.assertEqual(self.service.preparations.get(owner_row['id'])['state'], prep.STATE_SCHEDULED)
+        self.assertEqual(self.pieces(other), [])
+
+
+class Bounds(_PieceCase):
+    def test_one_child_per_run_a_second_call_or_its_continuation_replaces_the_pending_child(self):
+        root = self.line_row()
+        job = self.running(root)
+        first = self.schedule(job, seconds=600, goal='첫 인계')
+        again = self.schedule(job, seconds=1800, goal='고친 인계')
+        self.assertEqual(again['preparation_id'], first['preparation_id'])
+        self.assertTrue(again['replaced_pending'])
+        continuation = self.running(root, suffix='/loc:1')
+        later = self.schedule(continuation, seconds=2400, goal='이어서 고친 인계')
+        self.assertEqual(later['preparation_id'], first['preparation_id'])
+        [piece] = self.pieces()
+        self.assertEqual((piece['goal_text'], piece['due_at']), ('이어서 고친 인계', self.now + 2400))
+        # Once it started, or the owner paused or cancelled it, the run schedules nothing more.
+        self.piece_run(piece)
+        self.refused(continuation, 'line_piece_exists')
+        for change in ('pause', 'cancel'):
+            with self.subTest(change=change):
+                other = self.line_row(goal='another ' + change)
+                run = self.running(other)
+                child = self.schedule(run)['preparation_id']
+                getattr(self.service.preparations, change)(child)
+                self.refused(run, 'line_piece_exists')
+        self.assertEqual(len(self.pieces()), 3)
+
+    def test_a_due_time_inside_the_lead_time_is_refused(self):
+        job = self.running(self.line_row())
+        self.refused(job, 'line_piece_too_soon', seconds=prep.PIECE_LEAD_SECONDS - 1)
+        self.refused(job, 'line_piece_too_soon', seconds=0)
+        self.assertEqual(self.pieces(), [])
+        self.assertTrue(self.schedule(job, seconds=prep.PIECE_LEAD_SECONDS)['scheduled'])
+
+    def finished_pieces(self, count, line_id=None):
+        """``count`` pieces of the line scheduled today by other runs, each already run."""
+        for index in range(count):
+            row = self.service.preparations.create(
+                kind='prepare', goal=f'piece {index}', due_at=self.now + 600, timezone='Asia/Seoul', recurrence=None,
+                channel='web', created_from='run', state=prep.STATE_SCHEDULED, accepted_by=prep.ACCEPTED_LINE_PIECE,
+                origin=prep.ORIGIN_LINE_PIECE, line_id=line_id or self.line_id, piece_of=f'preparation:p{index}:1')
+            with self.store.db() as db:
+                db.execute('UPDATE preparations SET state=? WHERE id=?', (prep.STATE_DELIVERED, row['id']))
+
+    def test_the_25th_piece_of_a_line_in_one_owner_day_is_refused_even_with_the_shared_budget_off(self):
+        self.service.preparations.set_budget(0)
+        self.finished_pieces(prep.LINE_PIECES_PER_DAY)
+        job = self.running(self.line_row())
+        self.refused(job, 'line_pieces_daily')
+        self.assertEqual(len(self.pieces()), prep.LINE_PIECES_PER_DAY)
+        # Another line has its own count.
+        other = self.service.lines.open('owner-work', task='다른 일', report_promise=PROMISE)['line_id']
+        self.assertTrue(self.schedule(self.running(self.line_row(line=other, goal='other')))['scheduled'])
+        # The next owner-local day counts afresh.
+        self.now += 86400
+        self.assertTrue(self.schedule(job)['scheduled'])
+
+    def test_the_11th_pending_piece_in_the_store_is_refused(self):
+        for index in range(prep.MAX_PENDING_PIECES):
+            self.schedule(self.running(self.line_row(goal=f'root {index}')))
+        self.assertEqual(len(self.pieces()), prep.MAX_PENDING_PIECES)
+        self.refused(self.running(self.line_row(goal='one more')), 'line_pieces_limit')
+        self.assertEqual(len(self.pieces()), prep.MAX_PENDING_PIECES)
+
+    def test_every_piece_run_is_charged_to_the_shared_daily_budget(self):
+        piece = self.service.preparations.get(self.schedule(self.running(self.line_row()))['preparation_id'])
+        job = self.piece_run(piece)
+        day = self.service.preparations.budget_day(piece['due_at'])
+        self.assertEqual(self.store.config(prep.SCHEDULED_USAGE_PREFIX + day), 1)
+        self.assertTrue([event for event in self.store.task_events(job['id']) if event['tool'] == prep.SCHEDULED_BUDGET_KEY])
+
+
+class StopAndForget(_PieceCase):
+    def test_stop_cancels_the_pending_piece(self):
+        piece = self.schedule(self.running(self.line_row()))
+        self.service.preparations_service.stop_line(self.line_id)
+        self.assertEqual(self.service.preparations.get(piece['preparation_id'])['state'], prep.STATE_CANCELLED)
+
+    def test_a_piece_scheduled_while_its_line_stops_is_refused(self):
+        root = self.line_row()
+        job = self.running(root)
+        fields = self.service.preparations_service.preparation_fields
+
+        def stop_between(args, now, *rest):
+            result = fields(args, now, *rest)
+            self.service.preparations_service.stop_line(self.line_id)
+            return result
+        with mock.patch.object(self.service, 'preparation_fields', side_effect=stop_between):
+            self.refused(job, 'line_stopped')
+        self.assertEqual(self.pieces(), [])
+        # A stopped brief alone (before its rows are cancelled) already refuses.
+        other = self.service.lines.open('owner-work', task='다른 일', report_promise=PROMISE)['line_id']
+        run = self.running(self.line_row(line=other, goal='other'))
+        self.service.lines.write(other, None, None, 'stopped', lambda brief: {**brief, 'state': el.STATE_STOPPED})
+        self.refused(run, 'line_stopped')
+        self.assertEqual(self.pieces(other), [])
+
+    def test_forget_cancels_pending_pieces_and_undo_restores_only_the_brief(self):
+        root = self.line_row()
+        piece = self.schedule(self.running(root))
+        receipt = OwnerForget(self.store).forget('local-owner', 'line:' + self.line_id)
+        self.assertEqual(self.service.preparations.get(piece['preparation_id'])['state'], prep.STATE_CANCELLED)
+        # A running piece of the forgotten line schedules nothing more.
+        self.refused(self.running(root, suffix='/loc:1'), 'line_stopped')
+        OwnerForget(self.store).undo('local-owner', receipt['receipt'])
+        self.assertEqual(self.service.lines.current(self.line_id)['state'], el.STATE_ACTIVE)
+        self.assertEqual(self.service.preparations.get(piece['preparation_id'])['state'], prep.STATE_CANCELLED)
+
+    def test_a_cancelled_piece_is_not_a_declined_proposal(self):
+        piece = self.schedule(self.running(self.line_row()), goal='끝난 인계')
+        self.service.preparations_service.stop_line(self.line_id)
+        self.assertEqual(self.service.preparations.get(piece['preparation_id'])['state'], prep.STATE_CANCELLED)
+        self.assertNotIn('끝난 인계', self.service.preparations.declined_goals(self.now))
+
+
+class Handoff(_PieceCase):
+    def test_only_a_run_that_may_continue_in_pieces_is_told_how(self):
+        guidance = msg('lines.piece_guidance', line=self.line_id, minutes=prep.PIECE_LEAD_SECONDS // 60)
+        root = self.line_row()
+        self.assertIn(guidance, self.service.preparations_service.line_run_input(self.running(root), root))
+        account = self.line_row(prep.ACCEPTED_OWNER_WORK, origin=prep.ORIGIN_LINE_ACCOUNT, recurrence='daily', goal='account')
+        self.assertNotIn(guidance, self.service.preparations_service.line_run_input(self.running(account), account))
+
+    def test_a_line_with_many_rows_still_reads_its_outcomes(self):
+        with self.store.db() as db:
+            for index in range(1100):
+                db.execute('INSERT INTO preparations(id,owner,kind,goal_text,due_at,timezone,channel,state,created_at,updated_at,line_id) '
+                           'VALUES (?,?,?,?,?,?,?,?,?,?,?)', (f'r{index:015d}', 'local-owner', 'prepare', 'g', self.now, 'Asia/Seoul',
+                                                              'web', prep.STATE_DELIVERED, self.now, self.now, self.line_id))
+            work = self.store.enqueue('g', prep.request_key('r000000000000007', self.now), db=db)
+            db.execute("UPDATE jobs SET status='succeeded',response='찾은 상태',delivery='none' WHERE id=?", (work,))
+        [outcome] = self.service.preparations_service.line_outcomes(self.line_id)
+        self.assertEqual((outcome['work_id'], outcome['text']), (work, '찾은 상태'))
+
+    def test_a_line_continues_in_pieces_through_the_worker_and_each_piece_reads_its_handoff(self):
+        self.now += 1  # the line this Work opens is the newest
+        brief, _work = self.open_line(recurrence=None)
+        [row] = self.work_rows(brief['line_id'])
+        handoff = '한 일: 첫 확인. 찾은 상태: 대기 중. 다음 조각이 확인할 것: 상태 변화.'
+        seen = []
+
+        def schedule_next(body):
+            return {'content': None, 'tool_calls': [call('n', 'schedule_preparation', kind='prepare', goal=handoff,
+                                                          due=self.due_iso(1800), line=brief['line_id'])]}
+
+        def answer(body):
+            seen.extend(tool_results(body, 'schedule_preparation'))
+            return {'content': '첫 단계 완료, 30분 뒤 이어서 확인해요.'}
+        bodies = self.run_line(row, [schedule_next, answer])
+        self.assertIn(msg('lines.piece_guidance', line=brief['line_id'], minutes=5), json.dumps(bodies, ensure_ascii=False))
+        self.assertTrue(seen and seen[0].get('scheduled'), seen)
+        [piece] = [item for item in self.work_rows(brief['line_id']) if item.get('origin') == prep.ORIGIN_LINE_PIECE]
+        self.assertEqual((piece['goal_text'], piece['line_id']), (handoff, brief['line_id']))
+        bodies = self.run_line(piece, [{'content': '상태 변화 없음.'}])
+        self.assertIn(handoff, json.dumps(bodies, ensure_ascii=False))
+        self.assertEqual(self.service.preparations.get(piece['id'])['state'], prep.STATE_DELIVERED)

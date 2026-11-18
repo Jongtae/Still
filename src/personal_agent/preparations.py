@@ -124,7 +124,9 @@ ORIGIN_DAY_PLAN = 'day-plan'
 #: #798: the periodic account of an entrusted line: one repeating run per line that gives an account
 #: of it (what was done and came of it, the rules in force, what was learned, what is open).
 ORIGIN_LINE_ACCOUNT = 'line-account'
-ORIGINS = (ORIGIN_DREAM, ORIGIN_DAY_PLAN, ORIGIN_LINE_ACCOUNT)
+#: #938: the next piece of an entrusted line's work, which a run of that line scheduled itself.
+ORIGIN_LINE_PIECE = 'line-piece'
+ORIGINS = (ORIGIN_DREAM, ORIGIN_DAY_PLAN, ORIGIN_LINE_ACCOUNT, ORIGIN_LINE_PIECE)
 #: #780: when the first daily plan runs, owner-local; the owner changes or cancels it like any preparation.
 DAY_PLAN_HOUR, DAY_PLAN_MINUTE = 6, 30
 #: #780: how far back a plan run is shown what earlier plan runs set up.
@@ -147,14 +149,30 @@ ACCEPTED_OWNER_STEER = 'owner-steer'
 ACCEPTED_OWNER_WORK, ACCEPTED_DREAM = 'owner-work', 'dream'
 #: #780: the daily plan, and what a daily-plan run set up.
 ACCEPTED_DAY_PLAN = 'day-plan'
+#: #938: a piece a line's run scheduled.  Who stands behind it is inherited from the chain's root row,
+#: never from the piece's own call: ``ACCEPTED_LINE_PIECE_OWNER`` when the root is a row the owner
+#: accepted (it follows the owner's payment autonomy, as that row does; owner decision 2026-11-18,
+#: #973), ``ACCEPTED_LINE_PIECE`` when the root was set up by the owner's AI on its own (self-set).
+ACCEPTED_LINE_PIECE, ACCEPTED_LINE_PIECE_OWNER = 'line-piece', 'line-piece-owner'
 #: #717: set up without the owner asking; such a run never uses the owner's payment autonomy.
-SELF_SET = (ACCEPTED_OWNER_WORK, ACCEPTED_DREAM, ACCEPTED_DAY_PLAN)
+SELF_SET = (ACCEPTED_OWNER_WORK, ACCEPTED_DREAM, ACCEPTED_DAY_PLAN, ACCEPTED_LINE_PIECE)
 #: #821: the owner asked for or accepted it; such a run may ask the owner to sign in.  An allowlist:
 #: a missing, NULL or unknown ``accepted_by`` is never read as the owner's acceptance.
 OWNER_ACCEPTED = (ACCEPTED_OWNER_REQUEST, ACCEPTED_OWNER_BUTTON, ACCEPTED_OWNER_SETTINGS, ACCEPTED_OWNER_ANSWER, ACCEPTED_OWNER_STEER)
 #: #968 (#938 D1): rows of an owner-set-up line whose own run may revise its own plan: the owner
 #: accepted the row, or it was set up in a Work the owner typed.  Look-back and daily-plan rows do not.
 LINE_RUN_ACCEPTED = OWNER_ACCEPTED + (ACCEPTED_OWNER_WORK,)
+#: #938: rows whose run may schedule the next piece of its line (D1); the look back's and the daily
+#: plan's rows are not among them.
+LINE_PIECE_PARENTS = (*OWNER_ACCEPTED, ACCEPTED_OWNER_WORK, ACCEPTED_LINE_PIECE, ACCEPTED_LINE_PIECE_OWNER)
+#: #938 (D3, owner decision 2026-11-18): pieces scheduled per line per owner-local day, the pending
+#: pieces of the whole store, and how far ahead a piece is due at least.  They hold with the shared
+#: daily budget off, so a chain shows up as a count and never as silent spend.
+LINE_PIECES_PER_DAY = 24
+MAX_PENDING_PIECES = 10
+PIECE_LEAD_SECONDS = MIN_EVERY_MINUTES * 60
+#: States in which a piece has not started yet: its parent run may still replace it (D6).
+PIECE_PENDING_STATES = (STATE_PROPOSED, STATE_SCHEDULED, STATE_PAUSED)
 #: #821: a waiting run's continuation refused because its preparation changed while it waited.
 WAIT_CHANGED = 'preparation-changed'
 
@@ -235,7 +253,9 @@ COLUMN_MIGRATIONS = (('prepared_text', 'TEXT'),
                      ('own_run_revision', 'REAL'), ('self_change', 'TEXT'),
                      ('accepted_from', 'TEXT'),
                      ('self_change_undone', 'INTEGER NOT NULL DEFAULT 0'),
-                     ('dream_held', 'INTEGER NOT NULL DEFAULT 0'))
+                     ('dream_held', 'INTEGER NOT NULL DEFAULT 0'),
+                     # #938: a piece's parent run, as that run's slot key (one child per run).
+                     ('piece_of', 'TEXT'))
 
 
 def run_seconds():
@@ -374,7 +394,12 @@ REFUSALS = {
     'running': '지금 실행 중인 준비는 지울 수 없습니다. 먼저 취소하세요.',
     **{code: msg('preparations.' + code) for code in
        ('invalid_rrule', 'already_running', 'invalid_state', 'goal_not_editable', 'invalid_edit', 'resume_expired', 'queue_full',
-        'replace_not_found', 'replace_not_allowed', 'line_inactive')},
+        'replace_not_found', 'replace_not_allowed', 'line_inactive', 'line_piece_invalid', 'line_piece_exists')},
+    # #938: the D3 bounds of a line's pieces.
+    'line_piece_too_soon': msg('preparations.line_piece_too_soon', minutes=PIECE_LEAD_SECONDS // 60),
+    'line_pieces_daily': msg('preparations.line_pieces_daily', maximum=LINE_PIECES_PER_DAY),
+    'line_pieces_limit': msg('preparations.line_pieces_limit', maximum=MAX_PENDING_PIECES),
+    'line_stopped': msg('lines.refused_line_stopped'),
 }
 
 
@@ -856,6 +881,22 @@ def line_refusal(db, line_id):
     return None if state == STATE_ACTIVE else LINE_STOPPED if state else LINE_UNREADABLE
 
 
+def piece_standing(parent_accepted_by):
+    """#938: the ``accepted_by`` of a piece scheduled by a run of a row with ``parent_accepted_by``, or None.
+
+    Inherited from the chain's root, never raised by a piece: a row the owner accepted, or a piece of
+    one, gives ``ACCEPTED_LINE_PIECE_OWNER`` (the owner's payment autonomy applies as it does to that
+    row; owner decision 2026-11-18); a row the owner's AI set up in an owner-typed Work, or a piece of
+    one, gives the self-set ``ACCEPTED_LINE_PIECE``.  Anything else (the look back, the daily plan, an
+    unknown or missing value) gives None: no piece.
+    """
+    if parent_accepted_by in (*OWNER_ACCEPTED, ACCEPTED_LINE_PIECE_OWNER):
+        return ACCEPTED_LINE_PIECE_OWNER
+    if parent_accepted_by in (ACCEPTED_OWNER_WORK, ACCEPTED_LINE_PIECE):
+        return ACCEPTED_LINE_PIECE
+    return None
+
+
 def run_outcome(kind, job):
     """What one run's Work shows: ``delivered``, ``unknown`` or ``failed``.
 
@@ -1268,11 +1309,17 @@ class Preparations:
         self.store.put(SCHEDULED_BUDGET_KEY, {'daily_calls': cap})
         return self.budget_settings()
 
-    def budget_day(self, now, db=None):
+    def _owner_zone(self, db=None):
         from .context_observations import ContextObservations, CONFIG_KEY
         # With no configured owner zone, use this owner's machine-local date (as cloud daily_calls does).
-        timezone = ContextObservations._normalize(self.store.config(CONFIG_KEY, db=db))['timezone']
-        return datetime.fromtimestamp(now, zone(timezone)).date().isoformat()
+        return zone(ContextObservations._normalize(self.store.config(CONFIG_KEY, db=db))['timezone'])
+
+    def budget_day(self, now, db=None):
+        return datetime.fromtimestamp(now, self._owner_zone(db)).date().isoformat()
+
+    def owner_day_start(self, now, db=None):
+        """#938: when the owner-local day of ``now`` began, by the same zone as ``budget_day``."""
+        return datetime.fromtimestamp(now, self._owner_zone(db)).replace(hour=0, minute=0, second=0, microsecond=0).timestamp()
 
     def _skip_budget_slot(self, db, row, key, now, day, cap):
         """Consume a refused slot atomically, retaining evidence without inventing an AI Work.
@@ -1417,7 +1464,8 @@ class Preparations:
 
     def create(self, *, kind, goal, due_at, timezone, recurrence, channel, created_from, state,
                accepted_by=None, owner=OWNER, window=None, delivery_mode=None, title=None, offer=None, origin=None,
-               report_every_minutes=None, line_id=None, max_runs=None, requested_until=None, bundle_channel=None, accepted_from=None, db=None):
+               report_every_minutes=None, line_id=None, max_runs=None, requested_until=None, bundle_channel=None, accepted_from=None,
+               piece_of=None, db=None):
         """One new row (idempotent for the same Work, kind, goal and slot).
 
         #574: when another Work already proposed the same kind, goal, due and
@@ -1433,8 +1481,21 @@ class Preparations:
         ``ORIGIN_DREAM`` marks a look-back suggestion (#583); #717: it starts scheduled (``ACCEPTED_DREAM``).
         #798: ``line_id`` is the entrusted line this row works for; the caller checked it is active.
         ``db`` joins a caller's transaction, so creation and its recovery evidence commit together.
+
+        #938: ``piece_of`` is the slot key of the run that schedules this piece of its line (origin
+        ``ORIGIN_LINE_PIECE``).  In this transaction the line must still be active (a stop at the same
+        moment wins, ``line_stopped``) and the D3 bounds hold: the lead time, ``LINE_PIECES_PER_DAY``
+        per line and owner-local day, ``MAX_PENDING_PIECES`` in the store.  One run has one child: a
+        second call from the same run (or its continuation) changes that child's goal and time while it
+        has not started, and is refused once it has started or the owner paused or cancelled it.
         """
         from .agent_runtime import not_run
+        if piece_of is not None and not (origin == ORIGIN_LINE_PIECE and accepted_by in (ACCEPTED_LINE_PIECE, ACCEPTED_LINE_PIECE_OWNER)
+                                         and kind == KIND_PREPARE and window is None and recurrence is None and max_runs is None
+                                         and line_id and state == STATE_SCHEDULED):
+            raise ValueError('a piece is one scheduled prepare of its line')
+        if origin == ORIGIN_LINE_PIECE and piece_of is None:
+            raise ValueError('a piece names the run that scheduled it')
         if kind not in KINDS:
             raise not_run(PreparationRefusal('invalid_kind'))
         if delivery_mode not in (None, DELIVERY_ALWAYS, DELIVERY_WHEN_NEEDED):
@@ -1469,13 +1530,23 @@ class Preparations:
         owns_transaction = db is None
         with (self.store.db() if owns_transaction else nullcontext(db)) as db:
             if owns_transaction:db.execute('BEGIN IMMEDIATE')
-            same = db.execute('SELECT * FROM preparations WHERE created_from=? AND kind=? AND goal_text=? AND due_at=? '
+            if piece_of is not None:
+                child = self._piece_admission(db, line_id, piece_of, due_at, now)
+                if child is not None:
+                    db.execute('UPDATE preparations SET goal_text=?,due_at=?,timezone=?,title_text=?,offer_text=?,updated_at=? '
+                               'WHERE id=? AND state=?', (goal, due_at, timezone, title, offer, now, child['id'], STATE_SCHEDULED))
+                    return {**dict(db.execute('SELECT * FROM preparations WHERE id=?', (child['id'],)).fetchone()),
+                            'piece_replaced': True}
+            same = None if piece_of is not None else db.execute(
+                              'SELECT * FROM preparations WHERE created_from=? AND kind=? AND goal_text=? AND due_at=? '
                               'AND state IN (?,?,?,?)', (created_from, kind, goal, due_at, *ACTIVE_STATES)).fetchone()
             if same:
                 return dict(same)
             # #574: another Work's identical proposal still waiting for the owner is that same proposal,
             # not a second one.  Scheduled rows are left alone: the owner may want two.
-            proposed = db.execute('SELECT * FROM preparations WHERE state=? AND created_from IS NOT ? AND kind=? AND goal_text=? '
+            # #938: a piece never takes up another Work's proposal (that would accept it).
+            proposed = None if piece_of is not None else db.execute(
+                                  'SELECT * FROM preparations WHERE state=? AND created_from IS NOT ? AND kind=? AND goal_text=? '
                                   'AND due_at=? AND recurrence IS ? AND every_seconds IS ? AND window_end IS ? AND max_runs IS ? AND window_terms IS ? '
                                   'ORDER BY created_at LIMIT 1',
                                   (STATE_PROPOSED, created_from, kind, goal, due_at, recurrence,
@@ -1502,7 +1573,8 @@ class Preparations:
                    'window_terms': terms, 'last_report_at': None,
                    'delivery_mode': delivery_mode, 'last_decision': None, 'last_decision_reason': None,
                    'last_notified_digest': None, 'last_notified_text': None, 'last_notified_at': None,
-                   'title_text': title, 'offer_text': offer, 'origin': origin, 'offered_at': None, 'line_id': line_id}
+                   'title_text': title, 'offer_text': offer, 'origin': origin, 'offered_at': None, 'line_id': line_id,
+                   'piece_of': piece_of}
             db.execute(f"INSERT INTO preparations({','.join(row)}) VALUES ({','.join('?' * len(row))})", tuple(row.values()))
             if bundle_channel is not None:
                 # The stood row and its original send intent commit together, already on web.
@@ -1510,6 +1582,30 @@ class Preparations:
                            (created_from, 'line_held', 'succeeded',
                             json.dumps({'preparation_id': row['id'], 'channel': bundle_channel}), now))
             return row
+
+    def _piece_admission(self, db, line_id, piece_of, due_at, now):
+        """#938: refuse a piece the line or the D3 bounds do not admit; the run's pending child, or None."""
+        from .agent_runtime import not_run
+        from .entrusted_lines import STATE_ACTIVE as LINE_ACTIVE, line_state
+        if line_state(db, line_id) != LINE_ACTIVE:
+            raise not_run(PreparationRefusal('line_stopped'))
+        if due_at < now + PIECE_LEAD_SECONDS:
+            raise not_run(PreparationRefusal('line_piece_too_soon'))
+        child = db.execute('SELECT * FROM preparations WHERE line_id=? AND piece_of=? ORDER BY created_at LIMIT 1',
+                           (line_id, piece_of)).fetchone()
+        if child is not None:
+            if child['state'] != STATE_SCHEDULED:
+                raise not_run(PreparationRefusal('line_piece_exists'))
+            return dict(child)
+        today = db.execute('SELECT count(*) FROM preparations WHERE line_id=? AND origin=? AND created_at>=?',
+                           (line_id, ORIGIN_LINE_PIECE, self.owner_day_start(now, db))).fetchone()[0]
+        if today >= LINE_PIECES_PER_DAY:
+            raise not_run(PreparationRefusal('line_pieces_daily'))
+        pending = db.execute(f"SELECT count(*) FROM preparations WHERE origin=? AND state IN ({','.join('?' * len(PIECE_PENDING_STATES))})",
+                             (ORIGIN_LINE_PIECE, *PIECE_PENDING_STATES)).fetchone()[0]
+        if pending >= MAX_PENDING_PIECES:
+            raise not_run(PreparationRefusal('line_pieces_limit'))
+        return None
 
     def accept(self, preparation_id, accepted_by, *, accepted_from=None):
         """``proposed`` → ``scheduled``: the owner's explicit yes.
@@ -2013,9 +2109,10 @@ class Preparations:
         with self.store.db() as db:
             return [row['goal_text'] for row in db.execute(
                 'SELECT goal_text FROM preparations WHERE state=? AND (accepted_by IS NULL OR accepted_by IN '
-                f"({','.join('?' * len(SELF_SET))})) AND origin IS NOT ? "
+                f"({','.join('?' * len(SELF_SET))})) AND COALESCE(origin,'') NOT IN (?,?) "
                 'AND updated_at>=? ORDER BY updated_at DESC LIMIT ?',
-                (STATE_CANCELLED, *SELF_SET, ORIGIN_DAY_PLAN, now - DECLINED_SECONDS, int(limit)))]
+                # #938: a piece cancelled with its line (or by the owner) ends a chain; it is not a declined proposal.
+                (STATE_CANCELLED, *SELF_SET, ORIGIN_DAY_PLAN, ORIGIN_LINE_PIECE, now - DECLINED_SECONDS, int(limit)))]
 
     def proposed_from(self, work_id, suggestions=True):
         """The proposals ``work_id`` created; ``suggestions`` False leaves out the look-back's (#583)."""
@@ -2397,6 +2494,10 @@ class Preparations:
                     if immediate:
                         raise PreparationRefusal('queue_full') from None
                     return None
+            if current.get('piece_of') and not existing:
+                # #938 (D5): a piece's run starts with its parent run's outside-content marks, so a chain
+                # never carries outside text into an unmarked run.  Same transaction as the Work.
+                self._inherit_piece_marks(db, current['piece_of'], job_id, now)
             if counted:
                 # As in cloud daily_calls, charge admission, even if the engine later fails.
                 # Enqueue, counter and evidence commit together; queue-full charges nothing.
@@ -2426,6 +2527,20 @@ class Preparations:
             db.execute('INSERT INTO tool_events(job_id,tool,status,detail,created) VALUES (?,?,?,?,?)',
                        (job_id, 'preparation', 'succeeded', json.dumps(detail), now))
             return job_id
+
+    def _inherit_piece_marks(self, db, parent_slot, job_id, now):
+        """#938: copy the host marks of every Work of the parent slot (its continuations included) to ``job_id``."""
+        parents = [row['id'] for row in db.execute('SELECT id FROM jobs WHERE request_key=? OR request_key LIKE ? ORDER BY created',
+                                                   (parent_slot, parent_slot + CONTINUATION_SEPARATOR + '%'))]
+        for parent in parents:
+            for row in db.execute('SELECT detail FROM work_intake_sources WHERE job_id=? ORDER BY id', (parent,)).fetchall():
+                try:
+                    category = json.loads(row['detail']).get('category') or 'outside-content'
+                except (ValueError, AttributeError):
+                    category = 'outside-content'
+                self.store._insert_intake_source(db, job_id, json.dumps(
+                    {'category': category, 'operation': 'line-piece', 'source_work_id': parent},
+                    ensure_ascii=False, sort_keys=True), now)
 
     @staticmethod
     def continue_run(db, work_id, continuation_id, now):
