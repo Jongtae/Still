@@ -441,6 +441,18 @@ def bridge_secret_redactor(store, relay):
     return lambda text: relay.call(SECRET_REDACTION, {'text': str(text)})
 
 
+def relay_store_redaction(store, relay):
+    """Route this bridge store's own stored-secret pass to the service as well (#369).
+
+    Store-level writes redact through ``redact_known_secrets(store, ...)``: the outside-content mark
+    a public read records before its result returns (#916), recall inheritance, profile anchors.
+    In this process that read failed closed on the owner's key, so every public page read of a CLI
+    Work failed.  Without a relay nothing changes and the pass runs here.
+    """
+    if relay is not None:
+        store.relayed_secret_redaction = bridge_secret_redactor(store, relay)
+
+
 def serve(data, job_id, provenance=(), native_search=False, profile=BOUNDED_PROFILE, browser_relay=None,
           search_off_reason='', relay_browser=True, skills=(), ai_connections=False, connection_slots=(),
           session_steers=False, peer_relay=None, turn_deadline=None):
@@ -478,6 +490,7 @@ def serve(data, job_id, provenance=(), native_search=False, profile=BOUNDED_PROF
     profile = profile if profile in HOST_CLI_PROFILES else STRICT_PROFILE
     relay = RelayClient(browser_relay) if browser_relay and profile == BOUNDED_PROFILE else None
     store = QuickStore(data)
+    relay_store_redaction(store, relay)
     def record(tool, status, detail):
         with store.db() as db:
             db.execute('INSERT INTO tool_events(job_id,tool,status,detail,created) VALUES (?,?,?,?,?)', (job_id,tool,status,detail,time.time()))
