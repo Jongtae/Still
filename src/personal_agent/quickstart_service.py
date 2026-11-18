@@ -151,6 +151,9 @@ STEER_NOT_APPLIED_REASONS={
     'new_request':'steer.not_applied.new_request'}
 #: #308 S1: how long a finishing Work waits for steer judgments still running (the judgment is a few seconds).
 STEER_JUDGMENT_WAIT_SECONDS=8
+#: #970: the lane for commands Still answers itself (D2a), and the tool-capable Work lanes (D1).
+LANE_COMMAND='command'
+LANE_WORK='work'
 #: #996: the owner's emoji on an assistant message, recorded on its Work.
 REACTION_EVENT='owner_reaction'
 #: #996: what the worker reads first when the owner's message just withdrew remembered facts.
@@ -834,6 +837,12 @@ class AgentService:
         self._settings_login=None
         self._signin_view,self._signin_view_refreshing={},False
         self.worker_lock=threading.Lock()
+        # #970 D1: each claimed Work runs in a lane off the work loop, which only dispatches.
+        # The registry holds a Work id from its claim until its tail (``_after_work``) finished;
+        # the loop's per-Work passes (deliveries, sweeps, settlements) leave such a Work alone.
+        self.work_lanes_held={}
+        self.work_lanes_lock=threading.Lock()
+        self.work_lane_spawn=lambda target,name:threading.Thread(target=target,name=name,daemon=True).start()
         # #655: the owner's configured search providers, read at call time.
         # #678: the connected AI's own search runs over this service's model
         # transport, so an injected test transport is also the search wire.
@@ -7613,8 +7622,10 @@ class AgentService:
 
     def resume_action_work(self):
         """Recover an approval issued while its worker was still returning."""
+        # #970: a Work still in its lane is still returning; it is looked at once its lane released it.
+        in_lane=self.lane_work_ids()
         for row in self.browser_step_requests():
-            if row.get('state') not in ('requested','issued'):continue
+            if row.get('state') not in ('requested','issued') or row.get('work_id') in in_lane:continue
             job=self.store.job(row['work_id'])
             if not job:continue
             expires=float(row.get('issued_at') if row.get('state')=='issued' else row.get('requested_at') or 0)+PAYMENT_APPROVAL_SECONDS
@@ -8676,8 +8687,10 @@ class AgentService:
         rows=self.browser_login_requests()
         if not rows:return []
         settled=[]
+        # #970: a Work still in its lane offers its own login when its run ends (``_after_work``).
+        in_lane=self.lane_work_ids()
         for work_id,row in list(rows.items()):
-            if not isinstance(row,dict):continue
+            if not isinstance(row,dict) or work_id in in_lane:continue
             state=row.get('state')
             if state in ('offered','closing'):
                 if self._reconcile_browser_login(work_id,now=now):settled.append(work_id)
@@ -9290,14 +9303,17 @@ class AgentService:
         unavailable leaves the message queued to run as its own Work afterwards.
         """
         # ``current_work_id`` is per thread (#826) and this runs on the poll thread, so the
-        # running Work is read from the store; one tool-capable worker runs at a time.
+        # running Work is read from the store.  #970: several Works may run, each in its own
+        # lane; a command Still answers itself is never steered, nor steered into (D2a).
         job=self.store.job(task_id)
         if not job or job.get('owner_typed')!=1:return False
+        if self.intent_classifier.has_local_candidate(job.get('message')):return False
+        commands=self.lane_work_ids(LANE_COMMAND)
         with self.store.db() as db:
-            row=db.execute("SELECT id FROM jobs WHERE status='running' AND chat_id IS ? AND channel=? AND id!=? ORDER BY created DESC LIMIT 1",
-                           (job.get('chat_id'),job.get('channel'),task_id)).fetchone()
-        if not row:return False
-        running=row['id']
+            rows=db.execute("SELECT id FROM jobs WHERE status='running' AND chat_id IS ? AND channel=? AND id!=? ORDER BY created DESC",
+                            (job.get('chat_id'),job.get('channel'),task_id)).fetchall()
+        running=next((row['id'] for row in rows if row['id'] not in commands),None)
+        if running is None:return False
         # #308 S1: the running Work's finish guard waits (bounded) for this judgment.
         with self.steer_judged:self.steer_judging[running]+=1
         def judge():
@@ -9505,9 +9521,9 @@ class AgentService:
             if job.get('chat_id') and surface is not None and surface.capabilities.reactions:
                 self._presence_call(surface,PRESENCE_REACT,job['chat_id'],source,DONE_REACTION)
             self.update_task_card(job,'succeeded')
-            # The work loop delivers only between Works, so the side reply is delivered here, off the
-            # tool-capable worker; each surface claims a pending reply atomically, so the loop's own
-            # delivery never sends it twice.  An older pending reply on the same surface goes first.
+            # The side reply is delivered here at once (#970: the work loop's dispatcher delivers too);
+            # each surface claims a pending reply atomically, so the loop's own delivery never sends
+            # it twice.  An older pending reply on the same surface goes first.
             for _ in range(SIDE_ANSWER_DELIVERY_PASSES):
                 if (self.store.job(task_id) or {}).get('delivery')!='pending':break
                 self.deliver_one()
@@ -9606,14 +9622,32 @@ class AgentService:
     def sweep_after_work(self, now=None):
         return self.work_executor.sweep_after_work(now)
 
+    #: #970 D1: tool-capable Works that may run at once.  Slice 1 keeps one.
+    WORK_LANES=1
+
+    def dispatch_work(self):
+        """The work loop's dispatcher pass (#970): claimed Works run in lanes, never on this thread."""
+        return self.work_executor.dispatch()
+
+    def hold_lane(self, work_id, lane):
+        with self.work_lanes_lock:self.work_lanes_held[work_id]=lane
+
+    def release_lane(self, work_id):
+        with self.work_lanes_lock:self.work_lanes_held.pop(work_id,None)
+
+    def lane_work_ids(self, lane=None):
+        """The Works now in a lane (of ``lane``, or any): claimed and not yet through their tail."""
+        with self.work_lanes_lock:
+            return frozenset(work for work,held in self.work_lanes_held.items() if lane is None or held==lane)
+
     def run_one(self):
         return self.work_executor.run_one()
 
     def _run_one(self):
         return self.work_executor._run_one()
 
-    def _claim_queued_work(self):
-        return self.work_executor._claim_queued_work()
+    def _claim_queued_work(self, lanes=None):
+        return self.work_executor._claim_queued_work(lanes)
 
     def _route_work(self, run):
         return self.work_executor._route_work(run)
@@ -9721,7 +9755,8 @@ class AgentService:
 
         for name in (
                 # #659/#685: cheap due checks; qualification runs off this thread.
-                'run_due_preparation','run_due_qualification','run_one',
+                # #970: the dispatcher hands claimed Works to lanes and returns at once.
+                'run_due_preparation','run_due_qualification','dispatch_work',
                 'deliver_one','deliver_notification',
                 # #818/#918: expire old prompts and release saved notices after uncertain sends.
                 'expire_memory_prompts','release_memory_saved_notices','sweep_after_work',

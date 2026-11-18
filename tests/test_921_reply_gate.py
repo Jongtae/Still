@@ -273,12 +273,12 @@ class ReplyGate(Harness):
         prepare = self.service._prepare_worker_turn
         def prepared(run):
             # Build the actual speculative call through the service's profile path.
-            early = self.service._early_plan.result()
+            early = run.early_plan.result()
             self.assertIn(old['id'], [i['id'] for i in early['profile_items']])
             # Same rendered text/date but a new row revision. Equal text is insufficient.
             with self.store.db() as db:
                 db.execute('UPDATE memories SET id=? WHERE id=?', ('replacement-row-id', old['id']))
-            self.service._early_plan = harness.EarlyPlan.future(early)
+            run.early_plan = harness.EarlyPlan.future(early)
             result = prepare(run)
             self.assertTrue(run.orchestration.early_used)
             self.assertEqual([i['id'] for i in run.orchestration.plan_inventory], [old['id']])

@@ -220,11 +220,14 @@ class TelegramStore:
         row = db.execute('SELECT * FROM telegram_notifications WHERE job_id=? AND kind=?',(job_id,kind)).fetchone()
         return dict(row)
 
-    def next_notification(self, surface='telegram'):
+    def next_notification(self, surface='telegram', busy=()):
+        """The oldest queued notice of ``surface``, leaving out the Works in ``busy`` (#970: still in their lane)."""
         store=self.store
+        busy=tuple(busy)
         with store.db() as db:
-            row=db.execute("SELECT * FROM telegram_notifications WHERE state='queued' AND surface=? ORDER BY created LIMIT 1",
-                           (surface,)).fetchone()
+            row=db.execute("SELECT * FROM telegram_notifications WHERE state='queued' AND surface=? "
+                           f"AND (job_id IS NULL OR job_id NOT IN ({','.join('?'*len(busy))})) ORDER BY created LIMIT 1",
+                           (surface,*busy)).fetchone()
             return dict(row) if row else None
 
     def update_notification(self, notification_id, state, message_id=None, fingerprint=None, delivered=False):

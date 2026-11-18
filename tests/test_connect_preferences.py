@@ -259,15 +259,21 @@ class ConnectionPreferences(Harness):
         again; the audit names both, not only the worker's B."""
         import threading
         worker = threading.current_thread()
+        runs, route = [], self.service._route_work
+
+        def routed(run):
+            runs.append(run)
+            return route(run)
 
         def snapshot(service, query, **kwargs):
             if threading.current_thread() is worker:
                 # Initial planning waits for A; the post-plan worker refresh has no pending Future.
-                if service._early_plan is not None:service._early_plan.result()
+                if runs and runs[0].early_plan is not None:runs[0].early_plan.result()
                 return 'profile.beta.changed: read by the plan asked again', []
             return 'profile.alpha.before: read by the early plan', []
         self.script([plan('codex', 'Over A.'), plan('codex', 'Over B.')], goals=[True])
-        with mock.patch.object(type(self.service), 'profile_section', snapshot):
+        with mock.patch.object(type(self.service), 'profile_section', snapshot), \
+                mock.patch.object(self.service, '_route_work', routed):
             job, row = self.run_work('Read the Unseen record.', key='early-then-again')
         self.assertEqual(row['status'], 'succeeded')
         self.assertEqual(len(self.asked_plans), 2, 'the early plan missed and was asked again')

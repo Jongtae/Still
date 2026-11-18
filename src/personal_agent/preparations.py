@@ -2162,7 +2162,7 @@ class Preparations:
 
     # -- the tick ----------------------------------------------------------
 
-    def due(self, now, limit=TICK_LIMIT):
+    def due(self, now, limit=TICK_LIMIT, busy=()):
         """The tick's one indexed query: due slots and runs ready to settle.
 
         A ``scheduled`` row is due at ``due_at``; a ``running`` row is ready
@@ -2170,16 +2170,19 @@ class Preparations:
         and its delivery is no longer pending or in flight. Expired windows
         also surface so an unanswered prerequisite can terminate without AI.
         Immediate runs settle even before the regular due time (#575).
+        A run whose Work is in ``busy`` (#970: still in its lane) is not ready yet.
         """
+        busy=tuple(busy)
         with self.store.db() as db:
             self._clear_closed_budget_skips(db)
             return [dict(row) for row in db.execute(
                 'SELECT p.*, j.status AS job_status, j.delivery AS job_delivery FROM preparations p '
                 'LEFT JOIN jobs j ON j.id=p.last_run_job_id '
                 "WHERE ((p.state='scheduled' AND p.due_at<=?) OR p.state='running') "
+                f"AND (p.state='scheduled' OR j.id IS NULL OR j.id NOT IN ({','.join('?'*len(busy))})) "
                 "AND (p.state='scheduled' OR j.id IS NULL OR (p.recurrence='window' AND p.window_end<=?) "
                 f"OR (j.status NOT IN {ws.sql_in(ws.ACTIVE_PREPARATION)} "
-                "AND j.delivery NOT IN ('pending','sending'))) ORDER BY p.due_at LIMIT ?", (now, now, limit))]
+                "AND j.delivery NOT IN ('pending','sending'))) ORDER BY p.due_at LIMIT ?", (now, *busy, now, limit))]
 
     @staticmethod
     def run_refusal(db, work_id, now):

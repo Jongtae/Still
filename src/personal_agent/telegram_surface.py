@@ -321,7 +321,7 @@ class TelegramSurface(ConversationSurface):
         service=self.service
         if time.monotonic()<service._unsent_retry_at:return False
         # #213: only this surface's queued notices; another surface's are never claimed or cancelled here.
-        notification=service.store.next_notification(self.name)
+        notification=service.store.next_notification(self.name,service.lane_work_ids())
         if not notification:return False
         with service.lock:
             # #208 review: the row was read before the lock; a switch to work mode may have cancelled
@@ -1356,8 +1356,11 @@ class TelegramSurface(ConversationSurface):
             with service.store.db() as db:
                 db.execute('BEGIN IMMEDIATE')
                 # #213: only this surface's replies; another surface's pending reply is never claimed here.
-                row=db.execute("SELECT * FROM jobs WHERE delivery='pending' AND substr(channel,1,?)=? ORDER BY created LIMIT 1",
-                               (len(self.channel_prefix),self.channel_prefix)).fetchone()
+                # #970: a Work still in its lane sends its reply once its tail finished.
+                busy=tuple(service.lane_work_ids())
+                row=db.execute("SELECT * FROM jobs WHERE delivery='pending' AND substr(channel,1,?)=? "
+                               f"AND id NOT IN ({','.join('?'*len(busy))}) ORDER BY created LIMIT 1",
+                               (len(self.channel_prefix),self.channel_prefix,*busy)).fetchone()
                 if not row:return
                 job=dict(row)
                 # #208: in work mode a Telegram reply is not sent (cancelled, never sent later); the Work keeps it.
