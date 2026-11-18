@@ -2045,8 +2045,7 @@ def refused_before_hand_off(execute):
 
 def record_outside_result(execute):
  """Persist intake before results OR dispatched errors leave either worker route."""
- @wraps(execute)
- def run(self,name,args):
+ def recorded(self,name,args):
   action=(self.tools.get(name) or {}).get('host_action')
   def mark():
    source={'operation':action or name, 'category':PRIVATE_PROVENANCE.get(action,UNATTRIBUTED_PROVENANCE)}
@@ -2061,6 +2060,12 @@ def record_outside_result(execute):
    raise
   if action not in OWNER_ONLY_RESULT_ACTIONS and not isinstance(result,_HostOnlyResult):mark()
   return result
+ @wraps(execute)
+ def run(self,name,args):
+  ledger=getattr(self.budget,'ledger',None)
+  if ledger is None:return recorded(self,name,args)
+  with self.store.read_checkpoint_writer(self.job_id,ledger.epoch):
+   return recorded(self,name,args)
  return run
 
 def attempted_outbound(capabilities,action,args,exc):
@@ -5956,7 +5961,7 @@ def work_awaiting_owner_text(capabilities):
  try:return awaiting_owner_text(work_awaiting_owner(capabilities.store,capabilities.job_id))[:AWAITING_OWNER_CHARS]
  except Exception:return ''
 
-def goal_judgment(judgments,goal,claim,observations,failures,work_id=None,redact=None,conversation='',owner_context=None,*,budget=None,attachments='',read_state='',awaiting='',conversation_turns=None,effects=(),reply_source='worker',reply_delivery='to_owner',plan_reading='',continues=''):
+def goal_judgment(judgments,goal,claim,observations,failures,work_id=None,redact=None,conversation='',owner_context=None,*,budget=None,attachments='',read_state='',awaiting='',conversation_turns=None,effects=(),reply_source='worker',reply_delivery='to_owner',plan_reading='',continues='',read_snapshot=None):
  """``yes`` / ``no`` / ``unavailable``: did the reply serve the owner's message ``goal``?
 
  The one outcome judgment (#657, #820): one ``ConversationJudgments.goal_reached``
@@ -6011,7 +6016,7 @@ def goal_judgment(judgments,goal,claim,observations,failures,work_id=None,redact
                                    **({'reply_delivery':reply_delivery} if reply_delivery!='to_owner' else {}),
                                    owner_context=owner,**({'conversation_messages':count} if count is not None else {}),
                                    **({'plan_reading':reading} if reading else {}),
-                                   **({'continues':continuation} if continuation else {}),
+                                   **({'continues':continuation, 'read_snapshot':read_snapshot} if continuation else {}),
                                    **({'attachments':attachments} if attachments else {}),
                                    **({'awaiting_owner':clean(awaiting)} if awaiting else {}),
                                    **({'recorded_effects':tuple(effects),
@@ -6255,6 +6260,13 @@ def run_agent(adapter,config,key,history,system,capabilities,record,scope='main'
  budget=capabilities.budget
  active_config=dict(config);rerouted=False;checked_direct=False;attempts={};actual=None
 
+ read_snapshot=None
+ def checkpoint_progress():
+  nonlocal read_snapshot
+  snapshot=getattr(capabilities.judgments,'checkpoint_snapshot',None)
+  read_snapshot=snapshot(capabilities.job_id) if callable(snapshot) else None
+  return read_progress() if read_progress else ''
+
  def checkpoint_goal(note):
   if not note:return goal
   corrections=capabilities.store.work_steer_texts(capabilities.job_id)
@@ -6266,7 +6278,7 @@ def run_agent(adapter,config,key,history,system,capabilities,record,scope='main'
   if labels and msg('agent_runtime.sources_looked_up') not in content:content+='\n\n'+msg('agent_runtime.sources_looked_up')+'\n'+'\n'.join(labels)
   result=ModelResult(content[:24000],config['provider'],actual)
   result.reply_source=reply_source
-  read_continuation=read_progress() if read_progress else ''
+  read_continuation=checkpoint_progress()
   needs_judgment=bool(_external(trail) or read_continuation)
   if claim is None and needs_judgment and not invalid_calls:
    # #820: a plain final reply after tools ran is judged once, like a done claim: did
@@ -6278,7 +6290,7 @@ def run_agent(adapter,config,key,history,system,capabilities,record,scope='main'
                             attachments=attachment_facts(images=len(images)) if images else '',read_state=steps_read_state(steps),
                             awaiting=work_awaiting_owner_text(capabilities),conversation_turns=conversation_turns,
                             effects=recorded_effects(steps),reply_source=reply_source,reply_delivery=reply_delivery,
-                            plan_reading=capabilities.plan_reading,continues=read_continuation)
+                            plan_reading=capabilities.plan_reading,continues=read_continuation,read_snapshot=read_snapshot)
   if not needs_judgment and not invalid_calls:
    # Ordinary conversation: no tool ran (or only internal current-state
    # bookkeeping, #627), so there is nothing to observe.
@@ -6354,7 +6366,7 @@ def run_agent(adapter,config,key,history,system,capabilities,record,scope='main'
   requested=active_config.get('model')
   if actual and active_config.get('model')=='openrouter/free' and actual!='openrouter/free':active_config['model']=actual
   actual=actual or NOT_REPORTED
-  read_continuation=read_progress() if read_progress else ''
+  read_continuation=checkpoint_progress()
   if read_continuation:
    try:budget.check()
    except ToolError as stop:
@@ -6427,14 +6439,14 @@ def run_agent(adapter,config,key,history,system,capabilities,record,scope='main'
       if not claim['evidence_refs']:reason='no_evidence'
      judgment=None
      if reason is None and claim['status']=='done':
-      read_continuation=read_progress() if read_progress else ''
+      read_continuation=checkpoint_progress()
       judged+=1
       judgment=goal_judgment(capabilities.judgments,checkpoint_goal(read_continuation),claim,observations,failed_steps_text(steps),capabilities.job_id,
                              getattr(capabilities,'judgment_text',None),conversation,owner_context,budget=budget,
                              attachments=attachment_facts(images=len(images)) if images else '',read_state=steps_read_state(steps),
                              awaiting=work_awaiting_owner_text(capabilities),conversation_turns=conversation_turns,
                             effects=recorded_effects(steps),reply_delivery=reply_delivery,plan_reading=capabilities.plan_reading,
-                            continues=read_continuation)
+                            continues=read_continuation,read_snapshot=read_snapshot)
       # A "not shown" answer returns the claim once, so the model can take
       # another path; a second one, or no engine, ends the run below.
       if judgment=='no' and getattr(judgment,'retry_warranted',None) is not False and judged<GOAL_JUDGMENTS:reason='goal_not_observed'

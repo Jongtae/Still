@@ -98,7 +98,26 @@ class _StoreConnection(sqlite3.Connection):
     statement failed before it ran, so preparing it again is what SQLite would have done.
     """
 
+    def _admit_checkpoint_write(self, sql):
+        # A run's indirect Evidence/projection writers use this same boundary.
+        # Admit under SQLite's writer lock, once per transaction (the transaction
+        # may itself change running to terminal). Reads remain available to cleanup.
+        guard = getattr(self, 'read_checkpoint_guard', None)
+        command = sql.lstrip().split(None, 1)[0].upper()
+        if command == 'BEGIN' and not self.in_transaction:
+            self.read_checkpoint_admitted = False
+        if guard is not None and command in ('INSERT', 'UPDATE', 'DELETE', 'REPLACE', 'WITH'):
+            if not self.in_transaction:
+                super().execute('BEGIN IMMEDIATE')
+                self.read_checkpoint_admitted = False
+            if not getattr(self, 'read_checkpoint_admitted', False):
+                if not guard(self):
+                    from .agent_runtime import LedgerSuperseded
+                    raise LedgerSuperseded('superseded read checkpoint writer')
+                self.read_checkpoint_admitted = True
+
     def execute(self, sql, parameters=(), /):
+        self._admit_checkpoint_write(sql)
         for attempt in range(VTABLE_RECONNECT_ATTEMPTS):
             try:
                 return super().execute(sql, parameters)
@@ -106,6 +125,10 @@ class _StoreConnection(sqlite3.Connection):
                 if not str(error).startswith('vtable constructor failed') or attempt+1==VTABLE_RECONNECT_ATTEMPTS:
                     raise
                 time.sleep(0.005*(attempt+1))
+
+    def executemany(self, sql, parameters, /):
+        self._admit_checkpoint_write(sql)
+        return super().executemany(sql, parameters)
 
 
 #: #407: the transcript row of a plan preview the owner read before the worker ran (``messages.delivery_projection``).
@@ -515,10 +538,28 @@ class QuickStore:
                 raise
             db.execute('COMMIT')
 
+    @cached_property
+    def _checkpoint_writer(self):
+        return threading.local()
+
+    @contextmanager
+    def read_checkpoint_writer(self, work_id, epoch, *, terminal=False):
+        """Bind indirect writers to the run, never to the latest epoch in the store."""
+        previous = getattr(self._checkpoint_writer, 'guard', None)
+        def guard(db):
+            value = epoch() if callable(epoch) else epoch
+            return self.read_checkpoint_can_settle(work_id, value, db=db, terminal=terminal)
+        self._checkpoint_writer.guard = guard
+        try:
+            yield
+        finally:
+            self._checkpoint_writer.guard = previous
+
     @contextmanager
     def db(self):
         conn = sqlite3.connect(self.path, timeout=10, factory=_StoreConnection)
         conn.row_factory = sqlite3.Row
+        conn.read_checkpoint_guard = getattr(self._checkpoint_writer, 'guard', None)
         conn.create_function(
             'unicode_search_key', 1,
             lambda value: unicodedata.normalize('NFKC', str(value or '')).casefold(),
@@ -2723,9 +2764,11 @@ class QuickStore:
         return True
 
     def _read_checkpoint_ready(self, db, work_id, checkpoint, predicate, *, expected_epoch):
+        from .agent_runtime import WORK_MODEL_TURNS, WORK_TOOL_ATTEMPTS
         ledger = self._read_checkpoint_ledger(db, work_id)
         if (not predicate or not ledger or ledger['epoch'] != expected_epoch
-                or ledger['deadline'] <= time.time() or self._read_checkpoint_stopped(db, work_id)):
+                or ledger['deadline'] <= time.time() or self._read_checkpoint_stopped(db, work_id)
+                or ledger['turns'] >= WORK_MODEL_TURNS or ledger['attempts'] >= WORK_TOOL_ATTEMPTS):
             return False
         try:
             return predicate(work_id, checkpoint) is True
@@ -2753,15 +2796,25 @@ class QuickStore:
                    ('실행 중 재시작되었습니다. 자동으로 재호출하지 않습니다.', delivery, work_id))
         return None
 
-    def read_checkpoint_can_settle(self, work_id, epoch, *, db=None):
+    def read_checkpoint_can_settle(self, work_id, epoch, *, db=None, terminal=False):
         """A superseded checkpoint run cannot publish a terminal result."""
         if db is None:
             with self.db() as db:
-                return self.read_checkpoint_can_settle(work_id, epoch, db=db)
+                return self.read_checkpoint_can_settle(work_id, epoch, db=db, terminal=terminal)
         if db.execute('SELECT 1 FROM work_read_checkpoints WHERE job_id=?', (work_id,)).fetchone() is None:
             return True
         ledger = self._read_checkpoint_ledger(db, work_id)
         row = db.execute('SELECT status FROM jobs WHERE id=?', (work_id,)).fetchone()
+        if terminal and row and row['status'] in ws.TERMINAL:
+            # The successful run pauses before its tail. Pausing does not change
+            # its epoch; recovery or another claimant does.
+            from .agent_runtime import WORK_LEDGER_KEY, WorkLedger
+            try:
+                root = WorkLedger.request_chain(db, work_id)[-1]['id']
+                ledger = WorkLedger._validate(self.config(f'{WORK_LEDGER_KEY}:{root}', {}, db=db))
+                return ledger['epoch'] == epoch and ledger.get('active_work_id', root) == work_id
+            except (TypeError, ValueError, KeyError):
+                return False
         return bool(row and row['status'] == 'running' and ledger and ledger['epoch'] == epoch)
 
     def recover(self, reply_prefixes=(), *, can_resume_checkpoint=None):

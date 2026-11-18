@@ -38,60 +38,89 @@ def checkpoint_note(checkpoint):
             'or proof of goal completion. Use the verified progress and current authority to decide what remains necessary.')
 
 
-def checkpoint_judgment(store, ledger, purpose, facts, note, call, redact):
-    """Reuse a completed judgment for the same inputs. Fence unfinished calls by Work epoch."""
+def checkpoint_snapshot(store, work_id, *, db=None):
+    """The state used to build a judgment, independent of its writer's epoch."""
+    if db is None:
+        with store.db() as db:
+            db.execute('BEGIN')
+            return checkpoint_snapshot(store, work_id, db=db)
+    checkpoint = store.read_checkpoint(work_id, db=db)
+    if not checkpoint:
+        return None
+    from . import folder_grants, trust_record, work_mode
+    roots = store.config('file_roots', [], db=db)
+    workspace = store.config('file_workspace', {'references': [], 'workspace': None}, db=db)
+    # The same stored folders and read-time exclusions as Capabilities.roots /
+    # FileWorkspace.active; connection authority is held in trust_record, not a Grant table.
+    folders = [*roots, *workspace.get('references', [])]
+    paths = [row['path'] for row in folders]
+    if workspace.get('workspace'):
+        paths.append(workspace['workspace'])
+    hands = store.config(trust_record.KEY, {}, db=db).get('hands', {})
+    authority = {key: {field: value for field, value in row.items() if field != 'history'}
+                 for key, row in hands.items()}
+    grants = (roots, workspace, [(path, folder_grants.blocked(path, store)) for path in paths], authority)
+    return {'checkpoint': public_checkpoint(checkpoint),
+            'steers': [tuple(row) for row in db.execute(
+                'SELECT source_job_id,content FROM work_steers WHERE job_id=? ORDER BY created,source_job_id', (work_id,))],
+            'mode': store.config(work_mode.CONFIG_KEY, None, db=db),
+            'grants': hashlib.sha256(json.dumps(grants, sort_keys=True).encode()).hexdigest()}
+
+
+def checkpoint_judgment(store, ledger, purpose, facts, note, call, redact, *, snapshot=None, eligible=None):
+    """Admit once per input/epoch; only the input's still-current writer may commit."""
     from .direct_message_surface import redact_provenance_values
-    from .work_mode import CONFIG_KEY
 
     work_id = ledger.job_id
 
-    def state(db):
+    def current(db):
         checkpoint = store.read_checkpoint(work_id, db=db)
-        if not checkpoint:
-            return None
-        if (ledger.lapse(db=db) or checkpoint['resume_pending'] or checkpoint['epoch'] != ledger.epoch
-                or store._read_checkpoint_stopped(db, work_id)
-                or not store.read_checkpoint_can_settle(work_id, ledger.epoch, db=db)
-                or not note or redact(checkpoint_note(checkpoint)) not in note):
+        if (not note or not checkpoint or ledger.lapse(db=db) or checkpoint['resume_pending']
+                or checkpoint['epoch'] != ledger.epoch or store._read_checkpoint_stopped(db, work_id)
+                or not store.read_checkpoint_can_settle(work_id, ledger.epoch, db=db)):
             return False
-        mode = store.config(CONFIG_KEY, None, db=db)
+        mode = store.config('work_mode', None, db=db)
         if mode is not None and (not isinstance(mode, dict) or mode.get('enabled') is not False):
             return False
-        steers = [tuple(row) for row in db.execute(
-            'SELECT source_job_id,content FROM work_steers WHERE job_id=? ORDER BY created,source_job_id', (work_id,))]
-        # The epoch fences writers. It does not change the evidence or give a
-        # resumed run a different identity for an already completed judgment.
-        inputs = (purpose, public_checkpoint(checkpoint), mode, steers, facts)
-        return hashlib.sha256(json.dumps(inputs, sort_keys=True, ensure_ascii=False).encode()).hexdigest()
+        if not store._read_checkpoint_ready(db, work_id, checkpoint, eligible or (lambda *_: True),
+                                            expected_epoch=ledger.epoch):
+            return False
+        return snapshot is not None and checkpoint_snapshot(store, work_id, db=db) == snapshot
 
+    try:
+        # Freeze the key before dispatch too: call() may mutate its input objects.
+        key = hashlib.sha256(json.dumps((purpose, snapshot, facts), sort_keys=True,
+                                       ensure_ascii=False, allow_nan=False).encode()).hexdigest()
+    except (TypeError, ValueError, OverflowError, RecursionError):
+        return None
     with store.db() as db:
         db.execute('BEGIN IMMEDIATE')
-        key = state(db)
-        if key is False:
+        if not current(db):
             return None
-        if key:
-            row = db.execute('SELECT epoch,result FROM work_read_judgments WHERE job_id=? AND input_digest=?',
-                             (work_id, key)).fetchone()
-            if row and row['result'] is not None:
-                return redact_provenance_values(json.loads(row['result']), redact)
-            if row and row['epoch'] == ledger.epoch:
-                return None
-            db.execute('INSERT INTO work_read_judgments(job_id,input_digest,epoch) VALUES (?,?,?) '
-                       'ON CONFLICT(job_id,input_digest) DO UPDATE SET epoch=excluded.epoch',
-                       (work_id, key, ledger.epoch))
-    result = call()
-    if key is None or result is None:
-        return result
-    if purpose == 'goal-reached' and result['outcome'] not in ('yes', 'no'):
-        return result
-    result = redact_provenance_values(result, redact)
+        row = db.execute('SELECT epoch,result FROM work_read_judgments WHERE job_id=? AND input_digest=?',
+                         (work_id, key)).fetchone()
+        if row and row['result'] is not None:
+            return redact_provenance_values(json.loads(row['result']), redact)
+        if row and row['epoch'] == ledger.epoch:
+            return None
+        db.execute('INSERT INTO work_read_judgments(job_id,input_digest,epoch) VALUES (?,?,?) '
+                   'ON CONFLICT(job_id,input_digest) DO UPDATE SET epoch=excluded.epoch',
+                   (work_id, key, ledger.epoch))
+    try:
+        result = call()
+        if result is None or (purpose == 'goal-reached' and result.get('outcome') not in ('yes', 'no')):
+            return None
+        result = redact_provenance_values(result, redact)
+        encoded = json.dumps(result, ensure_ascii=False, allow_nan=False)
+    except Exception:
+        return None
     with store.db() as db:
         db.execute('BEGIN IMMEDIATE')
-        if state(db) != key:
+        if not current(db):
             return None
         committed = db.execute('UPDATE work_read_judgments SET result=? '
                                'WHERE job_id=? AND input_digest=? AND epoch=? AND result IS NULL',
-                               (json.dumps(result, ensure_ascii=False), work_id, key, ledger.epoch)).rowcount
+                               (encoded, work_id, key, ledger.epoch)).rowcount
     return result if committed else None
 
 

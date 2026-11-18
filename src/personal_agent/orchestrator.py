@@ -984,6 +984,7 @@ class Orchestration:
         #: follow-up judgment linked them ('' otherwise).  Read first for what the message refers to.
         self.continues = str(continues or '')
         self.read_progress = ''
+        self.read_snapshot = None
         #: #1517: what the message carried besides its words ('1 photo'), for the outcome judgment.
         self.attachments = str(attachments or '')
         #: #240: what already waits for the owner's own decision in this conversation (kinds and when
@@ -1282,7 +1283,7 @@ class Orchestration:
                 data, failure = self._ask_plan(candidates, context)
                 return data if not failure else None
             data = checkpoint_judgment(self.work_id, PURPOSE, inputs, self._continues_text(),
-                                       decide, budget=self.budget)
+                                       decide, budget=self.budget, snapshot=self.read_snapshot)
             return (data, '') if data is not None else (None, FALLBACK_BUDGET if self.budget_stop else FALLBACK_UNAVAILABLE)
         return self._ask_plan(candidates)
 
@@ -1659,6 +1660,7 @@ class Orchestration:
                             if self.attempts else '')
             judged = goal_reached(request, observed, str(failed or '')[:FAILURE_CHARS], work_id=self.work_id,
                                   answer=reply,
+                                  **({'read_snapshot': self.read_snapshot} if self.read_progress else {}),
                                   **({'plan_reading': plan_reading} if plan_reading else {}),
                                   **({'reply_source': reply_source} if reply_source != 'worker' else {}),
                                   **({'reply_delivery': reply_delivery} if reply_delivery != 'to_owner' else {}),

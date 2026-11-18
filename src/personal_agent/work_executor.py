@@ -174,33 +174,46 @@ class WorkExecutor:
             service.release_lane(job['id'])
 
     def _run_claimed(self, job):
+        service = self.service
+        def epoch():
+            ledger = getattr(service.current_decision_budget(), 'ledger', None)
+            return job.get('read_checkpoint_resume', ledger.epoch if ledger is not None else None)
+        with service.store.read_checkpoint_writer(job['id'], epoch):
+            return self._execute_claimed(job)
+
+    def _execute_claimed(self, job):
         """Run one claimed Work through its phases, ending with its tail (``_after_work``)."""
         service=self.service
         run=WorkRun(job,time.time())
+        run.exiting=False
         try:
             try:
                 try:
-                    if service.fold_delivered_steer(job):return True
-                    service.current_work_id=job['id']
-                    service.record_stage(job['id'],'queue_wait',job.get('created') or run.claimed_at)
-                    service.update_task_card(job,'running')
-                    run.retry_note=service.action_continuation_note(job)
-                    # #308 S4: a message meant for an earlier Work says first why it is answered on its own.
-                    notice=service.steer_disposition_notice(job)
-                    if notice:run.reply_notice=notice+'\n\n'
-                    for phase in (service._route_work,service._load_work_photos,service._run_rule_intent):
-                        step=phase(run)
-                        if step is not PROCEED:return step
-                    if not run.handled:
-                        for phase in (service._prepare_worker_turn,service._run_worker_attempts):
+                    try:
+                        if service.fold_delivered_steer(job):return True
+                        service.current_work_id=job['id']
+                        service.record_stage(job['id'],'queue_wait',job.get('created') or run.claimed_at)
+                        service.update_task_card(job,'running')
+                        run.retry_note=service.action_continuation_note(job)
+                        # #308 S4: a message meant for an earlier Work says first why it is answered on its own.
+                        notice=service.steer_disposition_notice(job)
+                        if notice:run.reply_notice=notice+'\n\n'
+                        for phase in (service._route_work,service._load_work_photos,service._run_rule_intent):
                             step=phase(run)
                             if step is not PROCEED:return step
-                        if not self._read_checkpoint_can_settle(run):return True
-                        if not run.handled:service._settle_worker_outcome(run)
-                    if service._finish_work(run) is False:return True
-                except Exception as exc:
-                    # #893: a claimed Work must not be stranded by an untyped phase failure.
-                    if service._fail_work(run,exc) is False:return True
+                        if not run.handled:
+                            for phase in (service._prepare_worker_turn,service._run_worker_attempts):
+                                step=phase(run)
+                                if step is not PROCEED:return step
+                            if not self._read_checkpoint_can_settle(run):return True
+                            if not run.handled:service._settle_worker_outcome(run)
+                        if service._finish_work(run) is False:return True
+                    except Exception as exc:
+                        # #893: a claimed Work must not be stranded by an untyped phase failure.
+                        if service._fail_work(run,exc) is False:return True
+                except BaseException as exc:
+                    run.exiting=not isinstance(exc,Exception)
+                    raise
                 finally:
                     try:service._settle_work_judgments(run)
                     finally:
@@ -221,6 +234,12 @@ class WorkExecutor:
         return True
 
     def _fail_work_terminal(self, run):
+        ledger = getattr(run.work_budget, 'ledger', None)
+        epoch = run.job.get('read_checkpoint_resume', ledger.epoch if ledger is not None else None)
+        with self.service.store.read_checkpoint_writer(run.job['id'], epoch):
+            return self._fail_work_terminal_fenced(run)
+
+    def _fail_work_terminal_fenced(self, run):
         """Last resort after a failed finalizer: commit the terminal reply, state and recoverable tail."""
         service=self.service
         job=run.job
@@ -861,7 +880,7 @@ class WorkExecutor:
                 if not self._read_checkpoint_can_settle(run, db=db):return
                 if status=='succeeded':service.record_connector_overlap(db,job['id'],tool,detail)
                 db.execute('INSERT INTO tool_events(job_id,tool,status,detail,created) VALUES (?,?,?,?,?)',(job['id'],tool,status,detail,time.time()))
-            if tool!='model':service.store.put('tool_run',{'job_id':job['id'],'tool':tool,'status':status,'detail':detail,'time':time.time()})
+                if tool!='model':service.store.put('tool_run',{'job_id':job['id'],'tool':tool,'status':status,'detail':detail,'time':time.time()},db=db)
         original_record=record
         def record(tool,status,detail):
             if status=='failed' and tool!='model':
@@ -1877,12 +1896,18 @@ class WorkExecutor:
             # answer itself says no longer suppresses or changes it.
             run.response+='\n\n'+msg('service.context_sources')+'\n'+'\n'.join(dict.fromkeys(run.context_sources))
 
-    def _read_checkpoint_can_settle(self, run, *, db=None):
+    def _read_checkpoint_can_settle(self, run, *, db=None, terminal=False):
         ledger = getattr(run.work_budget, 'ledger', None)
         epoch = run.job.get('read_checkpoint_resume', ledger.epoch if ledger is not None else None)
-        return self.service.store.read_checkpoint_can_settle(run.job['id'], epoch, db=db)
+        return self.service.store.read_checkpoint_can_settle(run.job['id'], epoch, db=db, terminal=terminal)
 
     def _finish_work(self, run):
+        ledger = getattr(run.work_budget, 'ledger', None)
+        epoch = run.job.get('read_checkpoint_resume', ledger.epoch if ledger is not None else None)
+        with self.service.store.read_checkpoint_writer(run.job['id'], epoch):
+            return self._finish_work_fenced(run)
+
+    def _finish_work_fenced(self, run):
         """Phase 7: the answer, its disclosures and the Work row, written once."""
         if not self._read_checkpoint_can_settle(run):return False
         service=self.service
@@ -1900,10 +1925,10 @@ class WorkExecutor:
         run.response=service._with_disclosures(job['id'],run.response)
         # #1486: a Work judged to have reached its outcome saves the function libraries it proposed.
         run.response=service._settle_procedures(job['id'],run.response,ws.request_met(run.outcome,goal) and goal=='reached')
-        service.record_work_sources(job['id'],run.work_sources)
         with service.store.db() as db:
             db.execute('BEGIN IMMEDIATE')
             if not self._read_checkpoint_can_settle(run, db=db):return False
+            service.record_work_sources(job['id'],run.work_sources|set(getattr(run.work_capabilities[0],'private_provenance',()) or ()),db=db)
             db.execute('INSERT INTO messages(role,content,channel,created,workspace_id,job_id,delivery_projection) VALUES (?,?,?,?,?,?,?)',
                        ('assistant',run.response,job['channel'],time.time(),job.get('workspace_id'),job['id'],
                         'system' if run.system_response else None))
@@ -1944,6 +1969,7 @@ class WorkExecutor:
             if run.outcome in ('failed','partial') and service._budget_boundary(service._attempt_stop_codes(db.execute(
                     'SELECT status,detail FROM tool_events WHERE job_id=? AND created>=?',(job['id'],run.claimed_at)).fetchall())):
                 service.store.put('budget_continue:'+job['id'],{'state':'pending'},db=db)
+            service.record_turn_provenance(job['id'],goal=service.work_goal(job['id'],run.work_capabilities[0],run.outcome),db=db)
             db.execute("UPDATE jobs SET status=?,response=?,error=?,provider=?,model=?,delivery=?,owner_cause=?,owner_verified=?,owner_note=?,goal_outcome=?,effect_state=? WHERE id=?",
                        (run.outcome,run.response,cause,run.provider,run.model,service.reply_delivery(job),spoken,observed,note,goal,effect,job['id']))
             # #308 S1: the steers the attempt whose reply this is had in hand are answered by it.
@@ -1957,9 +1983,14 @@ class WorkExecutor:
                 om.enqueue_self_review(service.store,job['id'],om.REVIEW_FAILED,db=db)
             service.owner_model.arm_terms(db,available=terms_available)
             self._record_after_work(run,db)
-        service.record_turn_provenance(job['id'],goal=service.work_goal(job['id'],run.work_capabilities[0],run.outcome))
 
     def _fail_work(self, run, exc):
+        ledger = getattr(run.work_budget, 'ledger', None)
+        epoch = run.job.get('read_checkpoint_resume', ledger.epoch if ledger is not None else None)
+        with self.service.store.read_checkpoint_writer(run.job['id'], epoch):
+            return self._fail_work_fenced(run, exc)
+
+    def _fail_work_fenced(self, run, exc):
         """Settle a still-running Work; return False when another outcome already won."""
         if not self._read_checkpoint_can_settle(run):return False
         service=self.service
@@ -2000,10 +2031,10 @@ class WorkExecutor:
         # Tool reads of a failed run are also read back from its
         # durable tool events; this records what was declared so far
         # plus the run-time labels of a worker that had started.
-        service.record_work_sources(job['id'],run.work_sources|set(getattr(run.work_capabilities[0],'private_provenance',()) or ()))
         with service.store.db() as db:
             db.execute('BEGIN IMMEDIATE')
             if not self._read_checkpoint_can_settle(run, db=db):return False
+            service.record_work_sources(job['id'],run.work_sources|set(getattr(run.work_capabilities[0],'private_provenance',()) or ()),db=db)
             # #787 review: an unknown effect recorded while the report was built still wins.
             if run.outcome=='failed' and service._work_has_unknown_effect(job['id']):
                 run.outcome,report='unknown',None
@@ -2021,21 +2052,34 @@ class WorkExecutor:
                     and db.execute("SELECT 1 FROM tool_events WHERE job_id=? AND tool IN ('subscription_engine','model') LIMIT 1",
                                    (job['id'],)).fetchone()):
                 om.enqueue_self_review(service.store,job['id'],om.REVIEW_FAILED,db=db)
+            service.record_turn_provenance(job['id'],goal=service.work_goal(job['id'],run.work_capabilities[0],run.outcome),db=db)
             self._record_after_work(run,db)
-        service.record_turn_provenance(job['id'],goal=service.work_goal(job['id'],run.work_capabilities[0],run.outcome))
 
     def _settle_work_judgments(self, run):
-        """Always: settle speculative judgments and pause the Work budget's ledger."""
+        """Settle speculative judgments; a process exit preserves a running read for recovery."""
         service=self.service
         # An unused speculative plan must finish before execution time
         # pauses; a late plan cannot spend in a subsequent host run.
         early,run.early_plan=run.early_plan,None
         service.settle_early_judgment(early)
         service.settle_early_judgment(run.early_intent)
+        if getattr(run,'exiting',False):
+            with service.store.db() as db:
+                job=db.execute('SELECT status FROM jobs WHERE id=?',(run.job['id'],)).fetchone()
+                if job and job['status']=='running' and service.store.read_checkpoint(run.job['id'],db=db):return
         if run.work_budget is not None and run.work_budget.ledger is not None:
-            run.work_budget.ledger.pause()
+            with service.store.read_checkpoint_writer(run.job['id'],run.work_budget.ledger.epoch,terminal=True):
+                run.work_budget.ledger.pause()
 
     def _after_work(self, run):
+        ledger = getattr(run.work_budget, 'ledger', None)
+        epoch = run.job.get('read_checkpoint_resume', ledger.epoch if ledger is not None else None)
+        with self.service.store.read_checkpoint_writer(run.job['id'], epoch, terminal=True):
+            with self.service.store.db() as db:
+                if not self._read_checkpoint_can_settle(run, db=db, terminal=True):return False
+                return self._after_work_fenced(run)
+
+    def _after_work_fenced(self, run):
         """After the run: the task card, browser login offer, photo cleanup and owner-decision notifications."""
         service=self.service
         job=run.job

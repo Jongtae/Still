@@ -782,7 +782,8 @@ class AgentService:
         # #619: the Main AI (Work route) chooser and per-provider API keys.
         self.main_ai=MainAiRoutes(self)
         self.decision_judge=ConversationJudgments(self.decision_engine,redactor=self.redact_judgment_text,
-                                                 checkpoint_judgment=self.read_checkpoint_judgment)
+                                                 checkpoint_judgment=self.read_checkpoint_judgment,
+                                                 checkpoint_snapshot=self.read_checkpoint_snapshot)
         self.intent_classifier=IntentClassifier(judge=self.decision_judge)
         # Owner-facing projection of blocked turns (#510). The projected
         # transcript row is also the durable Telegram delivery source.
@@ -2562,7 +2563,7 @@ class AgentService:
         # secrets' values, then the credential shapes (``redact_known_secrets`` ends with them).
         return self._redact_known_secrets(str(text or ''))[:60000]
 
-    def record_turn_provenance(self, job_id, **fields):
+    def record_turn_provenance(self, job_id, *, db=None, **fields):
         """Keep what this Work actually sent and what the worker reported.
 
         Redacted before persistence, bounded, local only; shown in developer
@@ -2604,7 +2605,7 @@ class AgentService:
                                          for text in fields['stream_errors'][:3]]
             # One transaction merges the fields into the stored record, so concurrent writers keep each other's.
             self.store.merge_turn_provenance(job_id,{**{k:v for k,v in fields.items() if v is not None},'recorded_at':time.time()},
-                                             combine=self._combine_turn_record)
+                                             combine=self._combine_turn_record,db=db)
         except Exception:
             LOG.warning('turn provenance could not be recorded job=%s',job_id)
 
@@ -2848,7 +2849,10 @@ class AgentService:
         previous_work,previous_budget=self.current_work_id,self.current_decision_budget()
         self.current_work_id=work_id
         self._work_local.budget=budget
-        try:yield
+        try:
+            ledger=getattr(budget,'ledger',None)
+            with self.store.read_checkpoint_writer(work_id,ledger.epoch if ledger is not None else None):
+                yield
         finally:
             self.current_work_id=previous_work
             self._work_local.budget=previous_budget
@@ -2921,7 +2925,8 @@ class AgentService:
         """Replace the engine behind both consumers (tests, later providers)."""
         self.decision_engine=engine
         self.decision_judge=ConversationJudgments(engine,redactor=self.redact_judgment_text,
-                                                 checkpoint_judgment=self.read_checkpoint_judgment)
+                                                 checkpoint_judgment=self.read_checkpoint_judgment,
+                                                 checkpoint_snapshot=self.read_checkpoint_snapshot)
         self.intent_classifier=IntentClassifier(judge=self.decision_judge)
 
     def record_stage(self, job_id, stage, since, db=None, **extra):
@@ -4530,7 +4535,14 @@ class AgentService:
                             confirm_broad=self._broad_confirmations(body))
             return files.projection()
 
-    def record_work_sources(self, job_id, labels):
+    def record_work_sources(self, job_id, labels, *, db=None):
+        if db is None:
+            with self.store.db() as db:
+                db.execute('BEGIN IMMEDIATE')
+                return self.record_work_sources(job_id, labels, db=db)
+        self._record_work_sources(job_id, labels, db=db)
+
+    def _record_work_sources(self, job_id, labels, *, db):
         """Widen one Work's durable source record (#605); never narrows it.
 
         Written before model use and again after the run, so a restart, a
@@ -4543,16 +4555,15 @@ class AgentService:
             # Generic private labels also describe our own write receipts. Only
             # the existing host mark propagates here; reads are marked at intake.
             if base_label(label)=='outside-content':
-                self.store.mark_outside_content(job_id,{'category':label,'operation':'inherited-context'})
+                self.store._insert_intake_source(db,job_id,self.store._outside_content_detail({'category':label,'operation':'inherited-context'}),time.time())
         try:
-            with self.lock:
-                rows=self.store.config(WORK_SOURCES_KEY,{})
-                rows=rows if isinstance(rows,dict) else {}
-                current=rows.pop(job_id,None)
-                merged=set(current if isinstance(current,list) else [])|{str(label) for label in labels if str(label).strip()}
-                rows[job_id]=sorted(merged)
-                while len(rows)>WORK_SOURCES_LIMIT:rows.pop(next(iter(rows)))
-                self.store.put(WORK_SOURCES_KEY,rows)
+            rows=self.store.config(WORK_SOURCES_KEY,{},db=db)
+            rows=rows if isinstance(rows,dict) else {}
+            current=rows.pop(job_id,None)
+            merged=set(current if isinstance(current,list) else [])|{str(label) for label in labels if str(label).strip()}
+            rows[job_id]=sorted(merged)
+            while len(rows)>WORK_SOURCES_LIMIT:rows.pop(next(iter(rows)))
+            self.store.put(WORK_SOURCES_KEY,rows,db=db)
         except Exception:
             LOG.warning('work source provenance could not be recorded job=%s',job_id)
 
@@ -5505,6 +5516,7 @@ class AgentService:
         # #671: a preparation's run is judged as this run, not as the schedule Still itself keeps.
         if prep.preparation_of(job.get('request_key')) and job.get('model')!='preparation':
             request=str(request or '')+'\n\n'+self.preparation_run_fact(job)
+        read_snapshot = self.read_checkpoint_snapshot(job['id'])
         orchestration = Orchestration(self.decision_judge,catalogue,request=request,conversation=conversation,
                              continues='\n'.join(part for part in (self.continued_exchange(job),
                                                     self.action_continuation_note(job, include_read=False)) if part),
@@ -5517,6 +5529,7 @@ class AgentService:
                              # #240: what waits for the owner, for the plan call and this Work's goal judgment.
                              awaiting_conversation=self.awaiting_in_conversation(job),
                              awaiting_work=lambda:om.awaiting_owner_text(om.work_awaiting_owner(self.store,job['id'])))
+        orchestration.read_snapshot = read_snapshot
         orchestration.read_progress = self.read_checkpoint_note(job)
         if orchestration.read_progress:
             orchestration.can_ask_location = False
@@ -5817,6 +5830,7 @@ class AgentService:
         can be checked against what the page showed.
         """
         if orchestration is None or attempt is None or not orchestration.orchestrated:return None
+        orchestration.read_snapshot = self.read_checkpoint_snapshot(job_id)
         reply_delivery=self.work_reply_delivery(self.store.job(job_id))
         if result is not None:reply_source=getattr(result,'reply_source','worker')
         # #428: a correction the owner sent while this attempt ran reaches the judgment and any re-plan,
@@ -8139,13 +8153,23 @@ class AgentService:
             return ''
         return self._redact_known_secrets(checkpoint_note(checkpoint))
 
-    def read_checkpoint_judgment(self, work_id, purpose, facts, note, call, *, budget=None):
+    def read_checkpoint_snapshot(self, work_id):
+        from .work_download import checkpoint_snapshot
+        return checkpoint_snapshot(self.store, work_id)
+
+    def read_checkpoint_judgment(self, work_id, purpose, facts, note, call, *, budget=None, snapshot=...):
         from .work_download import checkpoint_judgment
+        # Explicit None preserves an input built before a checkpoint existed.
+        if snapshot is ...:snapshot=self.read_checkpoint_snapshot(work_id)
         budget = budget or self.current_decision_budget()
         ledger = getattr(budget, 'ledger', None)
+        with self.store.db() as db:
+            if not db.execute('SELECT 1 FROM work_read_checkpoints WHERE job_id=?',(work_id,)).fetchone():
+                return call()
         if not note or ledger is None or ledger.job_id != work_id:
-            return call()
-        return checkpoint_judgment(self.store, ledger, purpose, facts, note, call, self.redact_judgment_text)
+            return None
+        return checkpoint_judgment(self.store, ledger, purpose, facts, note, call, self.redact_judgment_text,
+                                   snapshot=snapshot, eligible=self.can_resume_read_checkpoint)
 
     def action_continuation_note(self, job, *, include_read=True):
         read_checkpoint = self.read_checkpoint_note(job) if include_read else ''
