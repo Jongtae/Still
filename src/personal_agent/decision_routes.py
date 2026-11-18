@@ -1260,7 +1260,8 @@ class DecisionRoutes:
         route = self.active()
         resolved = self.service.decision_route()
         # Retained launch bindings are internal qualification evidence.
-        checks = {key: {k: v for k, v in row.items() if k != 'route'} for key, row in self._checks().items()}
+        checks = {key: ({k: v for k, v in row.items() if k != 'route'} if isinstance(row, dict) else row)
+                  for key, row in self._checks().items()}
         capabilities = self._capabilities()
         direct_config = resolved[0] if resolved else None
         explicit = self.store.config('decision_model', {})
