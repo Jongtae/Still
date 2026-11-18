@@ -435,6 +435,33 @@ class TestReadWorkEntryIntegration1007(handoff.HandoffTestCase):
         self.assertEqual(self.wire.offsets, [0, 4, 8, 0, 4, 8])
         self.release_frozen_worker(frozen)
 
+    def test_same_preview_offset_runs_again_after_fetch_advances_checkpoint(self):
+        job = self.enqueue()
+        preview = ('public_download', {'operation': 'preview', 'offset': 0})
+        self.plan = [fetch(0), fetch(4), preview, fetch(8), preview]
+        self.claim_completion()
+
+        self.assertTrue(self.service.run_one())
+
+        observations = [json.loads(row['detail'])['evidence'] for row in self.rows('tool_events', job)
+                        if row['tool'] == 'public_download' and row['status'] == 'succeeded']
+        self.assertEqual([(item['offset'], item['received']) for item in observations if 'offset' in item],
+                         [(0, 8), (0, len(DATA))])
+
+    def test_same_preview_offset_is_duplicate_at_unchanged_checkpoint(self):
+        job = self.enqueue()
+        preview = ('public_download', {'operation': 'preview', 'offset': 0})
+        self.plan = [fetch(0), preview, preview]
+        self.claim_completion()
+
+        self.assertTrue(self.service.run_one())
+
+        events = [row for row in self.rows('tool_events', job) if row['tool'] == 'public_download']
+        observations = [json.loads(row['detail'])['evidence'] for row in events if row['status'] == 'succeeded']
+        self.assertEqual([(item.get('offset'), item['received']) for item in observations], [(None, 4), (0, 4)])
+        failures = [json.loads(row['detail']) for row in events if row['status'] == 'failed']
+        self.assertEqual([(item['code'], item['ran']) for item in failures], [('duplicate_call', False)])
+
     def test_owner_intake_final_answer_and_delivery_are_each_exactly_once(self):
         job = self.enqueue(telegram=True)
         frozen = self.interrupt_after_range(job)

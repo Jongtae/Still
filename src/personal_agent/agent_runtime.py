@@ -3643,10 +3643,16 @@ class Capabilities:
   try:return exposed_strings(rows)
   except Exception:raise unverified() from None
  def source_revision(self,action,args):
-  """The resolved source revision a ``weather(location_ref)`` call is keyed on, or None (#627)."""
-  if action!='weather' or not isinstance(args,dict) or 'location_ref' not in args:return None
-  try:return self.current_context().ref_revision(args.get('location_ref'))
+  """The source identity for weather refs (#627) or download previews (#1007), if available."""
+  if not isinstance(args,dict):return None
+  try:
+   if action=='weather' and 'location_ref' in args:
+    return self.current_context().ref_revision(args.get('location_ref'))
+   if action=='public_download' and args.get('operation')=='preview':
+    checkpoint=self.store.read_checkpoint(self.job_id)
+    if checkpoint is not None:return [checkpoint['revision'],checkpoint['received']]
   except Exception:return None
+  return None
  def _location_ref_args(self,args):
   """Resolve ``weather(location_ref)`` to the admitted source, checked now (#627).
 
