@@ -12,6 +12,7 @@ from . import work_status as ws
 import json
 import time
 import traceback
+from contextlib import ExitStack
 from .messages import msg
 from .telegram_locale import owner_language
 from .work_execution import PROCEED, REDELEGATED, WorkRun
@@ -175,21 +176,40 @@ class WorkExecutor:
 
     def _run_claimed(self, job):
         service = self.service
+        budget = None
+        # An owner continuation did not get an active epoch from restart
+        # recovery. Reopen its ledger before fencing any of the run's writes.
+        if 'read_checkpoint_resume' not in job and service.store.read_checkpoint(job['id']):
+            try:
+                budget = service.work_budget(job['id'])
+            except Exception as exc:
+                LOG.warning('early work budget lookup failed job=%s kind=%s',job['id'],type(exc).__name__)
+                return self._execute_claimed(job, budget=None, retry_budget=True)
+
         def epoch():
             ledger = getattr(service.current_decision_budget(), 'ledger', None)
             return job.get('read_checkpoint_resume', ledger.epoch if ledger is not None else None)
-        with service.store.read_checkpoint_writer(job['id'], epoch):
-            return self._execute_claimed(job)
+        with service.store.read_checkpoint_writer(job['id'], budget.ledger.epoch if budget is not None else epoch):
+            return self._execute_claimed(job, budget=budget)
 
-    def _execute_claimed(self, job):
+    def _execute_claimed(self, job, *, budget=None, retry_budget=False):
         """Run one claimed Work through its phases, ending with its tail (``_after_work``)."""
         service=self.service
         run=WorkRun(job,time.time())
+        run.work_budget=budget
         run.exiting=False
+        writer_scope=ExitStack()
+
         try:
             try:
                 try:
                     try:
+                        # The ledger must reopen before the checkpoint fence
+                        # can admit writes, including the ledger's own write.
+                        if retry_budget:
+                            run.work_budget=service.work_budget(job['id'])
+                            writer_scope.enter_context(service.store.read_checkpoint_writer(
+                                job['id'],run.work_budget.ledger.epoch))
                         if service.fold_delivered_steer(job):return True
                         service.current_work_id=job['id']
                         service.record_stage(job['id'],'queue_wait',job.get('created') or run.claimed_at)
@@ -228,7 +248,8 @@ class WorkExecutor:
         finally:
             # #1261: an early plan the Work never read does not outlive it (#969).
             early,run.early_plan=run.early_plan,None
-            service.settle_early_judgment(early)
+            try:service.settle_early_judgment(early)
+            finally:writer_scope.close()
         # The result delivery is the one terminal Telegram bubble.
         # Do not append a second generic completion notification.
         return True
@@ -401,7 +422,7 @@ class WorkExecutor:
         job=run.job
         # Routing and owner-followup judgments spend this same run's
         # allowance before any worker or speculative plan can start.
-        budget=service.work_budget(job['id'])
+        budget=run.work_budget if run.work_budget is not None else service.work_budget(job['id'])
         if 'read_checkpoint_resume' in job and budget.ledger.epoch != job['read_checkpoint_resume']:
             return True
         run.work_budget=budget

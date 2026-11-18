@@ -18,7 +18,7 @@ from test_agency_loop import goal_engine
 from test_public_download_1009 import Opener, Response
 
 from personal_agent import work_download, work_mode
-from personal_agent.agent_runtime import WORK_LEDGER_KEY, WORK_STOP_KEY
+from personal_agent.agent_runtime import LedgerSuperseded, WORK_LEDGER_KEY, WORK_STOP_KEY
 from personal_agent.local_tools import PublicPageReader
 from personal_agent.public_download import PublicDownload
 from personal_agent.quickstart_store import QuickStore
@@ -223,6 +223,103 @@ class TestReadWorkEntryIntegration1007(handoff.HandoffTestCase):
     def finish_script(self):
         self.plan = [fetch(4), fetch(8), ('public_download', {'operation': 'preview', 'offset': 0})]
         self.claim_completion()
+
+    def test_budget_continue_reopens_checkpoint_and_fences_old_worker(self):
+        job = self.enqueue('read-budget-continue')
+        service = self.service
+        work_budget = service.work_budget
+        budgets = []
+
+        def limited_budget(work_id):
+            budget = work_budget(work_id)
+            budget.attempts = 1
+            budgets.append(budget)
+            return budget
+
+        self.plan = [fetch(0), fetch(4)]
+        self.text = 'The first range was read.'
+        with patch.object(service, 'work_budget', limited_budget):
+            self.assertTrue(service.run_one())
+        paused = self.store.job(job)
+        self.assertEqual(paused['status'], 'partial')
+        self.assertEqual(self.wire.offsets, [0])
+        self.assertEqual(self.staged(job), DATA[:4])
+        old_budget, = budgets
+        self.assertFalse(old_budget.ledger.counts()['active'])
+
+        offer = service.budget_continue_offer(job)
+        self.assertEqual(offer['state'], 'offered')
+        self.assertTrue(service.budget_continue_decision({'work_id': job, 'nonce': offer['nonce']})['resumed'])
+        self.assertEqual(self.store.job(job)['status'], 'queued')
+        claimed = service._claim_queued_work()
+        self.assertEqual(claimed['id'], job)
+        self.assertNotIn('read_checkpoint_resume', claimed)
+        stale_run = WorkRun(paused, self.context_clock())
+        stale_run.work_budget = old_budget
+
+        transport = service.adapter.transport
+        stale_checks = []
+
+        def check_stale_worker(*args, **kwargs):
+            if not stale_checks:
+                self.assertEqual(self.store.job(job)['status'], 'running')
+                self.assertGreater(service.current_decision_budget().ledger.epoch, old_budget.ledger.epoch)
+                with service.work_decision_scope(job, old_budget):
+                    with self.assertRaises(LedgerSuperseded):
+                        service.record_decision({'purpose': 'stale-worker'})
+                    self.assertIs(service._finish_work(stale_run), False)
+                stale_checks.append(True)
+            return transport(*args, **kwargs)
+
+        self.text = ANSWER
+        self.finish_script()
+        with patch.object(service.adapter, 'transport', check_stale_worker):
+            self.assertTrue(service.work_executor._run_claimed(claimed))
+        self.assertEqual(self.store.job(job)['status'], 'succeeded')
+        self.assertIn(ANSWER, self.store.job(job)['response'])
+        self.assertEqual(stale_checks, [True])
+        queue_waits = [e for e in self.rows('tool_events', job)
+                       if e['tool'] == 'response_timing' and json.loads(e['detail'])['stage'] == 'queue_wait']
+        self.assertEqual(len(queue_waits), 2, 'both claims record queue timing before routing')
+        self.assertEqual(self.wire.offsets, [0, 4, 8])
+        self.assertEqual(self.staged(job), DATA)
+
+    def test_budget_continue_retries_failed_early_budget_lookup(self):
+        job = self.enqueue('read-budget-lookup-failure')
+        service = self.service
+        work_budget = service.work_budget
+
+        def limited_budget(work_id):
+            budget = work_budget(work_id)
+            budget.attempts = 1
+            return budget
+
+        self.plan = [fetch(0), fetch(4)]
+        self.text = 'The first range was read.'
+        with patch.object(service, 'work_budget', limited_budget):
+            self.assertTrue(service.run_one())
+        self.assertEqual(self.store.job(job)['status'], 'partial')
+        self.assertEqual(self.staged(job), DATA[:4])
+
+        offer = service.budget_continue_offer(job)
+        self.assertTrue(service.budget_continue_decision({'work_id': job, 'nonce': offer['nonce']})['resumed'])
+        claimed = service._claim_queued_work()
+        self.assertEqual(claimed['id'], job)
+        self.assertNotIn('read_checkpoint_resume', claimed)
+        self.assertEqual(self.store.job(job)['status'], 'running')
+
+        self.text = ANSWER
+        self.finish_script()
+        with patch.object(service, 'work_budget', wraps=work_budget) as lookup:
+            def fail_first_lookup(work_id):
+                if lookup.call_count == 1:
+                    raise RuntimeError('early budget lookup failed')
+                return work_budget(work_id)
+
+            lookup.side_effect = fail_first_lookup
+            self.assertTrue(service.work_executor._run_claimed(claimed))
+        self.assertGreaterEqual(lookup.call_count, 2)
+        self.assertEqual(self.store.job(job)['status'], 'succeeded')
 
     def test_duplicate_claim_after_restart_preserves_identity_scope_and_budget(self):
         job = self.enqueue()
