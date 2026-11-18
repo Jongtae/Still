@@ -206,12 +206,12 @@ class Bundles(_LinesCase):
         self.assertEqual(sum('Owner requested result' in s['text'] for s in self.sends()),1)
         self.at(9);self.assertIsNone(self.flush())
 
-    def test_run_now_held_location_continuation_keeps_direct_delivery(self):
+    def test_legacy_run_now_held_location_continuation_keeps_direct_delivery(self):
         from test_ask_location import _LocationCase
+        from test_preparations import CHAT, GENERATION
         _,row,job=self.request_held_run()
-        ask=self.service.location_requester(job)
-        self.assertIsNotNone(ask)
-        ask('Share the current position for this run.')
+        # Recovery of a pending request persisted before #986; new runs cannot ask.
+        self.service.context_observations.open_location_request(job['id'],CHAT,GENERATION)
         with self.store.db() as db:
             db.execute("UPDATE jobs SET status='partial',response='Waiting for position' WHERE id=?",(job['id'],))
         _LocationCase.location(self)
@@ -410,27 +410,24 @@ class Bundles(_LinesCase):
         self.assertIn('notes',self.sends()[0]['text'])
         self.assertEqual(self.store.job(job['id'])['delivery'],'none')
 
-    def test_held_location_request_is_actionable_now_even_with_answer(self):
+    def test_held_run_cannot_request_location_even_with_answer(self):
+        from personal_agent.agent_runtime import ToolError
+        from personal_agent.quickstart_service import UNATTENDED_APPROVAL_TEXT
         for with_answer in (False,True):
             with self.subTest(with_answer=with_answer):
                 row,job=self.start_held_notice_run()
-                ask=self.service.location_requester(job)
-                self.assertIsNotNone(ask)
-                request=ask('Share the current position for this run.',with_answer=with_answer)
-                self.assertEqual(self.service.context_observations.request_work(request),job['id'])
-                self.assertEqual(self.sends()[0]['text'],'Share the current position for this run.')
-                self.assertTrue(self.sends()[0]['reply_markup']['keyboard'][0][0]['request_location'])
+                self.assertIsNone(self.service.location_requester(job))
+                with self.assertRaises(ToolError) as caught:
+                    self.service.request_current_location(job['id'],'Where are you?',with_answer=with_answer)
+                self.assertEqual((caught.exception.code,str(caught.exception),caught.exception.ran),
+                                 ('unattended_run',UNATTENDED_APPROVAL_TEXT,False))
+                self.assertEqual(self.sends(),[])
+                with self.store.db() as db:
+                    self.assertEqual(db.execute('SELECT count(*) FROM context_location_requests').fetchone()[0],0)
                 self.assertIsNone(self.store.config(self.service.LOCATION_OFFER_PREFIX+job['id']))
                 self.assertEqual((self.store.job(job['id'])['channel'],self.store.job(job['id'])['delivery']),('web','none'))
-                with self.store.db() as db:
-                    db.execute("UPDATE jobs SET status='partial',response='Waiting for position' WHERE id=?",(job['id'],))
-                from test_ask_location import _LocationCase
-                _LocationCase.location(self)
-                continued=self.store.job(self.service.preparations.get(row['id'])['last_run_job_id'])
-                self.assertNotEqual(continued['id'],job['id'])
-                self.assertEqual((continued['channel'],continued['chat_id']),('web',None))
+                self.finish_held_notice_run(row,job)
                 self.telegram.clear()
-                self.finish_held_notice_run(row,continued)
                 self.now+=86400
 
     def test_held_memory_candidate_request_is_sent_without_releasing_report(self):

@@ -113,6 +113,15 @@ def answerable_work(job):
             and not isinstance(chat_id, bool))
 
 
+def can_request_location(job):
+    """A paired chat can answer a location question only in attended Work (#986).
+
+    Scheduled runs and their continuations keep their preparation provenance
+    even when they have a chat destination; they must never wait for an answer.
+    """
+    return answerable_work(job) and preparation_of(job.get('request_key')) is None
+
+
 def _number(value):
     """A finite real number; bool, NaN and Infinity are not coordinates."""
     if isinstance(value, bool) or not isinstance(value, (int, float)):

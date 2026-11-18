@@ -29,7 +29,7 @@ from .skills import SkillBinding, SkillLibrary
 from .connection_slots import relayed as relayed_slots
 from .cli_browser_relay import (RELAYED_INFORMATION_USE, RELAYED_LINES, RELAYED_LOCATION_REQUEST, RELAYED_OWNER_UPDATE, RELAYED_PREPARATIONS, RELAYED_SETTINGS,
                                 SECRET_REDACTION, RelayClient, unused_browser_factory)
-from .context_observations import answerable_work
+from .context_observations import can_request_location
 from .local_tools import LocalTools
 from .search_providers import ProviderRegistry
 from .quickstart_store import QuickStore
@@ -508,11 +508,11 @@ def serve(data, job_id, provenance=(), native_search=False, profile=BOUNDED_PROF
                                 preparations=RELAYED_PREPARATIONS if relay is not None else None,
                                 # #798: a placeholder that lists entrusted_line; its calls go to the service.
                                 lines=RELAYED_LINES if relay is not None else None,
-                                # ask_location only for a Work from the paired Telegram chat, as on the direct route.
+                                # ask_location only for attended Work from the paired chat, as on the direct route.
                                 # #407: tell_owner only for a Work that showed the owner a plan preview, as on the direct route.
                                 owner_update=(RELAYED_OWNER_UPDATE if relay is not None and store.shown_preview(job_id) else None),
                                 location_request=(RELAYED_LOCATION_REQUEST if relay is not None
-                                                  and answerable_work(store.job(job_id)) else None),
+                                                  and can_request_location(store.job(job_id)) else None),
                                 # #814: a placeholder that lists the settings tools; their calls go to the service.
                                 settings=RELAYED_SETTINGS if relay is not None else None,
                                 # #826: a placeholder that lists information_use; its calls go to the service.

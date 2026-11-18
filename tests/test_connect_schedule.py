@@ -152,9 +152,9 @@ class ScheduledConnection(unittest.TestCase):
 
 
 class ScheduledLocation(unittest.TestCase):
-    def test_late_location_expires_run_before_consumed_wait_can_settle(self):
+    def test_legacy_late_location_expires_run_before_consumed_wait_can_settle(self):
         import test_ask_location as location_cases
-        from test_preparations import call, finish
+        from test_preparations import CHAT, GENERATION
         case = location_cases._LocationCase(methodName='runTest')
         case.setUp()
         self.addCleanup(case.doCleanups)
@@ -170,10 +170,11 @@ class ScheduledLocation(unittest.TestCase):
             window=(600, case.now + 60, 1))
         case.tick()
         [work] = case.runs(row['id'])
-        case.script = [{'tool_calls': [call('loc', 'ask_location', reason='Please share your current position.')]},
-                       finish('f', 'loc', summary='Please share your current position.')]
-        self.assertTrue(case.service.run_one())
-        case.service.deliver_one()
+        # Legacy persisted request from before #986; new scheduled runs cannot ask.
+        case.service.context_observations.open_location_request(work['id'], CHAT, GENERATION)
+        with case.store.db() as db:
+            db.execute("UPDATE jobs SET status='succeeded',response='Please share your current position.',delivery='sent' WHERE id=?",
+                       (work['id'],))
         [request] = case.pending()
         case.now = row['window_end'] + 1
         self.assertLess(case.now, request['expires'], 'the location itself is still answerable')
