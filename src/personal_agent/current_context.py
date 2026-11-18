@@ -115,9 +115,16 @@ def redact_known_secrets(store, text):
     The deterministic pass provenance records and the #658 profile snapshot
     already use, callable from any process holding the store (the CLI's MCP
     bridge resolves profile anchors without the service).
+
+    A bridge store carries the service's pass (``mcp_bridge.relay_store_redaction``): encrypted
+    API slot values need the owner's Keychain key, which the process a CLI starts cannot read
+    (#369).  A failed relayed call raises, so the caller withholds as before.
     """
     from .bounded_execution import SECRET_PATTERN
     text = str(text or '')
+    relayed = getattr(store, 'relayed_secret_redaction', None)
+    if callable(relayed):
+        return str(relayed(text))
     entry = _material_entry(store)
     values, ledger = entry['values'], entry['ledger']
     # #819: the same text (a prompt envelope, a recorded step) is redacted several times per Work; its result
