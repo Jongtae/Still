@@ -4322,7 +4322,8 @@ class Capabilities:
    from copy import copy
    from .public_download import PublicDownloadError
    from .work_download import WorkDownloadError, preview, receive
-   if self.readonly or self.delegated:
+   job=self.store.job(self.job_id)
+   if self.readonly or self.delegated or not job or job.get('owner_typed')!=1:
     raise ToolError('This read belongs to the foreground Work.', 'read_checkpoint_unavailable', ran=False)
    try:
     if args.get('operation')=='preview':
@@ -4337,8 +4338,11 @@ class Capabilities:
     check()
     reader=copy(self.network.page_reader)
     reader.declared=None
+    def dispatch():
+     check()
+     handed_off()
     return receive(self.store,self.job_id,self.budget.ledger,reader,args['url'],args.get('offset'),
-                   address_check=self._page_address_secret_free,guard=check)
+                   address_check=self._page_address_secret_free,before_send=dispatch,guard=check)
    except (PublicDownloadError,WorkDownloadError) as exc:
     raise ToolError(str(exc),exc.code,ran=exc.ran) from None
   if name in BROWSER_ACTIONS:

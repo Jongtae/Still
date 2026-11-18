@@ -16,7 +16,7 @@ PAYLOAD = b'verified text'
 @pytest.fixture
 def download(tmp_path, monkeypatch):
     store = QuickStore(tmp_path)
-    work_id = store.enqueue('Read the source', 'download-fixture')
+    work_id = store.enqueue('Read the source', 'download-fixture', owner_typed=True)
     with store.db() as db:
         db.execute("UPDATE jobs SET status='running' WHERE id=?", (work_id,))
     ledger = WorkLedger(store, work_id, fresh=True)
@@ -86,3 +86,29 @@ def test_network_stop_is_rechecked_after_a_chunk_arrives(download, monkeypatch):
     assert stopped.value.code == 'stopped'
     assert store.read_checkpoint(work_id) is None
     assert not (store.private / 'work-downloads').exists()
+
+
+def test_restarted_work_consumes_remaining_ranges_once(download):
+    store, work_id, old_ledger, caps, calls = download
+    previous = caps.execute('public_download', {'operation': 'fetch', 'url': URL, 'offset': 0})
+    from personal_agent.quickstart_service import AgentService
+
+    restarted_store = QuickStore(store.root)
+    service = AgentService(restarted_store)
+    service.recover_interrupted_work()
+    assert restarted_store.job(work_id)['status'] == 'queued'
+    claimed = service._claim_queued_work()
+    assert claimed['id'] == work_id
+    replacement = service.work_budget(work_id)
+    assert replacement.ledger.epoch != old_ledger.epoch
+    assert f'4 of {len(PAYLOAD)} bytes verified' in service.read_checkpoint_note(claimed)
+    new_caps = Capabilities(restarted_store, None, {}, '', work_id, lambda *args: None,
+                            network=LocalTools(), budget=replacement)
+    offset = previous['received']
+    while offset < len(PAYLOAD):
+        current = new_caps.execute('public_download', {
+            'operation': 'fetch', 'url': URL, 'offset': offset})
+        offset = current['received']
+    assert new_caps.execute('public_download', {'operation': 'preview', 'offset': 0})['content'] == PAYLOAD.decode()
+    assert [row[0] for row in calls] == [0, 4, 8, 12]
+    assert not service._claim_queued_work()

@@ -69,7 +69,7 @@ def _make_room(store, db, artifact, size):
             return
     raise WorkDownloadError('The install reached its staged read limit.', 'read_checkpoint_limit', ran=True)
 
-def receive(store, job_id, ledger, reader, url, offset, *, address_check, guard):
+def receive(store, job_id, ledger, reader, url, offset, *, address_check, before_send, guard):
     """Read one range and publish only bytes whose Work checkpoint commits."""
     if ledger is None or ledger.epoch is None:
         raise WorkDownloadError('The Work has no active read checkpoint scope.', 'read_checkpoint_unavailable')
@@ -90,7 +90,7 @@ def receive(store, job_id, ledger, reader, url, offset, *, address_check, guard)
         canonical, offset, length, etag=previous.get('etag') if previous else None,
         total=previous.get('total') if previous else None,
         source_digest=previous.get('source_digest') if previous else None,
-        address_check=address_check, before_send=guard,
+        address_check=address_check, before_send=before_send,
     )
     guard()
     checkpoint = {
