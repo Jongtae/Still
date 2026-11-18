@@ -269,8 +269,12 @@ class PreparationsService:
             # owner asked for keeps what the owner's payment autonomy allows (``self_set_run``).
             asked=bool(owner_work and service.decision_judge.explicit_preparation_request(
                 service.owner_request_words(job),summary,service.preparation_conversation(job)).outcome==JUDGMENT_YES)
-            if steered and not asked and service.store.outside_content_sources(job['id']):
-                # #968, C17 case 3: after outside content, only what the owner's own words asked for.
+            if steered and service.store.outside_content_sources(job['id']) and not (asked and self.steer_asked(
+                    job,'replace this scheduled work with: '+summary
+                    +'\nits whole instruction changed at these places:\n'
+                    +prep.hunks_text(prep.changed_hunks((self.own_running_row(job) or {}).get('goal_text'),goal)))):
+                # #968, C17 case 3: after outside content, only what the owner's own words asked for, judged
+                # over the whole replacement (every changed place of its instruction), not a display preview.
                 raise not_run(ToolError(msg('preparations.steer_not_asked'),'unattended_run'))
             accepted_by=(prep.ACCEPTED_DAY_PLAN if planning else
                          prep.ACCEPTED_OWNER_REQUEST if asked else
