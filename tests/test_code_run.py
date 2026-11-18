@@ -100,8 +100,9 @@ class Arguments(unittest.TestCase):
         text = str(caught.exception)
         self.assertIn('requests', text)
         self.assertNotIn('a==1.0', text.split('(', 2)[-1])
-        self.assertIn('==1.2.3', text)
+        self.assertIn('name==1.2.3', text)
         self.assertIn('lib_', text)
+        self.assertIn('패키지 없이 바로 import', text)
 
     def test_accepts_comma_separated_hosts_and_pins(self):
         code, packages, hosts, names, seconds = code_run._arguments(

@@ -158,6 +158,8 @@ class Storage(unittest.TestCase):
         # #983: the refusal names the tool and the library module that take this set instead.
         self.assertIn('code_run', str(caught.exception))
         self.assertIn('lib_example_broker', str(caught.exception))
+        self.assertIn('packages에 넣지 않고 import lib_example_broker', str(caught.exception))
+        self.assertIn('name==1.2.3', str(caught.exception))
 
     def test_each_kind_has_its_own_line_headed_for_its_tool(self):
         # #983: a code-run set listed under the api_request header was sent through api_request.

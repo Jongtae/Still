@@ -1184,7 +1184,8 @@ class ApiRequests:
             from .procedures import module_name
             raise ApiError(f"'{slot['name']}'은 코드 실행(code_run) 전용 비밀값 묶음이라 api_request로 보내지 않았습니다. "
                            f"code_run의 secrets에 '{slot['name']}'을 넣어 실행하세요. 이 묶음의 저장된 함수는 "
-                           f"그 실행에서 import {module_name(slot['name'])}로 가져옵니다.",
+                           f"그 실행에서 packages에 넣지 않고 import {module_name(slot['name'])}로 가져옵니다. "
+                           "외부 패키지가 필요하면 packages에 name==1.2.3 형식으로 넣으세요.",
                            'api_slot_code_only')
         method = str(args.get('method') or 'GET').upper()
         if method not in METHODS:
