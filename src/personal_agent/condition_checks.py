@@ -200,25 +200,6 @@ class CheckRunner(CodeRunner):
             self.state_out = None
         return saved
 
-    def _result(self, code, packages, hosts, outcome, requests, names=(), failed=None):
-        from .api_credentials import STATE_PLAIN_KEY, STATE_REDACT_CHARS, _strings
-        from .quickstart_store import QuickStore
-        # The captured state is not saved until admission. Protect its new values now,
-        # using the same state-value policy and literal redactor as stored credentials.
-        try:
-            state = json.loads(self.state_out or '{}')
-        except ValueError:
-            state = {}
-        if isinstance(state, dict):
-            state = {key: value for key, value in state.items() if key != STATE_PLAIN_KEY}
-        values = _strings(state, STATE_REDACT_CHARS)
-        values = sorted({*values, *(form for value in values for form in QuickStore.json_escaped_forms(value))},
-                        key=len, reverse=True)
-        outcome = {**outcome, **{key: QuickStore.redact_secret_spans(outcome.get(key), values, None)
-                                for key in ('stdout', 'stderr')}}
-        requests = [{**row, 'path': QuickStore.redact_secret_spans(row['path'], values, None)} for row in requests]
-        return super()._result(code, packages, hosts, outcome, requests, names, failed)
-
 
 class ConditionChecks:
     """The check runner of one service (#972): claim, run, then quiet, wake or count a failure."""

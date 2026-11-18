@@ -114,6 +114,20 @@ class _Base(unittest.TestCase):
         process._lines = write_state
         return process
 
+    def executing_process(self, requests=()):
+        process = FakeProcess(requests=requests)
+        original = process._lines
+
+        def execute():
+            config = process.config
+            completed = subprocess.run(config['argv'], cwd=config['workdir'], env=config['env'],
+                                       capture_output=True, text=True, timeout=10)
+            process._result = {'exit': completed.returncode, 'stdout': completed.stdout, 'stderr': completed.stderr}
+            yield from original()
+
+        process._lines = execute
+        return process
+
     def tick(self, seconds=15):
         self.now += seconds
         return self.checks.run_due()
@@ -147,25 +161,11 @@ class Setup(_Base):
                 '    json.dump(state, handle)\n'
                 'print(state["runs"])\n')
 
-        def executing_process():
-            process = FakeProcess()
-            original = process._lines
-
-            def execute():
-                config = process.config
-                completed = subprocess.run(config['argv'], cwd=config['workdir'], env=config['env'],
-                                           capture_output=True, text=True, timeout=10)
-                process._result = {'exit': completed.returncode, 'stdout': completed.stdout, 'stderr': completed.stderr}
-                yield from original()
-
-            process._lines = execute
-            return process
-
         job = self.owner_work()
         args = self.check_args(code=code, secrets='')
         # Each proving run starts empty, even after the same code has written to the file.
         for _ in range(2):
-            process = executing_process()
+            process = self.executing_process()
             result = self.code_run(job, args, process)
             self.assertEqual(result['exit_status'], 0, result['stderr'])
             self.assertEqual(result['stdout'].strip(), '1')
@@ -180,10 +180,39 @@ class Setup(_Base):
         credentials = ApiCredentials(self.store)
         self.assertFalse(credentials.read_bound_state(cc.state_key(row['id']), spec['digest']))
         # The actual check runs that exact code, but never inherits the proving run's state.
-        self.queue.append(executing_process())
+        self.queue.append(self.executing_process())
         self.tick(0)
         self.assertEqual(cc.status_of(self.row(row['id']))['last_result'], cc.HIT)
         self.assertEqual(json.loads(credentials.read_bound_state(cc.state_key(row['id']), spec['digest'])), {'runs': 1})
+
+    def test_proving_state_secrets_are_redacted_from_output_and_request_paths_without_retention(self):
+        host = 'api.example.com'
+        token = 'freshly-obtained-"proving"-token-972'
+        plain = 'owner-visible-description-00001'
+        code = ('import json, os\n'
+                f'token = {token!r}\n'
+                f'state = {{"nested": [token], "plain": {{"description": {plain!r}}}}}\n'
+                'with open(os.environ["CHECK_STATE_FILE"], "w") as handle:\n'
+                '    json.dump(state, handle)\n')
+        known = ApiCredentials(self.store).state_values()
+        for ending, field, status in [('print(token)\nprint(json.dumps(token))\nprint(state["plain"]["description"])\n',
+                                       'stdout', 0), ('raise RuntimeError(token)\n', 'stderr', 1)]:
+            with self.subTest(field=field):
+                job = self.owner_work(field)
+                process = self.executing_process(requests=[{'method': 'GET', 'host': host, 'path': '/v1/' + token}])
+                result = self.code_run(job, self.check_args(code=code + ending, secrets='', hosts=host), process)
+                self.assertEqual(result['exit_status'], status, result['stderr'])
+                self.assertNotIn(token, result[field])
+                self.assertNotIn(json.dumps(token)[1:-1], result[field])
+                self.assertIn('[redacted]', result[field])
+                if field == 'stdout':
+                    self.assertIn(plain, result[field])
+                    self.assertIn('check_proof', result)
+                self.assertEqual(result['requests'][0]['path'], '/v1/[redacted]')
+                self.assertEqual(result['sources'], [f'https://{host}/v1/[redacted]'])
+                self.assertNotIn('state_saved', result)
+                self.assertFalse(Path(process.config['env'][cc.STATE_ENV]).exists())
+                self.assertEqual(ApiCredentials(self.store).state_values(), known)
 
     def test_a_proven_check_is_scheduled_with_its_pinned_library_and_digest(self):
         library = ProcedureLibrary(self.store)
