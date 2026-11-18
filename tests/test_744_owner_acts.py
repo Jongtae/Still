@@ -13,7 +13,7 @@ import time
 import pytest
 
 from personal_agent.api_requests import ApiRequests, save_slot
-from personal_agent.decision import (BinaryDecision, FixtureDecisionEngine,
+from personal_agent.decision import (BinaryDecision, SelectionDecision, FixtureDecisionEngine,
                                      StructuredDecision, fixture_confidence)
 from personal_agent.quickstart_service import AgentService
 from personal_agent.quickstart_store import QuickStore
@@ -725,6 +725,13 @@ def test_malformed_live_outbound_record_is_cancelled_without_stopping_settlement
 
 
 class PositiveSteerJudgment(RecordingJudgment):
+    def choose(self, context, candidates, question):
+        if context.purpose == 'running-work-steer':
+            self.seen.append((context.purpose, dict(context.facts)))
+            return SelectionDecision('decided', next(c for c in candidates if c.startswith('steer:')),
+                                     candidates, fixture_confidence())
+        return super().choose(context, candidates, question)
+
     def judge(self, context, proposition):
         self.seen.append((context.purpose, dict(context.facts)))
         return BinaryDecision('decided', context.purpose == 'running-work-steer', fixture_confidence())
@@ -822,7 +829,7 @@ def test_owner_typed_surface_message_still_steers_running_work(service, paired, 
     typed = next(j for j in service.store.jobs() if j['message'] == text)
     assert typed['owner_typed'] == 1
     assert calls['consider'] == [(typed['id'], text)]
-    assert calls['judge'] == [(running, typed['id'], text)]
+    assert calls['judge'] == [([running], typed['id'], text)]
     with service.store.db() as db:
         row = db.execute('SELECT source_job_id,content FROM work_steers WHERE job_id=?', (running,)).fetchone()
         assert row['source_job_id'] == typed['id'] and row['content'] == text
@@ -838,7 +845,7 @@ def test_owner_typed_telegram_message_still_steers_running_work(service, monkeyp
     typed = next(j for j in service.store.jobs() if j['id'] != running)
     assert typed['owner_typed'] == 1
     assert calls['consider'] == [(typed['id'], text)]
-    assert calls['judge'] == [(running, typed['id'], text)]
+    assert calls['judge'] == [([running], typed['id'], text)]
     assert text in claim_owner_steers(service.store, running)
 
 

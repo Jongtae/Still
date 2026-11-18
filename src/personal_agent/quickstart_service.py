@@ -6388,12 +6388,9 @@ class AgentService:
     def acknowledge_long_work(self, now=None):
         """Acknowledge Work the owner is waiting on, with the smallest native surface.
 
-        Short Work answers in a single bubble, so nothing is sent when a
-        request arrives.  Running Work gets Telegram-native presence only
-        (`typing…`, then an ephemeral draft with Stop; see
-        `present_waiting_work`, #581) - never a "processing" bubble.  Work
-        still *queued* behind another request shows only the 👀 on the
-        owner's message (#958): no task card and no buttons.  The owner
+        Short Work answers in a single bubble. Running Work and queued owner
+        Work get the surface's standard waiting state (`present_waiting_work`,
+        #581, #970 D6), never a processing card. The owner
         withdraws a queued Work in words (`cancel_focused_work`) or with
         Telegram's native Stop (`ingest_stop`).  Runs on its own thread, so
         a blocking model call cannot suppress it.  Returns the ids of queued
@@ -6405,7 +6402,6 @@ class AgentService:
         paired=[(surface,surface.pairing()) for surface in self.surfaces]
         paired=[(surface,pairing) for surface,pairing in paired if pairing is not None]
         if not paired:return []
-        self.present_waiting_work(now=now)
         acknowledged=[]
         for surface,pairing in paired:
             with self.store.db() as db:
@@ -6421,6 +6417,7 @@ class AgentService:
                     state=self.presence.setdefault(job['id'],WaitState())
                     if self._react_received(job,state):
                         acknowledged.append(job['id'])
+        self.present_waiting_work(now=now)
         return acknowledged
 
     # --- PRESENCE-TG-01 / #581: native conversation presence --------------------
@@ -6636,20 +6633,21 @@ class AgentService:
             if pairing is None:continue
             capabilities=conversation.capabilities
             with self.store.db() as db:
-                rows=db.execute("SELECT id,message FROM jobs WHERE channel=? AND chat_id=? AND status='running' ORDER BY created",
+                rows=db.execute("SELECT id,message FROM jobs WHERE channel=? AND chat_id=? "
+                                "AND (status='running' OR (status='queued' AND owner_typed=1)) ORDER BY created",
                                 (pairing.channel,pairing.owner)).fetchall()
             for row in rows:
                 if not self.is_natural_language(row['message']):continue
                 with self.lock:
                     job=self.store.job(row['id'])
-                    if not job or job['status']!='running' or not conversation.owns(job):continue
+                    if not job or not ws.is_active(job['status']) or not conversation.owns(job):continue
                     state=self.presence.setdefault(job['id'],WaitState())
                     if state.stopped:continue
                     # #835: 👀 as soon as the Work runs, before its first decision.
                     if self._react_received(job,state):continue
                 with self.lock:
                     job=self.store.job(row['id'])
-                    if not job or job['status']!='running' or not conversation.owns(job):continue
+                    if not job or not ws.is_active(job['status']) or not conversation.owns(job):continue
                     state=self.presence.get(job['id'])
                     if state is None or state.stopped:continue
                     if capabilities.wait_status:
@@ -9361,13 +9359,7 @@ class AgentService:
             return None
 
     def consider_steer(self, task_id, text):
-        """Ask, off the poll thread, whether a message queued behind a running Work steers it (#999).
-
-        Only the owner's Judgment AI decides (``steers_running_work``); a yes
-        hands the message to that running Work, which passes it to its worker
-        with the next tool result. A no may get a tool-less Main AI side answer;
-        unavailable leaves the message queued to run as its own Work afterwards.
-        """
+        """Judge steer/beside/wait off the poll thread, reserving the message (#970 D6)."""
         # ``current_work_id`` is per thread (#826) and this runs on the poll thread, so the
         # running Work is read from the store.  #970: several Works may run, each in its own
         # lane; a command Still answers itself is never steered, nor steered into (D2a).
@@ -9381,22 +9373,23 @@ class AgentService:
             if not current or current['status']!='queued':return False
             rows=db.execute("SELECT id FROM jobs WHERE status='running' AND chat_id IS ? AND channel=? AND id!=? ORDER BY created DESC",
                             (job.get('chat_id'),job.get('channel'),task_id)).fetchall()
-            running=next((row['id'] for row in rows if row['id'] not in commands),None)
-            if running is None:return False
+            running=[row['id'] for row in rows if row['id'] not in commands][:self.work_lanes]
+            if not running:return False
             with self.side_answer_lock:
                 if task_id in self.steer_messages:return False
                 self.steer_messages.add(task_id)
-        # #308 S1: the running Work's finish guard waits (bounded) for this judgment.
-        with self.steer_judged:self.steer_judging[running]+=1
+            # #308 S1: each running Work's finish guard waits (bounded) for this judgment.
+            with self.steer_judged:
+                for work_id in running:self.steer_judging[work_id]+=1
         def judge():
-            try:self.judge_steer(running,task_id,text)
+            try:self.judge_steer(running if self.work_lanes>1 else running[0],task_id,text)
             finally:
                 with self.side_answer_lock:self.steer_messages.discard(task_id)
-                self._steer_judgment_done(running)
+                for work_id in running:self._steer_judgment_done(work_id)
         try:self.steer_spawn(judge)
         except Exception:
             with self.side_answer_lock:self.steer_messages.discard(task_id)
-            self._steer_judgment_done(running)
+            for work_id in running:self._steer_judgment_done(work_id)
             raise
         return True
 
@@ -9408,13 +9401,30 @@ class AgentService:
 
     def judge_steer(self, running_id, task_id, text):
         try:
-            job=self.store.job(running_id)
-            if not job or job.get('status')!='running':return False
-            judged=self.decision_judge.steers_running_work(job.get('message') or '',text,
-                                                           shown_plan=self.store.shown_preview(running_id))
-            if judged.outcome==JUDGMENT_NO:
-                return self.start_side_answer(job,task_id)
-            if judged.outcome!=JUDGMENT_YES:return False
+            if isinstance(running_id,list):
+                running=[job for work_id in running_id if (job:=self.store.job(work_id)) and job['status']=='running']
+                if not running:return False
+                judged=self.decision_judge.steers_running_work([
+                    {'id':job['id'],'message':job['message'],'shown_plan':self.store.shown_preview(job['id'])}
+                    for job in running],text)
+                if judged.outcome=='beside':
+                    with self.store.db() as db:
+                        db.execute('BEGIN IMMEDIATE')
+                        source=db.execute('SELECT status,owner_typed FROM jobs WHERE id=?',(task_id,)).fetchone()
+                        if not source or source['status']!='queued' or source['owner_typed']!=1:return False
+                        db.execute('INSERT INTO tool_events(job_id,tool,status,detail,created) VALUES (?,?,?,?,?)',
+                                   (task_id,STEER_EVENT,'beside','{}',time.time()))
+                    return True
+                if judged.outcome!='steer' or judged.value not in {job['id'] for job in running}:return False
+                running_id=judged.value
+            else:
+                job=self.store.job(running_id)
+                if not job or job.get('status')!='running':return False
+                judged=self.decision_judge.steers_running_work(job.get('message') or '',text,
+                                                               shown_plan=self.store.shown_preview(running_id))
+                if judged.outcome==JUDGMENT_NO:
+                    return self.start_side_answer(job,task_id)
+                if judged.outcome!=JUDGMENT_YES:return False
             with self.store.db() as db:
                 db.execute('BEGIN IMMEDIATE')
                 # #308 S1: read under the write lock the finish guard closes with, so a steer is

@@ -765,13 +765,28 @@ class ConversationJudgments:
                         source=decision.confidence.provider or decision.outcome)
 
     def steers_running_work(self, running_request, utterance, shown_plan=''):
-        """Is ``utterance`` meant for the Work still running on ``running_request`` (#999)?
+        """Route an owner message against running Work (#999, #970 D6).
 
-        Both texts are the owner's own words; ``shown_plan`` (#407) is the plan
-        preview the owner was shown before that Work started, when there was one.
-        Unavailable or unknown leaves the message to run as its own Work
-        afterwards, as before.
+        A list supplies the conversation's running Works for the three-way
+        choice. A single request retains the single-lane binary/side-answer
+        contract. Unknown never releases a queued message to another lane.
         """
+        if isinstance(running_request, list):
+            facts={'owner_message':utterance}
+            candidates=['beside','wait']
+            for work in running_request:
+                work_id=work['id']
+                candidates.append('steer:'+work_id)
+                facts['request:'+work_id]=work.get('message') or ''
+                if work.get('shown_plan'):facts['shown_plan:'+work_id]=work['shown_plan']
+            context=self._context('running-work-steer',facts,uncut='owner_message')
+            decision=self.engine.choose(context,tuple(candidates),prompt('steers_running_works'))
+            choice=self.policy.selection(decision)
+            # Validate against the host's candidates, even for a faulty adapter.
+            if choice not in candidates:return Judgment('wait',source=decision.outcome)
+            if choice.startswith('steer:'):
+                return Judgment('steer',value=choice[len('steer:'):],source=decision.confidence.provider or decision.outcome)
+            return Judgment(choice,source=decision.confidence.provider or decision.outcome)
         context = self._context('running-work-steer',
                                 {'running_request': running_request, 'owner_message': utterance,
                                  **({'shown_plan': shown_plan} if shown_plan else {})},

@@ -21,7 +21,7 @@ from personal_agent import mcp_bridge, quickstart_service
 from personal_agent.agent_runtime import STEER_DRAFT_LEAD, STEER_EVENT, STEER_LEAD, claim_owner_steers
 from personal_agent.orchestrator import (EVENT_TOOL as ORCHESTRATION_EVENT, EVALUATED, NOT_REACHED, STEER_CONTINUED,
                                          STOP_STEER, Attempt, Catalogue, Orchestration)
-from personal_agent.decision import OUTCOME_DECIDED, BinaryDecision, FixtureDecisionEngine, fixture_confidence
+from personal_agent.decision import OUTCOME_DECIDED, BinaryDecision, SelectionDecision, FixtureDecisionEngine, fixture_confidence
 from personal_agent.messages import msg
 from personal_agent.quickstart_service import STEER_FOLDED_TEXT, STEER_NOT_APPLIED, STEER_SECOND_PASS_TEXT
 from personal_agent.telegram_locale import translate
@@ -44,7 +44,12 @@ def steer_engine(steers):
         if context.purpose == 'running-work-steer' and steers is not None:
             return BinaryDecision(OUTCOME_DECIDED, steers, fixture_confidence())
         return None
-    return FixtureDecisionEngine(judge=judge)
+    def choose(context, candidates, question):
+        if context.purpose == 'running-work-steer' and steers is not None:
+            choice = next(c for c in candidates if c.startswith('steer:')) if steers else 'wait'
+            return SelectionDecision(OUTCOME_DECIDED, choice, candidates, fixture_confidence())
+        return None
+    return FixtureDecisionEngine(judge=judge, choose=choose)
 
 
 class _SteerCase(_Case):

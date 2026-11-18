@@ -2117,6 +2117,7 @@ class PreparationsService:
             text=(job.get('response') if label in (el.OUTCOME_DELIVERED,el.OUTCOME_KEPT)
                   else job.get('owner_cause') or job.get('error') or '')
             out.append({'work_id':job['id'],'at':job['created'],'outcome':label,
+                        'preparation_id':prep.preparation_of(job.get('request_key')),
                         'text':el.excerpt(service.scrub_work_text(job['id'],text))})
             if limit is not None and len(out)>=limit:break
         return out
@@ -2341,6 +2342,42 @@ class PreparationsService:
             slot=prep.slot_key(key)[len(prefix):]
             if slot.isdigit():start=max(start,float(slot))
         return start
+
+    def line_pieces_account(self, row, job):
+        """#938 (D4): what the periodic account of ``row`` is told about the line's pieces, or ``''``.
+
+        The account's own outcomes show only the newest runs; a line done in pieces may have run many
+        more since the last account.  This counts every piece run of the period by what came of it
+        (``line_outcomes``) and names the pending piece's due time.  Counts only; no new store.
+
+        The period is bounded by observed times on both ends, so a late account counts no run twice:
+        from when the account's previous run started to when this run started (``jobs.created``).
+        """
+        line_id=row['line_id']
+        rows=self.line_rows(line_id)
+        pieces={item['id'] for item in rows if item.get('origin')==prep.ORIGIN_LINE_PIECE}
+        if not pieces:return ''
+        current=prep.slot_key(job['request_key'])
+        with self.service.store.db() as db:
+            runs=[dict(item) for item in db.execute('SELECT request_key,created FROM jobs WHERE request_key LIKE ?',
+                                                    (prep.REQUEST_KEY_PREFIX+row['id']+':%',))]
+        since=max((item['created'] for item in runs if prep.slot_key(item['request_key'])!=current),default=row['created_at'])
+        until=job['created']
+        ran=[item for item in self.line_outcomes(line_id,exclude=job['id'],limit=None)
+             if item['preparation_id'] in pieces and since<=item['at']<until]
+        # Only a scheduled piece starts (``Preparations.start``); a paused one waits for the owner (as ``line_entry``).
+        pending=min((item for item in rows if item['id'] in pieces and item['state']==prep.STATE_SCHEDULED),
+                    key=lambda item:item['due_at'],default=None)
+        paused=any(item['id'] in pieces and item['state']==prep.STATE_PAUSED for item in rows)
+        if not ran and pending is None and not paused:return ''
+        counts={label:sum(1 for item in ran if item['outcome']==label)
+                for label in (el.OUTCOME_DELIVERED,el.OUTCOME_KEPT,el.OUTCOME_FAILED,el.OUTCOME_OPEN)}
+        text=msg('lines.account_pieces',count=len(ran),**counts)
+        if pending is not None:
+            text+=' '+msg('lines.account_next_piece',at=prep.local_text(pending['due_at'],pending['timezone']))
+        elif paused:
+            text+=' '+msg('lines.account_piece_paused')
+        return text
 
     # -- #968: a scheduled run revises its own plan ---------------------------------------------
 
@@ -2583,6 +2620,7 @@ class PreparationsService:
         outcomes=self.line_outcomes(row['line_id'],exclude=job['id'])
         if row.get('origin')==prep.ORIGIN_LINE_ACCOUNT:
             lead=msg('lines.account_input')
+
             since=self.account_period_start(row,exclude=job.get('request_key'))
             counts=[(item,service.condition_checks.counts_since(item,since)) for item in self.line_rows(row['line_id'])
                     if item.get('check_spec')]
@@ -2590,6 +2628,8 @@ class PreparationsService:
                 # #972 D7: the line's check runs and wakes since the last account (owner-local days).
                 lead+='\n'+'\n'.join(msg('checks.account_line',title=service._redact_known_secrets(prep.owner_title(item)),
                                            runs=runs,wakes=wakes) for item,(runs,wakes) in counts)
+            pieces=self.line_pieces_account(row,job)
+            if pieces:lead+='\n'+pieces
         else:
             lead=msg('lines.run_input')
             # #938 (D2): a run that may continue its line in pieces is told how, in one general sentence.

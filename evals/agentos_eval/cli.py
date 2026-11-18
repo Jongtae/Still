@@ -536,6 +536,8 @@ def main(argv=None):
         else:
             regression.add_argument('--terms',type=Path,required=True,help='terms recording (.json or .json.gz)')
             regression.add_argument('--plans',type=Path,required=True,help='plans recording (.json or .json.gz)')
+            regression.add_argument('--held-plan',action='store_true',
+                help='hold each recorded plan fixed while the current product recomputes inventories and the gate')
     judgments = sub.add_parser('judgments', help='measure shipped judgments (#42)')
     actions = judgments.add_subparsers(dest='action', required=True)
     from .judgments import DEFAULT_CASES

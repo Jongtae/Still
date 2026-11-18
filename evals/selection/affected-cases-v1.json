@@ -57,7 +57,7 @@
     },
     {
       "id": "role-steers_running_work",
-      "match": {"propositions": ["steers_running_work", "STEER_PROPOSITION"], "prompt_fragments": ["steers_running_work"], "paths": ["src/personal_agent/prompts/steers_running_work.md"]},
+      "match": {"propositions": ["steers_running_work", "STEER_PROPOSITION"], "prompt_fragments": ["steers_running_work", "steers_running_works"], "paths": ["src/personal_agent/prompts/steers_running_work.md", "src/personal_agent/prompts/steers_running_works.md"]},
       "select": [{"set": "judgments", "roles": ["steers_running_work"]}],
       "reason": "This instruction or proposition is exercised by the steers_running_work judgment cases."
     },
