@@ -2666,7 +2666,7 @@ def page_load_only(action,detail,status=None):
 
  ``detail`` is the call's recorded event detail.  ``browser_open`` qualifies
  on its declaration: it navigates by URL and submits nothing and presses
- nothing.  #899: a click or typing step qualifies on its declaration while it
+ nothing; so does a click Still ran as opening the link's address (#971).  #899: a click or typing step qualifies on its declaration while it
  runs (``status`` ``running``), and once it ``succeeded`` only when its
  evidence shows Still observed no non-GET form submission and no spent owner
  approval (``browser_session.observe_step``); #1496: a step that timed out, on the
@@ -2681,6 +2681,8 @@ def page_load_only(action,detail,status=None):
   if status=='running':return True
   evidence=detail.get('evidence') if isinstance(detail.get('evidence'),dict) else {}
   # #1496: a step that timed out carries the same observation on its failure record.
+  # #971: a link press run as opening its address (``link_opened``) is a browser_open of it.
+  if status=='succeeded' and evidence.get('link_opened') is True:return True
   seen=evidence.get('observed_step') if status=='succeeded' else detail.get('observed_step') if status=='failed' else None
   return isinstance(seen,dict) and seen.get('posted') is False and seen.get('approved') is False
  # #1216: an API call Still classified read/navigate (a GET/HEAD) changed nothing either.
@@ -5363,6 +5365,7 @@ def _evidence_detail(name,result):
            'element_count':len(result.get('elements',[])),'characters':len(result.get('text','')),
            'redacted_values':int(result.get('redacted_values') or 0),'found':result.get('found')}
   if result.get('layout')=='desktop':summary['layout']='desktop'   # #572
+  if result.get('link_opened') is True:summary['link_opened']=True   # #971: a press run as opening the link's address
   signed=result.get('provider_sign_in')
   if isinstance(signed,dict) and signed.get('state') in ('available','returned','unconfirmed'):
    # #636: the site and the provider host a re-sign-in went through (hosts only), for the receipt and the audit.

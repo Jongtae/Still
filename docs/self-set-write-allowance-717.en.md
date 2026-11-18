@@ -52,6 +52,14 @@ form that cannot be identified cannot receive an exact approval and is refused.
 A run without a current paired conversation also refuses a write requiring
 approval; it cannot manufacture an owner confirmation.
 
+A plain link press is a navigation (#971). When the snapshot measured the target
+as a navigating link (`browser_session.link_address`: the worker's `nav_link`, an
+http(s) address, no forwarding label, no payment field) and the step declares
+read or navigate, the gate answers without a judgment or ticket and the session
+opens that address through `browser_open`. The link is not pressed, so a page
+handler cannot add an effect. Payment, commit and guarded-submit floors are
+checked first and are unchanged. Every other press keeps the judgment.
+
 Judgment may yield while inputs change. API authorization therefore precedes
 the existing final credential/revision check and dispatch claim. A self-set
 browser press rechecks the bound form/page state after judgment and refuses a

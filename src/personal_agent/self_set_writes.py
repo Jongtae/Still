@@ -175,7 +175,11 @@ def _plain_or_json(value):
 
 
 def authorize(service, job, binding, connection, operation, target, names=(), *, effect=None, description=None, request=True, values=None,
-              note='', require_note=False):
+              note='', require_note=False, link=False):
+    """``link`` (#971): the browser session's own snapshot found the press target a plain
+    link (``browser_session.link_address``) under no payment/commit/submit floor, and the
+    step declares reading or navigating.  Where presses are narrowed the answer is then
+    ``FOLLOW_LINK``: the session opens that address like ``browser_open``, unjudged."""
     barrier = service.__dict__.get('_native_intake_barriers', {}).get(job['id'])
     awaiting = barrier is not None and barrier.pending()
     browser_press = connection is None and operation in ('browser_click', 'browser_type')
@@ -199,6 +203,10 @@ def authorize(service, job, binding, connection, operation, target, names=(), *,
     # judgment, never the owner's request/body, to classify a non-floor press.
     # Known non-browser writes need no additional judgment in owner Works.
     if (marked or awaiting) and browser_press or effect is None and service.self_set_run(job):
+        if link is True and connection is None and operation == 'browser_click':
+            # #971: a GET navigation, opened like browser_open; no judgment and no ticket.
+            from .browser_session import FOLLOW_LINK
+            return FOLLOW_LINK
         try:
             metadata=operation
             if connection is None:

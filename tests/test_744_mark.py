@@ -371,7 +371,8 @@ class TestMarkedScheduled(scheduled._Runs):
         from personal_agent.messages import msg
         from test_browser_session import FakeDriver
         _,job=self.started(accepted_by=prep.ACCEPTED_DREAM)
-        driver=FakeDriver(pages={'/read':'<title>Reading</title><a href="/more">More</a>'},
+        # #971: a plain link is a navigation and is opened unjudged; a button keeps the judgment.
+        driver=FakeDriver(pages={'/read':'<title>Reading</title><button type="button">More</button>'},
                           origin='https://notes.test')
         caps=Capabilities(self.store,None,{},'',job['id'],lambda *args:None,
                           browser=lambda:driver,browser_approvals=self.service.browser_approvals_for(job))
@@ -381,7 +382,7 @@ class TestMarkedScheduled(scheduled._Runs):
         with mock.patch.object(self.service.decision_judge,'connector_effect',return_value='payment') as decide:
             with pytest.raises(ToolError) as refused:
                 caps.execute('browser_click',{'target':str(target),'effect':'navigate'})
-        decide.assert_called_once_with('browser_click @ https://notes.test',['More','link'],'',job['id'])
+        decide.assert_called_once_with('browser_click @ https://notes.test',['More','button'],'',job['id'])
         assert (refused.value.code,str(refused.value))==('unattended_run',msg('write_allowances.payment'))
         assert refused.value.ran is False
         assert not any(row[0]=='click' for row in driver.log)

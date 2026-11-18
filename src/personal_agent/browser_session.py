@@ -468,6 +468,38 @@ def login_form_present(elements, redirected=False):
     return False
 
 
+#: #971: what the self-set/marked write gate answers for a press that is a plain link:
+#: the session opens the link's address as ``browser_open`` instead of pressing it.
+FOLLOW_LINK = 'follow_link'
+#: The worker cuts an address at this length; an address that long may be cut, so it is not followed.
+LINK_ADDRESS_LIMIT = 2000
+
+
+def link_address(element):
+    """#971: the address a press on ``element`` would open, when it is a plain link; else ''.
+
+    Only Still's own snapshot decides: the worker's ``nav_link`` measurement (an ``<a>``
+    with a non-empty http(s) address, no ``role=button`` and no press handler the DOM
+    exposes, #899), a pressable control whose ``<label>`` forwards no press, and not a
+    payment field.  The page's text, the element's name and the model's words play no
+    part, so page text cannot make a button read as a link.  HTML defines activating
+    such a link as following it (a GET navigation to ``href``); the session then does
+    exactly that by opening the address, so a handler the DOM does not expose
+    (``addEventListener``) never runs on this press.  Whether it carries a payment or
+    commit signal is the caller's floor and is checked before this.
+    """
+    href = str(element.get('href') or '')
+    if (element.get('tag') != 'a' or element.get('nav_link') is not True or element.get('pressable') is False
+            or element.get('label_form') is not None or element.get('payment') or element.get('guarded')
+            or element.get('forwards_payment') or not href or len(href) >= LINK_ADDRESS_LIMIT):
+        return ''
+    try:
+        parts = urlsplit(href)
+    except ValueError:
+        return ''
+    return href if parts.scheme in ('http', 'https') and parts.netloc else ''
+
+
 def target_key(element):
     """The stable descriptor an approval is bound to (not the list number, which shifts)."""
     return '|'.join(str(element.get(key) or '') for key in ('role', 'name', 'tag', 'type', 'autocomplete', 'form'))
@@ -661,7 +693,10 @@ def mediate_snapshot(raw, requested_url=None):
         internal.append({**{key: element.get(key) for key in ('index', 'role', 'name', 'tag', 'type', 'autocomplete', 'form',
                                                              'label_form')},
                          'n': row['n'], 'guarded': guarded_field(element), 'payment': payment_field(element),
-                         'commit': commit_control(element), 'detail': commit_detail(element)})
+                         'commit': commit_control(element), 'detail': commit_detail(element),
+                         # #971: the worker's own measurement and the unmediated address, for ``link_address``.
+                         'nav_link': element.get('nav_link') is True, 'pressable': element.get('pressable', True) is not False,
+                         'href': str(element.get('href') or '') if element.get('tag') == 'a' else ''})
         if len(visible) >= READ_ELEMENT_LIMIT:
             break
     forms = payment_forms(elements)
@@ -1718,9 +1753,15 @@ class BrowserSession:
         write_ticket=None
         gate=getattr(self.approvals,'self_set_write',None)
         if not required and callable(gate):
+            # #971: a plain link the step declares as reading or navigating is a navigation;
+            # in a Work whose presses are narrowed the gate answers FOLLOW_LINK for it.
+            link = bool(link_address(element)) and effect in ('read', 'navigate')
             write_ticket=gate(binding,None,'browser_click',page_reference(snapshot['_page']),
                  self._write_metadata(snapshot, element),description=description,
-                 values={'url': snapshot['_page'], 'target': key, 'state': state})
+                 values={'url': snapshot['_page'], 'target': key, 'state': state},
+                 **({'link': True} if link else {}))
+            if write_ticket == FOLLOW_LINK:
+                return self._follow_link(element, snapshot)
         try:
             if write_ticket:
                 # Judgment can yield while the page changes. Dispatch only the input
@@ -1759,6 +1800,23 @@ class BrowserSession:
             page['navigated'] = True
             self._last_input = None
         return self._with_dialogs(observe_step(page, answer, approved), answer)
+
+    def _follow_link(self, element, snapshot):
+        """#971: open a plain link's address as ``browser_open`` does, instead of pressing it.
+
+        Used only where the write gate narrows presses (a Work that read outside content,
+        or a self-set unattended run).  Every check ``open`` makes applies (this computer
+        and its private network, provider sign-in, the Work's budget and Stop), and no
+        page handler runs, so the step can do no more than ``browser_open`` of that address.
+        """
+        before = page_reference(snapshot.get('url'))
+        page = self.open({'url': link_address(element), 'effect': 'navigate'})
+        # What ran is an address open, not a press; the step's record says so, and
+        # ``agent_runtime.page_load_only`` then counts it as ``browser_open`` is counted.
+        page['link_opened'] = True
+        if page_reference(page.get('url')) != before:
+            page['navigated'] = True
+        return page
 
     def _click_preview(self, snapshot, element):
         """Readable input and binding share one source, before secret redaction (#744)."""

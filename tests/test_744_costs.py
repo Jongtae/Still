@@ -17,7 +17,7 @@ from test_owner_model_dream import Dream, dream, fact, CHAT, GENERATION
 def browser(host):
     store, service, job=host
     driver=FakeDriver(pages={
-        '/read': '<title>Reading</title><a href="/more">More</a>'
+        '/read': '<title>Reading</title><a href="/more">More</a><button type="button">Expand</button>'
                  '<form method="get" action="/search"><input name="q" aria-label="Search"></form>',
         '/more': '<title>More reading</title><p>Result</p>'},origin='https://notes.test')
     caps=Capabilities(store,None,{},'',job['id'],lambda *args:None,
@@ -27,14 +27,26 @@ def browser(host):
     return store,service,job,caps,driver,page
 
 
-@pytest.mark.parametrize('judgment',['read','navigate'])
-def test_marked_link_read_needs_no_confirmation(browser, judgment):
+@pytest.mark.parametrize('effect',['read','navigate'])
+def test_marked_link_read_needs_no_confirmation(browser, effect):
     store,service,job,caps,driver,page=browser
     target=next(e['n'] for e in page['elements'] if e['name']=='More')
+    # #971: a plain link is a navigation from Still's own snapshot: opened at its address, unjudged.
+    with mock.patch.object(service.decision_judge,'connector_effect',side_effect=AssertionError('judged')):
+        caps.execute('browser_click',{'target':str(target),'effect':effect})
+    assert driver.url=='https://notes.test/more'
+    assert not any(row[0]=='click' for row in driver.log)
+    assert service._browser_request(job['id']) is None
+
+
+@pytest.mark.parametrize('judgment',['read','navigate'])
+def test_marked_press_judged_read_needs_no_confirmation(browser, judgment):
+    store,service,job,caps,driver,page=browser
+    target=next(e['n'] for e in page['elements'] if e['name']=='Expand')
     with mock.patch.object(service.decision_judge,'connector_effect',return_value=judgment) as decide:
         caps.execute('browser_click',{'target':str(target),'effect':'navigate'})
-    decide.assert_called_once_with('browser_click @ https://notes.test', ['More','link'], '',job['id'])
-    assert driver.url=='https://notes.test/more'
+    decide.assert_called_once_with('browser_click @ https://notes.test', ['Expand','button'], '',job['id'])
+    assert any(row[0]=='click' for row in driver.log)
     assert service._browser_request(job['id']) is None
 
 
@@ -51,7 +63,7 @@ def test_marked_search_enter_needs_no_confirmation(browser):
 @pytest.mark.parametrize('judgment',['reversible','irreversible','payment',None,'exception'])
 def test_marked_browser_nonread_or_failed_judgment_is_held(browser,judgment):
     store,service,job,caps,driver,page=browser
-    target=next(e['n'] for e in page['elements'] if e['name']=='More')
+    target=next(e['n'] for e in page['elements'] if e['name']=='Expand')
     kwargs={'side_effect':RuntimeError('judgment unavailable')} if judgment=='exception' else {'return_value':judgment}
     with mock.patch.object(service.decision_judge,'connector_effect',**kwargs):
         with pytest.raises(ToolError) as held:

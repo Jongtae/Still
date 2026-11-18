@@ -1160,9 +1160,9 @@ class ReturnedLoginTests(LoginHarness):
                                                          'expires': None, 'secure': True, 'http_only': True,
                                                          'same_site': None}]})
 
-    def resign_work(self, judged_effect='navigate'):
+    def resign_work(self, judged_effect='navigate', click_effect='navigate'):
         self.scripts = [Script({'tool_calls': [call('1', 'browser_open', url=f'https://{SITE}/login', effect='navigate')]},
-                               {'tool_calls': [call('2', 'browser_click', target='다른 계정으로 로그인', effect='navigate')]},
+                               {'tool_calls': [call('2', 'browser_click', target='다른 계정으로 로그인', effect=click_effect)]},
                                {'content': '주문 내역을 확인했습니다.'})]
         job_id = self.receive('주문 내역 확인해줘')
         # #744 disposition 2026-11-17: a marked Work's non-floor press is
@@ -1198,7 +1198,9 @@ class ReturnedLoginTests(LoginHarness):
         self.assertTrue(wait_until(lambda: len(self.drivers) == 2), 'the owner login window was opened')
 
     def test_unclassified_sign_in_navigation_is_held_without_losing_login_request(self):
-        job_id = self.resign_work(judged_effect=None)
+        # #971: the link declared as navigating is opened at its address unjudged (the cases
+        # above); declared as a change, the press is judged, and left unclassified it is held.
+        job_id = self.resign_work(judged_effect=None, click_effect='mutate')
         self.assertEqual(self.receipt(job_id), [])
         self.assertIsNotNone(self.service._browser_login(job_id))
         self.assertEqual(self.service._browser_request(job_id)['source_action'], 'browser_click')
