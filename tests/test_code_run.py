@@ -132,9 +132,9 @@ class RequestPolicy(unittest.TestCase):
         self.assertEqual(result['sources'], ['https://api.example.com/v1/items', 'https://api.example.com/'])
         # The sandbox never inherits the host environment, and home stays unreadable.
         self.assertEqual(set(process.config['env']),
-                         {'PATH', 'HOME', 'LANG', 'PYTHONIOENCODING', 'PYTHONDONTWRITEBYTECODE', 'CHECK_STATE_FILE'})
-        self.assertEqual(os.path.dirname(process.config['env']['CHECK_STATE_FILE']), process.config['workdir'])
-        self.assertFalse(os.path.exists(process.config['env']['CHECK_STATE_FILE']))
+                         {'PATH', 'HOME', 'LANG', 'PYTHONIOENCODING', 'PYTHONDONTWRITEBYTECODE', 'still_check_state_file'})
+        self.assertEqual(os.path.dirname(process.config['env']['still_check_state_file']), process.config['workdir'])
+        self.assertFalse(os.path.exists(process.config['env']['still_check_state_file']))
         self.assertEqual(process.config['masked'], [])
         self.assertEqual(process.config['allowedDomains'], ['api.example.com'])
         self.assertIn(os.path.realpath(os.path.expanduser('~')), process.config['denyRead'])

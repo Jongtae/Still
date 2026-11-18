@@ -449,7 +449,7 @@ SCHEDULE_PREPARATION_ARGUMENTS={
   'ended with exit status 0, sent no state change and installed no packages), plus every_seconds (15 to 43200, default 60). '
   'Still runs that code at the interval without a model until until; output on stdout wakes this preparation\'s run with '
   'it, and a run that prints nothing is quiet, so print only what the run should act on. Keep hold times and what was '
-  'already reported in the JSON object at the path in CHECK_STATE_FILE. A check only reads; the woken run acts. A run woken '
+  'already reported in the JSON object at the path in still_check_state_file. A check only reads; the woken run acts. A run woken '
   'by its check may replace it (replaces set to its own preparation id) with the same secret sets and hosts or fewer.'),
  'line':('The id of the entrusted line (entrusted_line) this preparation does the work of (#798): the line you opened for a '
   'continuing responsibility, or an existing one when the owner starts the same work again; continue it instead of opening '

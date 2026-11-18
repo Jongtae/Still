@@ -99,7 +99,7 @@ The convention is cron's (a job that prints nothing has nothing to report) and t
 
 The Nagios/Monitoring Plugins exit codes (0 OK, 1 WARNING, 2 CRITICAL) were considered and not adopted: an uncaught Python exception exits 1 and would read as WARNING.
 
-**Check state.** The run gets `CHECK_STATE_FILE`, a JSON object of at most 16 KB that the code may read and rewrite. It is kept like a set's run state: encrypted between runs, bound to the check's digest, redacted from output, and discarded when the check is replaced or ends. A hold duration ("below the level for 180 seconds") and edge triggering ("report a crossing once, not every run") are the AI's code over this state. That is the Prometheus `for` pattern without a Still rule for it. The set's own `<SET>_STATE_FILE` (a cached token, for example) is shared with Works that use the set, last writer wins, as between two Works today.
+**Check state.** The run gets `still_check_state_file`, a JSON object of at most 16 KB that the code may read and rewrite. The lowercase environment name cannot collide with a secret set's generated `[A-Z0-9_]+` names. It is kept like a set's run state: encrypted between runs, bound to the check's digest, redacted from output, and discarded when the check is replaced or ends. A hold duration ("below the level for 180 seconds") and edge triggering ("report a crossing once, not every run") are the AI's code over this state. That is the Prometheus `for` pattern without a Still rule for it. The set's own `<SET>_STATE_FILE` (a cached token, for example) is shared with Works that use the set, last writer wins, as between two Works today.
 
 ### D5. The wake and the handoff
 
@@ -158,7 +158,7 @@ A scheduled run may already cancel or pause its own preparation. With a check it
 | Code, hosts, sets, output | `code_run` bounds | Unchanged |
 | Failures before pause | 3 in a row | New, from the probe convention |
 
-**Should `MAX_SECONDS` be configurable per check? No.** A check is short by design: it reads, compares and exits. Duration conditions come from `CHECK_STATE_FILE` across runs, not from one long run. The 180-second hold from the live case becomes 12 runs at 15 seconds, each a few seconds long, instead of a two-minute run that blocks a model turn. A run that genuinely needs more than 120 seconds is not a check. Raising `MAX_SECONDS` for Work `code_run` calls is a separate question, and this design removes the case that raised it.
+**Should `MAX_SECONDS` be configurable per check? No.** A check is short by design: it reads, compares and exits. Duration conditions come from `still_check_state_file` across runs, not from one long run. The 180-second hold from the live case becomes 12 runs at 15 seconds, each a few seconds long, instead of a two-minute run that blocks a model turn. A run that genuinely needs more than 120 seconds is not a check. Raising `MAX_SECONDS` for Work `code_run` calls is a separate question, and this design removes the case that raised it.
 
 **Cost, for scale.** 10 checks at the 15-second floor are 57,600 sandbox runs a day, one at a time, and no model tokens until a hit. The live case's 14 runs used about 4 minutes of model time each.
 
@@ -198,14 +198,14 @@ External first, from primary sources read on 2026-11-18.
 - **cron with condition scripts.** cron mails a job's output only when it prints something (`MAILTO`); moreutils `chronic` prints only on failure. **Adopt** the convention: nothing printed means nothing to report (D4). cron itself has no overlap protection (`flock` is added by hand) and no failure threshold; Still adds both (D3, D9).
 - **Monitoring Plugins (Nagios, Icinga, Sensu) exit codes.** 0 OK, 1 WARNING, 2 CRITICAL, 3 UNKNOWN. **Rejected** as the hit signal: a Python exception exits 1 (D4).
 - **Kubernetes exec probes.** A command runs every `periodSeconds` (default 10, minimum 1) with `timeoutSeconds`; exit 0 is success, a timeout is a failure, and `failureThreshold` (default 3) consecutive failures act. **Adopt** timeout-as-failure and the threshold of 3 (D9).
-- **Cloud alerting.** Prometheus alerting rules: a condition must hold `for` a duration (pending, then firing), and `keep_firing_for` prevents flapping. CloudWatch alarms invoke actions only when the alarm changes state, evaluate M out of N datapoints, and offer high-resolution periods of 10 or 30 seconds. **Adopt** the semantics, but as the AI's code over `CHECK_STATE_FILE`, not as Still rules. Hold durations, M of N and edge triggering are part of the condition, and the condition is the AI's (C16). Still keeps only one wake at a time.
+- **Cloud alerting.** Prometheus alerting rules: a condition must hold `for` a duration (pending, then firing), and `keep_firing_for` prevents flapping. CloudWatch alarms invoke actions only when the alarm changes state, evaluate M out of N datapoints, and offer high-resolution periods of 10 or 30 seconds. **Adopt** the semantics, but as the AI's code over `still_check_state_file`, not as Still rules. Hold durations, M of N and edge triggering are part of the condition, and the condition is the AI's (C16). Still keeps only one wake at a time.
 - **Temporal schedules.** An overlap policy decides what happens when a run is still going at the next time; the default is to skip. **Adopt** skip (D3). No workflow framework is introduced, as in #938.
 - **Anthropic, [effective harnesses for long-running agents](https://www.anthropic.com/engineering/effective-harnesses-for-long-running-agents).** A session starts from a progress file and leaves the next session a clean state. **Adopt:** the woken run starts from the brief and the hit handoff (D5). The check itself is the harness's "do not spend a session on what a script can check".
 - **Internal.**
   - Preparations and windows (#659, #719): durable due times, slot keys, `start(immediate=True)` and the window columns are reused (D1, D5).
   - `when_needed` (#719): the model-based quiet judgment runs after every full turn. A check moves the cheap pre-filter into the AI's own code and keeps the judgment for the woken run's report.
   - `code_run` (Jongtae/agentos#1380) and its library (Jongtae/agentos#1486): the sandbox, scope, redaction and library are reused unchanged, behind one seam (`approvals=None`, a pinned library).
-  - `<SET>_STATE_FILE`: the model for `CHECK_STATE_FILE`.
+  - `<SET>_STATE_FILE`: the model for `still_check_state_file`.
   - `scheduled_work_budget` (#867), entrusted lines (#798) and pieces (#938), and the outside-content mark.
 - **Decision: Adapt.** The change opens the existing `code_run` sandbox to scheduled runs of a proven check, behind the existing preparation row. It adds columns to `preparations` (the check, its state, its next time and its counters) and one runner thread. There is no new store, dependency or framework.
 
@@ -263,7 +263,7 @@ Proposed, for the owner to accept or change:
 ## Implementation slices
 
 1. **Check runner and setup.** D1 to D5, D8 to D11: storage, the proving rule, the runner thread, the `CodeRunner` seam, the wake transaction, stop and forget, the negative tests, the contract amendments and the escalated review.
-2. **Replacing a check from the woken run** (D6) and the worker guidance as message content: one general sentence in the `schedule_preparation` description on writing a check (silence is quiet, keep hold and edge state in `CHECK_STATE_FILE`, prove it first). It names no task, site or domain (C16).
+2. **Replacing a check from the woken run** (D6) and the worker guidance as message content: one general sentence in the `schedule_preparation` description on writing a check (silence is quiet, keep hold and edge state in `still_check_state_file`, prove it first). It names no task, site or domain (C16).
 3. **Owner view** (D7): the setup notice line, the Settings entry, and the counts in the line's periodic account.
 
 Related: #659, #719, #798, #867, #938, #970, #973; Jongtae/agentos#1380 and #1486 (code runs and their library).

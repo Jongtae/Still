@@ -12,7 +12,7 @@ it.  Nothing here knows what a check is for: no service, site or domain is named
   with ``approvals=None``: every request that is not a read is refused unsent, so a check never
   acts.  Nothing due costs one indexed query; a quiet run costs no model call.
 * **Output protocol** (cron, Monitor): exit 0 with nothing on stdout is quiet; exit 0 with
-  output is a hit; any other end is a failure.  The run reads and rewrites ``CHECK_STATE_FILE``
+  output is a hit; any other end is a failure.  The run reads and rewrites ``still_check_state_file``
   (hold durations, edge triggering), kept encrypted between runs and bound to the check.
 * A **hit wakes** the row's ordinary scheduled run (``Preparations.wake``), with the output as
   its handoff, charged to the shared daily budget, at most ``DAILY_WAKES`` a day.  Three failures
@@ -170,7 +170,7 @@ class CheckRunner(CodeRunner):
 
     The differences from a Work's run: ``approvals`` is None (every request that is not a read is
     refused unsent), the libraries are the pinned versions, nothing is proposed, saved or counted on a
-    library, no hint is given, and ``CHECK_STATE_FILE`` holds the check's own state.
+    library, no hint is given, and ``still_check_state_file`` holds the check's own state.
     """
 
     HINTS = False

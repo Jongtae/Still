@@ -188,7 +188,7 @@ A condition check is the one way code runs without a Work. Design: [condition ch
   - Each named set's library is the version the proving run imported (pinned by its id), never `for_run`. A forgotten pinned version pauses the check; it never runs another version.
   - No library is proposed, saved or counted, and no library hint is given.
   - No packages.
-  - `CHECK_STATE_FILE`, a JSON object of at most 16 KB, holds the check's own state between runs. It is encrypted, bound to the check's digest, redacted like a set's run state and discarded when the check is replaced or ends.
+  - `still_check_state_file`, a JSON object of at most 16 KB, holds the check's own state between runs. It is encrypted, bound to the check's digest, redacted like a set's run state and discarded when the check is replaced or ends.
 - **Output protocol:**
   - Exit 0 with nothing on stdout is quiet.
   - Exit 0 with output is a hit, and the output wakes the preparation's run as its handoff.

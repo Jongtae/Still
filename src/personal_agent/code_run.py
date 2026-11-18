@@ -51,7 +51,8 @@ MAX_HOSTS = 16
 MAX_SECRET_SETS = 4
 OUTPUT_BYTES = 16 * 1024
 MAX_SECONDS = 120
-CHECK_STATE_ENV = 'CHECK_STATE_FILE'
+# Lowercase keeps this outside env_name's uppercase secret-set namespace, including a set named 'check'.
+CHECK_STATE_ENV = 'still_check_state_file'
 INSTALL_SECONDS = 180
 #: Grace for the runner to start its proxies and report after the code's own timeout.
 RUNNER_GRACE = 30

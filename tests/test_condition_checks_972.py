@@ -18,6 +18,7 @@ from unittest import mock
 from personal_agent import agent_runtime, condition_checks as cc, preparations as prep
 from personal_agent.agent_runtime import ToolError, outside_source, record_outside_result, result_outside_source
 from personal_agent.api_credentials import ApiCredentials
+from personal_agent.api_requests import slots
 from personal_agent.code_run import MAX_SECONDS, CodeRunner
 from personal_agent.procedures import ProcedureLibrary
 from personal_agent.quickstart_service import AgentService
@@ -154,10 +155,10 @@ class Setup(_Base):
 
     def test_stateful_code_proves_unchanged_and_starts_with_fresh_check_state(self):
         code = ('import json, os\n'
-                'with open(os.environ["CHECK_STATE_FILE"]) as handle:\n'
+                'with open(os.environ["still_check_state_file"]) as handle:\n'
                 '    state = json.load(handle)\n'
                 'state["runs"] = state.get("runs", 0) + 1\n'
-                'with open(os.environ["CHECK_STATE_FILE"], "w") as handle:\n'
+                'with open(os.environ["still_check_state_file"], "w") as handle:\n'
                 '    json.dump(state, handle)\n'
                 'print(state["runs"])\n')
 
@@ -185,6 +186,53 @@ class Setup(_Base):
         self.assertEqual(cc.status_of(self.row(row['id']))['last_result'], cc.HIT)
         self.assertEqual(json.loads(credentials.read_bound_state(cc.state_key(row['id']), spec['digest'])), {'runs': 1})
 
+    def test_check_secret_set_keeps_its_state_separate_in_proving_and_check_runs(self):
+        self.save(name='check', money=False)
+        slot = slots(self.store)['check']
+        credentials = ApiCredentials(self.store)
+        token = 'cached-set-access-token-972'
+        self.assertTrue(credentials.write_state('check', slot, json.dumps({'access_token': token, 'runs': 0})))
+        code = ('import json, os\n'
+                'set_path = os.environ["CHECK_STATE_FILE"]\n'
+                'check_path = os.environ["still_check_state_file"]\n'
+                'assert set_path != check_path\n'
+                'with open(set_path) as handle:\n'
+                '    set_state = json.load(handle)\n'
+                'with open(check_path) as handle:\n'
+                '    check_state = json.load(handle)\n'
+                'set_state["runs"] += 1\n'
+                'check_state["runs"] = check_state.get("runs", 0) + 1\n'
+                'with open(set_path, "w") as handle:\n'
+                '    json.dump(set_state, handle)\n'
+                'with open(check_path, "w") as handle:\n'
+                '    json.dump(check_state, handle)\n')
+        job = self.owner_work()
+        args = self.check_args(code=code, secrets='check')
+        process = self.executing_process()
+        result = self.code_run(job, args, process)
+        self.assertEqual(result['exit_status'], 0, result['stderr'])
+        self.assertEqual(result['state_saved'], {'check': True})
+        self.assertIn('check_proof', result)
+        self.assertNotEqual(process.config['env']['CHECK_STATE_FILE'],
+                            process.config['env']['still_check_state_file'])
+        self.assertEqual(json.loads(credentials.read_state('check', slot)), {'access_token': token, 'runs': 1})
+
+        scheduled = self.schedule(job, {**args, 'every_seconds': 15})
+        row = self.row(scheduled['preparation_id'])
+        spec = cc.spec_of(row)
+        self.assertFalse(credentials.read_bound_state(cc.state_key(row['id']), spec['digest']))
+        for check_runs in (1, 2):
+            process = self.executing_process()
+            self.queue.append(process)
+            self.tick(0 if check_runs == 1 else 15)
+            self.assertEqual(cc.status_of(self.row(row['id']))['last_result'], cc.QUIET)
+            self.assertNotEqual(process.config['env']['CHECK_STATE_FILE'],
+                                process.config['env']['still_check_state_file'])
+            self.assertEqual(json.loads(credentials.read_state('check', slot)),
+                             {'access_token': token, 'runs': check_runs + 1})
+            self.assertEqual(json.loads(credentials.read_bound_state(cc.state_key(row['id']), spec['digest'])),
+                             {'runs': check_runs})
+
     def test_proving_state_secrets_are_redacted_from_output_and_request_paths_without_retention(self):
         host = 'api.example.com'
         token = 'freshly-obtained-"proving"-token-972'
@@ -192,7 +240,7 @@ class Setup(_Base):
         code = ('import json, os\n'
                 f'token = {token!r}\n'
                 f'state = {{"nested": [token], "plain": {{"description": {plain!r}}}}}\n'
-                'with open(os.environ["CHECK_STATE_FILE"], "w") as handle:\n'
+                'with open(os.environ["still_check_state_file"], "w") as handle:\n'
                 '    json.dump(state, handle)\n')
         known = ApiCredentials(self.store).state_values()
         for ending, field, status in [('print(token)\nprint(json.dumps(token))\nprint(state["plain"]["description"])\n',
