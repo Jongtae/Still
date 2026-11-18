@@ -566,6 +566,37 @@ class CodeRunner:
         return masked, plain, set_hosts
 
     def run(self, args, *, seconds=None):
+        self._run_state_values = set()
+        try:
+            return self._redact_run_value(self._run(args, seconds=seconds))
+        except CodeRunError as exc:
+            raise CodeRunError(self._redact_run_value(str(exc)), exc.code,
+                               requires=self._redact_run_value(exc.requires)) from None
+        finally:
+            self.sent = self._redact_run_value(self.sent)
+
+    def _collect_state_values(self, paths):
+        from .api_credentials import STATE_PLAIN_KEY, STATE_REDACT_CHARS, _strings
+        for path in paths:
+            try:
+                state = json.loads(path.read_text(encoding='utf-8'))
+            except (OSError, UnicodeDecodeError, ValueError):
+                continue
+            if isinstance(state, dict):
+                state = {key: value for key, value in state.items() if key != STATE_PLAIN_KEY}
+            self._run_state_values.update(_strings(state, STATE_REDACT_CHARS))
+
+    def _redact_run_value(self, value):
+        from .current_context import redact_known_secrets
+        from .direct_message_surface import redact_provenance_values
+        from .quickstart_store import QuickStore
+        values = getattr(self, '_run_state_values', set())
+        forms = sorted({*values, *(form for item in values for form in QuickStore.json_escaped_forms(item))},
+                       key=len, reverse=True)
+        return redact_provenance_values(value, lambda text: redact_known_secrets(
+            self.store, QuickStore.redact_secret_spans(text, forms, None)))
+
+    def _run(self, args, *, seconds=None):
         # #233: first, so a run refused below never reports an earlier run's requests as its own.
         self.sent = []
         # Live 2026-10-14: a resumed Work rewrote the code that asked for approval, so the request no
@@ -619,12 +650,18 @@ class CodeRunner:
             command = prefix + (['-c', LAUNCHER] if libraries else ['main.py'])
             policy = {**{host: set() for host in hosts}, **set_hosts}
             states = self._load_states(names, workdir, plain)
-            outcome = self._session(node, runtime, workdir, command, policy, roots, timeout, requests, 'run',
-                                    masked=masked, plain=plain)
-            saved = self._save_states(states)
-            kept = self._keep_libraries(libraries, workdir, outcome, (node, runtime, prefix, policy, roots, masked, plain))
-            result = self._result(code, packages, hosts, outcome, requests, names,
-                                  state_path=Path(plain[CHECK_STATE_ENV]))
+            state_paths = [Path(plain[CHECK_STATE_ENV]), *(path for _slot, path in states.values())]
+            self._collect_state_values(state_paths)
+            try:
+                outcome = self._session(node, runtime, workdir, command, policy, roots, timeout, requests, 'run',
+                                        masked=masked, plain=plain)
+                self._collect_state_values(state_paths)
+                saved = self._save_states(states)
+                kept = self._keep_libraries(libraries, workdir, outcome, (node, runtime, prefix, policy, roots, masked, plain))
+            finally:
+                # Collect before TemporaryDirectory cleanup, including exception and unsaved-state paths.
+                self._collect_state_values(state_paths)
+            result = self._result(code, packages, hosts, outcome, requests, names)
         if saved:
             result['state_saved'] = saved
         if kept:
@@ -1133,24 +1170,10 @@ class CodeRunner:
                 except subprocess.TimeoutExpired:
                     process.kill()
 
-    def _result(self, code, packages, hosts, outcome, requests, names=(), failed=None, *, state_path=None):
-        from .api_credentials import STATE_PLAIN_KEY, STATE_REDACT_CHARS, _strings
+    def _result(self, code, packages, hosts, outcome, requests, names=(), failed=None):
         from .current_context import redact_known_secrets
-        from .quickstart_store import QuickStore
-        # #972: both proving runs and scheduled checks can obtain new secrets in CHECK_STATE_FILE.
-        # Read it before the temporary directory is discarded; redaction never persists this state.
-        try:
-            state = json.loads(state_path.read_text(encoding='utf-8') if state_path else '{}')
-        except (OSError, UnicodeDecodeError, ValueError):
-            state = {}
-        if isinstance(state, dict):
-            state = {key: value for key, value in state.items() if key != STATE_PLAIN_KEY}
-        values = _strings(state, STATE_REDACT_CHARS)
-        values = sorted({*values, *(form for value in values for form in QuickStore.json_escaped_forms(value))},
-                        key=len, reverse=True)
-        outcome = {**outcome, **{key: QuickStore.redact_secret_spans(outcome.get(key), values, None)
-                                for key in ('stdout', 'stderr')}}
-        requests = [{**row, 'path': QuickStore.redact_secret_spans(row['path'], values, None)} for row in requests]
+        outcome = self._redact_run_value(outcome)
+        requests = self._redact_run_value(requests)
         # An in_code value can appear in a request path; the log keeps it redacted like the output.
         requests = [{**row, 'path': redact_known_secrets(self.store, row['path'])} for row in requests[:200]]
         result = {'exit_status': outcome['exit_status'], 'timed_out': outcome['timed_out'],

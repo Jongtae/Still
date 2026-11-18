@@ -26,6 +26,7 @@ import json
 import logging
 import math
 import time
+import uuid
 from datetime import datetime, timedelta
 
 from . import preparations as prep
@@ -116,7 +117,11 @@ def proven_check(store, work_id, value, declared=lambda host: False):
     The run timeout is at most the interval and ``MAX_SECONDS`` (``_arguments`` already caps it), so
     a check never overlaps itself.
     """
-    code, hosts, names, timeout, every = normalize(value, declared)
+    try:
+        code, hosts, names, timeout, every = normalize(value, declared)
+    except prep.PreparationRefusal as exc:
+        from .current_context import redact_known_secrets
+        raise prep.PreparationRefusal(exc.code, redact_known_secrets(store, str(exc))) from None
     digest = check_arguments_digest(code, hosts, names, timeout)
     libraries = proof_of(store, work_id, digest)
     if libraries is None:
@@ -175,6 +180,7 @@ class CheckRunner(CodeRunner):
         super().__init__(store, record_id, approvals=None, **kwargs)
         self.pinned, self.state_text, self.state_out = pinned, state_text or '{}', None
         self._state_path = None
+        self.set_states = {}
 
     def _libraries(self, names, proposed):
         from .procedures import module_name
@@ -193,12 +199,17 @@ class CheckRunner(CodeRunner):
         return states
 
     def _save_states(self, states):
-        saved = super()._save_states(states)
+        # No secrets-file mutation before the result has a durable replay record.
+        for name, (slot, path) in states.items():
+            try:
+                self.set_states[name] = (slot, path.read_text(encoding='utf-8') if path.is_file() else '')
+            except (OSError, UnicodeDecodeError):
+                continue
         try:
             self.state_out = self._state_path.read_text(encoding='utf-8') if self._state_path and self._state_path.is_file() else ''
         except (OSError, UnicodeDecodeError):
             self.state_out = None
-        return saved
+        return {}
 
 
 class ConditionChecks:
@@ -278,6 +289,10 @@ class ConditionChecks:
         if problem:
             self._pause(row, spec, problem, now)
             return True
+        pending = self._pending(row)
+        if pending:
+            self._commit(row, spec, pending['outcome'], now, pending=pending)
+            return True
         outcome = self._run(row, spec, pinned)
         self._commit(row, spec, outcome, self.now())
         return True
@@ -335,7 +350,8 @@ class ConditionChecks:
         from .api_credentials import ApiCredentials
         state_text = ''
         try:
-            state_text = ApiCredentials(self.store).read_bound_state(state_key(row['id']), spec['digest'])
+            if not status_of(row).get('state_reset'):
+                state_text = ApiCredentials(self.store).read_bound_state(state_key(row['id']), spec['digest'])
         except Exception:
             state_text = ''
         runner = self.runner(self.store, 'check:' + row['id'], pinned=pinned, state_text=state_text,
@@ -349,10 +365,48 @@ class ConditionChecks:
         except Exception as exc:  # noqa: BLE001 - an unexpected runner failure is a failed check run, never a stopped loop
             LOG.warning('condition check run failed kind=%s', type(exc).__name__)
             return {'error': 'code_run_failed', 'reason': ''}
-        return {'result': result, 'state': getattr(runner, 'state_out', None)}
+        return {'result': result, 'state': getattr(runner, 'state_out', None),
+                'set_states': getattr(runner, 'set_states', {})}
 
-    def _commit(self, row, spec, outcome, now):
+    def _pending(self, row):
+        """Recover an unsettled result before executing code that may already see advanced state."""
+        from .api_credentials import ApiCredentials
+        token = self.store.secret(state_key(row['id']) + ':pending')
+        if not token:
+            return None
+        payload = json.loads(ApiCredentials(self.store)._cipher().decrypt(token.encode()))
+        if (spec_of(row) and payload['binding'] == spec_of(row)['digest'] and payload['updated_at'] == row['updated_at']
+                and payload['id'] != status_of(row).get('settled_result')):
+            return payload
+        return None
+
+    def _stage_result(self, row, spec, outcome, now):
+        """Write-ahead recovery for the secrets-file/SQLite boundary; no plaintext in SQLite.
+
+        Keep only state values in the standard redaction envelope. The already-redacted
+        result is encrypted alongside it, but ordinary output must not become a secret.
+        """
+        from .api_credentials import ApiCredentials, STATE_PLAIN_KEY
+        credentials = ApiCredentials(self.store)
+        states = []
+        for text in [outcome.get('state'), *(item[1] for item in outcome.get('set_states', {}).values())]:
+            try:
+                state = json.loads(text or '{}')
+            except ValueError:
+                continue
+            states.append({key: value for key, value in state.items() if key != STATE_PLAIN_KEY}
+                          if isinstance(state, dict) else state)
+        payload = {'version': 1, 'binding': spec['digest'], 'state': json.dumps(states),
+                   'id': uuid.uuid4().hex, 'updated_at': row['updated_at'], 'at': now, 'outcome': outcome}
+        key = state_key(row['id']) + ':pending'
+        # Retire a previous envelope before replacing it, preserving the existing redaction rule.
+        credentials.discard_bound_state(key)
+        self.store.secret(key, create=lambda: credentials._cipher(create=True).encrypt(json.dumps(payload).encode()).decode())
+        return payload
+
+    def _commit(self, row, spec, outcome, now, *, pending=None):
         """Settle one run: dropped when its row changed meanwhile, else quiet, a wake, or a counted failure."""
+        recovering = pending is not None
         result = outcome.get('result')
         if outcome.get('error') == 'needs_setup':
             self._pause(row, spec, PAUSED_NOT_READY, now)
@@ -376,10 +430,17 @@ class ConditionChecks:
                 # D10: the row changed during the run (paused, cancelled, replaced, run now): its result is dropped.
                 return
             status = status_of(current)
+            # This durable envelope survives a rollback after either state file is written.
+            # Its id is settled in the SAME transaction as wake admission and its handoff.
+            pending = pending or self._stage_result(current, spec, outcome, now)
+            if status.get('settled_result') == pending['id']:
+                return
             if status.pop('paused', None):
                 # The owner resumed a check that paused itself: it starts counting failures afresh.
                 status['failures'] = 0
-            self._count(status, now, db, run=True, hosts=hosts)
+            if status.get('counted_result') != pending['id']:
+                self._count(status, now, db, run=True, hosts=hosts)
+                status['counted_result'] = pending['id']
             status.update(last_run_at=now, last_result=kind)
             save_state = ended and outcome.get('state') is not None
             updates = {}
@@ -391,7 +452,7 @@ class ConditionChecks:
                 status['failures'] = 0
                 status.pop('last_error', None)
                 # The woken Work's record names what the hit run reached (D7, information use).
-                handoff = {'kind': HIT, 'at': now, 'check': spec['digest'][:16], 'output': result.get('stdout') or '',
+                handoff = {'kind': HIT, 'at': pending['at'], 'check': spec['digest'][:16], 'output': result.get('stdout') or '',
                            'reached': sorted(set(hosts)), 'secrets': spec['secrets']}
                 woken, reason = self._wake(db, current, status, now, handoff, destination, prep.STATE_SCHEDULED)
                 # An edge-triggered check may have marked this hit reported in its state.
@@ -419,7 +480,16 @@ class ConditionChecks:
                         updates['state'] = prep.STATE_PAUSED
                         self._queue_paused_notice(db, current, now)
             if save_state:
-                self._write_state(current['id'], spec, outcome['state'])
+                if self._write_state(current['id'], spec, outcome['state']):
+                    status.pop('state_reset', None)
+            if ended and (kind != HIT or woken):
+                from .api_credentials import ApiCredentials
+                for name, (slot, text) in outcome.get('set_states', {}).items():
+                    ApiCredentials(self.store).write_state(name, slot, text)
+            # A recovered result may already have advanced either file before the crash.
+            # A refused replay must retain it until admission succeeds (or the owner stops it).
+            if not (recovering and kind == HIT and not woken):
+                status['settled_result'] = pending['id']
             updates['check_status'] = json.dumps(status, sort_keys=True)
             if 'state' in updates:
                 updates['updated_at'] = max(now, math.nextafter(current['updated_at'], math.inf))
@@ -480,8 +550,8 @@ class ConditionChecks:
         try:
             credentials = ApiCredentials(self.store)
             if text == credentials.read_bound_state(state_key(preparation_id), spec['digest']):
-                return
-            credentials.write_bound_state(state_key(preparation_id), spec['digest'], text)
+                return True
+            return credentials.write_bound_state(state_key(preparation_id), spec['digest'], text)
         except Exception as exc:  # noqa: BLE001 - an unsaved state is the next run's empty state, never a stopped loop
             LOG.warning('condition check state not saved kind=%s', type(exc).__name__)
 
@@ -497,10 +567,11 @@ class ConditionChecks:
             return 0
         removed = 0
         for key in keys:
-            preparation_id = key[len(CHECK_STATE_PREFIX):]
+            preparation_id = key[len(CHECK_STATE_PREFIX):].removesuffix(':pending')
             row = self.preparations.get(preparation_id)
             if row and row['state'] in prep.ACTIVE_STATES and spec_of(row):
-                continue
+                if not key.endswith(':pending') or self._pending(row):
+                    continue
             try:
                 ApiCredentials(self.store).discard_bound_state(key)
                 removed += 1
@@ -535,9 +606,11 @@ class ConditionChecks:
             paused = status.pop('paused', None)
             status['failures'] = 0
             status.pop('last_error', None)
+            status['state_reset'] = True
             status['replaced'] = {'at': now, 'work_id': job['id'], 'from': before['digest'][:16], 'to': spec['digest'][:16]}
             updates = {'check_spec': json.dumps(spec, sort_keys=True), 'check_next_at': now,
-                       'check_status': json.dumps(status, sort_keys=True)}
+                       'check_status': json.dumps(status, sort_keys=True),
+                       'updated_at': max(now, math.nextafter(current['updated_at'], math.inf))}
             if paused == PAUSED_FAILURES and current['run_return_state'] == prep.STATE_PAUSED:
                 # A fix of the check that paused itself: it runs again once this run settles.
                 updates['run_return_state'] = prep.STATE_SCHEDULED
@@ -589,7 +662,8 @@ class ConditionChecks:
             parts.append(msg('checks.last_' + last, lang, at=prep.local_text(status['last_run_at'], row['timezone'])))
         if status.get('paused'):
             parts.append(msg('checks.paused_' + status['paused'].replace('-', '_'), lang))
-        return ' · '.join(parts)
+        from .current_context import redact_known_secrets
+        return redact_known_secrets(self.store, ' · '.join(parts))
 
     def view(self, row, now=None):
         """The Settings entry of one row's check: its text in each language, and its code, read-only."""
@@ -597,9 +671,11 @@ class ConditionChecks:
         spec = spec_of(row)
         if spec is None:
             return None
-        return {'text': {lang: self.summary(row, now, lang) for lang in LANGUAGES}, 'code': spec['code'],
+        from .current_context import redact_known_secrets
+        from .direct_message_surface import redact_provenance_values
+        return redact_provenance_values({'text': {lang: self.summary(row, now, lang) for lang in LANGUAGES}, 'code': spec['code'],
                 'every_seconds': spec['every_seconds'], 'hosts': spec['hosts'], 'secrets': spec['secrets'],
-                'digest': spec['digest'][:16]}
+                'digest': spec['digest'][:16]}, lambda text: redact_known_secrets(self.store, text))
 
     def counts_since(self, row, since):
         """``(runs, wakes)`` of a row's check on the owner-local days from ``since`` (the line's account, D7)."""

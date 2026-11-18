@@ -819,5 +819,246 @@ class PaymentParity(_Base):
         self.assertEqual(self.pay(woken), [False])
 
 
+class RecoveryAndRedaction(_Base):
+    class Crash(BaseException):
+        pass
+
+    def crash_after_check_write(self):
+        write = self.checks._write_state
+
+        def crash(*args):
+            write(*args)
+            raise self.Crash()
+        return mock.patch.object(self.checks, '_write_state', side_effect=crash)
+
+    def restart(self):
+        self.checks = cc.ConditionChecks(self.service, runner=self.runner)
+        self.service.condition_checks = self.checks
+
+    def test_hit_replays_after_secrets_write_and_database_rollback(self):
+        row = self.check_row()
+        token = 'pending-state-secret-000000000972'
+        self.queue.append(self.state_process({'reported': True, 'token': token}, {'stdout': 'one event ' + token}))
+        with self.crash_after_check_write(), self.assertRaises(self.Crash):
+            self.tick(0)
+        self.assertEqual(self.woken(row['id']), [])
+        saved = ApiCredentials(self.store).read_bound_state(cc.state_key(row['id']), cc.spec_of(row)['digest'])
+        self.assertTrue(json.loads(saved)['reported'], 'the external write really happened')
+        self.assertNotIn(token, self.store.secret_path.read_text())
+        self.assertNotIn(token, self.row(row['id'])['check_status'] or '')
+        self.restart()
+        with mock.patch.object(self.checks, 'runner', side_effect=AssertionError('must replay, not rerun code')):
+            self.tick(15)
+        [work] = self.woken(row['id'])
+        self.assertEqual(self.checks.handoff(work)['output'], 'one event [redacted]')
+        day = self.service.preparations.budget_day(self.now)
+        self.assertEqual(self.store.config(prep.SCHEDULED_USAGE_PREFIX + day), 1)
+        self.assertEqual(self.checks.wakes_today(self.row(row['id']), self.now), 1)
+        # The committed marker also survives a restart before pending-envelope cleanup.
+        self.settle(row['id'])
+        self.restart()
+        self.tick(15)
+        self.assertEqual(len(self.woken(row['id'])), 1)
+        self.checks.sweep_states()
+        self.assertFalse(self.store.secret(cc.state_key(row['id']) + ':pending'))
+
+    def test_quiet_and_failure_state_writes_replay_without_losing_run_accounting(self):
+        for exit_status in (0, 1):
+            with self.subTest(exit_status=exit_status):
+                row = self.check_row()
+                self.queue.append(self.state_process({'cursor': 2}, {'exit': exit_status, 'stderr': 'diagnostic'}))
+                with self.crash_after_check_write(), self.assertRaises(self.Crash):
+                    self.tick(0)
+                self.assertNotIn('last_result', cc.status_of(self.row(row['id'])))
+                self.restart()
+                with mock.patch.object(self.checks, 'runner', side_effect=AssertionError('must replay')):
+                    self.tick(15)
+                status = cc.status_of(self.row(row['id']))
+                self.assertEqual(status['failures'], exit_status)
+                self.assertEqual(sum(day['runs'] for day in status['days'].values()), 1)
+                self.service.preparations.cancel(row['id'])
+
+    def set_state_process(self, result):
+        process = FakeProcess(result=result)
+        original = process._lines
+
+        def write():
+            Path(process.config['env']['EXAMPLE_BROKER_STATE_FILE']).write_text('{"reported": true}')
+            yield from original()
+        process._lines = write
+        return process
+
+    def test_set_state_does_not_advance_on_refused_or_discarded_hit(self):
+        from personal_agent.api_requests import slots
+        credentials = ApiCredentials(self.store)
+        slot = slots(self.store)['example-broker']
+        for reason in ('queue-full', 'paused'):
+            with self.subTest(reason=reason):
+                row = self.check_row()
+                credentials.write_state('example-broker', slot, '{"reported": false}')
+                process = self.set_state_process({'stdout': 'one event'})
+                self.queue.append(process)
+                if reason == 'queue-full':
+                    with mock.patch.object(self.store, 'enqueue', side_effect=ValueError('queue full')):
+                        self.tick(0)
+                else:
+                    original = process._lines
+
+                    def pause():
+                        self.service.preparations.pause(row['id'])
+                        yield from original()
+                    process._lines = pause
+                    self.tick(0)
+                self.assertEqual(json.loads(credentials.read_state('example-broker', slot)), {'reported': False})
+                self.assertEqual(self.woken(row['id']), [])
+                self.service.preparations.cancel(row['id'])
+
+    def test_set_state_write_crash_retains_the_hit_for_replay(self):
+        from personal_agent.api_requests import slots
+        row = self.check_row()
+        self.queue.append(self.set_state_process({'stdout': 'set cursor event'}))
+        write = ApiCredentials.write_state
+
+        def crash(credentials, *args):
+            write(credentials, *args)
+            raise self.Crash()
+        with mock.patch.object(ApiCredentials, 'write_state', crash), self.assertRaises(self.Crash):
+            self.tick(0)
+        self.assertEqual(self.woken(row['id']), [])
+        self.assertEqual(json.loads(ApiCredentials(self.store).read_state('example-broker', slots(self.store)['example-broker'])),
+                         {'reported': True})
+        self.restart()
+        with mock.patch.object(self.checks, 'runner', side_effect=AssertionError('must replay')):
+            self.tick(15)
+        [work] = self.woken(row['id'])
+        self.assertEqual(self.checks.handoff(work)['output'], 'set cursor event')
+
+    def test_unsaved_set_state_is_redacted_from_proving_and_check_outputs(self):
+        token = 'new-unsaved-set-state-token-000972'
+        for scheduled in (False, True):
+            with self.subTest(scheduled=scheduled):
+                row = self.check_row() if scheduled else None
+                process = self.state_process({}, {'stdout': token, 'stderr': token})
+                original = process._lines
+
+                def write():
+                    Path(process.config['env']['EXAMPLE_BROKER_STATE_FILE']).write_text(json.dumps({'token': token}))
+                    yield from original()
+                process._lines = write
+                with mock.patch.object(ApiCredentials, 'write_state', return_value=False):
+                    if scheduled:
+                        self.queue.append(process)
+                        self.tick(0)
+                        [work] = self.woken(row['id'])
+                        result = self.checks.handoff(work)
+                    else:
+                        result = self.code_run(self.owner_work(), self.check_args(), process)
+                self.assertNotIn(token, json.dumps(result))
+                self.assertIn('[redacted]', json.dumps(result))
+
+    def test_proving_error_redacts_state_before_directory_cleanup_and_diagnostic_truncation(self):
+        from personal_agent.code_run import CodeRunError
+        token = 'new-exception-check-token-0000000972'
+
+        def fail(runner, *args, **kwargs):
+            Path(kwargs['plain'][cc.STATE_ENV]).write_text(json.dumps({'token': token}))
+            raise CodeRunError(token + ' ' + code_secrets.VALUES['APP_KEY'], 'code_run_failed', requires=token)
+        with mock.patch.object(CodeRunner, '_session', fail):
+            with self.assertRaises(CodeRunError) as caught:
+                self.code_run(self.owner_work(), self.check_args())
+        self.assertEqual(str(caught.exception), '[redacted] [redacted]')
+        self.assertEqual(caught.exception.requires, '[redacted]')
+        row = self.check_row()
+        with mock.patch.object(CodeRunner, '_session', fail):
+            for _ in range(cc.FAILURES_BEFORE_PAUSE):
+                self.tick(15)
+        [work] = self.woken(row['id'])
+        self.assertEqual(self.checks.handoff(work)['diagnostic'], '[redacted] [redacted]')
+        self.assertNotIn(token, self.row(row['id'])['check_status'] or '')
+
+    def test_request_host_and_metadata_are_redacted_in_result_evidence_and_audit(self):
+        token = 'new-state-host-token-000000972'
+        host = token + '.example.org'
+        job = self.owner_work()
+        process = self.state_process({'token': token}, {'stdout': 'hit'})
+        process._requests = [{'method': 'GET', 'host': host, 'path': '/value', 'query': ''}]
+        result = self.code_run(job, self.check_args(secrets='', hosts=host), process)
+        self.assertNotIn(token, json.dumps(result))
+        self.assertNotIn(token, json.dumps(self.store.task_events(job['id'])))
+        self.assertNotIn(token, json.dumps(self.service.work_information_use(job['id'])))
+        self.assertIn('[redacted].example.org', json.dumps(result))
+
+    def test_refused_recovery_keeps_pending_hit_and_counts_the_run_once(self):
+        row = self.check_row()
+        self.queue.append(self.state_process({'reported': True}, {'stdout': 'recover this event'}))
+        with self.crash_after_check_write(), self.assertRaises(self.Crash):
+            self.tick(0)
+        self.restart()
+        with mock.patch.object(self.store, 'enqueue', side_effect=ValueError('queue full')):
+            self.tick(15)
+        self.assertEqual(self.woken(row['id']), [])
+        self.assertIsNotNone(self.checks._pending(self.row(row['id'])))
+        self.restart()
+        with mock.patch.object(self.checks, 'runner', side_effect=AssertionError('must replay')):
+            self.tick(15)
+        [work] = self.woken(row['id'])
+        self.assertEqual(self.checks.handoff(work)['output'], 'recover this event')
+        status = cc.status_of(self.row(row['id']))
+        self.assertEqual(sum(day['runs'] for day in status['days'].values()), 1)
+        self.assertEqual(sum(day['wakes'] for day in status['days'].values()), 1)
+
+    def test_identical_replacement_resets_state_even_if_postcommit_discard_crashes(self):
+        row = self.check_row()
+        self.queue.append(self.state_process({'reported': True}, {'stdout': 'first event'}))
+        self.tick(0)
+        [work] = self.woken(row['id'])
+        args = {**self.check_args(), 'every_seconds': 15}
+        self.code_run(work, args)
+        with mock.patch.object(ApiCredentials, 'discard_bound_state', side_effect=self.Crash), self.assertRaises(self.Crash):
+            self.checks.replace_own(work, args)
+        self.assertEqual(cc.spec_of(self.row(row['id']))['digest'], cc.spec_of(row)['digest'])
+        self.settle(row['id'])
+        self.restart()
+        seen = []
+        process = FakeProcess()
+        original = process._lines
+
+        def read():
+            seen.append(json.loads(Path(process.config['env'][cc.STATE_ENV]).read_text()))
+            yield from original()
+        process._lines = read
+        self.queue.append(process)
+        self.tick(15)
+        self.assertEqual(seen, [{}])
+
+    def test_setup_error_does_not_repeat_a_secret_in_invalid_package_arguments(self):
+        token = code_secrets.VALUES['APP_KEY']
+        with self.assertRaises(prep.PreparationRefusal) as caught:
+            cc.proven_check(self.store, self.owner_work()['id'], self.check_args(packages=token))
+        self.assertNotIn(token, str(caught.exception))
+        self.assertIn('[redacted]', str(caught.exception))
+
+    def test_owner_view_redacts_known_check_state_and_stored_secrets_in_code(self):
+        token = 'owner-view-check-state-token-0000972'
+        row = self.check_row(code=CHECK_CODE + f'# {token} {code_secrets.VALUES["APP_KEY"]}')
+        self.queue.append(self.state_process({'token': token}, {'stdout': ''}))
+        self.tick(0)
+        view = json.dumps(self.checks.view(self.row(row['id'])))
+        self.assertNotIn(token, view)
+        self.assertNotIn(code_secrets.VALUES['APP_KEY'], view)
+        self.assertIn('[redacted]', view)
+
+    def test_library_result_metadata_is_redacted_before_model_and_evidence(self):
+        token = 'library-metadata-state-token-0000972'
+        process = self.state_process({'token': token}, {'stdout': 'ok'})
+        job = self.owner_work()
+        with mock.patch.object(CodeRunner, '_keep_libraries', return_value={
+                'example-broker': {'state': 'not_saved', 'reason': token, 'failed': [token]}}):
+            result = self.code_run(job, self.check_args(), process)
+        self.assertNotIn(token, json.dumps(result))
+        self.assertNotIn(token, json.dumps(self.store.task_events(job['id'])))
+        self.assertEqual(result['library']['example-broker']['reason'], '[redacted]')
+
+
 if __name__ == '__main__':
     unittest.main()
