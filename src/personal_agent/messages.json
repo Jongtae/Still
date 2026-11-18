@@ -11812,6 +11812,18 @@
   "ja": "報告時刻を保存",
   "zh": "保存报告时间"
  },
+ "decision_routes.qualified_fallback_used": {
+  "ko": "이번 요청은 {main}의 판단 AI가 적격성 검사를 통과하지 못해, 이 컴퓨터에서 확인된 {label} · {model}을(를) 판단 AI로 사용했어요.",
+  "en": "For this request, judgments used {label} · {model}, qualified on this machine, because the judgment AI for {main} did not qualify.",
+  "ja": "今回のリクエストでは、{main}の判断AIが適格性検査に通らなかったため、このコンピューターで確認済みの{label} · {model}を判断AIとして使いました。",
+  "zh": "本次请求中，由于{main}的判断AI未通过资格检查，使用了本机已通过检查的{label} · {model}进行判断。"
+ },
+ "decision_routes.qualified_fallback": {
+  "ko": "{main}의 판단 AI가 적격성 검사를 통과하지 못해, 이 컴퓨터에서 확인된 {label} · {model}을(를) 판단 AI로 사용해요. 기본 AI의 판단 경로가 다시 통과하면 돌아가요.",
+  "en": "The judgment AI for {main} did not qualify, so judgments use {label} · {model}, qualified on this machine. They switch back when the main AI's judgment route qualifies again.",
+  "ja": "{main}の判断AIが適格性検査に通らなかったため、このコンピューターで確認済みの{label} · {model}を判断AIとして使います。基本AIの判断経路が再び合格すると戻ります。",
+  "zh": "{main}的判断AI未通过资格检查，因此使用本机已通过检查的{label} · {model}进行判断。默认AI的判断路径再次通过后会切换回来。"
+ },
  "preparations.more_proposals": {
    "ko": "그 밖의 제안 {remaining}개는 이 메시지로 수락되지 않아요. \"예약 보여줘\"처럼 대화로 확인하고 수락할 수 있어요.",
    "en": "The other {remaining} proposals are not accepted by this message. Ask in conversation, for example \"show my reservations\", to review and accept them.",
