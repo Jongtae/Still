@@ -295,11 +295,11 @@ class CatalogTests(unittest.TestCase):
 
     def test_runtime_fallback_translates_whole_lines(self):
         from personal_agent.agent_runtime import fallback_response
-        reply = fallback_response([('find_files', {'files': []})], [])
+        reply = fallback_response([('find_files', {'files': []})])
         self.assertEqual(reply, '찾은 파일:\n일치하는 파일이 없어요.')
         self.assertEqual(telegram_locale.translate(reply, 'en'),
                          'Files found:\nNo matching files.')
-        reply = fallback_response([('read_file', {})], [])
+        reply = fallback_response([('read_file', {})])
         self.assertEqual(reply, '요청한 파일을 읽었어요. 이어서 필요한 내용을 질문해 주세요.')
         self.assertEqual(telegram_locale.translate(reply, 'en'),
                          'Read the requested file. Ask about anything you need next.')

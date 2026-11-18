@@ -9,7 +9,7 @@ from unittest.mock import patch
 
 import pytest
 
-from personal_agent.agent_runtime import Capabilities, ToolError, check_arguments, fallback_response, run_agent
+from personal_agent.agent_runtime import Capabilities, ToolError, check_arguments, run_agent
 from personal_agent.providers import ModelAdapter
 from personal_agent.quickstart_store import QuickStore
 from test_agency_loop import CFG, Script, call, finish
@@ -62,7 +62,8 @@ def test_recorded_finish_shape_with_tool_result_sources(direct, ref_count, struc
         answer = run_agent(ModelAdapter(script), CFG, '', [{'role': 'user', 'content': 'Check the saved request.'}],
                            '', caps, record)
     assert len(script.bodies) == 14
-    assert answer.content.count(source) == 1
+    # #1014: structured sources do not break the run, and Still appends no source of its own.
+    assert source not in answer.content
     assert answer.report['question'] == 'Please confirm the next step.'
     assert not any(status == 'claim_rejected' for _, status, _ in events)
     # status is an offered progress argument, not an unexpected field.
@@ -134,14 +135,6 @@ def test_shared_schema_checks_nested_values_enums_and_numeric_bounds():
         with pytest.raises(ToolError) as caught:
             check_arguments(schema, args)
         assert caught.value.code == 'invalid_arguments'
-
-
-def test_fallback_also_filters_sources_before_deduplication():
-    source = 'https://api.example/source'
-    text = fallback_response([('web_search', {'results': []})],
-                             [{'url': source}, [source], source, source])
-    assert text.count(source) == 1
-    assert "{'url':" not in text
 
 
 def test_scheduled_work_executor_finishes_after_correctable_arguments(case, caplog):

@@ -105,7 +105,8 @@ class GeneralRuntimeTests(unittest.TestCase):
    return {'choices':[{'message':{'tool_calls':[{'id':str(count),'function':{'name':name,'arguments':json.dumps(args)}}]}}]}
   result=run_agent(ModelAdapter(transport),CFG,'',[{'role':'user','content':'Aurora 출시일을 파일에서 찾아줘'}],'',self.caps,lambda *a:None)
   self.assertIn('October 12',result.content)
-  self.assertIn('파일: launch.txt · 줄 1',result.content)
+  # #1014: the answer is the worker's; Still appends no source block (the file stays in Evidence).
+  self.assertNotIn('launch.txt',result.content)
  def test_weather_falls_back_to_tool_result_when_model_returns_no_final_text(self):
   calls=[0]
   def transport(u,b,h):
@@ -118,6 +119,8 @@ class GeneralRuntimeTests(unittest.TestCase):
   result=run_agent(caps.adapter,CFG,'',[{'role':'user','content':'성남시 날씨'}],'',caps,lambda *a:None)
   self.assertIn('Seongnam-si',result.content)
   self.assertIn('24 °C',result.content)
+  # #1014: the fallback names Open-Meteo but lists no request URL.
+  self.assertNotIn('open-meteo.example',result.content)
 if __name__=='__main__':unittest.main()
 
 class ProviderToolProtocolTests(unittest.TestCase):

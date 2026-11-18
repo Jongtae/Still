@@ -5423,8 +5423,7 @@ def verified_text(name,result):
  """
  if name in UNVERIFIABLE_RESULTS or not isinstance(result,dict):return None
  if 'setup-required' in evidence_qualifiers(result):return None
- own=[url for url in result.get('sources',[]) if isinstance(url,str)] if isinstance(result.get('sources'),list) else []
- text=_fallback_text(name,result,own)
+ text=_fallback_text(name,result)
  return None if text==FALLBACK_UNDESCRIBED or not str(text).strip() else str(text)
 
 def recorded_effects_response(steps,read_saved):
@@ -5457,12 +5456,7 @@ def recorded_effects_response(steps,read_saved):
   return '\n\n'.join([text,*([content] if content else []),*notes]),bool(content)
  return None,False
 
-def source_labels(sources):
- """Citation text only, filtered before hashing; structured tool data stays in its result."""
- if not isinstance(sources,(list,tuple)):return []
- return list(dict.fromkeys(source for source in sources if isinstance(source,str) and source.strip()))
-
-def fallback_response(executions, sources):
+def fallback_response(executions):
  """Return a useful safe result when a tool-capable model stops after tools.
 
  A result carrying a typed qualifier is described with it: a setup-required
@@ -5472,12 +5466,11 @@ def fallback_response(executions, sources):
  name,result=executions[-1]
  qualifiers=evidence_qualifiers(result)
  if 'setup-required' in qualifiers:return QUALIFIER_NOTES['setup-required']
- text=_fallback_text(name,result,sources)
+ text=_fallback_text(name,result)
  notes=[QUALIFIER_NOTES[label] for label in qualifiers if label in QUALIFIER_NOTES]
  return '\n\n'.join([text,*notes]) if notes else text
 
-def _fallback_text(name, result, sources):
- sources=source_labels(sources)
+def _fallback_text(name, result):
  if name=='weather' and isinstance(result,dict):
   try:
    from .local_tools import weather_answer
@@ -5488,7 +5481,7 @@ def _fallback_text(name, result, sources):
   lines=[msg('agent_runtime.search_results_fetched')]
   for row in rows[:5]:
    if isinstance(row,dict) and row.get('title') and row.get('url'):lines.append(f"- {row['title']}: {row['url']}")
-  return '\n'.join(lines)+(('\n\n'+msg('agent_runtime.sources_looked_up')+'\n'+'\n'.join(sources)) if sources else '')
+  return '\n'.join(lines)
  if name=='public_page_read' and isinstance(result,dict):
   return (result.get('content','')[:12000] + '\n\n' + msg('agent_runtime.page_source', url=result.get('url','')))
  if name=='save_note' and isinstance(result,dict) and result.get('saved'):return msg('agent_runtime.note_saved')
@@ -5988,7 +5981,7 @@ def agency_report(goal,verified,failures,unknown,next_step,question=None):
          'unknown':list(dict.fromkeys(item for item in unknown if item))[:REPORT_ITEMS+2],
          'next':next_step or None,'question':clip_keeping_links(question or '',600) or None}
 
-def _budget_end(exc,executions,sources,successful,incomplete,verified,config,actual,draft=None):
+def _budget_end(exc,executions,successful,incomplete,verified,config,actual,draft=None):
  """End a run whose budget, deadline or Stop ran out, keeping what was observed.
 
  Nothing observed: the Work fails with the reason.  Otherwise it is at most
@@ -6000,7 +5993,7 @@ def _budget_end(exc,executions,sources,successful,incomplete,verified,config,act
  """
  if not successful:raise ProviderError(str(exc))
  worker_text=isinstance(draft,str) and bool(draft.strip())
- text=(draft if worker_text else fallback_response(executions,sources))+'\n\n'+str(exc)
+ text=(draft if worker_text else fallback_response(executions))+'\n\n'+str(exc)
  result=ModelResult(text[:24000],config['provider'],actual or NOT_REPORTED)
  result.reply_source='worker' if worker_text else 'still_receipt'
  result.outcome='partial';result.incomplete=[*incomplete,('work',str(exc))];result.verified=verified
@@ -6173,7 +6166,7 @@ def run_agent(adapter,config,key,history,system,capabilities,record,scope='main'
  definitions=loop_definitions(definitions)
  specs={d['function']['name']:d['function']['parameters'] for d in definitions if d is not FINISH_DEFINITION}
  finish_offered=True
- sources=[];executions=[];failed=False;successful=0;invalid_calls=set()
+ executions=[];failed=False;successful=0;invalid_calls=set()
  # #818: memory proposals recorded; they neither advance nor fail the Work (as in outcome_from_events).
  proposals=0
  # #690: withheld calls that keep the Work partial (``withheld_partial``), as ``outcome_from_events`` reads them.
@@ -6205,8 +6198,8 @@ def run_agent(adapter,config,key,history,system,capabilities,record,scope='main'
 
  def conclude(content,claim=None,judgment=None,reply_source='worker'):
   """The run's result: ``succeeded`` needs an accepted done claim judged yes (#657)."""
-  labels=source_labels(sources)
-  if labels and msg('agent_runtime.sources_looked_up') not in content:content+='\n\n'+msg('agent_runtime.sources_looked_up')+'\n'+'\n'.join(labels)
+  # #1014: the answer is delivered as the AI wrote it; citing is its call (worker_core).
+  # The looked-up sources stay in the tool results and Evidence, not in a host block.
   result=ModelResult(content[:24000],config['provider'],actual)
   result.reply_source=reply_source
   if claim is None and _external(trail) and not invalid_calls:
@@ -6265,7 +6258,7 @@ def run_agent(adapter,config,key,history,system,capabilities,record,scope='main'
   try:budget.spend_turn()
   except ToolError as exc:
    record('model','stopped',json.dumps({'scope':scope,'code':exc.code,'reason':str(exc)},ensure_ascii=False))
-   return _budget_end(exc,executions,sources,successful,incomplete,verified,config,actual,draft)
+   return _budget_end(exc,executions,successful,incomplete,verified,config,actual,draft)
   # #620 (OpenAI Agents SDK ``max_turns``, LangGraph ``RemainingSteps``): the last turn before the
   # outcome judgment's reserve is told so, and its plain reply concludes the run (judged as any
   # reply after tools).  Only once a tool ran: a run with no observation is never told to answer
@@ -6286,7 +6279,7 @@ def run_agent(adapter,config,key,history,system,capabilities,record,scope='main'
    try:budget.spend_turn()
    except ToolError as stop:
     record('model','stopped',json.dumps({'scope':scope,'code':stop.code,'reason':str(stop)},ensure_ascii=False))
-    return _budget_end(stop,executions,sources,successful,incomplete,verified,config,actual,draft)
+    return _budget_end(stop,executions,successful,incomplete,verified,config,actual,draft)
    messages=[{k:v for k,v in m.items() if k not in ('reasoning_details','openai_reasoning')} for m in messages]
    model_options={'report_observed':True}
    if images:model_options['images']=images
@@ -6322,7 +6315,7 @@ def run_agent(adapter,config,key,history,system,capabilities,record,scope='main'
     # call, but it did run and fallback_response explains it better than a
     # bare provider error would.
     if executions:
-     content=fallback_response(executions,sources)
+     content=fallback_response(executions)
      reply_source='still_receipt'
     else:raise ProviderError(msg('agent_runtime.model_returned_no_answer'))
    return conclude(content,reply_source=reply_source)
@@ -6428,7 +6421,6 @@ def run_agent(adapter,config,key,history,system,capabilities,record,scope='main'
      executions.append((name,result))
      if name in ('find_files','read_file','list_notes','list_memory','search_memory','save_memory','calendar_query','drive_search','drive_read','mail_search','mail_read'):capabilities.evidence.append({'tool':name,'result':result})
      invalid_calls.discard(name)
-     sources.extend(source_labels(result.get('sources',[])))
      # #657: a page state the call returned is the page the next step acts on.
      page=result_page_digest(result) or page
      # A tool that declined or deferred returned normally, so this loop used to

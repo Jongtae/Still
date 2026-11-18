@@ -753,7 +753,7 @@ class AgencyReportEntryPointTests(unittest.TestCase):
         route = self.CHANNELS[1]
         script = Script({'tool_calls': [call('1', 'weather', city='Seongnam', country='KR')]},
                         {'tool_calls': [call('2', 'web_search', query='Seongnam weather tomorrow')]},
-                        finish_observed('f', status='partial', summary='내일 성남은 22°C로 보입니다.',
+                        finish_observed('f', status='partial', summary='내일 성남은 22°C로 보입니다. https://weather.example/seongnam',
                                         unknown=['내일 강수 확률'], next='날씨 예보 페이지를 열어 강수 확률을 확인하기'))
         row, failed = self.run_turn('내일 성남 날씨랑 비 올 확률 알려줘', script, Network(), route)
         self.assertEqual(row['status'], 'partial')
@@ -765,7 +765,7 @@ class AgencyReportEntryPointTests(unittest.TestCase):
         self.assertEqual(row['owner_cause'].split('\n'), ['완료하지 못한 부분 — 날씨 조회: 도시를 찾지 못했습니다.',
                                                           '확인하지 못한 부분: 내일 강수 확률',
                                                           '다음 단계 제안: 날씨 예보 페이지를 열어 강수 확률을 확인하기'])
-        # One bubble, in order (#847): the AI's own answer with its sources,
+        # One bubble, in order (#847): the AI's own answer with the source it cited (#1014),
         # then one note - the step counted, the next step as a sentence.
         from personal_agent.conversation_projection import TERMINAL_VERIFIED_LABEL
         parts = ['내일 성남은 22°C로 보입니다.', 'https://weather.example/seongnam',

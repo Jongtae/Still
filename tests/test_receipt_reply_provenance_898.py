@@ -150,7 +150,7 @@ def test_direct_fallback_receipt_is_not_worker_text_on_owner_turn(case, source):
 @pytest.mark.parametrize('draft,source', [(None, 'still_receipt'), ('Worker text.', 'worker')])
 def test_budget_end_retains_composer_provenance(draft, source):
     from personal_agent.agent_runtime import _budget_end
-    result = _budget_end(RuntimeError('Stopped.'), [('save_note', {'saved': True})], [], 1, [], [],
+    result = _budget_end(RuntimeError('Stopped.'), [('save_note', {'saved': True})], 1, [], [],
                          {'provider': 'compatible'}, 'fixture', draft)
     assert result.reply_source == source
     assert result.outcome == 'partial'

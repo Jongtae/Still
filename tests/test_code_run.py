@@ -170,7 +170,8 @@ class RequestPolicy(unittest.TestCase):
             result = run_agent(caps.adapter, CFG, '', [{'role': 'user', 'content': 'count the items'}], '', caps,
                                lambda *row: events.append(row))
         self.assertEqual(result.outcome, 'succeeded')
-        self.assertIn('https://api.example.com/v1/items', result.content)
+        # #1014: the request address stays in Evidence; Still appends no source block to the answer.
+        self.assertNotIn('https://api.example.com/v1/items', result.content)
         self.assertIn(('model', 'concluded'), [row[:2] for row in events])
 
 

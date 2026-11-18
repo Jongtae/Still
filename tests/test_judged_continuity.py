@@ -198,22 +198,18 @@ class JudgedSavedContextTests(_Case):
         self.tap(token, self.store.telegram_context_choice(token[4:])['message_id'])
         return work
 
-    def test_the_context_sources_footer_comes_from_the_typed_record(self):
-        # #173 slice C: an answer that itself says "컨텍스트:" no longer hides or changes the footer.
-        from personal_agent.messages import msg
+    def test_the_answer_carries_no_host_context_source_block(self):
+        # #1014: the answer is delivered as the AI wrote it; the chosen item stays in the
+        # Work's context attachment rather than in a host-appended source block.
         work = self.choose_the_item(SAVED_CONTEXT_REQUEST)
-        answer = '컨텍스트: 회의 안건을 참고했어요.'
+        answer = '회의 안건을 참고했어요.'
         self.script = [{'content': answer}] * 2
         self.assertTrue(self.service.run_one())
         job = self.store.job(work)
         self.assertEqual(job['status'], 'succeeded', job.get('error'))
-        head, footer = job['response'].split('\n\n' + msg('service.context_sources') + '\n', 1)
-        self.assertEqual(head, answer)
+        self.assertEqual(job['response'], answer)
         attachment = self.store.context_attachment(work)
         self.assertEqual(attachment['event_ids'], [self.item['id']])
-        [line] = footer.splitlines()
-        self.assertTrue(line.startswith('컨텍스트: text · ' + self.item['id'] + ' · '), line)
-        self.assertNotIn('PRIVATE-ROADMAP', footer, 'the footer names the item, never its content')
 
     def test_an_unrelated_request_the_judgment_does_not_select_opens_nothing(self):
         self.needs({SAVED_CONTEXT_REQUEST: 'saved-context'})

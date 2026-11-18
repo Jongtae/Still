@@ -602,7 +602,7 @@ class NativeSearchInTheLoop(unittest.TestCase):
                 return {'choices': [{'message': {'tool_calls': [{'id': 'call-1', 'function': {
                     'name': 'web_search', 'arguments': json.dumps({'query': 'jeju october weather'})}}]}}]}
             return {'choices': [{'message': {'tool_calls': [{'id': 'f', 'function': {'name': 'finish', 'arguments': json.dumps(
-                {'status': 'done', 'evidence_refs': ['call-1'], 'summary': '10월 제주는 18-23도입니다.'})}}]}}]}
+                {'status': 'done', 'evidence_refs': ['call-1'], 'summary': '10월 제주는 18-23도입니다. https://travel.example/jeju'})}}]}}]}
         network = LocalTools(providers=ProviderRegistry.from_config({'native': main_ai(OPENROUTER)}, transport=transport))
         seen, events = [], []
         caps = Capabilities(store, ModelAdapter(transport), OPENROUTER, API_KEY, 'job', lambda *e: events.append(e),
@@ -610,8 +610,8 @@ class NativeSearchInTheLoop(unittest.TestCase):
         result = run_agent(caps.adapter, OPENROUTER, API_KEY, [{'role': 'user', 'content': '10월 제주 날씨'}], '', caps,
                            lambda *e: events.append(e))
         self.assertEqual(result.outcome, 'succeeded')
-        # The URL reaches the owner-visible answer.
-        self.assertIn('https://travel.example/jeju', result.content)
+        # #1014: the URL the AI cited reaches the owner once; Still adds no copy of its own.
+        self.assertEqual(result.content.count('https://travel.example/jeju'), 1)
         # The model saw the labelled answer; the judgment saw only the observed part.
         tool_message = json.loads(next(m['content'] for m in main[1]['messages'] if m.get('tool_call_id') == 'call-1'))
         self.assertEqual(tool_message['answer'], {'text': ANSWER, 'label': ANSWER_LABEL})
