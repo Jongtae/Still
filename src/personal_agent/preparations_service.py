@@ -1023,13 +1023,15 @@ class PreparationsService:
         if row and row.get('line_id'):
             own=[item['id'] for item in self.line_rows(row['line_id'])] or own
         if preparation_id and job.get('created') is not None:
-            keys=' OR '.join('request_key LIKE ?' for _ in own)
+            # #938: a line's rows by subquery (a line done in pieces has many); one row by its own key.
+            keys,key=((prep.line_works_sql('request_key'),row['line_id']) if row and row.get('line_id')
+                      else ('request_key LIKE ?',prep.REQUEST_KEY_PREFIX+preparation_id+':%'))
             with service.store.db() as db:
                 candidates=[dict(item) for item in db.execute(
                     f"SELECT * FROM jobs WHERE created<? AND id<>? AND ({keys}) "
                     "AND response IS NOT NULL AND TRIM(response)<>'' "
                     "AND (delivery='sent' OR (chat_id IS NULL AND delivery='none')) ORDER BY created DESC,id DESC",
-                    (job['created'],job['id'],*(prep.REQUEST_KEY_PREFIX+item+':%' for item in own)))]
+                    (job['created'],job['id'],key))]
             previous=next((item for item in candidates
                            if prep.preparation_of(item['request_key']) in own and item['response'].strip()
                            and ws.has_delivered_result(item['status'])
@@ -2021,11 +2023,8 @@ class PreparationsService:
         with service.store.db() as db:
             ids=[row['id'] for row in db.execute('SELECT id FROM preparations WHERE line_id=?',(line_id,))]
             if not ids:return []
-            # #938: a line done in pieces has a row per piece, so its rows are matched by a subquery,
-            # not by one LIKE term per row (SQLite bounds an expression's depth).
-            start=len(prep.REQUEST_KEY_PREFIX)+1
-            keys=(f"j.request_key LIKE '{prep.REQUEST_KEY_PREFIX}%' AND substr(j.request_key,{start},"
-                  f"instr(substr(j.request_key,{start}),':')-1) IN (SELECT id FROM preparations WHERE line_id=?)")
+            # #938: a line done in pieces has a row per piece (``line_works_sql``).
+            keys=prep.line_works_sql('j.request_key')
             jobs=[dict(row) for row in db.execute(
                 f"SELECT j.*,EXISTS(SELECT 1 FROM telegram_notifications n WHERE n.job_id=j.id AND n.kind=? AND n.state='sent') "
                 f"AS notified, EXISTS(SELECT 1 FROM tool_events b JOIN jobs bundle ON bundle.id=json_extract(b.detail,'$.bundle_id') "

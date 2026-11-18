@@ -417,6 +417,11 @@ class Handoff(_PieceCase):
             db.execute("UPDATE jobs SET status='succeeded',response='찾은 상태',delivery='none' WHERE id=?", (work,))
         [outcome] = self.service.preparations_service.line_outcomes(self.line_id)
         self.assertEqual((outcome['work_id'], outcome['text']), (work, '찾은 상태'))
+        # The next run's history reads that earlier report too.
+        self.now += 60
+        run = self.running(self.line_row(goal='next'))
+        history = self.service.preparations_service.preparation_history(run)
+        self.assertIn('찾은 상태', json.dumps(history, ensure_ascii=False))
 
     def test_a_line_continues_in_pieces_through_the_worker_and_each_piece_reads_its_handoff(self):
         self.now += 1  # the line this Work opens is the newest
