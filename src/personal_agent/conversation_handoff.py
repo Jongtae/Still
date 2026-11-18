@@ -724,10 +724,11 @@ class ConversationJudgments:
     even with no redactor, and a failing redactor withholds the fact.
     """
 
-    def __init__(self, engine=None, policy=None, redactor=None):
+    def __init__(self, engine=None, policy=None, redactor=None, checkpoint_judgment=None):
         self.engine = engine or UnavailableDecisionEngine()
         self.policy = policy or DecisionPolicy()
         self.redactor = redactor
+        self.checkpoint_judgment = checkpoint_judgment
 
     def redact(self, text):
         """The stored secrets' values and credential shapes, replaced; a failing redactor withholds the text."""
@@ -1036,7 +1037,7 @@ class ConversationJudgments:
         verdict stands with neither its note nor its gap (the truth floor, or nothing, follows #631).
         Still never turns a verdict into another one; only typed ids are compared, never wording.
         """
-        from .agent_runtime import record_contradiction_text, record_contradictions, recorded_effects_text
+        from .agent_runtime import recorded_effects_text
         request = str(request or '')
         facts = {'owner_request': request, 'recent_conversation': conversation or 'none',
                  # #980: the earlier exchange this message was judged to follow up, when linked.
@@ -1050,6 +1051,19 @@ class ConversationJudgments:
                  'recorded_effects': recorded_effects_text(recorded_effects) or 'none'}
         if plan_reading:
             facts['plan_reading'] = plan_reading
+
+        def evaluate():
+            result = self._evaluate_goal(facts, work_id, conversation_messages, recorded_effects, may_rejudge)
+            return {key: getattr(result, key) for key in Judgment.__slots__}
+
+        if self.checkpoint_judgment is not None and continues and not recorded_effects:
+            result = self.checkpoint_judgment(work_id, 'goal-reached', facts, continues, evaluate)
+        else:
+            result = evaluate()
+        return Judgment(**result) if result else Judgment(JUDGMENT_UNAVAILABLE)
+
+    def _evaluate_goal(self, facts, work_id, conversation_messages, recorded_effects, may_rejudge):
+        from .agent_runtime import record_contradiction_text, record_contradictions
 
         def ask(facts):
             context = self._context('goal-reached', facts, work_id=work_id, reserve=True,

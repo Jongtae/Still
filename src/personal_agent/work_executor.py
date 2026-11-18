@@ -400,6 +400,11 @@ class WorkExecutor:
         # nor re-related to another Work.
         resumed=service.resumed_judged_intent(job)
         resumed_decision=None
+        if 'read_checkpoint_resume' in job:
+            source=service.canonical_retry_source(job)
+            if source is None:raise ValueError('The original Work request is no longer available.')
+            run.prompt,run.prompt_work_id=source['message'].strip(),source['id']
+            resumed_decision=IntentDecision(INTENT_CONVERSATION,AUTHORITY_RULE,argument=run.prompt)
         if resumed:
             run.prompt,run.prompt_work_id,resumed_decision=resumed
         # #774: a location continuation re-runs the asking Work's message; the
@@ -438,7 +443,7 @@ class WorkExecutor:
         # records; only the wall clock overlaps.
         answered=run.act_reply is not None
         early_prompt=run.prompt
-        run.early_intent=(None if resumed or located or answered else
+        run.early_intent=(None if resumed_decision or located or answered else
                       service.start_early_judgment(job['id'],service.classify_intent,early_prompt))
         # #309 L1: planning shares the allowance with routing and continuity.
         # Replays, explicit commands and answered owner acts ask for no plan.
@@ -853,6 +858,7 @@ class WorkExecutor:
         def record(tool,status,detail):
             with service.store.db() as db:
                 db.execute('BEGIN IMMEDIATE')
+                if not self._read_checkpoint_can_settle(run, db=db):return
                 if status=='succeeded':service.record_connector_overlap(db,job['id'],tool,detail)
                 db.execute('INSERT INTO tool_events(job_id,tool,status,detail,created) VALUES (?,?,?,?,?)',(job['id'],tool,status,detail,time.time()))
             if tool!='model':service.store.put('tool_run',{'job_id':job['id'],'tool':tool,'status':status,'detail':detail,'time':time.time()})
@@ -896,6 +902,7 @@ class WorkExecutor:
                                               attachments=attachment_facts(images=len(run.image_inputs)) if run.image_inputs else '')
         early_plan,run.early_plan=run.early_plan,None
         run.attempt=run.orchestration.first(early=early_plan) if run.orchestration else None
+        if not self._read_checkpoint_can_settle(run):return True
         if not run.orchestration:service.settle_early_judgment(early_plan)
         elif getattr(run.orchestration,'context_sent',False):
             # The final plan may differ from the speculative one; audit exactly what it received.
@@ -1556,6 +1563,7 @@ class WorkExecutor:
         except Exception:
             service.record_attempt_input(job['id'],input_ref,'unknown' if dispatched else 'not-sent')
             raise
+        if not self._read_checkpoint_can_settle(run):return True
         service.record_attempt_input(job['id'],input_ref,'sent')
         service.preparations_service.record_plan_line_reads(job['id'],run.stored_history,engine_context['request'])
         # #729: a bridge call the CLI never saw completed is a typed failure.
@@ -1707,12 +1715,14 @@ class WorkExecutor:
             # #833: the outcome judgment reads the same profile / current-context sections.
             run_options={'owner_context':api_context,'judgment_history':judgment_history,
                          'reply_delivery':service.work_reply_delivery(job)}
-            if read_continuation := service.read_checkpoint_note(job):
-                run_options.update(read_continuation=read_continuation, original_goal=run.prompt)
+            if job.get('owner_typed')==1:
+                run_options.update(read_progress=lambda:service.read_checkpoint_note(job, include_fresh=True),
+                                   original_goal=run.prompt)
             if run.image_inputs:run_options['images']=run.image_inputs
             # Adopt the adapter's existing tool_turn boundary: the loop may refuse its
             # budget before dispatch, which must leave every annotation open.
             run.result=run_agent(_FirstTurnCommit(service.adapter,lambda:self._commit_profile_shown(run,api_context)),runtime_config,run.key,[*api_context['conversation'],{'role':'user','content':api_context['request']}],context_sections(api_context),run.capabilities,run.record,definitions=offered,**run_options)
+            if not self._read_checkpoint_can_settle(run):return True
             # #825: a run the budget ended before any model turn sent nothing.
             received=self._model_responded(job['id'],run.attempt_start)
             service.record_attempt_input(job['id'],input_ref,{True:'sent',False:'not-sent'}.get(received,'unknown'))
@@ -1721,6 +1731,7 @@ class WorkExecutor:
                                           count=len(run.image_inputs),route='direct-api',
                                           provider=runtime_config.get('provider'))
         except Exception as exc:
+            if not self._read_checkpoint_can_settle(run):return True
             # #825: a model response in this attempt shows the input was sent; without one the
             # failure may have come before or after the request reached the provider.
             service.record_attempt_input(job['id'],input_ref,'sent' if self._model_responded(job['id'],run.attempt_start) else 'unknown')
@@ -1743,8 +1754,9 @@ class WorkExecutor:
         finally:
             # #656: the Work's browser session ends with the run, on this thread.
             run.capabilities.close_browser()
-            if self._model_responded(job['id'],run.attempt_start):
+            if self._read_checkpoint_can_settle(run) and self._model_responded(job['id'],run.attempt_start):
                 service.preparations_service.record_plan_line_reads(job['id'],run.stored_history,api_context['request'])
+        if not self._read_checkpoint_can_settle(run):return True
         service.record_observed_tools(job['id'])
         # Private reads during the run widen the egress guard;
         # record the final set, not only the pre-run snapshot.

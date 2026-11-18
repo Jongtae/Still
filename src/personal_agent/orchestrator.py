@@ -983,6 +983,7 @@ class Orchestration:
         #: #980: the owner message and reply of the Work this one follows up, when the
         #: follow-up judgment linked them ('' otherwise).  Read first for what the message refers to.
         self.continues = str(continues or '')
+        self.read_progress = ''
         #: #1517: what the message carried besides its words ('1 photo'), for the outcome judgment.
         self.attachments = str(attachments or '')
         #: #240: what already waits for the owner's own decision in this conversation (kinds and when
@@ -1136,6 +1137,7 @@ class Orchestration:
     def _revision_context_digest(self):
         return digest({'request': self.request, 'conversation': self.conversation,
                        'sections': self.sections, 'steers': self.steers,
+                       **({'read_progress': self.read_progress} if self.read_progress else {}),
                        **({'corrections': list(self.corrections)} if getattr(self, 'corrections', ()) else {})})
 
     def _owner_context(self):
@@ -1240,8 +1242,10 @@ class Orchestration:
         while routing runs: the budget's remaining seconds and (#384) the current-context clock."""
         return digest(self._plan_inputs(candidates))
 
-    def _plan_inputs(self, candidates):
-        facts = dict(self._plan_context(candidates).facts)
+    def _plan_inputs(self, candidates, context=None):
+        if context is None:
+            context = self._plan_context(candidates)
+        facts = dict(context.facts)
         facts.pop('budget', None)
         if 'current_context' in facts:
             facts['current_context'] = without_moving_clock(facts['current_context'])
@@ -1268,6 +1272,21 @@ class Orchestration:
 
     def _ask(self, candidates):
         """``(data, failure)`` for one plan call over ``candidates``."""
+        checkpoint_judgment = getattr(self.judgments, 'checkpoint_judgment', None)
+        if self.read_progress and checkpoint_judgment is not None:
+            context = self._plan_context(candidates)
+            inputs = self._plan_inputs(candidates, context)
+            self.plan_inventory = self._context_inventory
+            self.context_sent = False
+            def decide():
+                data, failure = self._ask_plan(candidates, context)
+                return data if not failure else None
+            data = checkpoint_judgment(self.work_id, PURPOSE, inputs, self._continues_text(),
+                                       decide, budget=self.budget)
+            return (data, '') if data is not None else (None, FALLBACK_BUDGET if self.budget_stop else FALLBACK_UNAVAILABLE)
+        return self._ask_plan(candidates)
+
+    def _ask_plan(self, candidates, context=None):
         engine = getattr(self.judgments, 'engine', None)
         method = getattr(engine, 'structured', None)
         if method is None or not candidates:
@@ -1277,7 +1296,8 @@ class Orchestration:
         if code:
             self.budget_stop = code
             return None, FALLBACK_BUDGET
-        context = self._plan_context(candidates)
+        if context is None:
+            context = self._plan_context(candidates)
         self.plan_inventory = self._context_inventory
         try:
             if self.budget is not None and getattr(getattr(self.judgments, 'engine', None), 'work_budget', None) is not self.budget:
@@ -1672,7 +1692,8 @@ class Orchestration:
 
     def _continues_text(self):
         """The linked earlier exchange (#980), redacted and bounded from its end, or 'none'."""
-        return self._redact(self.continues)[-CONTINUES_CHARS:] or 'none'
+        parts = '\n'.join(part for part in (self.continues, self.read_progress) if part)
+        return self._redact(parts)[-CONTINUES_CHARS:] or 'none'
 
     def may_judge(self):
         """Whether a judgment that can only end the Work may still be asked: not stopped, deadline not passed.

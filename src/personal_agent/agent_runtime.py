@@ -6214,7 +6214,7 @@ def loop_definitions(definitions):
  # name ever reach this list, the loop's own definition replaces it.
  return [*(d for d in definitions if d['function']['name']!=FINISH_ACTION),FINISH_DEFINITION]
 
-def run_agent(adapter,config,key,history,system,capabilities,record,scope='main',owner_context=None,images=None,judgment_history=None,definitions=None,reply_delivery='to_owner',*,read_continuation='',original_goal=None):
+def run_agent(adapter,config,key,history,system,capabilities,record,scope='main',owner_context=None,images=None,judgment_history=None,definitions=None,reply_delivery='to_owner',*,read_progress=None,original_goal=None):
  """The direct-API tool loop.  ``owner_context`` (#833) is the turn context whose
  ``profile`` / ``current_context`` sections ``system`` already carries, so the outcome
  judgment reads the same owner model the worker was given; None reads ``none``.
@@ -6244,7 +6244,7 @@ def run_agent(adapter,config,key,history,system,capabilities,record,scope='main'
  # #14: (tool, host_action, state, detail, reason) of every validated attempt, as ``trail_steps``
  # reads recorded events, so the outcome judgment sees which failures a later call made up for.
  steps=[]
- goal=original_goal if original_goal is not None else next((m.get('content') for m in reversed(history) if isinstance(m,dict) and m.get('role')=='user' and isinstance(m.get('content'),str)),'')
+ goal=next((m.get('content') for m in reversed(history) if isinstance(m,dict) and m.get('role')=='user' and isinstance(m.get('content'),str)),'')
  # #820: the recent conversation the one outcome judgment reads (the current request excluded).
  # #240: each row labelled as an earlier Work (as on the orchestrated route); this history carries no times.
  judgment_rows=[m for m in (history[:-1] if judgment_history is None else judgment_history)
@@ -6255,19 +6255,25 @@ def run_agent(adapter,config,key,history,system,capabilities,record,scope='main'
  budget=capabilities.budget
  active_config=dict(config);rerouted=False;checked_direct=False;attempts={};actual=None
 
+ def checkpoint_goal(note):
+  if not note:return goal
+  corrections=capabilities.store.work_steer_texts(capabilities.job_id)
+  return '\n\n'.join((original_goal if original_goal is not None else goal,*corrections))
+
  def conclude(content,claim=None,judgment=None,reply_source='worker'):
   """The run's result: ``succeeded`` needs an accepted done claim judged yes (#657)."""
   labels=source_labels(sources)
   if labels and msg('agent_runtime.sources_looked_up') not in content:content+='\n\n'+msg('agent_runtime.sources_looked_up')+'\n'+'\n'.join(labels)
   result=ModelResult(content[:24000],config['provider'],actual)
   result.reply_source=reply_source
+  read_continuation=read_progress() if read_progress else ''
   needs_judgment=bool(_external(trail) or read_continuation)
   if claim is None and needs_judgment and not invalid_calls:
    # #820: a plain final reply after tools ran is judged once, like a done claim: did
    # the reply serve the owner's message, given every settled observation?  Whether
    # the model also called ``finish`` is bookkeeping, not the outcome.
    refs=[ref for ref,row in observations.items() if row[2]=='succeeded' and row[1] not in INTERNAL_STATE_ACTIONS]
-   judgment=goal_judgment(capabilities.judgments,goal,{'evidence_refs':refs,'summary':content},observations,failed_steps_text(steps),
+   judgment=goal_judgment(capabilities.judgments,checkpoint_goal(read_continuation),{'evidence_refs':refs,'summary':content},observations,failed_steps_text(steps),
                           capabilities.job_id,getattr(capabilities,'judgment_text',None),conversation,owner_context,budget=budget,
                             attachments=attachment_facts(images=len(images)) if images else '',read_state=steps_read_state(steps),
                             awaiting=work_awaiting_owner_text(capabilities),conversation_turns=conversation_turns,
@@ -6348,6 +6354,11 @@ def run_agent(adapter,config,key,history,system,capabilities,record,scope='main'
   requested=active_config.get('model')
   if actual and active_config.get('model')=='openrouter/free' and actual!='openrouter/free':active_config['model']=actual
   actual=actual or NOT_REPORTED
+  read_continuation=read_progress() if read_progress else ''
+  if read_continuation:
+   try:budget.check()
+   except ToolError as stop:
+    return _budget_end(stop,executions,sources,successful,incomplete,verified,config,actual,draft)
   capabilities.worker_identity={'route':'direct-api','model':requested or '',
                                 'observed_model':actual if actual!=NOT_REPORTED else ''}
   calls=message.get('tool_calls') or []
@@ -6416,8 +6427,9 @@ def run_agent(adapter,config,key,history,system,capabilities,record,scope='main'
       if not claim['evidence_refs']:reason='no_evidence'
      judgment=None
      if reason is None and claim['status']=='done':
+      read_continuation=read_progress() if read_progress else ''
       judged+=1
-      judgment=goal_judgment(capabilities.judgments,goal,claim,observations,failed_steps_text(steps),capabilities.job_id,
+      judgment=goal_judgment(capabilities.judgments,checkpoint_goal(read_continuation),claim,observations,failed_steps_text(steps),capabilities.job_id,
                              getattr(capabilities,'judgment_text',None),conversation,owner_context,budget=budget,
                              attachments=attachment_facts(images=len(images)) if images else '',read_state=steps_read_state(steps),
                              awaiting=work_awaiting_owner_text(capabilities),conversation_turns=conversation_turns,
@@ -6566,7 +6578,7 @@ def run_agent(adapter,config,key,history,system,capabilities,record,scope='main'
     if len(encoded)>24000:encoded=json.dumps({**ref,'truncated':True,'preview':encoded[:22000],**left},ensure_ascii=False)
     messages.append({'role':'tool','tool_call_id':call['id'],'content':encoded})
   finally:overlap.settle()
-  steer=claim_owner_steers(capabilities.store,capabilities.job_id,record)
+  steer=claim_owner_steers(capabilities.store,capabilities.job_id,record,ledger=getattr(budget,'ledger',None))
   if steer:messages.append({'role':'user','content':steer})
   # #798: a correction to this run's entrusted line reaches its next step (a stop ends it by itself).
   line_note=capabilities.line_note() if callable(getattr(capabilities,'line_note',None)) else None

@@ -12,7 +12,7 @@ class ReadProgressReplanning(Harness):
     checkpoint = {
         'resumed': True, 'artifact': 'artifact-1010', 'received': 48, 'total': 96, 'revision': 2,
         'source': 'https://outside.invalid/untrusted-text',
-        'etag': '"private-etag"', 'digest': 'private-digest', 'epoch': 4,
+        'etag': '"private-etag"', 'digest': 'private-digest', 'epoch': 0, 'resume_pending': False,
     }
 
     def test_the_direct_attempt_and_one_final_judgment_share_verified_progress(self):

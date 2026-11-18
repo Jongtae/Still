@@ -149,6 +149,10 @@ class QuickStore:
                 job_id TEXT PRIMARY KEY, epoch INTEGER NOT NULL, value TEXT NOT NULL,
                 resume_pending INTEGER NOT NULL DEFAULT 0, resume_count INTEGER NOT NULL DEFAULT 0
             );
+            CREATE TABLE IF NOT EXISTS work_read_judgments(
+                job_id TEXT NOT NULL, input_digest TEXT NOT NULL, epoch INTEGER NOT NULL,
+                result TEXT, PRIMARY KEY(job_id,input_digest)
+            );
             -- Intake is authority state, never a dispatched tool or an effect receipt.
             CREATE TABLE IF NOT EXISTS work_intake_sources(id INTEGER PRIMARY KEY AUTOINCREMENT, job_id TEXT NOT NULL, detail TEXT NOT NULL, created REAL NOT NULL);
             CREATE INDEX IF NOT EXISTS work_intake_sources_job ON work_intake_sources(job_id,id);

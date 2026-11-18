@@ -781,7 +781,8 @@ class AgentService:
         self.decision_engine=RoutedDecisionEngine(self.decision_routes.engine, budget=self.current_decision_budget)
         # #619: the Main AI (Work route) chooser and per-provider API keys.
         self.main_ai=MainAiRoutes(self)
-        self.decision_judge=ConversationJudgments(self.decision_engine,redactor=self.redact_judgment_text)
+        self.decision_judge=ConversationJudgments(self.decision_engine,redactor=self.redact_judgment_text,
+                                                 checkpoint_judgment=self.read_checkpoint_judgment)
         self.intent_classifier=IntentClassifier(judge=self.decision_judge)
         # Owner-facing projection of blocked turns (#510). The projected
         # transcript row is also the durable Telegram delivery source.
@@ -2919,7 +2920,8 @@ class AgentService:
     def use_decision_engine(self, engine):
         """Replace the engine behind both consumers (tests, later providers)."""
         self.decision_engine=engine
-        self.decision_judge=ConversationJudgments(engine,redactor=self.redact_judgment_text)
+        self.decision_judge=ConversationJudgments(engine,redactor=self.redact_judgment_text,
+                                                 checkpoint_judgment=self.read_checkpoint_judgment)
         self.intent_classifier=IntentClassifier(judge=self.decision_judge)
 
     def record_stage(self, job_id, stage, since, db=None, **extra):
@@ -5493,23 +5495,33 @@ class AgentService:
         previous_route=self.previous_work_route(job,rows)
         def event(status,detail):
             with self.store.db() as db:
+                db.execute('BEGIN IMMEDIATE')
+                ledger=getattr(budget,'ledger',None)
+                if ledger is not None and not self.store.read_checkpoint_can_settle(job['id'],ledger.epoch,db=db):
+                    return
                 db.execute('INSERT INTO tool_events(job_id,tool,status,detail,created) VALUES (?,?,?,?,?)',
                            (job['id'],ORCHESTRATION_EVENT,status,json.dumps(detail,ensure_ascii=False),time.time()))
         state=(lambda:self.store.config(self.ORCHESTRATION_STATE,{}),lambda value:self.store.put(self.ORCHESTRATION_STATE,value))
         # #671: a preparation's run is judged as this run, not as the schedule Still itself keeps.
         if prep.preparation_of(job.get('request_key')) and job.get('model')!='preparation':
             request=str(request or '')+'\n\n'+self.preparation_run_fact(job)
-        return Orchestration(self.decision_judge,catalogue,request=request,conversation=conversation,
-                             continues='\n'.join(part for part in (self.continued_exchange(job),self.action_continuation_note(job)) if part),
+        orchestration = Orchestration(self.decision_judge,catalogue,request=request,conversation=conversation,
+                             continues='\n'.join(part for part in (self.continued_exchange(job),
+                                                    self.action_continuation_note(job, include_read=False)) if part),
                              sections={**sections,'history':len(earlier)},budget=budget,record=event,state=state,
                              work_id=job['id'],qualifying=self.decision_routes.qualifying,
                              can_ask_location=can_ask_location,attachments=attachments,previous_route=previous_route,
                              effort_timing=self.effort_timing_text(),
                              # #407: computed here so the early plan and the Work's own plan ask the same question.
-                             can_preview=self.can_preview(job),
+                             can_preview=self.can_preview(job) and 'read_checkpoint_resume' not in job,
                              # #240: what waits for the owner, for the plan call and this Work's goal judgment.
                              awaiting_conversation=self.awaiting_in_conversation(job),
                              awaiting_work=lambda:om.awaiting_owner_text(om.work_awaiting_owner(self.store,job['id'])))
+        orchestration.read_progress = self.read_checkpoint_note(job)
+        if orchestration.read_progress:
+            orchestration.can_ask_location = False
+            orchestration.owner_corrected(self.store.work_steer_texts(job['id']))
+        return orchestration
 
     #: How far back and how often the observed effort timing is read; levels with fewer turns are left out.
     EFFORT_TIMING_DAYS,EFFORT_TIMING_REFRESH,EFFORT_TIMING_MIN_TURNS=14,600,3
@@ -5830,7 +5842,8 @@ class AgentService:
         from .orchestrator import EFFECT_UNKNOWN_STOP
         effect=EFFECT_UNKNOWN_STOP if unknown else 'changed' if 'effect' in reasons else False
         observations,failed_steps,effects,summary=self.attempt_observations(orchestration,rows,pages=pages)
-        if read_checkpoint := self.read_checkpoint_note({'id': job_id}):
+        if read_checkpoint := self.read_checkpoint_note({'id': job_id}, include_fresh=True):
+            orchestration.read_progress = read_checkpoint
             observations=read_checkpoint+'\n'+observations[:max(0,16000-len(read_checkpoint)-1)]
         if recalled:observations=recalled+'\n'+observations[:max(0,16000-len(recalled)-1)]
         if failed is not None:
@@ -8118,25 +8131,24 @@ class AgentService:
         if not resumed and not self.photo_work_has_pending_resume(work_id):self.store.remove_telegram_photo(work_id)
         return {'resumed':resumed,'response':msg('budget_continue.resumed' if resumed else 'budget_continue.stale')}
 
-    def read_checkpoint_note(self, job):
+    def read_checkpoint_note(self, job, *, include_fresh=False):
         """Render host-owned metadata only. Never send source URLs or artifact contents."""
+        from .work_download import checkpoint_note
         checkpoint = self.store.read_checkpoint(job['id'])
-        if not checkpoint or checkpoint.get('resumed') is not True:
+        if not checkpoint or (not include_fresh and checkpoint.get('resumed') is not True):
             return ''
-        artifact = checkpoint.get('artifact')
-        received, total, revision = (checkpoint.get(k) for k in ('received', 'total', 'revision'))
-        if (not isinstance(artifact, str) or not re.fullmatch(r'[A-Za-z0-9_-]{1,128}', artifact)
-                or not all(type(value) is int and 0 < value < 2**63 for value in (received, total, revision))
-                or received > total):
-            return ''
-        return self._redact_known_secrets(
-            f'Still verified read progress on this same Work. Artifact reference {artifact}, '
-            f'checkpoint revision {revision}: {received} of {total} bytes verified; {total - received} bytes remain. '
-            'This is a host observation, not a new owner instruction or proof of goal completion. '
-            'Use the verified progress and current authority to decide what remains necessary.')
+        return self._redact_known_secrets(checkpoint_note(checkpoint))
 
-    def action_continuation_note(self, job):
-        read_checkpoint = self.read_checkpoint_note(job)
+    def read_checkpoint_judgment(self, work_id, purpose, facts, note, call, *, budget=None):
+        from .work_download import checkpoint_judgment
+        budget = budget or self.current_decision_budget()
+        ledger = getattr(budget, 'ledger', None)
+        if not note or ledger is None or ledger.job_id != work_id:
+            return call()
+        return checkpoint_judgment(self.store, ledger, purpose, facts, note, call, self.redact_judgment_text)
+
+    def action_continuation_note(self, job, *, include_read=True):
+        read_checkpoint = self.read_checkpoint_note(job) if include_read else ''
         with self.store.db() as db:
             continued=db.execute("SELECT 1 FROM tool_events WHERE job_id=? AND tool IN ('action_continuation','settings_continuation') AND status='queued'",(job['id'],)).fetchone()
             progress=db.execute("SELECT detail FROM tool_events WHERE job_id=? AND tool='action_continuation' AND status='queued' ORDER BY id DESC LIMIT 1",(job['id'],)).fetchone()

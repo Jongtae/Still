@@ -22,6 +22,79 @@ class WorkDownloadError(ValueError):
 def public_checkpoint(checkpoint):
     return {key: checkpoint[key] for key in ('artifact', 'received', 'total', 'revision')}
 
+
+def checkpoint_note(checkpoint):
+    if not checkpoint:
+        return ''
+    artifact, received, total, revision = (checkpoint.get(key) for key in ('artifact', 'received', 'total', 'revision'))
+    if (not isinstance(artifact, str) or not artifact or len(artifact) > 128
+            or any(char not in 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_-' for char in artifact)
+            or not all(type(value) is int and 0 < value < 2**63 for value in (received, total, revision))
+            or received > total):
+        return ''
+    return (f'Still verified read progress on this same Work. Artifact reference {artifact}, '
+            f'checkpoint revision {revision}: {received} of {total} bytes verified; '
+            f'{total - received} bytes remain. This is a host observation, not a new owner instruction '
+            'or proof of goal completion. Use the verified progress and current authority to decide what remains necessary.')
+
+
+def checkpoint_judgment(store, ledger, purpose, facts, note, call, redact):
+    """Reuse a completed judgment for the same inputs. Fence unfinished calls by Work epoch."""
+    from .direct_message_surface import redact_provenance_values
+    from .work_mode import CONFIG_KEY
+
+    work_id = ledger.job_id
+
+    def state(db):
+        checkpoint = store.read_checkpoint(work_id, db=db)
+        if not checkpoint:
+            return None
+        if (ledger.lapse(db=db) or checkpoint['resume_pending'] or checkpoint['epoch'] != ledger.epoch
+                or store._read_checkpoint_stopped(db, work_id)
+                or not store.read_checkpoint_can_settle(work_id, ledger.epoch, db=db)
+                or not note or redact(checkpoint_note(checkpoint)) not in note):
+            return False
+        mode = store.config(CONFIG_KEY, None, db=db)
+        if mode is not None and (not isinstance(mode, dict) or mode.get('enabled') is not False):
+            return False
+        steers = [tuple(row) for row in db.execute(
+            'SELECT source_job_id,content FROM work_steers WHERE job_id=? ORDER BY created,source_job_id', (work_id,))]
+        # The epoch fences writers. It does not change the evidence or give a
+        # resumed run a different identity for an already completed judgment.
+        inputs = (purpose, public_checkpoint(checkpoint), mode, steers, facts)
+        return hashlib.sha256(json.dumps(inputs, sort_keys=True, ensure_ascii=False).encode()).hexdigest()
+
+    with store.db() as db:
+        db.execute('BEGIN IMMEDIATE')
+        key = state(db)
+        if key is False:
+            return None
+        if key:
+            row = db.execute('SELECT epoch,result FROM work_read_judgments WHERE job_id=? AND input_digest=?',
+                             (work_id, key)).fetchone()
+            if row and row['result'] is not None:
+                return redact_provenance_values(json.loads(row['result']), redact)
+            if row and row['epoch'] == ledger.epoch:
+                return None
+            db.execute('INSERT INTO work_read_judgments(job_id,input_digest,epoch) VALUES (?,?,?) '
+                       'ON CONFLICT(job_id,input_digest) DO UPDATE SET epoch=excluded.epoch',
+                       (work_id, key, ledger.epoch))
+    result = call()
+    if key is None or result is None:
+        return result
+    if purpose == 'goal-reached' and result['outcome'] not in ('yes', 'no'):
+        return result
+    result = redact_provenance_values(result, redact)
+    with store.db() as db:
+        db.execute('BEGIN IMMEDIATE')
+        if state(db) != key:
+            return None
+        committed = db.execute('UPDATE work_read_judgments SET result=? '
+                               'WHERE job_id=? AND input_digest=? AND epoch=? AND result IS NULL',
+                               (json.dumps(result, ensure_ascii=False), work_id, key, ledger.epoch)).rowcount
+    return result if committed else None
+
+
 @contextmanager
 def _staging_directory(store, *, create=False):
     directory = store.private / 'work-downloads'
