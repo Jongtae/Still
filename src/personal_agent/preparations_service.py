@@ -794,7 +794,8 @@ class PreparationsService:
         if not preparation_id or job.get('model')=='preparation':return ''
         try:
             row=service.preparations.get(preparation_id)
-            if not row:return msg('preparations.run_fact')
+            # #969: the owner's goal and accepted risk lead; limits the AI set itself are its plan.
+            if not row:return msg('preparations.run_fact')+'\n'+msg('preparations.own_limits')
             count,maximum,recurrence=int(row['run_count']),row.get('max_runs'),row.get('recurrence')
             # ``start`` counts the run and leaves ``due_at`` on its slot until the run is settled.
             if recurrence==prep.RECURRENCE_WINDOW:
@@ -825,10 +826,10 @@ class PreparationsService:
                              else 'preparations.run_delivery',channel=row['channel'])
             return msg('preparations.run_record', id=preparation_id,
                        position=msg('preparations.run_bounded',run=count,maximum=maximum) if maximum else str(count),
-                       schedule=schedule,delivery=delivery)
+                       schedule=schedule,delivery=delivery)+'\n'+msg('preparations.own_limits')
         except Exception:
             LOG.info('preparation run fact unavailable job=%s',job.get('id'))
-            return msg('preparations.run_fact')
+            return msg('preparations.run_fact')+'\n'+msg('preparations.own_limits')
 
     def preparation_history(self, job):
         """The only conversation a preparation's Work is shown (#659).

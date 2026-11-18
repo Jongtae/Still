@@ -1614,10 +1614,16 @@
   "zh": "暂时不用"
  },
  "preparations.accepted_offer_label": {
-  "ko": "소유자가 읽고 수락한 내용(이 범위 안에서 하세요):",
-  "en": "What the owner read and accepted (stay within it):",
-  "ja": "オーナーが読んで承諾した内容（この範囲内で行ってください）:",
-  "zh": "主人阅读并接受的内容（请在此范围内进行）："
+  "ko": "소유자가 읽고 수락한 내용(이 범위 안에서 하세요. 여기서 스스로 정했다고 밝힌 한도는 소유자의 규칙이 아니라 계획이에요):",
+  "en": "What the owner read and accepted (stay within it; a limit it names as your own choice is your plan, not the owner's rule):",
+  "ja": "オーナーが読んで承諾した内容（この範囲内で行ってください。ここで自分で決めたと示した上限はオーナーのルールではなく自分の計画です）:",
+  "zh": "主人阅读并接受的内容（请在此范围内进行；其中注明由你自行选择的限制是你的计划，不是主人的规则）："
+ },
+ "preparations.own_limits": {
+  "ko": "기준은 소유자가 말한 목표와 소유자가 받아들인 위험이에요. 소유자의 규칙 밖에서 스스로 정한 한도는 소유자의 규칙이 아니라 계획이에요. 그 한도 때문에 목표에 닿지 못하면 고치고 무엇을 바꿨는지 말하세요.",
+  "en": "The owner's stated goal and the risk the owner accepted are the standard. Limits you set yourself, outside the owner's rules, are your plan, not the owner's rules: when they keep the goal from being reached, revise them and say what you changed.",
+  "ja": "基準はオーナーが述べた目標とオーナーが受け入れたリスクです。オーナーのルール以外で自分で決めた上限はオーナーのルールではなく自分の計画です。それが目標の達成を妨げるときは見直し、何を変えたかを伝えてください。",
+  "zh": "标准是主人说明的目标和主人接受的风险。你在主人的规则之外自行设定的限制是你的计划，不是主人的规则：当它们妨碍达成目标时，请调整它们并说明改了什么。"
  },
  "preparations.run_record": {
   "ko": "준비 {id}. 이 Work는 소유자가 수락한 준비의 {position}번째 실행이며, 답은 이번 실행의 결과예요. {schedule}. {delivery}",
