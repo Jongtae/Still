@@ -325,12 +325,7 @@ class TestReadWorkEntryIntegration1007(handoff.HandoffTestCase):
         self.release_frozen_worker(frozen)
         self.assertEqual(len(calls), 2)
 
-    # Possible defect for #1007: WorkExecutor._settle_work_judgments
-    # (work_executor.py ~2027) pauses the ledger on every exit including
-    # SystemExit/KeyboardInterrupt, and recovery then marks the checkpointed
-    # Work interrupted instead of requeueing it; a graceful process stop
-    # (signal -> SystemExit) loses auto-resume.
-    @unittest.expectedFailure
+    # #1007: a graceful stop (signal -> SystemExit) inside a judgment keeps auto-resume.
     def test_graceful_exit_during_judgment_still_resumes_checkpointed_work(self):
         job = self.enqueue('graceful-exit')
         calls = []
@@ -351,7 +346,6 @@ class TestReadWorkEntryIntegration1007(handoff.HandoffTestCase):
         self.assertIsNone(unfinished[0]['result'])
         self.assertEqual(self.store.read_checkpoint(job)['received'], 4)
         self.fresh_service().recover_interrupted_work()
-        # This queued-status assertion is the verified expected failure.
         self.assertEqual(self.store.job(job)['status'], 'queued')
 
     def test_old_epoch_judgment_cannot_commit_or_deliver_after_reclaim(self):
