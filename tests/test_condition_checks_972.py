@@ -100,6 +100,17 @@ class _Base(unittest.TestCase):
     def hit(self, text='level held 180 s'):
         self.queue.append(FakeProcess(result={'stdout': text, 'stderr': ''}))
 
+    def state_process(self, state, result):
+        process = FakeProcess(result=result)
+        original = process._lines
+
+        def write_state():
+            with open(process.config['env'][cc.STATE_ENV], 'w') as handle:
+                json.dump(state, handle)
+            yield from original()
+        process._lines = write_state
+        return process
+
     def tick(self, seconds=15):
         self.now += seconds
         return self.checks.run_due()
@@ -204,6 +215,115 @@ class Setup(_Base):
 
 
 class Running(_Base):
+    def test_new_check_state_secrets_are_redacted_before_the_first_hit_is_persisted(self):
+        row = self.check_row()
+        token = 'fresh-check-value-opaque-00000001'
+        plain = 'owner-visible-description-00001'
+        self.queue.append(self.state_process({'nested': [token], 'plain': {'description': plain}},
+                                             {'stdout': f'{plain}: {token}', 'stderr': token}))
+        self.tick(0)
+        [work] = self.woken(row['id'])
+        with self.store.db() as db:
+            [event] = db.execute('SELECT detail FROM tool_events WHERE job_id=? AND tool=?',
+                                (work['id'], prep.CHECK_EVENT_TOOL)).fetchall()
+        self.assertNotIn(token, event['detail'], 'redact before SQLite, not only when displaying the handoff')
+        self.assertIn('[redacted]', json.loads(event['detail'])['output'])
+        self.assertIn(plain, json.loads(event['detail'])['output'])
+        self.assertNotIn(token, json.dumps(self.checks.handoff(work)))
+
+    def test_new_check_state_secrets_are_redacted_from_each_failure_and_its_wake(self):
+        row = self.check_row()
+        for count in range(cc.FAILURES_BEFORE_PAUSE):
+            token = f'fresh-check-exception-value-{count:08d}'
+            self.queue.append(self.state_process({'token': token},
+                                                 {'exit': 1, 'stderr': f'RuntimeError: {token}'}))
+            self.tick(15)
+            current = self.row(row['id'])
+            self.assertNotIn(token, current['check_status'])
+            self.assertEqual(cc.status_of(current)['last_error']['diagnostic'], 'RuntimeError: [redacted]')
+        [work] = self.woken(row['id'])
+        with self.store.db() as db:
+            [event] = db.execute('SELECT detail FROM tool_events WHERE job_id=? AND tool=?',
+                                (work['id'], prep.CHECK_EVENT_TOOL)).fetchall()
+        self.assertNotIn(token, event['detail'])
+        self.assertEqual(json.loads(event['detail'])['diagnostic'], 'RuntimeError: [redacted]')
+
+    def test_queue_full_keeps_previous_edge_state_until_the_hit_is_admitted(self):
+        row = self.check_row()
+        spec, key = cc.spec_of(row), cc.state_key(row['id'])
+        credentials = ApiCredentials(self.store)
+        previous = json.dumps({'reported': False, 'cursor': 7})
+        self.assertTrue(credentials.write_bound_state(key, spec['digest'], previous))
+        seen = []
+
+        def edge_process():
+            process = FakeProcess()
+            original = process._lines
+
+            def report_once():
+                path = process.config['env'][cc.STATE_ENV]
+                with open(path) as handle:
+                    state = json.load(handle)
+                seen.append(state.copy())
+                process._result = {'stdout': '' if state['reported'] else 'new event'}
+                state['reported'] = True
+                with open(path, 'w') as handle:
+                    json.dump(state, handle)
+                yield from original()
+            process._lines = report_once
+            return process
+
+        self.queue.append(edge_process())
+        with mock.patch.object(self.store, 'enqueue', side_effect=ValueError('queue full')):
+            self.tick(0)
+        self.assertEqual(self.woken(row['id']), [])
+        current = self.row(row['id'])
+        self.assertEqual(cc.status_of(current)['wake_refused']['reason'], 'queue-full')
+        self.assertEqual(credentials.read_bound_state(key, spec['digest']), previous)
+        day = self.service.preparations.budget_day(self.now)
+        self.assertIsNone(self.store.config(prep.SCHEDULED_USAGE_PREFIX + day))
+        self.queue.append(edge_process())
+        self.tick(15)
+        [work] = self.woken(row['id'])
+        self.assertEqual(self.checks.handoff(work)['output'], 'new event')
+        self.assertEqual(seen, [json.loads(previous), json.loads(previous)])
+        self.assertTrue(json.loads(credentials.read_bound_state(key, spec['digest']))['reported'])
+        self.assertEqual(self.store.config(prep.SCHEDULED_USAGE_PREFIX + day), 1)
+        self.assertEqual(self.checks.wakes_today(self.row(row['id']), self.now), 1)
+        self.assertFalse(self.tick(15), 'one wake at a time')
+        self.settle(row['id'])
+        self.queue.append(edge_process())
+        self.tick(15)
+        self.assertEqual(len(self.woken(row['id'])), 1, 'the admitted event is not reported again')
+
+    def test_woken_work_audit_records_the_checks_api_use_without_further_tools(self):
+        row = self.check_row()
+        self.queue.append(FakeProcess(requests=[
+            {'method': 'GET', 'host': HOST, 'path': '/value', 'query': ''},
+            {'method': 'GET', 'host': 'refused.example.net', 'path': '/', 'query': ''}],
+            result={'stdout': 'new event', 'stderr': ''}))
+        self.tick(0)
+        work = self.settle(row['id'])
+        audit = self.service.work_information_use(work)
+        used = {item['category']: item['items'] for item in audit['used']}
+        self.assertIn('example-broker', used.get('api', []))
+        self.assertEqual(audit['sent_to']['connections'], [
+            {'engine': 'agentos', 'phase': 'condition-check', 'destination': HOST,
+             'state': 'reached', 'remote_receipt': ''}])
+        self.assertNotIn('refused.example.net', json.dumps(audit))
+        self.assertEqual([event['tool'] for event in self.store.task_events(work)
+                          if event['tool'] == 'code_run'], [])
+        # The same authenticated read in an ordinary Work shows the same facts,
+        # with its actual route, rather than claiming the woken Work called code_run.
+        ordinary = self.owner_work('read the value')
+        self.code_run(ordinary, self.check_args(), FakeProcess(requests=[
+            {'method': 'GET', 'host': HOST, 'path': '/value', 'query': ''},
+            {'method': 'GET', 'host': 'refused.example.net', 'path': '/', 'query': ''}]))
+        direct = self.service.work_information_use(ordinary['id'])
+        self.assertEqual(direct['used'], audit['used'])
+        self.assertEqual(direct['sent_to']['connections'], [
+            {**audit['sent_to']['connections'][0], 'phase': 'code-run'}])
+
     def test_a_quiet_run_costs_no_work_and_runs_again_one_interval_after_it_ended(self):
         row = self.check_row()
         self.assertTrue(self.tick(0))

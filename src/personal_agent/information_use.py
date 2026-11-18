@@ -643,6 +643,22 @@ def _work_information_use(store, job_id, redact=None, *, compare_held_values=Tru
                                 ('engine', 'phase', 'destination', 'state', 'remote_receipt')}
             continue
         evidence = trace.get('evidence') if isinstance(trace.get('evidence'), dict) else {}
+        check_wake = action == 'condition_check' and status == 'woken'
+        if check_wake or (action == 'code_run' and status in ('succeeded', 'failed')):
+            # A handoff uses the check's observed API access even if its Work calls no tools.
+            # Use the same secret-set labels and allowed run destinations as code_run Evidence;
+            # declared or refused hosts are not evidence of contact, and no response is inferred.
+            access = trace if check_wake else evidence
+            add('api', access.get('secrets') or ())
+            reached = (access.get('reached') or ()) if check_wake else [
+                row.get('host') for row in access.get('requests') or ()
+                if isinstance(row, dict) and row.get('allowed') and row.get('phase') == 'run']
+            for host in reached:
+                destination = label(host, 200)
+                if destination:
+                    connections[(action, event.get('id'), destination)] = {
+                        'engine': 'agentos', 'phase': 'condition-check' if check_wake else 'code-run',
+                        'destination': destination, 'state': 'reached', 'remote_receipt': ''}
         if action == 'api_dispatch':
             evidence_state = 'response-observed' if status == 'observed' else 'authentication-refused' if status == 'rejected' else 'outcome-unknown'
             connections[('api', event.get('id'))] = {'engine': 'agentos', 'phase': 'api-dispatch',

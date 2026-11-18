@@ -201,6 +201,25 @@ class CheckRunner(CodeRunner):
             self.state_out = None
         return saved
 
+    def _result(self, code, packages, hosts, outcome, requests, names=(), failed=None):
+        from .api_credentials import STATE_PLAIN_KEY, STATE_REDACT_CHARS, _strings
+        from .quickstart_store import QuickStore
+        # The captured state is not saved until admission. Protect its new values now,
+        # using the same state-value policy and literal redactor as stored credentials.
+        try:
+            state = json.loads(self.state_out or '{}')
+        except ValueError:
+            state = {}
+        if isinstance(state, dict):
+            state = {key: value for key, value in state.items() if key != STATE_PLAIN_KEY}
+        values = _strings(state, STATE_REDACT_CHARS)
+        values = sorted({*values, *(form for value in values for form in QuickStore.json_escaped_forms(value))},
+                        key=len, reverse=True)
+        outcome = {**outcome, **{key: QuickStore.redact_secret_spans(outcome.get(key), values, None)
+                                for key in ('stdout', 'stderr')}}
+        requests = [{**row, 'path': QuickStore.redact_secret_spans(row['path'], values, None)} for row in requests]
+        return super()._result(code, packages, hosts, outcome, requests, names, failed)
+
 
 class ConditionChecks:
     """The check runner of one service (#972): claim, run, then quiet, wake or count a failure."""
@@ -382,8 +401,7 @@ class ConditionChecks:
                 status['failures'] = 0
             self._count(status, now, db, run=True, hosts=hosts)
             status.update(last_run_at=now, last_result=kind)
-            if ended and outcome.get('state') is not None:
-                self._write_state(current['id'], spec, outcome['state'])
+            save_state = ended and outcome.get('state') is not None
             updates = {}
             if kind == QUIET:
                 status['failures'] = 0
@@ -396,6 +414,9 @@ class ConditionChecks:
                 handoff = {'kind': HIT, 'at': now, 'check': spec['digest'][:16], 'output': result.get('stdout') or '',
                            'reached': sorted(set(hosts)), 'secrets': spec['secrets']}
                 woken, reason = self._wake(db, current, status, now, handoff, destination, prep.STATE_SCHEDULED)
+                # An edge-triggered check may have marked this hit reported in its state.
+                # Keep its previous state on every non-admission so the next run retries it.
+                save_state = save_state and bool(woken)
                 updates['check_next_at'] = (now + spec['every_seconds'] if woken or reason == 'queue-full'
                                             else self._next_day_start(now, db))
                 if reason == 'run-limit':
@@ -417,6 +438,8 @@ class ConditionChecks:
                     if not woken:
                         updates['state'] = prep.STATE_PAUSED
                         self._queue_paused_notice(db, current, now)
+            if save_state:
+                self._write_state(current['id'], spec, outcome['state'])
             updates['check_status'] = json.dumps(status, sort_keys=True)
             if 'state' in updates:
                 updates['updated_at'] = max(now, math.nextafter(current['updated_at'], math.inf))
