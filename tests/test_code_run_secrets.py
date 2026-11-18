@@ -155,6 +155,35 @@ class Storage(unittest.TestCase):
             api_requests.ApiRequests(self.store, 'work').call(
                 {'slot': 'example-broker', 'url': f'https://{HOST}/v1/balance', 'method': 'GET', 'effect': 'read'})
         self.assertEqual(caught.exception.code, 'api_slot_code_only')
+        # #983: the refusal names the tool and the library module that take this set instead.
+        self.assertIn('code_run', str(caught.exception))
+        self.assertIn('lib_example_broker', str(caught.exception))
+
+    def test_each_kind_has_its_own_line_headed_for_its_tool(self):
+        # #983: a code-run set listed under the api_request header was sent through api_request.
+        def headed(line, tool):
+            return line.split(':', 1)[0].split('(', 1)[1].split(';', 1)[0].startswith(tool)
+        self.save()
+        only_code = api_requests.context_line(self.store).split('\n')
+        self.assertEqual(len(only_code), 1)
+        self.assertTrue(headed(only_code[0], 'code_run'))
+        self.assertIn('example-broker', only_code[0])
+        api_requests.save_slot(self.store, 'example-weather', ['weather.example.com'], 'weather-value-0003')
+        both = api_requests.context_line(self.store).split('\n')
+        self.assertEqual(len(both), 2)
+        api_line, code_line = both
+        self.assertTrue(headed(api_line, 'api_request'))
+        self.assertTrue(headed(code_line, 'code_run'))
+        self.assertIn('example-weather (weather.example.com', api_line)
+        self.assertNotIn('example-broker', api_line)
+        self.assertNotIn('code_run secrets only', api_line)
+        self.assertIn('example-broker (api.example.com:9443) [code_run secrets only', code_line)
+        self.assertNotIn('example-weather', code_line)
+        self.assertNotIn('weather-value-0003', '\n'.join(both))
+        api_requests.remove_slot(self.store, 'example-broker')
+        only_api = api_requests.context_line(self.store).split('\n')
+        self.assertEqual(len(only_api), 1)
+        self.assertTrue(headed(only_api[0], 'api_request'))
 
     def test_values_must_match_the_declared_fields_and_stay_encrypted(self):
         with self.assertRaises(ApiError):

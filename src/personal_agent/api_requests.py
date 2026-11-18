@@ -482,10 +482,18 @@ def describe(slot):
 
 #: The current-context line naming the registered slots (names and hosts only).
 CONTEXT_LINE = 'API slots (api_request; Still inserts the credential, never shown): '
+#: #983: code-run secret sets have their own line, headed for the tool that uses them.  Listed under
+#: the api_request header, a worker sent a set through api_request until each call was refused.
+CODE_RUN_LINE = 'Code-run secret sets (code_run secrets, not api_request; Still inserts the values, never shown): '
+#: Every current-context line ``context_line`` writes, for readers that take them out whole.
+CONTEXT_LINE_PREFIXES = (CONTEXT_LINE, CODE_RUN_LINE)
 
 
 def context_line(store, connections=None):
-    """One context line naming the registered and connection slots and their hosts, or None."""
+    """The context lines naming the registered and connection slots and their hosts, or None.
+
+    True API slots are listed after ``CONTEXT_LINE`` and code-run secret sets after ``CODE_RUN_LINE``
+    (#983), one line each; a kind with nothing registered has no line."""
     listed = {**(connections or {}), **slots(store)}
     if not listed:
         return None
@@ -516,7 +524,12 @@ def context_line(store, connections=None):
         saved = library.listing(name) if library is not None else ''
         return (f"{text} [code_run secrets only: {env}{reads}; any other request to these hosts (an order, a change) "
                 f"is sent once after the owner approves that exact request, or under current owner-enabled payment autonomy{'; ' + saved if saved else ''}]")
-    return CONTEXT_LINE + '; '.join(entry(name, slot) for name, slot in sorted(listed.items()))
+    lines = []
+    for header, code in ((CONTEXT_LINE, False), (CODE_RUN_LINE, True)):
+        entries = [entry(name, slot) for name, slot in sorted(listed.items()) if (slot.get('kind') == CODE_KIND) == code]
+        if entries:
+            lines.append(header + '; '.join(entries))
+    return '\n'.join(lines)
 
 
 def effective_effect(method, declared):
@@ -1167,7 +1180,11 @@ class ApiRequests:
         """Run the same bounded transport for active calls and input readiness."""
         self._payment_ticket = None
         if slot.get('kind') == CODE_KIND:
-            raise ApiError(f"'{slot['name']}'은 코드 실행(code_run) 전용 비밀값 묶음이라 api_request로 보내지 않았습니다.",
+            # #983: name the next step, so the worker goes to code_run instead of retrying here.
+            from .procedures import module_name
+            raise ApiError(f"'{slot['name']}'은 코드 실행(code_run) 전용 비밀값 묶음이라 api_request로 보내지 않았습니다. "
+                           f"code_run의 secrets에 '{slot['name']}'을 넣어 실행하세요. 이 묶음의 저장된 함수는 "
+                           f"그 실행에서 import {module_name(slot['name'])}로 가져옵니다.",
                            'api_slot_code_only')
         method = str(args.get('method') or 'GET').upper()
         if method not in METHODS:

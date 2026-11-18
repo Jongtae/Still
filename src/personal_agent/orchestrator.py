@@ -55,7 +55,7 @@ from .conversation_projection import earlier_turn_line, earlier_turns_in
 from .agent_runtime import (BUDGET_CODES, BUDGET_TEXTS, CURRENT_CONTEXT_FACT_CHARS, PROFILE_FACT_CHARS, GOAL_CONVERSATION_CHARS, MAX_PLAN_READING_CHARS,
                             budget_stop_code, owner_context_fact, second_judgment_allowed, split_entrusted)
 from .current_context import without_moving_clock
-from .api_requests import CONTEXT_LINE as API_SLOTS_LINE
+from .api_requests import CONTEXT_LINE_PREFIXES as API_SLOTS_LINES
 from .information_use import BROWSER_SIGNINS_PREFIX
 from .decision import MAX_CONTEXT_CHARS, OUTCOME_DECIDED, OUTCOME_MALFORMED, DecisionContext, DecisionPolicy, StructuredSchema
 
@@ -111,9 +111,9 @@ AWAITING_OWNER_CHARS = 600
 #: #980: the earlier exchange the follow-up judgment linked this message to.
 CONTINUES_CHARS = 1200
 #: #501: the lines of the current-context section that say what the worker can reach now: the browser
-#: sign-ins and the API slots with what each can and cannot do.  They come after the snapshot, so the
+#: sign-ins, the API slots and the code-run secret sets (#983) with what each can and cannot do.  They come after the snapshot, so the
 #: snapshot's cut dropped them first; the plan reads them as their own ``connections`` fact.
-ROUTE_LINE_PREFIXES = (BROWSER_SIGNINS_PREFIX, API_SLOTS_LINE)
+ROUTE_LINE_PREFIXES = (BROWSER_SIGNINS_PREFIX, *API_SLOTS_LINES)
 #: #501: that fact's own bound (20 signed-in sites and several slots with their notes fit).
 CONNECTIONS_FACT_CHARS = 4000
 ATTEMPTS_CHARS = 1800
