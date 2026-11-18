@@ -522,6 +522,8 @@ def main(argv=None):
         regression.add_argument('--fixture',type=Path,default=REPO/'evals/recall/recall-pairs-v4.json')
         regression.add_argument('--additions',type=Path,default=REPO/'evals/recall/recall-gate-dev-1.json')
         regression.add_argument('--out',type=Path,required=True)
+        regression.add_argument('--heldout-layer',type=Path,
+            help='fresh held-out layer that replaces the base held-out cases (#827)')
         if command=='recall-record':
             from .paths import SRC
             regression.add_argument('--src',type=Path,default=SRC)
@@ -533,8 +535,10 @@ def main(argv=None):
             regression.add_argument('--terms',type=Path,help='reuse a complete terms recording (.json or .json.gz)')
             regression.add_argument('--resume',type=Path,help='continue incomplete plans (.json or .json.gz); terms default to its sibling terms file with the same suffix')
             regression.add_argument('--heldout-runs',type=int,default=3)
-            regression.add_argument('--splits',choices=('all','dev'),default='all',
-                help='dev: record only dev cases and additions, left incomplete for a later --resume')
+            regression.add_argument('--splits',choices=('all','dev','heldout'),default='all',
+                help='record one split only (dev includes the additions), left incomplete for a later --resume')
+            regression.add_argument('--terms-base',type=Path,
+                help='terms recorded on the composition without --heldout-layer; reused for its rows, new rows keyed live')
         else:
             regression.add_argument('--terms',type=Path,required=True,help='terms recording (.json or .json.gz)')
             regression.add_argument('--plans',type=Path,required=True,help='plans recording (.json or .json.gz)')

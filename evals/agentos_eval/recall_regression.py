@@ -63,6 +63,27 @@ def layer(base, additions):
     return pairs.validate(data)
 
 
+HELDOUT_VERSION = 'recall-heldout/1'
+
+
+def compose(base, additions, heldout=None):
+    """The dev store, optionally with a fresh held-out layer that replaces the spent held-out cases.
+
+    Fresh target rows come first, so they are the oldest rows and the request-only profile
+    fill cuts them as it cuts the base targets; every dev case and row is unchanged (#827).
+    """
+    data = layer(base, additions)
+    if heldout is None:
+        return data
+    if (heldout.get('version') != HELDOUT_VERSION or heldout.get('base_digest') != digest(base)
+            or heldout.get('additions_digest') != digest(additions)):
+        raise ValueError('Held-out layer digest/version differs')
+    if not heldout.get('cases') or any(c.get('split') != 'heldout' for c in heldout['cases']):
+        raise ValueError('Held-out layer must be held-out only')
+    return pairs.validate(dict(data, rows=heldout['rows'] + data['rows'],
+                               cases=[c for c in data['cases'] if c['split'] == 'dev'] + heldout['cases']))
+
+
 def seed_fixture(store, data):
     """Monotonic synthetic creation times preserve row order under a fixed clock."""
     now = datetime.fromisoformat(data['today']).replace(hour=11, tzinfo=timezone.utc).timestamp()
