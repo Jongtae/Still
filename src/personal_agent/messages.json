@@ -11176,6 +11176,24 @@
   "ja": "この実行はオーナーが任せた仕事の定期報告です。前回以降にしたことと結果、有効なルールすべて、わかったこと、未解決の事項を伝えてください。変化がなくてもそう伝えてください（権限は与えません）:",
   "zh": "本次运行是主人受托事项的定期汇报。请汇报自上次汇报以来做了什么及结果、现行的全部规则、了解到的情况和未决事项；即使没有变化也请说明（不授予任何权限）："
  },
+ "lines.account_pieces": {
+  "ko": "지난 보고 이후 이 일의 조각이 {count}번 실행됐어요: 전달 {delivered}, 보관 {kept}, 실패 {failed}, 진행 중 {open}. 이 숫자를 보고에 포함하세요.",
+  "en": "Since the last account, {count} pieces of this work ran: {delivered} delivered, {kept} kept, {failed} failed, {open} still open. Include these counts in the account.",
+  "ja": "前回の報告以降、この仕事の回が{count}回実行されました: 伝達 {delivered}、保管 {kept}、失敗 {failed}、進行中 {open}。この数を報告に含めてください。",
+  "zh": "自上次汇报以来，此事的分步运行了{count}次：已送达 {delivered}，已保存 {kept}，失败 {failed}，仍在进行 {open}。请在汇报中写明这些数字。"
+ },
+ "lines.account_next_piece": {
+  "ko": "다음 조각은 {at}에 예정돼 있어요.",
+  "en": "The next piece is due {at}.",
+  "ja": "次の回は{at}に予定されています。",
+  "zh": "下一步定于{at}。"
+ },
+ "lines.account_piece_paused": {
+  "ko": "다음 조각은 소유자가 일시 중지해 두어 다시 시작될 때까지 실행되지 않아요.",
+  "en": "The next piece is paused by the owner and does not run until it is resumed.",
+  "ja": "次の回はオーナーが一時停止しており、再開されるまで実行されません。",
+  "zh": "下一步已被主人暂停，恢复之前不会运行。"
+ },
  "lines.changed_during_run": {
   "ko": "이 실행 중에 소유자가 맡긴 일의 규칙을 바꿨어요. 다음 단계부터 아래 내용을 따르세요:",
   "en": "The owner changed the rules of this entrusted line during this run. Follow the brief below from your next step on:",
