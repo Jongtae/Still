@@ -5090,7 +5090,8 @@ class AgentService:
             self.preparations.connection_wait_notice(db,job['id'],message.lastrowid,now)
 
     def work_stopped(self, job_id):
-        """Did the owner Stop or cancel this running Work (#606 T1)?"""
+        """Did the owner Stop/cancel this Work, or shut down the service?"""
+        if self.stop.is_set():return True
         state=self.presence.get(job_id)
         if (state is not None and state.stopped) or work_stop_requested(self.store,job_id):
             return True
@@ -9705,6 +9706,9 @@ class AgentService:
         return pool.submit(target)
 
     def shutdown_work_lanes(self):
+        # Executor threads are joined at interpreter exit too. Signal the
+        # budget/CLI cancellation path before waiting, not just the dispatcher.
+        self.stop.set()
         # Do not cancel claimed tasks: each must reach the ordinary terminal/fencing path.
         with self.work_lanes_lock:pool=self._work_pool
         if pool is not None:pool.shutdown(wait=True)

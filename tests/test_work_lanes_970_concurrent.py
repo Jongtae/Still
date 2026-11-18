@@ -110,6 +110,47 @@ def test_racing_claimants_never_execute_one_work_twice(lane, lanes):
         assert db.execute("SELECT COUNT(*) FROM messages WHERE job_id=? AND role='user'", (work,)).fetchone()[0] == 1
 
 
+@pytest.mark.parametrize('lanes', [1, 3])
+def test_shutdown_stops_active_work_before_joining_pool(lane, lanes):
+    service, store, _ = lane
+    service.work_lanes = lanes
+    service.work_lane_spawn = service._spawn_work_lane
+    works = [enqueue(store, f'shutdown-{i}', chat=i) for i in range(lanes)]
+    entered = threading.Barrier(lanes + 1)
+    release = threading.Event()
+    effects = []
+
+    def route(run):
+        budget = run.work_budget = service.work_budget(run.job['id'])
+        entered.wait(timeout=10)
+        assert release.wait(10)
+        # The same budget check gates tools and is polled by running CLIs.
+        budget.check()
+        effects.append(run.job['id'])
+        finish(store, run.job['id'])
+        return True
+
+    with mock.patch.object(service, '_route_work', side_effect=route):
+        assert service.dispatch_work() == lanes
+        entered.wait(timeout=10)
+        shutdown = service._work_pool.shutdown
+
+        def join(*args, **kwargs):
+            try:
+                assert service.stop.is_set(), 'signal cancellation before joining active lanes'
+                assert all(service.work_stopped(work) for work in works)
+            finally:
+                release.set()
+                shutdown(*args, **kwargs)
+
+        with mock.patch.object(service._work_pool, 'shutdown', side_effect=join):
+            service.shutdown_work_lanes()
+    assert effects == []
+    assert not service.lane_work_ids()
+    assert all(store.job(work)['status'] == 'failed' for work in works)
+    assert all(store.job(work)['error'] == WORK_STOPPED for work in works)
+
+
 def test_same_run_exact_payment_approval_allows_one_effect_under_race():
     case = effects.EffectBoundary('runTest')
     case.setUp()

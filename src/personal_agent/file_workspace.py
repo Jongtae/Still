@@ -1,7 +1,8 @@
 """Scoped local file workspace: references stay read-only; results are new files."""
 from .messages import msg
 from pathlib import Path
-import hashlib, json, os, re, sqlite3, stat, time, unicodedata, uuid
+from contextlib import contextmanager
+import fcntl, hashlib, json, os, re, sqlite3, stat, time, unicodedata, uuid
 from .document_reader import MAX_FILE_BYTES, read as read_document, supported as supported_document
 from . import folder_grants
 
@@ -199,7 +200,27 @@ class FileWorkspace:
         if candidate.is_symlink() or not candidate.resolve().is_relative_to(root): raise ValueError('관리 작업공간 밖의 결과에는 접근할 수 없습니다.')
         return candidate
 
+    @contextmanager
+    def _publication_lock(self, *, blocking=True):
+        # Host lanes and CLI bridges share the same store. A per-instance or
+        # thread lock cannot protect the committed reservation from recovery.
+        # Keep this inode in place; process exit releases flock automatically.
+        fd=os.open(self.store.private/'file-workspace.lock',os.O_RDWR|os.O_CREAT,0o600)
+        try:
+            try:fcntl.flock(fd,fcntl.LOCK_EX | (0 if blocking else fcntl.LOCK_NB))
+            except BlockingIOError:
+                yield False
+                return
+            try:yield True
+            finally:fcntl.flock(fd,fcntl.LOCK_UN)
+        finally:os.close(fd)
+
     def recover(self, deadline=None):
+        # A reader/sweep must neither wait for nor recover a live publication.
+        with self._publication_lock(blocking=False) as acquired:
+            if acquired:self._recover(deadline)
+
+    def _recover(self, deadline=None):
         """Finalize only a verified publication, and discard unpublised reservations.
 
         ``deadline`` (``time.monotonic``) stops before the next reservation once passed, leaving the rest
@@ -229,9 +250,13 @@ class FileWorkspace:
         with self.store.db() as db: db.execute("UPDATE file_workspace_results SET state='current' WHERE id=? AND state='pending'",(record['id'],))
 
     def save(self, request_id, title, content, sources):
+        with self._publication_lock():
+            return self._save(request_id,title,content,sources)
+
+    def _save(self, request_id, title, content, sources):
         if not request_id or not content.strip(): raise ValueError('저장 요청과 내용이 필요합니다.')
         if not isinstance(sources,list) or not sources: raise ValueError('원본 출처가 필요합니다.')
-        self.recover()
+        self._recover()
         safe=''.join(char if char.isalnum() or char in ' -_' else '-' for char in title).strip()[:80] or 'result'
         sources=[self._source_metadata(source) for source in sources]
         if any(set(('reference_id','source_id','path','version'))-set(source) for source in sources): raise ValueError('원본 출처 정보가 올바르지 않습니다.')
@@ -256,7 +281,7 @@ class FileWorkspace:
                 except FileExistsError:
                     temporary.unlink(missing_ok=True)
                     with self.store.db() as db: db.execute("DELETE FROM file_workspace_results WHERE id=? AND state='pending'",(record['id'],))
-                    return self.save(request_id,title,content,sources)
+                    return self._save(request_id,title,content,sources)
             self._mark_current(record)
             # ``inserted``: this call published the result (a concurrent same-request save returns the row it lost to).
             return {**record,'state':'current','inserted':True}

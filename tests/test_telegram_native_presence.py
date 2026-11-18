@@ -1253,13 +1253,27 @@ class StartLatencyTests(NativePresenceTestCase):
                          ['capability-need', 'closing-reaction', 'conversation-followup', 'turn-reaction'])
 
     def test_a_judged_cancel_does_not_read_the_early_routing_judgment(self):
+        from personal_agent.work_execution import WorkRun
         self.connect_model()
         self.install_judgments({'conversation-followup': FOLLOWUP_CANCEL})
         first, _ = self.turn('오늘 저녁 메뉴 추천해줘')
         with self.store.db() as db:
             db.execute("UPDATE jobs SET status='running' WHERE id=?", (first['id'],))
         self.judgment_log.clear()
-        job, _ = self.turn('그만')
+        # Test the routing phase after admission. Slice 2 intentionally keeps
+        # another owner Work in this conversation queued while the first runs;
+        # that admission policy must not be bypassed just to exercise routing.
+        job_id = self.store.enqueue('그만', 'cancel-routing', channel=first['channel'],
+                                    chat_id=first['chat_id'], owner_typed=True)
+        with self.store.db() as db:
+            db.execute("UPDATE jobs SET status='running' WHERE id=?", (job_id,))
+        run = WorkRun(self.store.job(job_id), time.time())
+        try:
+            with self.service.work_decision_scope(job_id, None):
+                self.service._route_work(run)
+        finally:
+            self.service._settle_work_judgments(run)
+        job = self.store.job(job_id)
         self.assertEqual(job['relation_kind'], FOLLOWUP_CANCEL)
         self.assertEqual(job['model'], 'continuity')
         self.assertIn('conversation-followup', self.purposes())

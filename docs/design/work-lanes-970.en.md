@@ -297,3 +297,29 @@ identity, naming the other running Work and target without call arguments.
 These are observations from successful host-visible events, not proof that unobserved native
 CLI activity did or did not overlap. They grant no authority and impose no
 account-connection lock.
+
+Publication and shutdown corrections for slice 2 retain these boundaries:
+
+- `FileWorkspace.save` holds a store-scoped OS file lock from recovery through
+  reservation, file publication and finalization (including collision retry and
+  failure cleanup). Recovery takes that same lock non-blockingly; a live writer
+  is left alone. Process exit releases the lock, so interrupted publications
+  retain the existing hash-verified recovery and one-result-per-Work semantics.
+- Service shutdown sets the existing stop Event before joining the executor.
+  `work_stopped` includes that Event, so active budgets and CLI polling observe
+  shutdown through their existing cancellation path. Already dispatched calls
+  still depend on their existing transport bounds; shutdown is not evidence that
+  an external effect was undone.
+
+Reuse decision: **Adopt** the installed Python `fcntl.flock` API (exclusive and
+nonblocking modes), `threading.Event` and `Executor.shutdown(wait=True)`, inspected
+via their installed API documentation. `QuickStore` already uses `flock` around
+cross-process secret-file writes; publication uses its own lock inode under the
+same private store directory. SQLite reservation transactions alone do not cover
+the subsequent filesystem write; `threading.RLock` alone does not cover bridge
+processes. A third-party lock library or broker is unnecessary for these supported
+macOS/Linux primitives. This adds no dependency, migration, network access or
+authority; Python/OS maintenance and the existing PSF-licensed runtime apply.
+The lock contains no owner content, and no result or provenance is discarded
+while its writer holds it. Scheduling still uses the existing atomic claim and
+key checks; these corrections do not select slice 3.

@@ -10,6 +10,8 @@ import tempfile
 import time
 import unittest
 import uuid
+import threading
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 from personal_agent.decision import OUTCOME_DECIDED, BinaryDecision, FixtureDecisionEngine, fixture_confidence
@@ -290,6 +292,50 @@ class WorkerFileWorkspaceTests(unittest.TestCase):
         retried = caps.execute('save_result', {'title': 'Notes', 'content': 'summary'})
         self.assertEqual((retried['saved'], retried['path']), (True, 'Notes.md'))
         self.assertTrue((self.workspace / 'Notes.md').is_file())
+
+    def test_recovery_and_concurrent_saves_preserve_live_publications(self):
+        from unittest.mock import patch
+        first = FileWorkspace(self.store)
+        # Separate store/workspace objects, as in host and bridge callers.
+        second = FileWorkspace(QuickStore(self.store.root))
+        source = first.read(first.status()['references'][0]['id'], 'trip.md')
+        entered, release, competing = threading.Event(), threading.Event(), threading.Event()
+        write_text = Path.write_text
+
+        def held_write(path, *args, **kwargs):
+            if path.name.startswith('First.md.tmp-'):
+                entered.set()
+                self.assertTrue(release.wait(10))
+            return write_text(path, *args, **kwargs)
+
+        def save_other():
+            competing.set()
+            return second.save('second', 'First', 'second result', [source])
+
+        with patch.object(Path, 'write_text', held_write), ThreadPoolExecutor(2) as pool:
+            saved_first = pool.submit(first.save, 'first', 'First', 'first result', [source])
+            try:
+                self.assertTrue(entered.wait(10))
+                second.recover(deadline=time.monotonic() + 1)
+                with self.store.db() as db:
+                    row = db.execute("SELECT state FROM file_workspace_results WHERE request_id='first'").fetchone()
+                self.assertIsNotNone(row, 'recovery must not discard a live writer')
+                self.assertEqual(row['state'], 'pending')
+                saved_second = pool.submit(save_other)
+                self.assertTrue(competing.wait(10))
+                with self.assertRaises(TimeoutError):
+                    saved_second.result(timeout=.1)
+            finally:
+                release.set()
+            records = [saved_first.result(timeout=10), saved_second.result(timeout=10)]
+        for record in records:
+            self.assertTrue(record['inserted'])
+            self.assertEqual(second.result_for(record['request_id'])['id'], record['id'])
+            replay = second.save(record['request_id'], 'Duplicate', 'changed', [source])
+            self.assertEqual(replay['id'], record['id'])
+            self.assertFalse(replay.get('inserted', False))
+        self.assertEqual(sorted(path.name for path in self.workspace.iterdir()), ['First-2.md', 'First.md'])
+        self.assertOriginalsUnchanged()
 
     def test_a_setup_only_read_is_not_document_history(self):
         service = AgentService(self.store)

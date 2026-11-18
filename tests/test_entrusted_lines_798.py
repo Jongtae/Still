@@ -565,13 +565,19 @@ class AuthorityTests(_LineCase):
             work = self.store.enqueue('pay', prep.request_key(row['id'], row['due_at']))
             with self.store.db() as db:
                 db.execute('UPDATE preparations SET state=?,last_run_job_id=? WHERE id=?', (prep.STATE_RUNNING, work, row['id']))
-                # Running already: the owner's next message is the next Work the loop takes.
+                # Authorization is checked while this probe is running.
                 db.execute("UPDATE jobs SET status='running' WHERE id=?", (work,))
             return self.store.job(work)
 
         def authorized(job):
             binding = bs.step_binding(job['id'], 'api_request', 'https://pay.test/', 'pay 10', argument='', state='s')
-            result = self.service._authorize_payment_autonomy(job, binding, 'pay 10')
+            try:
+                result = self.service._authorize_payment_autonomy(job, binding, 'pay 10')
+            finally:
+                # The probe is finished. Leaving four synthetic running rows
+                # would fill slice 2's three lanes before the reminder turn.
+                with self.store.db() as db:
+                    db.execute("UPDATE jobs SET status='succeeded' WHERE id=?", (job['id'],))
             return result and result['authorized_by']
 
         for accepted_by in (prep.ACCEPTED_OWNER_WORK, prep.ACCEPTED_OWNER_REQUEST):
