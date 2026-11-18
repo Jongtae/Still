@@ -305,12 +305,12 @@ def record(args, *, factory=None, sandbox_factory=None, requalify=None):
     additions = json.loads(Path(args.additions).read_text())
     data = layer(base,additions)
     order = run_order(base,additions,args.heldout_runs)
-    if getattr(args,'splits','all') == 'dev':
-        # Dev first (#827): record the dev split only; --resume adds held-out later.
-        order = [(r,c) for r,c in order if c['split']=='dev']
     dry_run = getattr(args,'dry_run',False)
     if dry_run:
         order = dry_run_order(order,additions,args.dry_run_cases)
+    if getattr(args,'splits','all') == 'dev':
+        # Dev first (#827): record the dev split only; --resume adds held-out later.
+        order = [(r,c) for r,c in order if c['split']=='dev']
     terms,resume = load_inputs(args,data,order)
     reused = terms is not None
     cap = judgments.CallCap(0 if dry_run else args.max_calls)
