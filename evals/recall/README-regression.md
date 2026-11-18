@@ -274,13 +274,21 @@ question and schema at the engine boundary, and the executor outcome/receipts,
 checked refresh and dispatched worker refs. The boundary digest is provenance,
 not a reconstruction of facts. No plan-input text is saved.
 
-Replay enforces both A equality and executor-outcome equality. It never
+Strict replay (the default) enforces both A equality and executor-outcome
+equality. That reproduces the recording only while the product code behind
+the plan inputs and the gate is unchanged. Since #965 changed the gate, a
+strict replay of the PR-8 recording stops on main. `--held-plan` holds each
+recorded plan's text fixed while the current product recomputes A, B and the
+gate. It is an approximation, because each plan was decided on the recorded
+A: the report labels the replay `held-plan` and counts, per facet, the
+observations whose A changed. It never
 reimplements the gate. Worker profile attribution mirrors
 `WorkExecutor._commit_profile_shown`: the full item line must be at its exact
 recorded position in the final context; bare-request dispatch has no items.
 The original method still commits annotations. Need/trap eligibility uses the
-real seeded store; gate-cost classification compares the actual checked
-matched refresh with A, including annotation/revision identity. Every withheld
+real seeded store; gate-cost classification follows the gate on main: since
+#965 it compares only the best-ranked checked match of each kind (profile,
+older record) with A, including annotation/revision identity. Every withheld
 row requires the reconstructed fresh-item count to equal the product receipt's
 `new` count; a mismatch raises instead of classifying noise.
 

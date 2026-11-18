@@ -221,11 +221,15 @@ def validate_plans(recording, data, terms):
             or recording['heldout_runs'] < 1 or not isinstance(recording.get('runs'),dict)
             or recording.get('tokens') != 'not observable'):
         raise ValueError('Invalid plan recording schema')
-    def items(values):
+    def items(values, *, ranked=False):
+        # Checked refresh items may carry the search rank #965's gate compares (None for fill rows).
         if not isinstance(values,list):
             raise ValueError('Invalid inventory schema')
         for item in values:
-            if (not isinstance(item,dict) or set(item) != {'ref','kind','digest','matched','annotated'}
+            rank = item.get('rank') if isinstance(item,dict) else None
+            keys = {'ref','kind','digest','matched','annotated'} | ({'rank'} if ranked and isinstance(item,dict) and 'rank' in item else set())
+            if (not isinstance(item,dict) or set(item) != keys
+                    or rank is not None and (type(rank) is not int or rank < 1)
                     or item['ref'] not in {r['ref'] for r in data['rows']}
                     or item['kind'] not in {'profile','record'} or not isinstance(item['digest'],str)
                     or type(item['matched']) is not bool or type(item['annotated']) is not bool):
@@ -262,7 +266,7 @@ def validate_plans(recording, data, terms):
                     or not isinstance(outcome.get('worker_refs'),list)):
                 raise ValueError('Invalid plan outcome')
             items(outcome.get('worker_items'))
-            items(outcome.get('checked_items'))
+            items(outcome.get('checked_items'),ranked=True)
             if outcome['worker_refs'] != [i['ref'] for i in outcome['worker_items']]:
                 raise ValueError('Worker refs differ from dispatched inventory')
             if entry['outcome'].get('final_answer_by') not in {'planner','worker'}:
@@ -374,12 +378,16 @@ class Executor:
         self.service, self.data, self.refs, self.catalogue = service, data, refs, catalogue
         self.reverse = {ident:ref for ref,ident in refs.items()}
 
-    def inventory(self, items):
+    def inventory(self, items, *, ranked=False):
+        """Fixture refs for product items; ``ranked`` also keeps each item's search rank (#965)."""
         result = []
         for i in items:
             if i['id'] not in self.reverse:
                 raise ValueError('Non-fixture row in executor inventory')
-            result.append({k:i[k] for k in ('kind','digest','matched','annotated')} | {'ref':self.reverse[i['id']]})
+            item = {k:i[k] for k in ('kind','digest','matched','annotated')} | {'ref':self.reverse[i['id']]}
+            if ranked:
+                item['rank'] = i.get('rank')
+            result.append(item)
         return result
 
     def run(self, case, engine, *, condition=None):
@@ -431,7 +439,8 @@ class Executor:
             if kwargs.get('with_items') and not kwargs.get('refresh'):
                 from personal_agent.orchestrator import cut_profile_fact
                 _, items = cut_profile_fact(value[0],value[2],limit_chars=len(value[0]))
-                checked[:] = self.inventory(items)
+                # The gate compares the best-ranked match of each kind (#965), so keep the ranks.
+                checked[:] = self.inventory(items, ranked=True)
             if condition == 'steer':
                 gate_started.append('fixture owner correction')
             return value
@@ -510,7 +519,21 @@ class Executor:
             baseline.close()
 
 
-def replay_case(executor, case, entry, *, condition=None):
+def _unranked(outcome):
+    """The outcome as a recording made before #965 stored it: checked items without ranks."""
+    return dict(outcome, checked_items=[{k:v for k,v in i.items() if k != 'rank'}
+                                        for i in outcome.get('checked_items', [])])
+
+
+def replay_case(executor, case, entry, *, condition=None, strict=True):
+    """Replay one recorded plan.
+
+    ``strict`` requires the recorded inventory A and executor outcome exactly. That holds only
+    while the product code behind the plan inputs and the gate is unchanged. With
+    ``strict=False`` (``recall-regression --held-plan``) the recorded plan text is held fixed
+    while the product recomputes A, B and the gate; ``inventory_changed`` says whether A differs
+    from the recording, so the plan was decided on a different A than it now meets.
+    """
     from .recall_record import PurposeRouter
     plan = dict(entry['plan'])
     if condition == 'location':
@@ -519,9 +542,15 @@ def replay_case(executor, case, entry, *, condition=None):
     result = executor.run(case, router.engine, condition=condition)
     if router.error:
         raise ValueError(router.error)
-    if not condition:
+    if strict and not condition:
         if result['inventory'] != entry['inventory']:
             raise ValueError('Replay inventory A mismatch')
-        if result['accepted'] != entry['accepted'] or result['outcome'] != entry['outcome']:
+        recorded = entry['outcome']
+        observed = result['outcome']
+        if all('rank' not in i for i in recorded.get('checked_items', [])):
+            observed = _unranked(observed)
+        if result['accepted'] != entry['accepted'] or observed != recorded:
             raise ValueError('Replay executor outcome mismatch')
+    if not strict:
+        result['inventory_changed'] = result['inventory'] != entry['inventory']
     return result

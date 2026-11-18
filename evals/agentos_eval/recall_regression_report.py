@@ -24,11 +24,15 @@ def gate_row(case, entry, result, data, refs):
     outcome = result['outcome']
     a = counts(case,result['inventory'],refs)
     b = counts(case,outcome['worker_items'],refs)
-    # Gate-cost attribution uses the actual matched refresh items and A. Only
-    # fixture classification is done here, never the gate decision/predicate.
+    # Gate-cost attribution uses the actual matched refresh items and A, with the gate's own
+    # rule since #965: only the best-ranked match of each kind (profile, older record) counts.
+    # The product receipt decides; its `new` count cross-checks this attribution.
     seen = {(i['ref'],i['digest']):i for i in result['inventory']}
-    fresh = [i for i in outcome['checked_items'] if i['matched'] and (
-        (i['ref'],i['digest']) not in seen or i['annotated'] and not seen[(i['ref'],i['digest'])]['annotated'])]
+    ranked = [i for i in outcome['checked_items'] if i['matched'] and i.get('rank')]
+    best = [min(group,key=lambda i:i['rank']) for group in
+            ([i for i in ranked if i['kind']==kind] for kind in ('profile','record')) if group]
+    fresh = [i for i in best if (i['ref'],i['digest']) not in seen
+             or i['annotated'] and not seen[(i['ref'],i['digest'])]['annotated']] if outcome['withheld'] else []
     if outcome['withheld'] and len(fresh) != outcome['receipt_counts']['new']:
         raise ValueError('Fresh-item count differs from product receipt')
     noise = counts(case,fresh,refs)
@@ -36,7 +40,8 @@ def gate_row(case, entry, result, data, refs):
     return dict(id=case['id'],split=case['split'],kind=case['kind'],**final,
         final_answer_by=outcome['final_answer_by'],withheld=outcome['withheld'],
         plan_not_accepted=not entry['accepted'], no_reply=not bool(result['reply']),a=a,worker=b,receipt_counts=outcome['receipt_counts'],
-        noise_only_withheld=bool(outcome['withheld'] and fresh and not noise['needed_hit'] and not noise['trap_hits']))
+        noise_only_withheld=bool(outcome['withheld'] and fresh and not noise['needed_hit'] and not noise['trap_hits']),
+        **({'inventory_changed':result['inventory_changed']} if 'inventory_changed' in result else {}))
 
 
 def summarize(rows, *, gate=False):
@@ -87,6 +92,10 @@ def facet_report(data, observations):
                 for r in rows if r['id'] in ids and r['trap_hits']}),
             majority=summarize([r for r in representatives if r['id'] in ids],gate=gate),
             per_run=[summarize([r for r in rows if r['id'] in ids],gate=gate) for rows in observations])
+        if any('inventory_changed' in r for rows in observations for r in rows):
+            # Held-plan replay: observations whose recomputed A differs from the recording.
+            result[name]['inventory_changed'] = sum(bool(r.get('inventory_changed'))
+                for rows in observations for r in rows if r['id'] in ids)
     return dict(facets=result,cases=case_results)
 
 
@@ -125,7 +134,7 @@ def condition_checks(executor, data, plans):
     return checks
 
 
-def report(base, additions, terms, plans, *, code_head=None):
+def report(base, additions, terms, plans, *, code_head=None, held_plan=False):
     data = layer(base,additions)
     validate_plans(plans,data,terms)
     if not plans['complete'] or not terms['complete']:
@@ -156,7 +165,7 @@ def report(base, additions, terms, plans, *, code_head=None):
                 if case['id'] not in entries:
                     continue
                 entry = entries[case['id']]
-                observed = replay_case(executor,case,entry)
+                observed = replay_case(executor,case,entry,strict=not held_plan)
                 rows.append(gate_row(case,entry,observed,data,refs))
             observations.append(rows)
         results['gate+terms'] = facet_report(data,observations)
@@ -166,7 +175,8 @@ def report(base, additions, terms, plans, *, code_head=None):
         addition_rows=len(additions['rows']),total_rows=len(data['rows']),addition_digest=digest(additions)),
         evidence=dict(fixture_digest=digest(data),v4_digest=digest(base),terms_digest=digest(terms),
             plan_digest=digest(plans),code_head=code_head,recorded_code_head=plans.get('git_head'),
-            recorded_inputs=plans.get('evidence_class','live-route:subscription_cli'),replay='fixture (model-free)',
+            recorded_inputs=plans.get('evidence_class','live-route:subscription_cli'),
+            replay='held-plan (model-free)' if held_plan else 'fixture (model-free)',
             calls=plans['call_budget'],identity=plans['identity'],tokens='not observable'),
         terms_status_counts=terms_status_counts(terms),
         arms=results,work_condition_checks=checks,
@@ -205,7 +215,8 @@ def command(args):
     if folder.is_relative_to(REPO.resolve()):
         raise ValueError('Recall reports belong outside the repository')
     result = report(pairs.load(args.fixture),json.loads(args.additions.read_text()),
-        load_recording(args.terms),load_recording(args.plans),code_head=git_head())
+        load_recording(args.terms),load_recording(args.plans),code_head=git_head(),
+        **({'held_plan':True} if getattr(args,'held_plan',False) else {}))
     folder.mkdir(parents=True,exist_ok=True)
     (folder/'recall-regression.json').write_text(json.dumps(result,ensure_ascii=False,indent=2)+'\n')
     (folder/'recall-regression.md').write_text(markdown(result))
