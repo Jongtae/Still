@@ -40,6 +40,7 @@ model reads the calendar with ``calendar_query`` and schedules with
 from . import work_status as ws
 from .messages import msg
 from .prompt_files import prompt
+import difflib
 import hashlib
 import json
 import logging
@@ -87,6 +88,8 @@ NOTIFY_KIND = 'preparation_notify'
 BLOCKED_NOTICE_PREFIX = 'preparation_blocked:'
 # The existing preparation-status notice transport also carries self-change receipts.
 SELF_CHANGE_NOTICE_PREFIX = BLOCKED_NOTICE_PREFIX + 'self-change:'
+#: #717, #968: what a run may change of its own preparation, each undone by the owner's restore.
+SELF_CHANGE_OPERATIONS = ('edit', 'pause', 'cancel', 'goal')
 EXPIRED_NOTICE_KIND = 'preparation_window_elapsed'
 # #867: owner-wide scheduled Work admissions, independent of the chosen AI route.
 SCHEDULED_BUDGET_KEY = 'scheduled_work_budget'
@@ -147,6 +150,9 @@ SELF_SET = (ACCEPTED_OWNER_WORK, ACCEPTED_DREAM, ACCEPTED_DAY_PLAN)
 #: #821: the owner asked for or accepted it; such a run may ask the owner to sign in.  An allowlist:
 #: a missing, NULL or unknown ``accepted_by`` is never read as the owner's acceptance.
 OWNER_ACCEPTED = (ACCEPTED_OWNER_REQUEST, ACCEPTED_OWNER_BUTTON, ACCEPTED_OWNER_SETTINGS, ACCEPTED_OWNER_ANSWER)
+#: #968 (#938 D1): rows of an owner-set-up line whose own run may revise its own plan: the owner
+#: accepted the row, or it was set up in a Work the owner typed.  Look-back and daily-plan rows do not.
+LINE_RUN_ACCEPTED = OWNER_ACCEPTED + (ACCEPTED_OWNER_WORK,)
 #: #821: a waiting run's continuation refused because its preparation changed while it waited.
 WAIT_CHANGED = 'preparation-changed'
 
@@ -1096,6 +1102,24 @@ def brief_preview(row):
     return goal[:BRIEF_PREVIEW_CHARS] + ('…' if len(goal) > BRIEF_PREVIEW_CHARS else '')
 
 
+def changed_spans(before, after, context=80, limit=BRIEF_PREVIEW_CHARS):
+    """#968: ``(before, after)`` cut to where two briefs differ, with some context each side (``difflib``).
+
+    A rewritten brief can differ in one number deep inside it; the owner's receipt shows that part.
+    """
+    before, after = str(before or ''), str(after or '')
+    changed = [op for op in difflib.SequenceMatcher(None, before, after, autojunk=False).get_opcodes() if op[0] != 'equal']
+    if not changed:
+        return before[:limit], after[:limit]
+
+    def cut(text, start, end):
+        start, end = max(0, start - context), min(len(text), end + context)
+        piece = text[start:end]
+        more = end < len(text) or len(piece) > limit
+        return ('…' if start else '') + piece[:limit] + ('…' if more else '')
+    return (cut(before, changed[0][1], changed[-1][2]), cut(after, changed[0][3], changed[-1][4]))
+
+
 def accepted_offer(row):
     """#393: the title and offer the owner accepted, without the schedule line.
 
@@ -1572,7 +1596,7 @@ class Preparations:
         return {key: value for key, value in updates.items() if value != row[key]}
 
     def change_own(self, preparation_id, work_id, operation, changes=None, *, reason='', notify_to=None):
-        """Atomic current-slot narrowing, receipt and outbox. Never creates a settings draft.
+        """Atomic current-slot narrowing (or, #968, the run's own goal), receipt and outbox. Never creates a settings draft.
 
         Adopt sqlite3 BEGIN IMMEDIATE and TelegramStore.queue_notification(db=...).
         tool_events retains fingerprints even when the bounded settings audit rolls off.
@@ -1593,6 +1617,12 @@ class Preparations:
             row = dict(row)
             if operation == 'edit':
                 updates = self.narrowing_values(row, changes, now)
+            elif operation == 'goal':
+                # #968: the run's own instruction for the next runs; the caller decided it may.
+                goal = (changes or {}).get('goal') if isinstance(changes, dict) else None
+                if row['kind'] != KIND_PREPARE or not isinstance(goal, str) or set(changes) != {'goal'}:
+                    raise PreparationRefusal('self_change_refused')
+                updates = {} if goal == row['goal_text'] else {'goal_text': goal}
             elif operation == 'cancel':
                 updates = {'state': STATE_CANCELLED}
             elif operation == 'pause':
@@ -1755,7 +1785,7 @@ class Preparations:
             db.execute('BEGIN IMMEDIATE')
             row = db.execute('SELECT * FROM preparations WHERE id=?', (preparation_id,)).fetchone()
             if row and (cancelled_at is None or row['updated_at'] == cancelled_at) and any(
-                    self.self_undoable(dict(row), operation) for operation in ('edit', 'pause', 'cancel')):
+                    self.self_undoable(dict(row), operation) for operation in SELF_CHANGE_OPERATIONS):
                 return self._undo_self_change(db, row)
         return self._resume(preparation_id, STATE_CANCELLED, cancelled_at=cancelled_at)
 

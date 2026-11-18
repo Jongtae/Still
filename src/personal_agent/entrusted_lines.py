@@ -15,8 +15,9 @@ line is about.
 A brief grants nothing.  It has no authority, rung, amount or subject field (an unknown
 field is refused), and no authorizing path reads it: Grants, trust rungs, per-action
 approval and payment autonomy are decided as before. A brief is written inside an
-owner-typed Work or by the look back's stand/amend path, recorded as inferred (``preparations_service``). Every other unattended write
-is refused.
+owner-typed Work or by the look back's stand/amend path, recorded as inferred (``preparations_service``). #968: a scheduled
+run writes only its own line: as the owner's steer into it asks, or, in a run of a line the owner set up that read
+no outside content, its open matters.  Every other unattended write is refused.
 """
 import json
 import sqlite3

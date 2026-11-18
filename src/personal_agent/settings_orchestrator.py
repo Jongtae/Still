@@ -599,7 +599,8 @@ class SettingsOrchestrator:
         """Active reservations and owner schedule operations (#1455, #575)."""
         from . import preparations as prep
         states = self._preparation_states()
-        rows = [row for row in self.service.preparations.rows() if row.get("state") in states or prep.Preparations.self_undoable(row, "edit")]
+        rows = [row for row in self.service.preparations.rows() if row.get("state") in states
+                or any(prep.Preparations.self_undoable(row, change) for change in ("edit", "goal"))]
         labels = {row["id"]: self._preparation_label(row, full=False) for row in rows}
         # #904: the complete reservation list belongs only on cancel, not every operation/option.
         listed = "\n".join(self._preparation_label(row) for row in rows) or msg('label.none')
@@ -612,7 +613,7 @@ class SettingsOrchestrator:
                                    ("edit", (prep.STATE_PROPOSED, prep.STATE_SCHEDULED, prep.STATE_PAUSED))):
             ids = tuple(item["id"] for item in rows if item["state"] in states_
                         or operation == 'restore' and any(prep.Preparations.self_undoable(item, change)
-                                                         for change in ('edit', 'pause', 'cancel'))
+                                                         for change in prep.SELF_CHANGE_OPERATIONS)
                         or operation == 'resume' and prep.Preparations.self_undoable(item, 'pause'))
             result[operation] = self._row(operation, "", ", ".join(labels[item] for item in ids) or msg('label.none'), self._options(ids, labels),
                                           format=msg('settings_orchestrator.preparation_edit_format') if operation == 'edit' else None)
@@ -1827,7 +1828,7 @@ class SettingsOrchestrator:
         return "\n".join(lines)
 
     def work_tools(self, owner, channel, work_id, telegram=False, *, unattended=False, owner_request=None,
-                   own_preparation=None):
+                   own_preparation=None, own_goal=None):
         """``settings_read`` / ``settings_change`` bound to one Work (#814).
 
         A change is only a draft bound to this conversation; the model gets
@@ -1844,6 +1845,8 @@ class SettingsOrchestrator:
 
         #717: ``own_preparation`` is the preparation a scheduled run belongs to; that run may cancel or
         pause or narrow it atomically with its audit and owner notice, without leaving a draft.
+        #968: ``own_goal(row, before, after) -> bool`` says whether that run may also rewrite the
+        preparation's goal (an ``edit`` with ``goal``), asked when the run applies it.
         """
         def call(action, args):
             args = args if isinstance(args, dict) else {}
@@ -1857,7 +1860,7 @@ class SettingsOrchestrator:
                 raise SettingsError(msg('settings_orchestrator.invalid_continue_work_option'))
             if unattended:
                 if own_preparation and (args.get('category'), args.get('setting')) in SELF_NARROWING:
-                    return self._apply_own_run(owner, channel, work_id, args, own_preparation)
+                    return self._apply_own_run(owner, channel, work_id, args, own_preparation, own_goal)
                 return {"state": "not_proposed", "unattended": True, "category": args.get("category"),
                         "setting": args.get("setting"), "applied": False,
                         "next_step": UNATTENDED_SETTINGS_TEXT}
@@ -1877,14 +1880,18 @@ class SettingsOrchestrator:
                     "next_step": f"{draft['summary']} 변경은 소유자 확인을 기다립니다. {how} 확인 전에는 아무것도 바뀌지 않았습니다."}
         return call
 
-    def _apply_own_run(self, owner, channel, work_id, args, own_preparation):
-        """#717: current-slot state, audit and notice commit together; no confirm authority."""
+    def _apply_own_run(self, owner, channel, work_id, args, own_preparation, own_goal=None):
+        """#717: current-slot state, audit and notice commit together; no confirm authority.
+
+        #968: an ``edit`` may carry ``goal``, the preparation's own brief for its next runs; it applies
+        only when ``own_goal`` allows it, as its own receipt beside any narrowing in the same call.
+        """
         from . import preparations as prep
         refused = {"state": "not_proposed", "unattended": True, "category": args.get('category'),
                    "setting": args.get('setting'), "applied": False,
                    "next_step": msg('preparations.self_change_refused')}
         value = args.get('value')
-        if not isinstance(value, str) or len(value) > 4000:
+        if not isinstance(value, str) or len(value) > 4000 + prep.BRIEF_MAX_CHARS:
             return refused
         from .current_context import redact_known_secrets
         if redact_known_secrets(self.store, value) != value:
@@ -1908,8 +1915,21 @@ class SettingsOrchestrator:
                 origin = self.store.job(row['created_from']) if row.get('created_from') else notices.owner_last_work()
                 destination = notices.notice_destination(notices.preparation_channel(origin, prep.KIND_PREPARE, 'send'))
             reason = redact_known_secrets(self.store, str(args.get('reason') or '')[:2000])
-            event = self.service.preparations.change_own(target, work_id, args['setting'], changes,
-                                                       reason=reason, notify_to=destination)
+            goal = changes.pop('goal', None) if changes is not None else None
+            if goal is None:
+                if len(value) > 4000:
+                    return refused
+                event = self.service.preparations.change_own(target, work_id, args['setting'], changes,
+                                                           reason=reason, notify_to=destination)
+            else:
+                # The goal is its own change: one receipt, never half of a mixed edit.
+                if changes:
+                    return refused
+                goal = prep.normalize_goal(goal if isinstance(goal, str) else None, prep.BRIEF_MAX_CHARS, prep.KIND_PREPARE)
+                if not (callable(own_goal) and own_goal(row, row['goal_text'], goal)):
+                    return {**refused, "next_step": msg('preparations.self_change_goal_refused')}
+                event = self.service.preparations.change_own(target, work_id, 'goal', {'goal': goal},
+                                                           reason=reason, notify_to=destination)
         except (prep.PreparationRefusal, ValueError, TypeError):
             return refused
         return {"state": "applied", "draft_id": event['draft_ref'], "category": "preparations",
