@@ -107,7 +107,7 @@ class _StoreConnection(sqlite3.Connection):
             self.read_checkpoint_admitted = None
         if not command or command[0].upper() not in ('INSERT', 'UPDATE', 'DELETE', 'REPLACE'):
             return
-        guard = getattr(self.read_checkpoint_writer_scope, 'guard', None)
+        guard = getattr(getattr(self, 'read_checkpoint_writer_scope', None), 'guard', None)
         if guard is None or guard is self.read_checkpoint_admitted:
             return
         if not guard(self):

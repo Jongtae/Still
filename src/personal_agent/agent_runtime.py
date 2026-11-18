@@ -2062,7 +2062,7 @@ def record_outside_result(execute):
   return result
  @wraps(execute)
  def run(self,name,args):
-  ledger=getattr(self.budget,'ledger',None)
+  ledger=getattr(getattr(self,'budget',None),'ledger',None)
   if ledger is None:return recorded(self,name,args)
   with self.store.read_checkpoint_writer(self.job_id,ledger.epoch):
    return recorded(self,name,args)
