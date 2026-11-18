@@ -2045,6 +2045,7 @@ class PreparationsService:
             text=(job.get('response') if label in (el.OUTCOME_DELIVERED,el.OUTCOME_KEPT)
                   else job.get('owner_cause') or job.get('error') or '')
             out.append({'work_id':job['id'],'at':job['created'],'outcome':label,
+                        'preparation_id':prep.preparation_of(job.get('request_key')),
                         'text':el.excerpt(service.scrub_work_text(job['id'],text))})
             if limit is not None and len(out)>=limit:break
         return out
@@ -2247,17 +2248,46 @@ class PreparationsService:
         service.preparations.edit(row['id'],rrule=el.account_rule(after['account_every_days']),
                                   due=datetime.fromtimestamp(due,prep.zone(row['timezone'])).isoformat())
 
-    def account_period_start(self, row):
-        """When the current period of a line's account began: its last run's slot, else when the row was set up."""
+    def account_period_start(self, row, *, running=None):
+        """When the current period of a line's account began: its last run's slot, else when the row was set up.
+
+        ``running`` is the account's own current run: the period it reports on began at the run before it.
+        """
         start=row['created_at']
         prefix=prep.REQUEST_KEY_PREFIX+row['id']+':'
+        current=prep.slot_key(running['request_key']) if running else None
         with self.service.store.db() as db:
             keys=[item['request_key'] for item in db.execute('SELECT request_key FROM jobs WHERE request_key LIKE ?',(prefix+'%',))]
         # A run's request key names its slot in whole seconds (``request_key``); a continuation keeps it.
         for key in keys:
+            if prep.slot_key(key)==current:continue
             slot=prep.slot_key(key)[len(prefix):]
             if slot.isdigit():start=max(start,float(slot))
         return start
+
+    def line_pieces_account(self, row, job):
+        """#938 (D4): what the periodic account of ``row`` is told about the line's pieces, or ``''``.
+
+        The account's own outcomes show only the newest runs; a line done in pieces may have run many
+        more since the last account.  This counts every piece run of the period by what came of it
+        (``line_outcomes``) and names the pending piece's due time.  Counts only; no new store.
+        """
+        line_id=row['line_id']
+        rows=self.line_rows(line_id)
+        pieces={item['id'] for item in rows if item.get('origin')==prep.ORIGIN_LINE_PIECE}
+        if not pieces:return ''
+        since=self.account_period_start(row,running=job)
+        ran=[item for item in self.line_outcomes(line_id,exclude=job['id'],limit=None)
+             if item['preparation_id'] in pieces and item['at']>=since]
+        pending=min((item for item in rows if item['id'] in pieces and item['state'] in prep.PIECE_PENDING_STATES),
+                    key=lambda item:item['due_at'],default=None)
+        if not ran and pending is None:return ''
+        counts={label:sum(1 for item in ran if item['outcome']==label)
+                for label in (el.OUTCOME_DELIVERED,el.OUTCOME_KEPT,el.OUTCOME_FAILED,el.OUTCOME_OPEN)}
+        text=msg('lines.account_pieces',count=len(ran),**counts)
+        if pending is not None:
+            text+=' '+msg('lines.account_next_piece',at=prep.local_text(pending['due_at'],pending['timezone']))
+        return text
 
     # -- #968: a scheduled run revises its own plan ---------------------------------------------
 
@@ -2500,6 +2530,8 @@ class PreparationsService:
         outcomes=self.line_outcomes(row['line_id'],exclude=job['id'])
         if row.get('origin')==prep.ORIGIN_LINE_ACCOUNT:
             lead=msg('lines.account_input')
+            pieces=self.line_pieces_account(row,job)
+            if pieces:lead+='\n'+pieces
         else:
             lead=msg('lines.run_input')
             # #938 (D2): a run that may continue its line in pieces is told how, in one general sentence.

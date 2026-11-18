@@ -455,3 +455,71 @@ class Handoff(_PieceCase):
         bodies = self.run_line(piece, [{'content': '상태 변화 없음.'}])
         self.assertIn(handoff, json.dumps(bodies, ensure_ascii=False))
         self.assertEqual(self.service.preparations.get(piece['id'])['state'], prep.STATE_DELIVERED)
+
+
+class OwnerView(_PieceCase):
+    """Slice 3 (D4): the owner sees the pending piece and how many pieces ran, through existing views."""
+
+    def piece_row(self, state, due_at=None):
+        """A piece row of the line as a chain of runs left it (written directly: its parent run is over)."""
+        self.serial = getattr(self, 'serial', 0) + 1
+        piece_id = f'piece{self.serial:011d}'
+        due_at = due_at or self.now + 3600
+        with self.store.db() as db:
+            db.execute('INSERT INTO preparations(id,owner,kind,goal_text,due_at,timezone,channel,state,created_at,updated_at,'
+                       'line_id,origin,accepted_by,piece_of) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)',
+                       (piece_id, 'local-owner', 'prepare', '조각', due_at, 'Asia/Seoul', 'web', state, self.now, self.now,
+                        self.line_id, prep.ORIGIN_LINE_PIECE, prep.ACCEPTED_LINE_PIECE_OWNER, f'preparation:parent:{self.serial}'))
+        return self.service.preparations.get(piece_id)
+
+    def piece_with_run(self, status, created, *, delivery='none', state=prep.STATE_DELIVERED):
+        """A piece row of the line and one run of it, created at ``created``."""
+        piece = self.piece_row(state, due_at=created)
+        work = self.store.enqueue('조각', prep.request_key(piece['id'], piece['due_at']))
+        with self.store.db() as db:
+            db.execute('UPDATE jobs SET status=?,delivery=?,response=?,created=? WHERE id=?',
+                       (status, delivery, '조각 결과', created, work))
+            db.execute('UPDATE preparations SET last_run_job_id=? WHERE id=?', (work, piece['id']))
+        return piece
+
+    def account(self):
+        return self.line_row(prep.ACCEPTED_OWNER_WORK, origin=prep.ORIGIN_LINE_ACCOUNT, recurrence='daily', goal='account')
+
+    def test_the_pending_piece_shows_as_the_lines_next_run(self):
+        root = self.line_row()
+        job = self.running(root)
+        self.schedule(job, seconds=1800)
+        [piece] = self.pieces()
+        with self.store.db() as db:
+            db.execute('UPDATE preparations SET state=? WHERE id=?', (prep.STATE_DELIVERED, root['id']))
+        entry = self.service.preparations_service.line_entry(self.service.lines.current(self.line_id))
+        self.assertEqual(entry['next'], prep.local_text(piece['due_at'], piece['timezone']))
+        self.assertNotIn('next_is_account', entry)
+
+    def test_the_account_counts_the_pieces_of_its_period_and_names_the_next_one(self):
+        account = self.account()
+        # The account's previous run opens the period; a piece run before it belongs to the last account.
+        period = self.now + 100
+        with self.store.db() as db:
+            earlier = self.store.enqueue('account', prep.request_key(account['id'], period), db=db)
+            db.execute("UPDATE jobs SET status='succeeded',created=? WHERE id=?", (period, earlier))
+        self.piece_with_run('succeeded', period - 50, delivery='sent')
+        self.piece_with_run('succeeded', period + 10, delivery='sent')
+        self.piece_with_run('succeeded', period + 20)
+        self.piece_with_run('failed', period + 30, state=prep.STATE_FAILED)
+        self.now = period + 86400
+        pending = self.piece_row(prep.STATE_SCHEDULED)
+        with self.store.db() as db:
+            db.execute('UPDATE preparations SET due_at=? WHERE id=?', (self.now, account['id']))
+        account = self.service.preparations.get(account['id'])
+        text = self.service.preparations_service.line_run_input(self.running(account), account)
+        self.assertIn(msg('lines.account_pieces', count=3, delivered=1, kept=1, failed=1, open=0), text)
+        self.assertIn(msg('lines.account_next_piece', at=prep.local_text(pending['due_at'], pending['timezone'])), text)
+
+    def test_an_account_of_a_line_without_pieces_and_an_ordinary_run_get_no_count(self):
+        account = self.account()
+        self.assertEqual(self.service.preparations_service.line_pieces_account(account, self.running(account)), '')
+        self.piece_with_run('succeeded', self.now, delivery='sent')
+        root = self.line_row(goal='ordinary')
+        text = self.service.preparations_service.line_run_input(self.running(root), root)
+        self.assertNotIn(msg('lines.account_pieces', count=1, delivered=1, kept=0, failed=0, open=0), text)
