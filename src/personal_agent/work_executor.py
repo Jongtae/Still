@@ -35,6 +35,7 @@ from . import owner_model as om
 from . import information_use
 from . import attempt_identity
 from .cli_browser_relay import BrowserRelay
+from .browser_session import BROWSER_WAIT_SECONDS
 from .quickstart_service import (
     BROWSER_LOGIN_SECONDS,
     CONTINUATION_EFFECT_NOTE_HEAD,
@@ -57,8 +58,6 @@ from .quickstart_service import (
 
 #: #970: claims one dispatcher pass may make per lane; a settled candidate counts as one.
 DISPATCH_CLAIMS=8
-#: Queued rows one claim reads, oldest first, before ordering them owner-first.
-CLAIM_SCAN=50
 
 
 class _FirstTurnCommit:
@@ -133,7 +132,7 @@ class WorkExecutor:
     def _lane_free(self, lane):
         service=self.service
         held=service.lane_work_ids(lane)
-        return len(held)<(1 if lane==LANE_COMMAND else max(1,int(service.WORK_LANES)))
+        return len(held)<(1 if lane==LANE_COMMAND else service.work_lanes)
 
     def _start_lane(self, job, lane):
         """Register the claimed Work in its lane, then run it there."""
@@ -155,14 +154,10 @@ class WorkExecutor:
     def _run_in_lane(self, job, lane):
         service=self.service
         try:
-            if lane==LANE_COMMAND:
-                # #970 D2a: model-free and tool-free; it never waits for the tool-capable worker.
-                return self._run_claimed(job)
-            # Slice 1 of #970: still one tool-capable Work at a time.
-            with service.worker_lock:
-                return self._run_claimed(job)
+            return self._run_claimed(job)
         except Exception as exc:
             LOG.warning('work lane failed job=%s kind=%s',job['id'],type(exc).__name__)
+            self._fail_work_terminal(WorkRun(job,time.time()))
         finally:
             service.current_work_id=None
             service._work_local.budget=None
@@ -170,15 +165,13 @@ class WorkExecutor:
     def _run_one(self):
         """Claim the oldest runnable Work and run it through its phases (``work_execution``)."""
         service=self.service
-        # One tool-capable worker: ordering is shared across all connected channels.
-        with service.worker_lock:
-            job=service._claim_queued_work()
-            if not isinstance(job,dict):return job
-            service.hold_lane(job['id'],LANE_WORK)
-            try:
-                return self._run_claimed(job)
-            finally:
-                service.release_lane(job['id'])
+        job=service._claim_queued_work()
+        if not isinstance(job,dict):return job
+        service.hold_lane(job['id'],LANE_WORK)
+        try:
+            return self._run_claimed(job)
+        finally:
+            service.release_lane(job['id'])
 
     def _run_claimed(self, job):
         """Run one claimed Work through its phases, ending with its tail (``_after_work``)."""
@@ -262,7 +255,26 @@ class WorkExecutor:
         service=self.service
         with service.store.db() as db:
             db.execute('BEGIN IMMEDIATE')
-            rows=db.execute("SELECT j.* FROM jobs j WHERE j.status='queued' ORDER BY j.created LIMIT ?",(CLAIM_SCAN,)).fetchall()
+            # Include finalization tails: a status can settle before its lane is released.
+            held=service.lane_work_ids()
+            running=[dict(row) for row in db.execute("SELECT * FROM jobs WHERE status='running'")]
+            running_ids={row['id'] for row in running}
+            for work_id in held-running_ids:
+                row=db.execute("SELECT * FROM jobs WHERE id=?",(work_id,)).fetchone()
+                if row:running.append(dict(row))
+            occupied=set()
+            counts={LANE_COMMAND:0,LANE_WORK:0}
+            background=0
+            commands=service.lane_work_ids(LANE_COMMAND)
+            for active in running:
+                active_chain=WorkLedger.request_chain(db,active['id'])
+                command=(active['id'] in commands or self._command_work(db,active,active_chain,claimed=True))
+                active_lane=LANE_COMMAND if command else LANE_WORK
+                counts[active_lane]+=1
+                active_owner=active_chain[-1].get('owner_typed')==1
+                if not command and not active_owner:background+=1
+                occupied.update(self._admission_keys(db,active,active_chain,active_lane,active_owner))
+            rows=db.execute("SELECT j.* FROM jobs j WHERE j.status='queued' ORDER BY j.created").fetchall()
             candidates=[]
             for row in rows:
                 job=dict(row)
@@ -285,8 +297,14 @@ class WorkExecutor:
                     if owner and lane==LANE_WORK:waiting.add(conversation)
                     continue
                 with service.side_answer_lock:
-                    flight=job['id'] in service.side_answer_flight
-                runnable=not flight and not any(ws.is_active(parent['status']) for parent in chain[1:])
+                    flight=job['id'] in service.side_answer_flight or job['id'] in service.steer_messages
+                limit=1 if lane==LANE_COMMAND else service.work_lanes
+                capacity=counts[lane]<limit
+                if lane==LANE_WORK and not owner and service.work_lanes>1:
+                    capacity=capacity and background<service.work_lanes-1
+                keys=self._admission_keys(db,job,chain,lane,owner)
+                runnable=(capacity and not keys.intersection(occupied) and job['id'] not in held
+                          and not flight and not any(ws.is_active(parent['status']) for parent in chain[1:]))
                 if runnable:
                     refusal=service.preparations.run_refusal(db,job['id'],service.preparations.clock())
                     if refusal:
@@ -310,7 +328,19 @@ class WorkExecutor:
                 return job
         return False
 
-    def _command_work(self, db, job, chain):
+    def _admission_keys(self, db, job, chain, lane, owner):
+        # #970 D3: durable identities only; never infer keys from message content.
+        keys={('chain',chain[-1]['id'])}
+        if lane==LANE_COMMAND:return keys
+        for member in chain:
+            preparation_id=prep.preparation_of(member.get('request_key'))
+            if preparation_id:
+                row=db.execute('SELECT line_id FROM preparations WHERE id=?',(preparation_id,)).fetchone()
+                keys.add(('line',row['line_id']) if row and row['line_id'] else ('prep',preparation_id))
+        if owner:keys.add(('conv',job['channel'],job.get('chat_id')))
+        return keys
+
+    def _command_work(self, db, job, chain, claimed=False):
         """Whether this queued Work is a command Still answers itself (#970 D2a), read in the claim.
 
         An owner-typed explicit form (``IntentClassifier.explicit``) with no photo,
@@ -322,7 +352,7 @@ class WorkExecutor:
         if service.intent_classifier.explicit((job.get('message') or '').strip()) is None:return False
         if continuation_request(job.get('request_key')) is not None:return False
         # A Work claimed before (parked, then queued again) resumes on the worker's path.
-        if db.execute("SELECT 1 FROM messages WHERE job_id=? AND role='user' LIMIT 1",(job['id'],)).fetchone():return False
+        if db.execute("SELECT COUNT(*) FROM messages WHERE job_id=? AND role='user'",(job['id'],)).fetchone()[0]>(1 if claimed else 0):return False
         if service.store.telegram_photo_file_ids(job['id']):return False
         photo_record=service.store.turn_provenance(job['id']) or {}
         return not (photo_record.get('telegram_photo_attached') or photo_record.get('photo_inputs') or photo_record.get('photo_input'))
@@ -799,6 +829,8 @@ class WorkExecutor:
         run.work_sources|=run.turn_provenance
         def record(tool,status,detail):
             with service.store.db() as db:
+                db.execute('BEGIN IMMEDIATE')
+                if status=='succeeded':service.record_connector_overlap(db,job['id'],tool,detail)
                 db.execute('INSERT INTO tool_events(job_id,tool,status,detail,created) VALUES (?,?,?,?,?)',(job['id'],tool,status,detail,time.time()))
             if tool!='model':service.store.put('tool_run',{'job_id':job['id'],'tool':tool,'status':status,'detail':detail,'time':time.time()})
         original_record=record
@@ -1138,7 +1170,7 @@ class WorkExecutor:
                                   allowed_tools=allowed_tools,inherited_provenance=set(run.turn_provenance)|run.work_private,
                                   current_packages=service.runtime_packages,budget=run.work_budget,
                                   current_context=service.current_state,
-                                  **({'browser':service.browser_profile.driver_factory(job['id']),
+                                  **({'browser':service.browser_profile.driver_factory(job['id'],check=run.work_budget.check,wait_seconds=BROWSER_WAIT_SECONDS if service.work_lanes>1 else 0),
                                       'browser_approvals':service.browser_approvals_for(job),
                                       'browser_unavailable':service.browser_profile.unavailable_message()}
                                      if cli_browser else {}),
@@ -1588,7 +1620,7 @@ class WorkExecutor:
                                   memory_request=run.owner_memory_request,inherited_provenance=set(run.turn_provenance)|shown_sources|run.work_private,calendar=service.calendar_for(job),calendar_owner=service.issuer_owner_id(job),drive=service.drive_for(job),mail=service.mail_for(job),connections=lambda job=job:service.connection_slots(job),current_packages=service.runtime_packages,
                                   budget=run.work_budget,
                                   # #656: the owner-logged-in browser profile and its per-step approvals.
-                                  browser=service.browser_profile.driver_factory(job['id']),browser_approvals=service.browser_approvals_for(job),
+                                  browser=service.browser_profile.driver_factory(job['id'],check=run.work_budget.check,wait_seconds=BROWSER_WAIT_SECONDS if service.work_lanes>1 else 0),browser_approvals=service.browser_approvals_for(job),
                                   browser_unavailable=service.browser_profile.unavailable_message(),
                                   current_context=service.current_state,
                                   # #659: owner-accepted preparations (proposal or owner-request acceptance).
