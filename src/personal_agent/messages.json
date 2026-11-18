@@ -10378,6 +10378,18 @@
   "ja": "準備の予定を変更しました。",
   "zh": "已更改准备计划。"
  },
+ "preparations.pieces_finished": {
+  "ko": "이 일의 끝난 조각 {count}개",
+  "en": "{count} finished pieces of this work",
+  "ja": "この仕事の終わった回 {count}件",
+  "zh": "此事已结束的分步 {count} 个"
+ },
+ "preparations.pieces_newest": {
+  "ko": "가장 늦게 끝난 조각 {count}개 보기",
+  "en": "Show the latest {count}",
+  "ja": "最近の{count}件を表示",
+  "zh": "查看最近 {count} 个"
+ },
  "preparations.replace_not_found": {
   "ko": "replaces에 준 준비를 찾지 못했거나 이미 끝났어요. settings_read preparations의 진행 중인 준비 id를 주거나, 추가하는 준비라면 replaces를 빼세요.",
   "en": "The preparation given in replaces was not found or has already ended. Give the id of an active preparation from settings_read preparations, or leave replaces out for an additional preparation.",

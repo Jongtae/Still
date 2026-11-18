@@ -1355,20 +1355,35 @@ class PreparationsService:
         row=service.preparations.get(preparation_id) or {'goal_text':job.get('message') or ''}
         return (msg('quickstart_service.prepared_result', title=prep.owner_title(row))+'\n\n')
 
+    def settings_decision(self, row):
+        """The row with the last decision Settings may claim.
+
+        Preserve Lane S's decision Evidence; Settings claims a held failure was told
+        only after its bundle has the same receipt meaning as line_outcomes.
+        """
+        if (row.get('last_decision_reason')==prep.REASON_RUN_FAILED_TOLD
+                and row.get('line_id') and not self.held_failure_told(row)):
+            return {**row,'last_decision':prep.DECISION_QUIET,'last_decision_reason':prep.REASON_RUN_FAILED}
+        return row
+
+    @staticmethod
+    def short_result(response):
+        """A run's answer as Settings lists it: the first 280 characters."""
+        last=str(response or '')
+        return last[:280]+('…' if len(last)>280 else '')
+
     def preparations_status(self):
         """The Settings 준비해 둔 일 list: owner's own view (#659)."""
         service=self.service
         rows=[]
         lines={brief['line_id']:brief['task'] for brief in service.lines.lines()}
-        for row in service.preparations.rows():
+        # #1005: a line's finished pieces come back once per line in ``piece_groups``.
+        for row in service.preparations.rows(finished_pieces=False):
             # Preserve Lane S's decision Evidence; Settings claims a held failure was told
             # only after its bundle has the same receipt meaning as line_outcomes.
-            if (row.get('last_decision_reason')==prep.REASON_RUN_FAILED_TOLD
-                    and row.get('line_id') and not self.held_failure_told(row)):
-                row={**row,'last_decision':prep.DECISION_QUIET,'last_decision_reason':prep.REASON_RUN_FAILED}
-            last=str(row.get('last_response') or '')
+            row=self.settings_decision(row)
+            last=self.short_result(row.get('last_response'))
             terms=prep.stored_window_terms(row)
-            last=last[:280]+('…' if len(last)>280 else '')
             if row.get('self_change') and not row.get('self_change_undone'):
                 last += '\n' + self.self_change_text(json.loads(row['self_change']))
             rows.append({'id':row['id'],'kind':row['kind'],'goal':row['goal_text'],'state':row['state'],
@@ -1406,7 +1421,8 @@ class PreparationsService:
                                                                               'rule','weekly_days','monthly_day','interval','rule_until')},
                 **{'day_'+day:'preparations.day_'+day for day in prep.RULE_DAYS},
                 'max_runs_hint':'preparations.max_runs_hint',
-                'last_day':'preparations.rule_last_day','timezone':'label.time_zone','paused':'settings_orchestrator.paused','saved':'preparations.saved'}
+                'last_day':'preparations.rule_last_day','timezone':'label.time_zone','paused':'settings_orchestrator.paused','saved':'preparations.saved',
+                'pieces_finished':'preparations.pieces_finished','pieces_newest':'preparations.pieces_newest'}
         # The same daily notice is visible in local Settings when no sending surface is paired.
         from .telegram_locale import translate
         notice_id = prep.SCHEDULED_USAGE_PREFIX + service.preparations.budget_day(service.preparations.clock())
@@ -1414,7 +1430,17 @@ class PreparationsService:
             notice = db.execute('SELECT content FROM messages WHERE job_id=? ORDER BY id LIMIT 1', (notice_id,)).fetchone()
         budget = {**service.preparations.budget_settings(), 'max':prep.MAX_SCHEDULED_DAILY_CALLS,
                   'notice':{lang:translate(notice['content'], lang) for lang in LANGUAGES} if notice else {}}
-        return {'preparations':rows,'budget':budget,'management':{key:{lang:msg(message_id,lang) for lang in LANGUAGES} for key,message_id in labels.items()}}
+        groups=[]
+        for line_id,group in service.preparations.finished_pieces_by_line().items():
+            group['rows']=[self.settings_decision(piece) for piece in group['rows']]
+            groups.append({'line_id':line_id,'line_task':lines.get(line_id),'count':group['count'],'states':group['states'],
+                           'pieces':[{'id':piece['id'],'state':piece['state'],'goal':piece['goal_text'],
+                                      'due_local':prep.local_text(piece['due_at'],piece['timezone']),
+                                      'last_work_id':piece['last_run_job_id'],'last_decision':piece.get('last_decision'),
+                                      'last_decision_reason':piece.get('last_decision_reason'),
+                                      'last_result':self.short_result(piece.get('last_response'))}
+                                     for piece in group['rows']]})
+        return {'preparations':rows,'piece_groups':groups,'budget':budget,'management':{key:{lang:msg(message_id,lang) for lang in LANGUAGES} for key,message_id in labels.items()}}
 
     def cancel_preparation(self, preparation_id):
         """``Preparations.cancel`` plus withdrawing its run's pending location request (#774).
