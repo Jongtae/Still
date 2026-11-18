@@ -2328,21 +2328,24 @@ class Preparations:
         Returns ``{line_id: {'count': n, 'states': {state: n}, 'rows': [newest first]}}``.
         """
         marks = ','.join('?' * len(ACTIVE_STATES))
+        finished = (STATE_DELIVERED, STATE_UNKNOWN, STATE_FAILED, STATE_CANCELLED, STATE_EXPIRED)
+        # One statement, so the counts and the listed rows come from the same snapshot.
+        counts = ', '.join(f'SUM(p.state=?) OVER (PARTITION BY p.line_id) AS "count_{state}"' for state in finished)
+        groups = {}
         with self.store.db() as db:
-            groups = {}
-            for row in db.execute(f'SELECT line_id, state, COUNT(*) AS n FROM preparations WHERE origin=? AND state NOT IN ({marks}) '
-                                  'AND line_id IS NOT NULL GROUP BY line_id, state', (ORIGIN_LINE_PIECE, *ACTIVE_STATES)):
-                group = groups.setdefault(row['line_id'], {'count': 0, 'states': {}, 'rows': []})
-                group['count'] += row['n']
-                group['states'][row['state']] = row['n']
             for row in db.execute(
                     'SELECT * FROM (SELECT p.*, j.status AS last_status, j.delivery AS last_delivery, j.response AS last_response, '
-                    'ROW_NUMBER() OVER (PARTITION BY p.line_id ORDER BY p.updated_at DESC, p.id DESC) AS newest '
+                    'ROW_NUMBER() OVER (PARTITION BY p.line_id ORDER BY p.updated_at DESC, p.id DESC) AS newest, '
+                    f'COUNT(*) OVER (PARTITION BY p.line_id) AS total, {counts} '
                     f'FROM preparations p LEFT JOIN jobs j ON j.id=p.last_run_job_id WHERE p.origin=? AND p.state NOT IN ({marks}) '
-                    'AND p.line_id IS NOT NULL) WHERE newest<=? ORDER BY line_id, newest', (ORIGIN_LINE_PIECE, *ACTIVE_STATES, int(shown))):
+                    'AND p.line_id IS NOT NULL) WHERE newest<=? ORDER BY line_id, newest',
+                    (*finished, ORIGIN_LINE_PIECE, *ACTIVE_STATES, int(shown))):
                 row = dict(row)
-                row.pop('newest')
-                groups[row['line_id']]['rows'].append(row)
+                states = {state: row.pop('count_' + state) for state in finished}
+                group = groups.setdefault(row['line_id'], {'count': row['total'], 'rows': [],
+                                                           'states': {state: n for state, n in states.items() if n}})
+                row.pop('newest'), row.pop('total')
+                group['rows'].append(row)
         return groups
 
     # -- the tick ----------------------------------------------------------
