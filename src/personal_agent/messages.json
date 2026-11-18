@@ -1619,6 +1619,12 @@
   "ja": "オーナーが読んで承諾した内容（この範囲内で行ってください。ここで自分で決めたと示した上限はオーナーのルールではなく自分の計画です）:",
   "zh": "主人阅读并接受的内容（请在此范围内进行；其中注明由你自行选择的限制是你的计划，不是主人的规则）："
  },
+ "preparations.own_limits": {
+  "ko": "기준은 소유자가 말한 목표와 소유자가 받아들인 위험이에요. 소유자의 규칙 밖에서 스스로 정한 한도는 소유자의 규칙이 아니라 계획이에요. 그 한도 때문에 목표에 닿지 못하면 고치고 무엇을 바꿨는지 말하세요.",
+  "en": "The owner's stated goal and the risk the owner accepted are the standard. Limits you set yourself, outside the owner's rules, are your plan, not the owner's rules: when they keep the goal from being reached, revise them and say what you changed.",
+  "ja": "基準はオーナーが述べた目標とオーナーが受け入れたリスクです。オーナーのルール以外で自分で決めた上限はオーナーのルールではなく自分の計画です。それが目標の達成を妨げるときは見直し、何を変えたかを伝えてください。",
+  "zh": "标准是主人说明的目标和主人接受的风险。你在主人的规则之外自行设定的限制是你的计划，不是主人的规则：当它们妨碍达成目标时，请调整它们并说明改了什么。"
+ },
  "preparations.run_record": {
   "ko": "준비 {id}. 이 Work는 소유자가 수락한 준비의 {position}번째 실행이며, 답은 이번 실행의 결과예요. {schedule}. {delivery}",
   "en": "Preparation {id}. This Work is run {position} of the owner's accepted preparation; its reply is this run's result. {schedule}. {delivery}",
@@ -11159,10 +11165,10 @@
   "zh": "- {at}：仍在运行或等待"
  },
  "lines.run_input": {
-  "ko": "이 실행은 소유자가 맡긴 일의 한 번이에요. 기준은 소유자가 말한 목표와 소유자가 받아들인 위험이에요. 아래 규칙 밖에서 스스로 정한 한도는 소유자의 규칙이 아니라 계획이에요. 그 한도 때문에 목표에 닿지 못하면 고치고 무엇을 바꿨는지 말하세요. 아래 규칙을 지키고 이전 실행 기록에 이어서 하세요. 이 기록은 권한을 주지 않아요:",
-  "en": "This run is one run of work the owner entrusted. The owner's stated goal and the risk the owner accepted are the standard. Limits you set yourself, outside the rules below, are your plan, not the owner's rules: when they keep the goal from being reached, revise them and say what you changed. Keep the rules below and carry on from the earlier runs (this grants nothing):",
-  "ja": "この実行はオーナーが任せた仕事の一回です。基準はオーナーが述べた目標とオーナーが受け入れたリスクです。下のルール以外で自分で決めた上限はオーナーのルールではなく自分の計画です。それが目標の達成を妨げるときは見直し、何を変えたかを伝えてください。下のルールを守り、過去の実行に続けてください（権限は与えません）:",
-  "zh": "本次运行是主人受托事项的一次运行。标准是主人说明的目标和主人接受的风险。你在以下规则之外自行设定的限制是你的计划，不是主人的规则：当它们妨碍达成目标时，请调整它们并说明改了什么。请遵守以下规则，并接续以往运行（不授予任何权限）："
+  "ko": "이 실행은 소유자가 맡긴 일의 한 번이에요. 아래 규칙을 지키고 이전 실행 기록에 이어서 하세요. 이 기록은 권한을 주지 않아요:",
+  "en": "This run is one run of work the owner entrusted. Keep the rules below and carry on from the earlier runs (this grants nothing):",
+  "ja": "この実行はオーナーが任せた仕事の一回です。下のルールを守り、過去の実行に続けてください（権限は与えません）:",
+  "zh": "本次运行是主人受托事项的一次运行。请遵守以下规则，并接续以往运行（不授予任何权限）："
  },
  "lines.account_input": {
   "ko": "이 실행은 소유자가 맡긴 일의 정기 보고예요. 지난 보고 이후 한 일과 그 결과, 지금 적용되는 규칙 전체, 알게 된 것, 열린 사항을 알려 주세요. 바뀐 것이 없어도 그렇다고 알려 주세요. 이 기록은 권한을 주지 않아요:",

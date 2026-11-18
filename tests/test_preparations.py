@@ -212,6 +212,8 @@ class PreparationRunFactTests(_Case):
                 self.assertTrue(self.service.preparation_history(job)[-1]['content'].startswith(job['message'] + '\n\n' + fact))
                 orchestration = self.service.work_orchestration(job, job['message'], [], {}, WorkBudget())
                 self.assertEqual(orchestration.request, job['message'] + '\n\n' + fact)
+                # #969: the plan call and the run itself both read that the AI's own limits are its plan.
+                self.assertTrue(fact.endswith('\n' + msg('preparations.own_limits')))
                 with self.store.db() as db:
                     db.execute("UPDATE preparations SET delivery_mode='when_needed' WHERE id=?", (row['id'],))
                 needed = self.service.preparation_run_fact(job)
@@ -253,11 +255,13 @@ class PreparationRunFactTests(_Case):
         from unittest.mock import patch
         import sqlite3
         job = {'request_key': prep.request_key('missing', self.now)}
-        self.assertEqual(self.service.preparation_run_fact(job), msg('preparations.run_fact'))
+        # #969: the fallback still says the owner's goal and accepted risk lead.
+        fixed = msg('preparations.run_fact') + '\n' + msg('preparations.own_limits')
+        self.assertEqual(self.service.preparation_run_fact(job), fixed)
         with patch.object(self.service.preparations, 'get', side_effect=sqlite3.OperationalError('unavailable')):
-            self.assertEqual(self.service.preparation_run_fact(job), msg('preparations.run_fact'))
+            self.assertEqual(self.service.preparation_run_fact(job), fixed)
         history = self.service.preparation_history({**job, 'id': 'missing', 'message': '확인'})
-        self.assertEqual(history[-1]['content'], '확인\n\n' + msg('preparations.run_fact'))
+        self.assertEqual(history[-1]['content'], '확인\n\n' + fixed)
 
 
 class PreparationEarlierReportTests(_Case):
