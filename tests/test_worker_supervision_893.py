@@ -68,7 +68,43 @@ def test_unexpected_phase_failure_settles_work_and_preparation(case, caplog):
     assert_settled(case, 'failed')
     assert markers(case)[0]['status'] == 'completed'
     assert 'OperationalError' in caplog.text
-    assert 'database is locked' not in caplog.text
+    assert 'Traceback (most recent call last)' in caplog.text
+    assert 'database is locked' in caplog.text
+
+
+@pytest.mark.parametrize('redactor_fails', [False, True])
+def test_untyped_work_failure_logs_only_a_redacted_traceback(case, caplog, redactor_fails):
+    secret = 'stored-value-without-credential-shape'
+    case.store.secret('model_key', secret)
+    original = case.service._redact_known_secrets
+
+    def redact(text):
+        if redactor_fails and 'Traceback (most recent call last)' in text:
+            raise RuntimeError('redaction unavailable')
+        return original(text)
+
+    def broken_worker(_run):
+        try:
+            raise ValueError(f'inner {secret} api_key=sk-never-print-this-value')
+        except ValueError as cause:
+            raise TypeError(f'outer {secret}') from cause
+
+    with patch.object(case.service, '_run_worker_attempts', side_effect=broken_worker), \
+         patch.object(case.service, '_redact_known_secrets', side_effect=redact):
+        assert case.service.run_one()
+    assert_settled(case, 'failed')
+    assert secret not in caplog.text
+    assert 'sk-never-print-this-value' not in caplog.text
+    assert f'work failed job={work_id(case)} kind=TypeError' in caplog.text
+    assert all(record.exc_info is None for record in caplog.records)
+    if redactor_fails:
+        assert '[traceback redaction unavailable]' in caplog.text
+        assert 'outer ' not in caplog.text
+    else:
+        assert 'Traceback (most recent call last)' in caplog.text
+        assert 'broken_worker' in caplog.text
+        assert 'ValueError: inner [redacted]' in caplog.text
+        assert 'TypeError: outer [redacted]' in caplog.text
 
 
 @pytest.mark.parametrize('unknown_effect', [False, True])
@@ -199,7 +235,7 @@ def test_folded_steer_keeps_committed_success_after_presence_failure(service_cas
         assert not db.execute('SELECT 1 FROM owner_model_upkeep WHERE job_id=?', (work,)).fetchone()
     tail.assert_not_called()
     assert 'OperationalError' in caplog.text
-    assert 'presence lookup locked' not in caplog.text
+    assert 'OperationalError: presence lookup locked' in caplog.text
 
 
 @pytest.mark.parametrize('status', ['succeeded', 'awaiting_connection', 'cancelled', 'interrupted'])
@@ -232,7 +268,7 @@ def test_phase_failure_preserves_already_committed_outcome(service_case, status,
     assert case.store.turn_provenance(work)['goal']['outcome'] == status
     tail.assert_not_called()
     assert 'OperationalError' in caplog.text
-    assert 'phase cleanup locked' not in caplog.text
+    assert 'OperationalError: phase cleanup locked' in caplog.text
 
 
 @pytest.mark.parametrize('status', ['interrupted', 'cancelled'])

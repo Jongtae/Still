@@ -219,7 +219,7 @@ def recorded_calls(calls,tools,redact=None):
   try:
    function=call.get('function') or {}
    action=(tools.get(function.get('name')) or {}).get('host_action')
-  except AttributeError:
+  except (AttributeError,TypeError):
    out.append(call);continue
   try:
    parsed=function.get('arguments','{}')
@@ -1830,20 +1830,39 @@ def action_definitions(tools,allowed,readonly=False,search_providers=None):
 def check_arguments(parameters,args):
  """The schema-level argument check shared by the native loop and the MCP facade.
 
- ``parameters`` is a ``DEFINITIONS`` parameter schema: an object whose
- declared properties are strings or bounded numeric scalars, ``additionalProperties: false``.
- Unknown and missing fields are refused rather than dropped.
+ Check the object, scalar and array schemas declared by Still's tools,
+ including finish, before any value is used as a key. Unknown and missing
+ fields are refused rather than dropped. This is the tool-schema subset,
+ not a general JSON Schema implementation (no refs or external resolution).
  """
- if not isinstance(args,dict) or set(args)-set(parameters['properties']) or set(parameters['required'])-set(args):raise ValueError(msg('agent_runtime.invalid_tool_arguments'))
- for key,value in args.items():
-  spec=parameters['properties'][key];kind=spec.get('type')
-  if kind not in ('integer','number'):
-   if not isinstance(value,str):raise ValueError(msg('agent_runtime.tool_argument_type'))
-  else:
-   import math
-   if isinstance(value,bool) or not isinstance(value,(int,float)) or (isinstance(value,float) and not math.isfinite(value)) or (kind=='integer' and not isinstance(value,int)):
-    raise ValueError('Invalid numeric tool argument')
-   if value<spec.get('minimum',-math.inf) or value>spec.get('maximum',math.inf):raise ValueError('Numeric tool argument outside bounds')
+ def invalid(path,reason):
+  raise ToolError(f"{msg('agent_runtime.invalid_tool_arguments')} {path}: {reason}",'invalid_arguments',ran=False)
+ def check(spec,value,path):
+  kind=spec.get('type')
+  if kind=='object':
+   if not isinstance(value,dict):invalid(path,'expected object')
+   properties=spec.get('properties',{})
+   missing=set(spec.get('required',()))-set(value)
+   if missing:invalid(path,'missing required fields: '+', '.join(sorted(missing)))
+   if spec.get('additionalProperties') is False and set(value)-set(properties):
+    invalid(path,'unexpected fields; allowed: '+', '.join(properties))
+   for key,item in value.items():
+    if key in properties:check(properties[key],item,f'{path}.{key}')
+  elif kind=='array':
+   if not isinstance(value,list):invalid(path,'expected array')
+   for index,item in enumerate(value):check(spec['items'],item,f'{path}[{index}]')
+  elif kind=='string':
+   if not isinstance(value,str):invalid(path,'expected string')
+  elif kind=='boolean':
+   if not isinstance(value,bool):invalid(path,'expected boolean')
+  elif kind in ('integer','number'):
+   if (isinstance(value,bool) or not isinstance(value,(int,float))
+       or isinstance(value,float) and not math.isfinite(value) or kind=='integer' and not isinstance(value,int)):
+    invalid(path,'expected finite '+kind)
+   if value<spec.get('minimum',-math.inf) or value>spec.get('maximum',math.inf):invalid(path,'number outside bounds')
+  else:raise ValueError('Unsupported tool schema type')
+  if 'enum' in spec and value not in spec['enum']:invalid(path,'expected one of '+json.dumps(spec['enum'],ensure_ascii=False))
+ check(parameters,args,'arguments')
  return args
 
 # --- One Work's shared loop budget (#606 T1, #607 AX-10) --------------------
@@ -5434,6 +5453,11 @@ def recorded_effects_response(steps,read_saved):
   return '\n\n'.join([text,*([content] if content else []),*notes]),bool(content)
  return None,False
 
+def source_labels(sources):
+ """Citation text only, filtered before hashing; structured tool data stays in its result."""
+ if not isinstance(sources,(list,tuple)):return []
+ return list(dict.fromkeys(source for source in sources if isinstance(source,str) and source.strip()))
+
 def fallback_response(executions, sources):
  """Return a useful safe result when a tool-capable model stops after tools.
 
@@ -5449,6 +5473,7 @@ def fallback_response(executions, sources):
  return '\n\n'.join([text,*notes]) if notes else text
 
 def _fallback_text(name, result, sources):
+ sources=source_labels(sources)
  if name=='weather' and isinstance(result,dict):
   try:
    from .local_tools import weather_answer
@@ -5459,7 +5484,7 @@ def _fallback_text(name, result, sources):
   lines=[msg('agent_runtime.search_results_fetched')]
   for row in rows[:5]:
    if isinstance(row,dict) and row.get('title') and row.get('url'):lines.append(f"- {row['title']}: {row['url']}")
-  return '\n'.join(lines)+(('\n\n'+msg('agent_runtime.sources_looked_up')+'\n'+'\n'.join(dict.fromkeys(sources))) if sources else '')
+  return '\n'.join(lines)+(('\n\n'+msg('agent_runtime.sources_looked_up')+'\n'+'\n'.join(sources)) if sources else '')
  if name=='public_page_read' and isinstance(result,dict):
   return (result.get('content','')[:12000] + '\n\n' + msg('agent_runtime.page_source', url=result.get('url','')))
  if name=='save_note' and isinstance(result,dict) and result.get('saved'):return msg('agent_runtime.note_saved')
@@ -5525,7 +5550,7 @@ def _batch_write_labels(calls,tools):
  labels=set()
  for call in calls if isinstance(calls,list) else []:
   try:action=(tools.get(call.get('function',{}).get('name')) or {}).get('host_action')
-  except AttributeError:continue
+  except (AttributeError,TypeError):continue
   if action in PRIVATE_WRITE_PROVENANCE:labels.add(PRIVATE_WRITE_PROVENANCE[action])
  return labels
 
@@ -6176,7 +6201,8 @@ def run_agent(adapter,config,key,history,system,capabilities,record,scope='main'
 
  def conclude(content,claim=None,judgment=None,reply_source='worker'):
   """The run's result: ``succeeded`` needs an accepted done claim judged yes (#657)."""
-  if sources and msg('agent_runtime.sources_looked_up') not in content:content+='\n\n'+msg('agent_runtime.sources_looked_up')+'\n'+'\n'.join(dict.fromkeys(sources))
+  labels=source_labels(sources)
+  if labels and msg('agent_runtime.sources_looked_up') not in content:content+='\n\n'+msg('agent_runtime.sources_looked_up')+'\n'+'\n'.join(labels)
   result=ModelResult(content[:24000],config['provider'],actual)
   result.reply_source=reply_source
   if claim is None and _external(trail) and not invalid_calls:
@@ -6314,8 +6340,16 @@ def run_agent(adapter,config,key,history,system,capabilities,record,scope='main'
     if finish_offered and function.get('name')==FINISH_ACTION:
      # #657: the completion claim.  Deterministic checks first (refs exist
      # and did not fail), then one DecisionEngine judgment for a done claim.
-     try:claim_args=json.loads(function.get('arguments') or '{}')
-     except (TypeError,ValueError):claim_args=None
+     try:
+      try:claim_args=json.loads(function.get('arguments') or '{}')
+      except (TypeError,ValueError):
+       raise ToolError(msg('agent_runtime.invalid_tool_arguments'),'invalid_arguments',ran=False) from None
+      check_arguments(FINISH_DEFINITION['function']['parameters'],claim_args)
+     except ToolError as exc:
+      result=_error_observation(exc,False)
+      record('model','claim_rejected',json.dumps({'scope':scope,'call_id':call['id'],**result},ensure_ascii=False))
+      messages.append({'role':'tool','tool_call_id':call['id'],'content':json.dumps(result,ensure_ascii=False)})
+      continue
      claim,reason=check_claim(claim_args,observations)
      if reason is None and claim['status']=='done':
       # #627: internal current-state bookkeeping is not evidence of the goal.
@@ -6349,8 +6383,10 @@ def run_agent(adapter,config,key,history,system,capabilities,record,scope='main'
     try:
      name=function.get('name')
      if not isinstance(name,str):
-      name='unknown';raise ValueError(msg('agent_runtime.tool_name_type'))
-     args=json.loads(function.get('arguments','{}'))
+      name='unknown';raise ToolError(msg('agent_runtime.tool_name_type'),'invalid_arguments',ran=False)
+     try:args=json.loads(function.get('arguments','{}'))
+     except (TypeError,ValueError):
+      raise ToolError(msg('agent_runtime.invalid_tool_arguments'),'invalid_arguments',ran=False) from None
      # #718: the status is display text only; it never reaches validation,
      # the repeat/duplicate keys or the tool itself.
      args,status=split_status(args)
@@ -6388,7 +6424,7 @@ def run_agent(adapter,config,key,history,system,capabilities,record,scope='main'
      executions.append((name,result))
      if name in ('find_files','read_file','list_notes','list_memory','search_memory','save_memory','calendar_query','drive_search','drive_read','mail_search','mail_read'):capabilities.evidence.append({'tool':name,'result':result})
      invalid_calls.discard(name)
-     sources.extend(result.get('sources',[]))
+     sources.extend(source_labels(result.get('sources',[])))
      # #657: a page state the call returned is the page the next step acts on.
      page=result_page_digest(result) or page
      # A tool that declined or deferred returned normally, so this loop used to
