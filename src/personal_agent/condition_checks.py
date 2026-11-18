@@ -29,6 +29,7 @@ import time
 from datetime import datetime, timedelta
 
 from . import preparations as prep
+from .code_run import CHECK_STATE_ENV as STATE_ENV
 from .code_run import MAX_SECONDS, CodeRunError, CodeRunner, _arguments, check_arguments_digest
 from .messages import msg
 
@@ -40,7 +41,6 @@ MAX_EVERY_SECONDS = prep.MAX_EVERY_MINUTES * 60
 DAILY_WAKES = 24
 #: The Kubernetes probe default ``failureThreshold``.
 FAILURES_BEFORE_PAUSE = 3
-STATE_ENV = 'CHECK_STATE_FILE'
 #: What a failure handoff and the owner's view keep of stderr: its tail.
 DIAGNOSTIC_CHARS = 600
 #: Per-day counts kept on a row for the owner's view and the line's periodic account.
@@ -188,9 +188,8 @@ class CheckRunner(CodeRunner):
     def _load_states(self, names, workdir, env):
         from pathlib import Path
         states = super()._load_states(names, workdir, env)
-        self._state_path = Path(workdir, 'check-state.json')
+        self._state_path = Path(env[STATE_ENV])
         self._state_path.write_text(self.state_text, encoding='utf-8')
-        env[STATE_ENV] = str(self._state_path)
         return states
 
     def _save_states(self, states):

@@ -4,12 +4,15 @@ Evidence class: model-free unit and store-level tests.  The real QuickStore, ``P
 ``AgentService`` (its schedule handler, history, Settings view, payment-autonomy gate) and
 ``CodeRunner`` request decisions run unchanged; only the sandbox process is a fake runner
 (``test_code_run.FakeProcess``) and the clock is a fake clock.  No live model, sandbox,
-network or account is contacted, and none is claimed.  No service is named: the fixtures are a
-synthetic API at example hosts.
+network or account is contacted, and none is claimed. The stateful proving regression executes
+its fixture code in a local Python subprocess behind the fake sandbox protocol. No service is
+named: the fixtures are a synthetic API at example hosts.
 """
 import json
+import subprocess
 import unittest
 from datetime import datetime, timezone
+from pathlib import Path
 from unittest import mock
 
 from personal_agent import agent_runtime, condition_checks as cc, preparations as prep
@@ -134,6 +137,53 @@ class Setup(_Base):
             self.schedule(job, args, **extra)
         self.assertEqual(caught.exception.code, code)
         self.assertEqual(self.service.preparations.rows(), [])
+
+    def test_stateful_code_proves_unchanged_and_starts_with_fresh_check_state(self):
+        code = ('import json, os\n'
+                'with open(os.environ["CHECK_STATE_FILE"]) as handle:\n'
+                '    state = json.load(handle)\n'
+                'state["runs"] = state.get("runs", 0) + 1\n'
+                'with open(os.environ["CHECK_STATE_FILE"], "w") as handle:\n'
+                '    json.dump(state, handle)\n'
+                'print(state["runs"])\n')
+
+        def executing_process():
+            process = FakeProcess()
+            original = process._lines
+
+            def execute():
+                config = process.config
+                completed = subprocess.run(config['argv'], cwd=config['workdir'], env=config['env'],
+                                           capture_output=True, text=True, timeout=10)
+                process._result = {'exit': completed.returncode, 'stdout': completed.stdout, 'stderr': completed.stderr}
+                yield from original()
+
+            process._lines = execute
+            return process
+
+        job = self.owner_work()
+        args = self.check_args(code=code, secrets='')
+        # Each proving run starts empty, even after the same code has written to the file.
+        for _ in range(2):
+            process = executing_process()
+            result = self.code_run(job, args, process)
+            self.assertEqual(result['exit_status'], 0, result['stderr'])
+            self.assertEqual(result['stdout'].strip(), '1')
+            self.assertIn('check_proof', result)
+            self.assertNotIn('state_saved', result)
+            self.assertFalse(Path(process.config['env'][cc.STATE_ENV]).exists())
+        scheduled = self.schedule(job, args)
+        self.assertTrue(scheduled['scheduled'])
+        row = self.row(scheduled['preparation_id'])
+        spec = cc.spec_of(row)
+        self.assertEqual(spec['code'], code)
+        credentials = ApiCredentials(self.store)
+        self.assertFalse(credentials.read_bound_state(cc.state_key(row['id']), spec['digest']))
+        # The actual check runs that exact code, but never inherits the proving run's state.
+        self.queue.append(executing_process())
+        self.tick(0)
+        self.assertEqual(cc.status_of(self.row(row['id']))['last_result'], cc.HIT)
+        self.assertEqual(json.loads(credentials.read_bound_state(cc.state_key(row['id']), spec['digest'])), {'runs': 1})
 
     def test_a_proven_check_is_scheduled_with_its_pinned_library_and_digest(self):
         library = ProcedureLibrary(self.store)

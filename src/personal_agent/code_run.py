@@ -51,6 +51,7 @@ MAX_HOSTS = 16
 MAX_SECRET_SETS = 4
 OUTPUT_BYTES = 16 * 1024
 MAX_SECONDS = 120
+CHECK_STATE_ENV = 'CHECK_STATE_FILE'
 INSTALL_SECONDS = 180
 #: Grace for the runner to start its proxies and report after the code's own timeout.
 RUNNER_GRACE = 30
@@ -870,6 +871,8 @@ class CodeRunner:
         A small JSON object the code may read and rewrite (an access token and its expiry, for
         example), so a run reuses a valid token instead of requesting a new one each time.  It is
         kept encrypted between runs, bound to the set's exact metadata, and redacted from output.
+        #972: a check's proving run also gets an empty JSON object, discarded with the run directory.
+        Only secret-set files enter ``states`` and are persisted by ``_save_states``.
         """
         from .api_credentials import ApiCredentials
         from .api_requests import env_name, slots
@@ -882,6 +885,9 @@ class CodeRunner:
             path.write_text(ApiCredentials(self.store).read_state(name, slot) or '{}', encoding='utf-8')
             env[env_name(name, 'STATE_FILE')] = str(path)
             states[name] = (slot, path)
+        check_state = Path(workdir, 'check-state.json')
+        check_state.write_text('{}', encoding='utf-8')
+        env[CHECK_STATE_ENV] = str(check_state)
         return states
 
     def _save_states(self, states):
