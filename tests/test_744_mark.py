@@ -136,7 +136,9 @@ def test_shared_steer_entry_requires_exact_owner_typed_flag(host, owner_typed):
         rows = db.execute('SELECT source_job_id,job_id,content FROM work_steers').fetchall()
     if owner_typed == 1:
         assert accepted is True
-        judge.assert_called_once_with(running['id'], queued, text)
+        judge.assert_called_once()
+        # #970 D6: with several lanes the judgment sees the conversation's running Works as a list.
+        assert judge.call_args.args in ((running['id'], queued, text), ([running['id']], queued, text))
         assert [tuple(row) for row in rows] == [(queued, running['id'], text)]
     else:
         judge.assert_not_called()
