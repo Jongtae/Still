@@ -398,7 +398,7 @@ class Executor:
         def prepared(run):
             # Normal path retains #1261; at most one plan is admitted by the router.
             if condition == 'early-revision':
-                early = service._early_plan.result()
+                early = run.early_plan.result()
                 if not early.get('profile_items'):
                     raise ValueError('Early revision check requires a nonempty inventory')
                 item = early['profile_items'][0]
