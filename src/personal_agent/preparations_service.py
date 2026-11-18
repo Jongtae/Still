@@ -238,9 +238,16 @@ class PreparationsService:
             planning=self.day_plan_run(job) and self.day_plan_on()
             steers=service.owner_steer_words(job)
             steered=bool(service.unattended_work(job) and not planning and steers)
-            if service.unattended_work(job) and not planning and not steered:
-                # #619: a scheduled run leaves no proposal waiting; it says what it would schedule.
-                raise not_run(ToolError(UNATTENDED_APPROVAL_TEXT,'unattended_run'))  # #618: Still refused it, ran: false
+            if service.unattended_work(job) and not planning:
+                # #938: the run of a qualifying line row schedules its line's next piece, and only that.
+                # #968/#984: a steered run's own replacement, or work that is not piece-shaped, takes the
+                # owner-present path below instead.
+                parent=self.piece_parent(job)
+                if steered and parent is not None and not self.piece_shaped(args,parent['line_id']):parent=None
+                if parent is not None:return self.schedule_piece(job,parent,args)
+                if not steered:
+                    # #619: a scheduled run leaves no proposal waiting; it says what it would schedule.
+                    raise not_run(ToolError(UNATTENDED_APPROVAL_TEXT,'unattended_run'))  # #618: Still refused it, ran: false
             if steered and (not self.own_running_row(job) or args.get('replaces') not in
                             (None, '', prep.preparation_of(job.get('request_key')))):
                 # A steer may start work or replace this row; it never replaces another row.
@@ -354,6 +361,73 @@ class PreparationsService:
                 if terms.get('report_seconds'):result['report_every_minutes']=terms['report_seconds']//60
             return result
         return schedule
+
+    def piece_parent(self, job):
+        """#938 (D1): the row ``job`` is the current run of, when that run may schedule its line's next piece.
+
+        A one-off or repeating ``prepare`` row of a line the owner set up (not a look-back line), that the
+        owner accepted, that an owner-typed Work set up, or that is itself a piece; never the look back's,
+        the daily plan's or a periodic account's row.  Only the slot's current Work counts (a continuation
+        keeps the slot, ``continue_run``).  None for every other unattended run, which stays refused.
+        """
+        service=self.service
+        preparation_id=prep.preparation_of((job or {}).get('request_key'))
+        row=service.preparations.get(preparation_id) if preparation_id else None
+        if not (row and row.get('line_id') and row['kind']==prep.KIND_PREPARE
+                and row.get('origin') in (None,prep.ORIGIN_LINE_PIECE)
+                and row.get('accepted_by') in prep.LINE_PIECE_PARENTS
+                and row['state']==prep.STATE_RUNNING and row.get('last_run_job_id')==job.get('id')):
+            return None
+        if service.lines.provenance(row['line_id']).get('by')=='look-back':return None
+        return row
+
+    @staticmethod
+    def piece_shaped(args, line_id=None):
+        """#938: whether a ``schedule_preparation`` call is one plain ``prepare`` of the run's own line."""
+        return not (args.get('kind')!=prep.KIND_PREPARE or args.get('line') not in (None,'',line_id)
+                    or any(args.get(key) not in (None,'') for key in
+                           ('recurrence','rrule','every_minutes','until','max_runs','report_every_minutes','replaces')))
+
+    def schedule_piece(self, job, parent, args):
+        """#938: schedule the next piece of ``parent``'s line from its run ``job`` (D1-D6).
+
+        The piece is one ``prepare`` of the same line, with no recurrence, window or ``replaces``.  Its
+        goal is the handoff the run writes.  Who stands behind it, where it goes and how it is told are
+        inherited from ``parent`` and never read from the call: ``prep.piece_standing`` (payment follows
+        the chain's owner-accepted root; owner decision 2026-11-18), the parent's channel and delivery
+        mode.  ``Preparations.create`` re-checks the line and the bounds in its transaction and keeps one
+        child per run.  No proposal, no message, no declined-goal judgment: the owner's line and its stop
+        control stand for it.
+        """
+        service=self.service
+        def refused(code):
+            return not_run(ToolError(str(prep.PreparationRefusal(code)),code))
+        if not self.piece_shaped(args,parent['line_id']):
+            raise refused('line_piece_invalid')
+        now=service.preparations.clock()
+        try:
+            fields=service.preparation_fields(args,now)
+        except prep.PreparationRefusal as exc:
+            raise not_run(ToolError(service._redact_known_secrets(str(exc))[:600],exc.code)) from None
+        accepted_by=prep.piece_standing(parent['accepted_by'])
+        if accepted_by is None:raise refused('line_piece_invalid')
+        try:
+            row=service.preparations.create(kind=prep.KIND_PREPARE,goal=fields['goal'],due_at=fields['due_at'],
+                                            timezone=fields['timezone'],recurrence=None,channel=parent['channel'],
+                                            created_from=job['id'],state=prep.STATE_SCHEDULED,accepted_by=accepted_by,
+                                            delivery_mode=parent.get('delivery_mode'),title=fields['title'],offer=fields['offer'],
+                                            origin=prep.ORIGIN_LINE_PIECE,line_id=parent['line_id'],
+                                            piece_of=prep.slot_key(job['request_key']))
+        except prep.PreparationRefusal as exc:
+            raise ToolError(str(exc),exc.code,**ran_field(exc)) from None
+        replaced=bool(row.get('piece_replaced'))
+        LOG.info('line piece %s id=%s line=%s work=%s',('replaced' if replaced else 'scheduled'),row['id'],row['line_id'],job['id'])
+        when=prep.local_text(row['due_at'],row['timezone'])
+        return {'preparation_id':row['id'],'kind':row['kind'],'state':row['state'],'scheduled':True,
+                'requires_owner_acceptance':False,'already_proposed':False,'replaced_pending':replaced,
+                'due':prep.iso(row['due_at'],row['timezone']),'due_local':when,'now_local':prep.local_text(now,row['timezone']),
+                'recurrence':'none','delivery':service.preparation_delivery(row),'accepted_by':row['accepted_by'],
+                'line_id':row['line_id'],'next_step':msg('preparations.line_piece_scheduled',when=when)}
 
     def scheduled_line(self, line, replaced, *, accepted, planning):
         """#798: the line a new row is linked to, or None; a refusal when it cannot be."""
@@ -949,13 +1023,15 @@ class PreparationsService:
         if row and row.get('line_id'):
             own=[item['id'] for item in self.line_rows(row['line_id'])] or own
         if preparation_id and job.get('created') is not None:
-            keys=' OR '.join('request_key LIKE ?' for _ in own)
+            # #938: a line's rows by subquery (a line done in pieces has many); one row by its own key.
+            keys,key=((prep.line_works_sql('request_key'),row['line_id']) if row and row.get('line_id')
+                      else ('request_key LIKE ?',prep.REQUEST_KEY_PREFIX+preparation_id+':%'))
             with service.store.db() as db:
                 candidates=[dict(item) for item in db.execute(
                     f"SELECT * FROM jobs WHERE created<? AND id<>? AND ({keys}) "
                     "AND response IS NOT NULL AND TRIM(response)<>'' "
                     "AND (delivery='sent' OR (chat_id IS NULL AND delivery='none')) ORDER BY created DESC,id DESC",
-                    (job['created'],job['id'],*(prep.REQUEST_KEY_PREFIX+item+':%' for item in own)))]
+                    (job['created'],job['id'],key))]
             previous=next((item for item in candidates
                            if prep.preparation_of(item['request_key']) in own and item['response'].strip()
                            and ws.has_delivered_result(item['status'])
@@ -1378,7 +1454,8 @@ class PreparationsService:
         proposals=[{'id':row['id'],'title':prep.owner_title(dict(row)),
                     'state':{prep.STATE_PROPOSED:'waiting',prep.STATE_EXPIRED:'expired',prep.STATE_CANCELLED:'declined'}[row['state']],
                     'date':owner_today(service.store,row['created_at']),'origin':row['origin']}
-                   for row in rows if row['accepted_by'] in prep.SELF_SET or row['origin']==prep.ORIGIN_DREAM]
+                   for row in rows if (row['accepted_by'] in prep.SELF_SET or row['origin']==prep.ORIGIN_DREAM)
+                   and row['origin']!=prep.ORIGIN_LINE_PIECE]
         block={'lines':lines,'proposals':proposals,'requests':[]}
         # Keep complete entries only. Truncated owner words never gain refs outside this block.
         while len(json.dumps(block,ensure_ascii=False))>om.LINE_INPUT_CHARS//2 and (proposals or lines):
@@ -1946,7 +2023,8 @@ class PreparationsService:
         with service.store.db() as db:
             ids=[row['id'] for row in db.execute('SELECT id FROM preparations WHERE line_id=?',(line_id,))]
             if not ids:return []
-            keys=' OR '.join('j.request_key LIKE ?' for _ in ids)
+            # #938: a line done in pieces has a row per piece (``line_works_sql``).
+            keys=prep.line_works_sql('j.request_key')
             jobs=[dict(row) for row in db.execute(
                 f"SELECT j.*,EXISTS(SELECT 1 FROM telegram_notifications n WHERE n.job_id=j.id AND n.kind=? AND n.state='sent') "
                 f"AS notified, EXISTS(SELECT 1 FROM tool_events b JOIN jobs bundle ON bundle.id=json_extract(b.detail,'$.bundle_id') "
@@ -1956,7 +2034,7 @@ class PreparationsService:
                 f"AND json_extract(s.detail,'$.line_id')=json_extract(b.detail,'$.line_id')) "
                 f"AND (bundle.delivery='sent' OR (bundle.channel='web' AND bundle.delivery='none'))) "
                 f"AS bundled FROM jobs j WHERE ({keys}) AND j.id IS NOT ? ORDER BY j.created DESC,j.id DESC LIMIT ?",
-                (prep.NOTIFY_KIND,*(prep.REQUEST_KEY_PREFIX+item+':%' for item in ids),exclude,limit*4 if limit is not None else -1))]
+                (prep.NOTIFY_KIND,line_id,exclude,limit*4 if limit is not None else -1))]
         out=[]
         for job in jobs:
             if prep.preparation_of(job.get('request_key')) not in ids or service.store.work_request_forgotten(job['id']):
@@ -2424,6 +2502,9 @@ class PreparationsService:
             lead=msg('lines.account_input')
         else:
             lead=msg('lines.run_input')
+            # #938 (D2): a run that may continue its line in pieces is told how, in one general sentence.
+            if self.piece_parent(job) is not None:
+                lead+='\n'+msg('lines.piece_guidance',line=row['line_id'],minutes=prep.PIECE_LEAD_SECONDS//60)
         return lead+'\n'+el.brief_text(brief)+'\n'+el.outcomes_text(outcomes,row.get('timezone'))
 
     def record_line_judgment_reads(self, work_id, text):

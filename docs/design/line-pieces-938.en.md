@@ -21,6 +21,8 @@ A run with no owner present may schedule the next piece of its own work.
 
 Payment rules are unchanged: per-action approval, or owner-enabled payment autonomy. A run Still set up on its own never pays (C17 defaults, `SELF_SET`). Unattended runs also take no step that needs the owner's approval (#619). A piece that reaches an order therefore reports what it found, and the owner acts from that report.
 
+**Amended by the owner decision of 2026-11-18** (recorded on #938, tracker #973): a piece of a line whose root row the owner accepted follows the owner's payment autonomy, like that row. With autonomy on it may order without a per-action approval; with it off, per-action approval is required as before, and an unattended run cannot ask for it. A piece of a row Still set up on its own still never pays. D1, D4 and D5 below carry this; C17 is amended in the same change.
+
 ## What exists
 
 All paths are under `src/personal_agent/` at the main revision this document was written against.
@@ -53,7 +55,7 @@ A call from an unattended run is accepted only when all of these hold:
    - its origin is not `line-account`;
    - its `accepted_by` is owner-request, owner-button, owner-settings, owner-answer, owner-work, or `line-piece`. In other words, the owner accepted the row, it was set up in an owner-typed Work, or it is itself a piece.
 
-   A row the owner accepted (owner-request, -button, -settings, -answer) is not `SELF_SET`, so its own run keeps the owner's payment rules. A piece it schedules is `line-piece`, which is `SELF_SET`, so the piece never pays.
+   A row the owner accepted (owner-request, -button, -settings, -answer) is not `SELF_SET`, so its own run keeps the owner's payment rules. A piece it schedules inherits that standing (`line-piece-owner`, D4). A piece of an `owner-work` row is `line-piece`, which is `SELF_SET`, so it never pays.
 
    Rows of the look back (`dream`) and of the daily plan (`day-plan`) do not qualify. Their own rules stand: the daily plan's runs cannot schedule in turn.
 2. The run's line is active and announced. This is checked again inside the `create` transaction (D6).
@@ -91,7 +93,11 @@ An earlier note in #938 said the goal bound is 1,000 characters. The code says 8
 
 ### D4. What the owner sees and how it stops
 
-- **Origin and acceptance:** a piece is recorded with origin `line-piece` (added to `ORIGINS`) and `accepted_by` `line-piece` (added to `SELF_SET`).
+- **Origin and acceptance:** a piece is recorded with origin `line-piece` (added to `ORIGINS`) and the parent run's slot key (`piece_of`). Its `accepted_by` is inherited from the row whose run scheduled it (`preparations.piece_standing`), never read from the call:
+  - `line-piece-owner` when that row is one the owner accepted (owner-request, -button, -settings, -answer) or is itself `line-piece-owner`. It is not `SELF_SET` and not `OWNER_ACCEPTED`: it keeps the root's payment standing (D5) and asks the owner nothing, sign-in included.
+  - `line-piece` (added to `SELF_SET`) when that row is `owner-work` or `line-piece`.
+  - A row of the look back or the daily plan schedules no piece (D1), so no chain starts from one.
+  - `Preparations.create` refuses a piece origin without a parent slot, and a piece never takes up another Work's waiting proposal.
 - **Delivery:** a piece inherits the recorded send intent and delivery mode of the row whose run created it. A chain started in an owner-typed Work therefore keeps that Work's destination. There is no new bundling and no routing from the brief's free text. A `when_needed` parent gives `when_needed` children: the existing quiet judgment sends a piece's report only when there is something for the owner.
 - **Owner view:**
   - The line's entry in `entrusted_line list` and in Settings shows the pending piece with its due time under the existing next-run field.
@@ -102,8 +108,8 @@ An earlier note in #938 said the goal bound is 1,000 characters. The code says 8
 
 ### D5. Payment, approvals and outside text
 
-- **No payment.** A piece is `SELF_SET`, so it never pays, even with payment autonomy on.
-- **No approval requests.** A piece takes no step that needs the owner's approval, as with every unattended run (#619). When it reaches such a step (an order, an irreversible change), it reports the exact action it would take and stops. The owner acts from that report in a Work the owner starts.
+- **Payment follows the root (owner decision 2026-11-18).** A piece of a chain whose root row the owner accepted (`line-piece-owner`) follows the owner's payment autonomy like that row: with autonomy on it may order without a per-action approval, with receipt and notice as any autonomy payment; with autonomy off it needs per-action approval, which an unattended run cannot ask for, so it reports instead. A piece of a chain Still set up on its own (`line-piece`) is `SELF_SET` and never pays, even with payment autonomy on. A piece cannot raise this standing: it is computed from the parent row in the scheduler and checked again in `create`.
+- **No approval requests.** A piece takes no step that needs the owner's approval, as with every unattended run (#619). When it reaches such a step (an order without payment autonomy, an irreversible change), it reports the exact action it would take and stops. The owner acts from that report in a Work the owner starts.
   - A separate amendment could let unattended runs put an approval request in front of the owner. It is listed under *Owner decisions* and is not part of this design.
 - **Other external changes.** These follow the shared #717/#875 rule, unchanged.
 - **Outside text.** Text a piece reads from outside (a page, a mail, another agent's output) informs the piece but never supplies owner authority (C17, case 3). A child inherits its parent run's outside-content mark: the child's run starts marked, so the narrowed write rules of a marked Work apply to it as well. A chain cannot launder outside text into an unmarked run.
@@ -123,7 +129,7 @@ An earlier note in #938 said the goal bound is 1,000 characters. The code says 8
 | Runaway chain | Each piece schedules one more, forever | Per-line daily cap and minimum lead time (D3), which hold even with the shared budget off. Shared budget. Visible in the line's entry and account. Stop cancels |
 | Fan-out | One run schedules several pieces | One child per run (D3, D6) |
 | Crowding owner work | Many lines with pieces | Store-wide piece allowance of 10 (D3) |
-| Payment without the owner | A piece reaches an order | `SELF_SET`; payment refused in unattended runs; no approval requests (D5) |
+| Payment without the owner | A piece reaches an order | Standing inherited from the chain's root, never set by the piece (D4). A chain from a row Still set up on its own is `SELF_SET` and never pays. A chain from an owner-accepted row pays only under the owner's payment autonomy, with its revision checked at dispatch, an exact-action receipt and notice; with autonomy off, per-action approval is required and an unattended run cannot ask for it (D5, #619) |
 | Outside text as instruction | A page tells the piece to schedule or widen work | C17 case 3; the outside-content mark is inherited (D5); same line only; no `replaces` (D1) |
 | Cancelling others' rows | `replaces` on the owner's row or the account row | `replaces` refused for pieces (D1) |
 | Scope drift | A piece schedules for another line or for none | D1: same line only |
@@ -155,7 +161,7 @@ The review was done at proposal time ([#938 comments](https://github.com/Jongtae
 
 ## Non-goals
 
-- Payment from pieces, approval requests from unattended runs, or any change to payment autonomy.
+- Payment from pieces of chains Still set up on its own, approval requests from unattended runs, or any change to payment autonomy itself.
 - Worker session resume (`codex exec resume`, `claude --resume`). It is an optimisation, tracked separately.
 - Parallel pieces, window or recurring pieces.
 - New brief fields, or brief writes from pieces.
@@ -172,7 +178,7 @@ Acceptance is by scenario, not by test counts.
    - Stop ends the pending check.
 2. **Multi-stage research.** A line's first piece collects sources and schedules the next with what it found. The last piece delivers the result. No piece waits inside its run.
 3. **Invariants across both scenarios.**
-   - No payments and no approval requests from pieces.
+   - No payments from pieces except under the owner's payment autonomy on an owner-accepted chain, and no approval requests from pieces.
    - No second child per run.
    - No piece beyond the per-line daily cap or sooner than the lead time.
    - No piece after stop, forget, or a stop race.
@@ -190,7 +196,7 @@ Acceptance is by scenario, not by test counts.
 - A second call from the same run or its continuation replaces its pending child.
 - The 25th piece of a line in one day is refused, including with the shared budget off. A due time inside the lead time is refused.
 - The 11th pending piece store-wide is refused.
-- A piece is `SELF_SET`. Payment is refused with payment autonomy on, and no approval is put to the owner.
+- A piece of an `owner-work` chain is `SELF_SET`: payment is refused with payment autonomy on, and no approval is put to the owner. A piece of an owner-accepted chain pays only with payment autonomy on; with it off, payment is refused and no approval is put to the owner. A piece cannot raise its standing or mark itself owner-accepted.
 - A child of a run that read outside content starts marked.
 - Stop and forget cancel the pending piece. A piece scheduled while its line stops is refused.
 - A piece cannot write the brief.

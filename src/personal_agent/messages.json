@@ -11422,6 +11422,48 @@
   "ja": "この準備が属する仕事が停止中か読めないため、実行していません。",
   "zh": "此准备所属的受托事项已停止或无法读取，因此未运行。"
  },
+ "preparations.line_piece_invalid": {
+  "ko": "맡은 일의 실행은 다음 한 조각만 예약할 수 있어요: kind prepare 한 번, 같은 line, recurrence·rrule·every_minutes·until·max_runs·replaces 없이. 예약하지 않았어요.",
+  "en": "A run of an entrusted line schedules only its next piece: one kind prepare for the same line, with no recurrence, rrule, every_minutes, until, max_runs or replaces. Nothing was scheduled.",
+  "ja": "任された仕事の実行が予約できるのは次の一回分だけです: kind prepare を一回、同じ line で、recurrence・rrule・every_minutes・until・max_runs・replaces なし。予約していません。",
+  "zh": "受托事项的运行只能安排它的下一步：一次 kind prepare，同一 line，不带 recurrence、rrule、every_minutes、until、max_runs 或 replaces。未安排。"
+ },
+ "preparations.line_piece_too_soon": {
+  "ko": "다음 조각은 지금부터 {minutes}분 이후로만 예약할 수 있어요. 예약하지 않았어요.",
+  "en": "The next piece can be scheduled no sooner than {minutes} minutes from now. Nothing was scheduled.",
+  "ja": "次の一回分は今から{minutes}分以降にしか予約できません。予約していません。",
+  "zh": "下一步只能安排在{minutes}分钟之后。未安排。"
+ },
+ "preparations.line_pieces_daily": {
+  "ko": "이 맡은 일은 오늘 이미 {maximum}개의 조각을 예약했어요. 더 예약하지 않았어요. 지금까지의 상황을 답에 적으세요.",
+  "en": "This line already scheduled {maximum} pieces today, so no more were scheduled. Say in your answer where the work stands.",
+  "ja": "この仕事は今日すでに{maximum}回分を予約しました。これ以上は予約していません。ここまでの状況を答えに書いてください。",
+  "zh": "此受托事项今天已安排了{maximum}步，未再安排。请在回答中说明目前的进展。"
+ },
+ "preparations.line_pieces_limit": {
+  "ko": "맡은 일들의 예약된 조각이 이미 {maximum}개라 더 예약하지 않았어요. 지금까지의 상황을 답에 적으세요.",
+  "en": "There are already {maximum} pending pieces across the entrusted lines, so no more were scheduled. Say in your answer where the work stands.",
+  "ja": "任された仕事の予約済みの回がすでに{maximum}件あるため、予約していません。ここまでの状況を答えに書いてください。",
+  "zh": "受托事项中待运行的步骤已有{maximum}项，未再安排。请在回答中说明目前的进展。"
+ },
+ "preparations.line_piece_exists": {
+  "ko": "이 실행이 예약한 다음 조각이 이미 시작됐거나 소유자가 멈추거나 취소했어요. 한 실행은 다음 조각 하나만 예약해요. 예약하지 않았어요.",
+  "en": "The next piece this run scheduled has already started, or the owner paused or cancelled it; a run schedules one next piece. Nothing was scheduled.",
+  "ja": "この実行が予約した次の回はすでに始まったか、オーナーが一時停止または取り消しました。一つの実行が予約できる次の回は一つです。予約していません。",
+  "zh": "本次运行安排的下一步已经开始，或已被主人暂停或取消；一次运行只安排一个下一步。未安排。"
+ },
+ "preparations.line_piece_scheduled": {
+  "ko": "이 맡은 일의 다음 조각을 {when}에 예약했어요. 이번 실행의 답에 지금까지의 상황과 언제 이어지는지를 적으세요.",
+  "en": "The next piece of this line is scheduled for {when}. Say in this run's answer where the work stands and when it continues.",
+  "ja": "この仕事の次の回を{when}に予約しました。今回の答えに、ここまでの状況といつ続くかを書いてください。",
+  "zh": "已将此受托事项的下一步安排在{when}。请在本次回答中说明目前的进展以及何时继续。"
+ },
+ "lines.piece_guidance": {
+  "ko": "이 일이 한 번에 끝나지 않으면 이번 실행에서는 한 단계만 하고 지금 상황을 말하며 끝내고, 나중에 더 할 일이 있으면 기다리지 말고 schedule_preparation으로 다음 조각을 예약하세요(kind prepare, line {line}, {minutes}분 이후, goal에는 한 일·찾은 상태·다음 조각이 확인할 것).",
+  "en": "When this work does not finish in one go, do one step in this run and end by saying where it stands; when more is needed later, do not wait inside the run but schedule the next piece with schedule_preparation (kind prepare, line {line}, at least {minutes} minutes ahead, its goal saying what was done, the state found and what the next piece should check).",
+  "ja": "この仕事が一度で終わらないときは、今回は一段階だけ行って今の状況を伝えて終え、後でさらに必要なら実行の中で待たずに schedule_preparation で次の回を予約してください（kind prepare、line {line}、{minutes}分以降、goal にはしたこと・見つけた状態・次の回が確かめること）。",
+  "zh": "如果此事无法一次完成，本次运行只做一步并在结束时说明进展；之后还需继续时，不要在运行中等待，而是用 schedule_preparation 安排下一步（kind prepare，line {line}，至少{minutes}分钟之后，goal 写明已做的事、发现的状态和下一步要确认的内容）。"
+ },
  "lines.say_in_reply": {
   "ko": "이 대화에는 Still이 따로 보낼 수 없으니, 답에서 이 문장을 그대로 전하세요: {text}",
   "en": "Still cannot send its own message in this conversation, so say this in your reply, as written: {text}",
