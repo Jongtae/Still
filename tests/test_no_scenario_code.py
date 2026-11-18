@@ -73,7 +73,7 @@ SCANNED_MODULES = ('agent_runtime.py', 'conversation_handoff.py', 'current_conte
                    # API-READ-01 (#1216): the authenticated API call and its response provenance.
                    'api_requests.py',
                    # PROC-MEM-01 (#1486): the sandboxed code run and the per-connection function library.
-                   'code_run.py', 'procedures.py',
+                   'code_run.py', 'procedures.py', 'work_download.py',
                    # GUARD-NL-01 (#171): modules that read owner or page text.
                    'settings_orchestrator.py', 'telegram_presence.py',
                    'information_use.py',
@@ -129,6 +129,8 @@ _COLLECTION_CALLS = frozenset({'frozenset', 'set', 'tuple', 'list'})
 #:   Interpretation is never ``enforcement``.
 CLASSIFICATIONS = frozenset({'enforcement', 'adapter', 'own-text', 'open-finding'})
 CLASSIFIED = {
+    ('work_download.py', r'-----(BEGIN|END) (?:[A-Z]{1,20} )?PRIVATE KEY-----'): (
+        'enforcement', 'PEM boundaries locate an unfinished private key so verified previews mask its tail'),
     ('chromium_runtime.py', '=> not found'): (
         'adapter', "#34: glibc ldd's own output marker for an unresolved shared library of the pinned Chromium; "
                    'tool output, never owner or page text'),

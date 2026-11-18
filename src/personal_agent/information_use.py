@@ -472,7 +472,7 @@ def deferred_comparison(store, job_id, action, arguments, evidence, at, *, clock
         cuts['outbound_unrecorded'] = 0
     if action == 'code_run':
         cuts['outbound_unrecorded'] = 0
-    if action == 'public_page_read':
+    if action in ('public_page_read', 'public_download'):
         # Evidence does not retain every redirect request.
         cuts['outbound_unrecorded'] = 0
     queries = evidence.get('search_queries') if action == 'web_search' and not result.get('sent') else None
@@ -754,7 +754,7 @@ def _work_information_use(store, job_id, redact=None, *, compare_held_values=Tru
         # #918: an undo is recorded on the Work after it settled (status ``recorded``, never a step).
         if (status == 'succeeded' or (action == MEMORY_UNDO_ACTION and status == 'recorded')) and action in READ_CATEGORIES:
             add(READ_CATEGORIES[action], _event_items(action, evidence))
-        if action in LOOKUP_ACTIONS and status in ('succeeded', 'failed') and (action!='capability_search' or evidence.get('contacted') is True):
+        if action in LOOKUP_ACTIONS and status in ('succeeded', 'failed') and (action not in ('capability_search','public_download') or evidence.get('contacted') is True):
             # A succeeded lookup's record is what its Evidence says left (``sent``, the CLI's reported
             # queries); the worker's raw arguments are not shown for it.  A failed lookup was still
             # attempted: its starting event (the worker's arguments, or the /search preflight's query)

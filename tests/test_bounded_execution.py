@@ -46,7 +46,7 @@ BOUNDED_NAMES = ['ask_location', 'browser_click', 'browser_find', 'browser_open'
                  'find_files',
                  'forget_record', 'information_use', 'list_memory', 'list_notes', 'list_roots',
                  'mail_read', 'mail_search',  # #150: the owner's Gmail reads, relayed to the service.
-                 'propose_current_state', 'public_page_read',
+                 'propose_current_state', 'public_download', 'public_page_read',
                  'read_file', 'save_memory', 'save_note',
                  'save_result',  # #182: a new result file in the file workspace, in the bridge process.
                  'schedule_preparation',

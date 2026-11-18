@@ -31,6 +31,8 @@ class HostTool:
 HOST_TOOLS={
     'web_search': HostTool(False, True, False, None, True, None),
     'public_page_read': HostTool(False, True, False, None, True, None),
+    # Anonymous public reads stage and redact bytes in the active Work, in the service.
+    'public_download': HostTool(False, False, True, None, True, 'url'),
     'weather': HostTool(False, True, False, None, True, None),
     'calendar_query': HostTool(False, True, True, 'calendar', False, None),
     'list_roots': HostTool(False, True, False, 'files', False, None),

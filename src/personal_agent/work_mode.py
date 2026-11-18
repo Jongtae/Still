@@ -66,7 +66,7 @@ AUDIT_LIMIT = 100
 #: Model tool host actions that reach a host off this Mac, and the egress class each belongs to.
 TOOL_EGRESS = {
     'web_search': 'web_search', 'capability_search': 'web_search',
-    'public_page_read': 'public_read', 'weather': 'public_read',
+    'public_page_read': 'public_read', 'public_download': 'public_read', 'weather': 'public_read',
     **{action: 'browser' for action in ('browser_open', 'browser_read', 'browser_find', 'browser_click',
                                         'browser_type', 'browser_sign_in')},
     'api_request': 'api_request', 'code_run': 'code_run', 'a2a_message': 'a2a',
@@ -191,6 +191,9 @@ def tool_refusal(store, host_action, args=None):
     declared intranet destination may run; each of its requests is checked
     again where it is sent.
     """
+    if (host_action == 'public_download' and isinstance(args, dict)
+            and args.get('operation') == 'preview' and 'url' not in args):
+        return None
     egress = TOOL_EGRESS.get(host_action)
     if not egress or not active(store):
         return None

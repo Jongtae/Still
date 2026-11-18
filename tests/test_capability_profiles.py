@@ -117,6 +117,8 @@ class OneActionSource(_Store):
                                  'forget_record': False,
                                  # #826: the connected-folder documents and public pages.
                                  'find_files': True, 'list_roots': True, 'read_file': True, 'public_page_read': True,
+                                 # #1007: anonymous reads with Work-owned staging.
+                                 'public_download': True,
                                  # #1172: the owner's Drive reads.
                                  'drive_search': True, 'drive_read': True,
                                  # #150: the owner's Gmail reads.
@@ -432,6 +434,7 @@ class SettingsProjection(_Store):
                                              # #953: the sign-in request, served the same way.
                                              'browser_sign_in',
                                              # #774: relayed to the service on this route.
+                                             'public_download',
                                              'calendar_query', 'list_memory', 'search_memory', 'search_conversation', 'save_memory', 'schedule_preparation',
                                              # #798: the owner's entrusted lines, relayed the same way.
                                              'entrusted_line',

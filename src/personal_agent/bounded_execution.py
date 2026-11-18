@@ -327,7 +327,7 @@ CLI_PROFILES = {
         'limitation': 'only the argumentless list_notes read is offered',
         'actions': ('list_notes',),
         'unavailable': {action: _ISOLATED for action in (
-            'save_note', 'weather', 'web_search', 'public_page_read',
+            'save_note', 'weather', 'web_search', 'public_page_read', 'public_download',
             'find_files', 'read_file', 'list_roots', 'save_result', 'calendar_query', 'save_memory', 'list_memory', 'search_memory', 'search_conversation', 'forget_record',
             'list_agents', 'delegate_agent', 'propose_current_state', 'schedule_preparation', 'entrusted_line', 'ask_location',
             'tell_owner', 'settings_read', 'settings_change', 'capability_search', 'information_use', 'a2a_message', 'drive_search', 'drive_read', 'mail_search', 'mail_read', 'api_request', 'code_run',
@@ -347,6 +347,7 @@ CLI_PROFILES = {
         # #820: public_page_read takes any public address here too, as on every profile.
         'actions': ('list_notes', 'propose_current_state', 'public_page_read', 'save_note', 'weather', 'web_search'),
         'unavailable': {
+            'public_download': 'work-download-staging-requires-trusted-local-service-relay',
             'find_files': _STRICT_FILES, 'read_file': _STRICT_FILES, 'list_roots': _STRICT_FILES, 'save_result': _STRICT_FILES,
             'calendar_query': _CALENDAR,
             'drive_search': _DRIVE, 'drive_read': _DRIVE,
@@ -2101,7 +2102,8 @@ class AgentOSMcpTools:
             check_arguments(parameters, arguments)
         except ValueError:
             raise ExecutionError('허용하지 않은 Still MCP 도구 또는 인수입니다.') from None
-        if any(not arguments[field].strip() for field in parameters['required']):
+        if any(isinstance(arguments[field], str) and not arguments[field].strip()
+               for field in parameters['required']):
             raise ExecutionError('MCP 도구의 필수 문자열 인수가 비어 있습니다.')
         return arguments, definition
 

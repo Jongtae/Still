@@ -12,6 +12,7 @@ from . import work_status as ws
 import json
 import time
 import traceback
+from contextlib import ExitStack
 from .messages import msg
 from .telegram_locale import owner_language
 from .work_execution import PROCEED, REDELEGATED, WorkRun
@@ -174,32 +175,67 @@ class WorkExecutor:
             service.release_lane(job['id'])
 
     def _run_claimed(self, job):
+        service = self.service
+        budget = None
+        # An owner continuation did not get an active epoch from restart
+        # recovery. Reopen its ledger before fencing any of the run's writes.
+        if 'read_checkpoint_resume' not in job and service.store.read_checkpoint(job['id']):
+            try:
+                budget = service.work_budget(job['id'])
+                service.store.rebind_read_checkpoint(job['id'], epoch=budget.ledger.epoch)
+            except Exception as exc:
+                LOG.warning('early checkpoint admission failed job=%s kind=%s',job['id'],type(exc).__name__)
+                return self._execute_claimed(job, budget=None, retry_budget=True)
+
+        def epoch():
+            ledger = getattr(service.current_decision_budget(), 'ledger', None)
+            return job.get('read_checkpoint_resume', ledger.epoch if ledger is not None else None)
+        with service.store.read_checkpoint_writer(job['id'], budget.ledger.epoch if budget is not None else epoch):
+            return self._execute_claimed(job, budget=budget)
+
+    def _execute_claimed(self, job, *, budget=None, retry_budget=False):
         """Run one claimed Work through its phases, ending with its tail (``_after_work``)."""
         service=self.service
         run=WorkRun(job,time.time())
+        run.work_budget=budget
+        run.exiting=False
+        writer_scope=ExitStack()
+
         try:
             try:
                 try:
-                    if service.fold_delivered_steer(job):return True
-                    service.current_work_id=job['id']
-                    service.record_stage(job['id'],'queue_wait',job.get('created') or run.claimed_at)
-                    service.update_task_card(job,'running')
-                    run.retry_note=service.action_continuation_note(job)
-                    # #308 S4: a message meant for an earlier Work says first why it is answered on its own.
-                    notice=service.steer_disposition_notice(job)
-                    if notice:run.reply_notice=notice+'\n\n'
-                    for phase in (service._route_work,service._load_work_photos,service._run_rule_intent):
-                        step=phase(run)
-                        if step is not PROCEED:return step
-                    if not run.handled:
-                        for phase in (service._prepare_worker_turn,service._run_worker_attempts):
+                    try:
+                        # The ledger must reopen before the checkpoint fence
+                        # can admit writes, including the ledger's own write.
+                        if retry_budget:
+                            run.work_budget=service.work_budget(job['id'])
+                            service.store.rebind_read_checkpoint(job['id'], epoch=run.work_budget.ledger.epoch)
+                            writer_scope.enter_context(service.store.read_checkpoint_writer(
+                                job['id'],run.work_budget.ledger.epoch))
+                        if service.fold_delivered_steer(job):return True
+                        service.current_work_id=job['id']
+                        service.record_stage(job['id'],'queue_wait',job.get('created') or run.claimed_at)
+                        service.update_task_card(job,'running')
+                        run.retry_note=service.action_continuation_note(job)
+                        # #308 S4: a message meant for an earlier Work says first why it is answered on its own.
+                        notice=service.steer_disposition_notice(job)
+                        if notice:run.reply_notice=notice+'\n\n'
+                        for phase in (service._route_work,service._load_work_photos,service._run_rule_intent):
                             step=phase(run)
                             if step is not PROCEED:return step
-                        if not run.handled:service._settle_worker_outcome(run)
-                    service._finish_work(run)
-                except Exception as exc:
-                    # #893: a claimed Work must not be stranded by an untyped phase failure.
-                    if service._fail_work(run,exc) is False:return True
+                        if not run.handled:
+                            for phase in (service._prepare_worker_turn,service._run_worker_attempts):
+                                step=phase(run)
+                                if step is not PROCEED:return step
+                            if not self._read_checkpoint_can_settle(run):return True
+                            if not run.handled:service._settle_worker_outcome(run)
+                        if service._finish_work(run) is False:return True
+                    except Exception as exc:
+                        # #893: a claimed Work must not be stranded by an untyped phase failure.
+                        if service._fail_work(run,exc) is False:return True
+                except BaseException as exc:
+                    run.exiting=not isinstance(exc,Exception)
+                    raise
                 finally:
                     try:service._settle_work_judgments(run)
                     finally:
@@ -214,12 +250,19 @@ class WorkExecutor:
         finally:
             # #1261: an early plan the Work never read does not outlive it (#969).
             early,run.early_plan=run.early_plan,None
-            service.settle_early_judgment(early)
+            try:service.settle_early_judgment(early)
+            finally:writer_scope.close()
         # The result delivery is the one terminal Telegram bubble.
         # Do not append a second generic completion notification.
         return True
 
     def _fail_work_terminal(self, run):
+        ledger = getattr(run.work_budget, 'ledger', None)
+        epoch = run.job.get('read_checkpoint_resume', ledger.epoch if ledger is not None else None)
+        with self.service.store.read_checkpoint_writer(run.job['id'], epoch):
+            return self._fail_work_terminal_fenced(run)
+
+    def _fail_work_terminal_fenced(self, run):
         """Last resort after a failed finalizer: commit the terminal reply, state and recoverable tail."""
         service=self.service
         job=run.job
@@ -227,6 +270,8 @@ class WorkExecutor:
             outcome='unknown' if service._work_has_unknown_effect(job['id']) else 'failed'
             reason=msg('projection.i_couldn_t_complete_this_request')
             with service.store.db() as db:
+                db.execute('BEGIN IMMEDIATE')
+                if not self._read_checkpoint_can_settle(run, db=db):return
                 changed=db.execute("UPDATE jobs SET status=?,error=?,delivery=? WHERE id=? AND status='running'",
                                    (outcome,reason,service.reply_delivery(job),job['id'])).rowcount
                 if changed:
@@ -331,8 +376,16 @@ class WorkExecutor:
                 if not runnable:
                     if owner:waiting.add(conversation)
                     continue
+                if service.store.read_checkpoint_pending(db, job['id']):
+                    epoch = service.store.claim_read_checkpoint(
+                        db, job['id'], getattr(service, 'can_resume_read_checkpoint', None),
+                        delivery=service.reply_delivery(job),
+                    )
+                    if epoch is None:return True
+                    job['read_checkpoint_resume'] = epoch
                 db.execute("UPDATE jobs SET status='running' WHERE id=?",(job['id'],))
-                db.execute('INSERT INTO messages(role,content,channel,created,workspace_id,job_id) VALUES (?,?,?,?,?,?)',('user',job['message'],job['channel'],time.time(),job.get('workspace_id'),job['id']))
+                if 'read_checkpoint_resume' not in job:
+                    db.execute('INSERT INTO messages(role,content,channel,created,workspace_id,job_id) VALUES (?,?,?,?,?,?)',('user',job['message'],job['channel'],time.time(),job.get('workspace_id'),job['id']))
                 return job
         return False
 
@@ -371,7 +424,10 @@ class WorkExecutor:
         job=run.job
         # Routing and owner-followup judgments spend this same run's
         # allowance before any worker or speculative plan can start.
-        run.work_budget=service.work_budget(job['id'])
+        budget=run.work_budget if run.work_budget is not None else service.work_budget(job['id'])
+        if 'read_checkpoint_resume' in job and budget.ledger.epoch != job['read_checkpoint_resume']:
+            return True
+        run.work_budget=budget
         service._work_local.budget=run.work_budget
         run.work_budget.check()
         run.image_inputs=[]
@@ -386,6 +442,11 @@ class WorkExecutor:
         # nor re-related to another Work.
         resumed=service.resumed_judged_intent(job)
         resumed_decision=None
+        if 'read_checkpoint_resume' in job:
+            source=service.canonical_retry_source(job)
+            if source is None:raise ValueError('The original Work request is no longer available.')
+            run.prompt,run.prompt_work_id=source['message'].strip(),source['id']
+            resumed_decision=IntentDecision(INTENT_CONVERSATION,AUTHORITY_RULE,argument=run.prompt)
         if resumed:
             run.prompt,run.prompt_work_id,resumed_decision=resumed
         # #774: a location continuation re-runs the asking Work's message; the
@@ -395,7 +456,8 @@ class WorkExecutor:
         run.continued=continuation_request(job.get('request_key'))
         # #1418: and runs on the asking Work's kept conversation route, unjudged again.
         located=service.located_route(job,run.continued) if run.continued and not resumed else None
-        replayed=bool(resumed or run.continued or service.settings_work_continued(job['id']))
+        replayed=bool(resumed or run.continued or 'read_checkpoint_resume' in job
+                      or service.settings_work_continued(job['id']))
         # #1389: an explicit command (/ai, /notes, ...) is routed literally and answered
         # with no model, so no pre-route judgment below can apply to it; none is asked.
         owner_command=not replayed and service.intent_classifier.explicit(owner_prompt) is not None
@@ -423,7 +485,7 @@ class WorkExecutor:
         # records; only the wall clock overlaps.
         answered=run.act_reply is not None
         early_prompt=run.prompt
-        run.early_intent=(None if resumed or located or answered else
+        run.early_intent=(None if resumed_decision or located or answered else
                       service.start_early_judgment(job['id'],service.classify_intent,early_prompt))
         # #309 L1: planning shares the allowance with routing and continuity.
         # Replays, explicit commands and answered owner acts ask for no plan.
@@ -838,9 +900,10 @@ class WorkExecutor:
         def record(tool,status,detail):
             with service.store.db() as db:
                 db.execute('BEGIN IMMEDIATE')
+                if not self._read_checkpoint_can_settle(run, db=db):return
                 if status=='succeeded':service.record_connector_overlap(db,job['id'],tool,detail)
                 db.execute('INSERT INTO tool_events(job_id,tool,status,detail,created) VALUES (?,?,?,?,?)',(job['id'],tool,status,detail,time.time()))
-            if tool!='model':service.store.put('tool_run',{'job_id':job['id'],'tool':tool,'status':status,'detail':detail,'time':time.time()})
+                if tool!='model':service.store.put('tool_run',{'job_id':job['id'],'tool':tool,'status':status,'detail':detail,'time':time.time()},db=db)
         original_record=record
         def record(tool,status,detail):
             if status=='failed' and tool!='model':
@@ -881,6 +944,7 @@ class WorkExecutor:
                                               attachments=attachment_facts(images=len(run.image_inputs)) if run.image_inputs else '')
         early_plan,run.early_plan=run.early_plan,None
         run.attempt=run.orchestration.first(early=early_plan) if run.orchestration else None
+        if not self._read_checkpoint_can_settle(run):return True
         if not run.orchestration:service.settle_early_judgment(early_plan)
         elif getattr(run.orchestration,'context_sent',False):
             # The final plan may differ from the speculative one; audit exactly what it received.
@@ -1541,6 +1605,7 @@ class WorkExecutor:
         except Exception:
             service.record_attempt_input(job['id'],input_ref,'unknown' if dispatched else 'not-sent')
             raise
+        if not self._read_checkpoint_can_settle(run):return True
         service.record_attempt_input(job['id'],input_ref,'sent')
         service.preparations_service.record_plan_line_reads(job['id'],run.stored_history,engine_context['request'])
         # #729: a bridge call the CLI never saw completed is a typed failure.
@@ -1692,10 +1757,14 @@ class WorkExecutor:
             # #833: the outcome judgment reads the same profile / current-context sections.
             run_options={'owner_context':api_context,'judgment_history':judgment_history,
                          'reply_delivery':service.work_reply_delivery(job)}
+            if job.get('owner_typed')==1:
+                run_options.update(read_progress=lambda:service.read_checkpoint_note(job, include_fresh=True),
+                                   original_goal=run.prompt)
             if run.image_inputs:run_options['images']=run.image_inputs
             # Adopt the adapter's existing tool_turn boundary: the loop may refuse its
             # budget before dispatch, which must leave every annotation open.
             run.result=run_agent(_FirstTurnCommit(service.adapter,lambda:self._commit_profile_shown(run,api_context)),runtime_config,run.key,[*api_context['conversation'],{'role':'user','content':api_context['request']}],context_sections(api_context),run.capabilities,run.record,definitions=offered,**run_options)
+            if not self._read_checkpoint_can_settle(run):return True
             # #825: a run the budget ended before any model turn sent nothing.
             received=self._model_responded(job['id'],run.attempt_start)
             service.record_attempt_input(job['id'],input_ref,{True:'sent',False:'not-sent'}.get(received,'unknown'))
@@ -1704,6 +1773,7 @@ class WorkExecutor:
                                           count=len(run.image_inputs),route='direct-api',
                                           provider=runtime_config.get('provider'))
         except Exception as exc:
+            if not self._read_checkpoint_can_settle(run):return True
             # #825: a model response in this attempt shows the input was sent; without one the
             # failure may have come before or after the request reached the provider.
             service.record_attempt_input(job['id'],input_ref,'sent' if self._model_responded(job['id'],run.attempt_start) else 'unknown')
@@ -1726,8 +1796,9 @@ class WorkExecutor:
         finally:
             # #656: the Work's browser session ends with the run, on this thread.
             run.capabilities.close_browser()
-            if self._model_responded(job['id'],run.attempt_start):
+            if self._read_checkpoint_can_settle(run) and self._model_responded(job['id'],run.attempt_start):
                 service.preparations_service.record_plan_line_reads(job['id'],run.stored_history,api_context['request'])
+        if not self._read_checkpoint_can_settle(run):return True
         service.record_observed_tools(job['id'])
         # Private reads during the run widen the egress guard;
         # record the final set, not only the pre-run snapshot.
@@ -1848,8 +1919,20 @@ class WorkExecutor:
             # answer itself says no longer suppresses or changes it.
             run.response+='\n\n'+msg('service.context_sources')+'\n'+'\n'.join(dict.fromkeys(run.context_sources))
 
+    def _read_checkpoint_can_settle(self, run, *, db=None, terminal=False):
+        ledger = getattr(run.work_budget, 'ledger', None)
+        epoch = run.job.get('read_checkpoint_resume', ledger.epoch if ledger is not None else None)
+        return self.service.store.read_checkpoint_can_settle(run.job['id'], epoch, db=db, terminal=terminal)
+
     def _finish_work(self, run):
+        ledger = getattr(run.work_budget, 'ledger', None)
+        epoch = run.job.get('read_checkpoint_resume', ledger.epoch if ledger is not None else None)
+        with self.service.store.read_checkpoint_writer(run.job['id'], epoch):
+            return self._finish_work_fenced(run)
+
+    def _finish_work_fenced(self, run):
         """Phase 7: the answer, its disclosures and the Work row, written once."""
+        if not self._read_checkpoint_can_settle(run):return False
         service=self.service
         job=run.job
         goal=run.goal_outcome if hasattr(run,'goal_outcome') else service.run_goal_outcome(run)
@@ -1865,9 +1948,10 @@ class WorkExecutor:
         run.response=service._with_disclosures(job['id'],run.response)
         # #1486: a Work judged to have reached its outcome saves the function libraries it proposed.
         run.response=service._settle_procedures(job['id'],run.response,ws.request_met(run.outcome,goal) and goal=='reached')
-        service.record_work_sources(job['id'],run.work_sources)
         with service.store.db() as db:
             db.execute('BEGIN IMMEDIATE')
+            if not self._read_checkpoint_can_settle(run, db=db):return False
+            service.record_work_sources(job['id'],run.work_sources|set(getattr(run.work_capabilities[0],'private_provenance',()) or ()),db=db)
             db.execute('INSERT INTO messages(role,content,channel,created,workspace_id,job_id,delivery_projection) VALUES (?,?,?,?,?,?,?)',
                        ('assistant',run.response,job['channel'],time.time(),job.get('workspace_id'),job['id'],
                         'system' if run.system_response else None))
@@ -1908,6 +1992,7 @@ class WorkExecutor:
             if run.outcome in ('failed','partial') and service._budget_boundary(service._attempt_stop_codes(db.execute(
                     'SELECT status,detail FROM tool_events WHERE job_id=? AND created>=?',(job['id'],run.claimed_at)).fetchall())):
                 service.store.put('budget_continue:'+job['id'],{'state':'pending'},db=db)
+            service.record_turn_provenance(job['id'],goal=service.work_goal(job['id'],run.work_capabilities[0],run.outcome),db=db)
             db.execute("UPDATE jobs SET status=?,response=?,error=?,provider=?,model=?,delivery=?,owner_cause=?,owner_verified=?,owner_note=?,goal_outcome=?,effect_state=? WHERE id=?",
                        (run.outcome,run.response,cause,run.provider,run.model,service.reply_delivery(job),spoken,observed,note,goal,effect,job['id']))
             # #308 S1: the steers the attempt whose reply this is had in hand are answered by it.
@@ -1921,10 +2006,16 @@ class WorkExecutor:
                 om.enqueue_self_review(service.store,job['id'],om.REVIEW_FAILED,db=db)
             service.owner_model.arm_terms(db,available=terms_available)
             self._record_after_work(run,db)
-        service.record_turn_provenance(job['id'],goal=service.work_goal(job['id'],run.work_capabilities[0],run.outcome))
 
     def _fail_work(self, run, exc):
+        ledger = getattr(run.work_budget, 'ledger', None)
+        epoch = run.job.get('read_checkpoint_resume', ledger.epoch if ledger is not None else None)
+        with self.service.store.read_checkpoint_writer(run.job['id'], epoch):
+            return self._fail_work_fenced(run, exc)
+
+    def _fail_work_fenced(self, run, exc):
         """Settle a still-running Work; return False when another outcome already won."""
+        if not self._read_checkpoint_can_settle(run):return False
         service=self.service
         job=run.job
         run.resolved_blocker=False
@@ -1962,9 +2053,12 @@ class WorkExecutor:
             report=service.scrub_work_text(job['id'],report) if report else report
         # Tool reads of a failed run are also read back from its
         # durable tool events; this records what was declared so far
-        # plus the run-time labels of a worker that had started.
+        # plus the run-time labels of a worker that had started. The writer scope
+        # fences this separate write; the terminal transaction rechecks its own admission.
         service.record_work_sources(job['id'],run.work_sources|set(getattr(run.work_capabilities[0],'private_provenance',()) or ()))
         with service.store.db() as db:
+            db.execute('BEGIN IMMEDIATE')
+            if not self._read_checkpoint_can_settle(run, db=db):return False
             # #787 review: an unknown effect recorded while the report was built still wins.
             if run.outcome=='failed' and service._work_has_unknown_effect(job['id']):
                 run.outcome,report='unknown',None
@@ -1982,21 +2076,34 @@ class WorkExecutor:
                     and db.execute("SELECT 1 FROM tool_events WHERE job_id=? AND tool IN ('subscription_engine','model') LIMIT 1",
                                    (job['id'],)).fetchone()):
                 om.enqueue_self_review(service.store,job['id'],om.REVIEW_FAILED,db=db)
+            service.record_turn_provenance(job['id'],goal=service.work_goal(job['id'],run.work_capabilities[0],run.outcome),db=db)
             self._record_after_work(run,db)
-        service.record_turn_provenance(job['id'],goal=service.work_goal(job['id'],run.work_capabilities[0],run.outcome))
 
     def _settle_work_judgments(self, run):
-        """Always: settle speculative judgments and pause the Work budget's ledger."""
+        """Settle speculative judgments; a process exit preserves a running read for recovery."""
         service=self.service
         # An unused speculative plan must finish before execution time
         # pauses; a late plan cannot spend in a subsequent host run.
         early,run.early_plan=run.early_plan,None
         service.settle_early_judgment(early)
         service.settle_early_judgment(run.early_intent)
+        if getattr(run,'exiting',False):
+            with service.store.db() as db:
+                job=db.execute('SELECT status FROM jobs WHERE id=?',(run.job['id'],)).fetchone()
+                if job and job['status']=='running' and service.store.read_checkpoint(run.job['id'],db=db):return
         if run.work_budget is not None and run.work_budget.ledger is not None:
-            run.work_budget.ledger.pause()
+            with service.store.read_checkpoint_writer(run.job['id'],run.work_budget.ledger.epoch,terminal=True):
+                run.work_budget.ledger.pause()
 
     def _after_work(self, run):
+        ledger = getattr(run.work_budget, 'ledger', None)
+        epoch = run.job.get('read_checkpoint_resume', ledger.epoch if ledger is not None else None)
+        with self.service.store.read_checkpoint_writer(run.job['id'], epoch, terminal=True):
+            with self.service.store.db() as db:
+                if not self._read_checkpoint_can_settle(run, db=db, terminal=True):return False
+                return self._after_work_fenced(run)
+
+    def _after_work_fenced(self, run):
         """After the run: the task card, browser login offer, photo cleanup and owner-decision notifications."""
         service=self.service
         job=run.job

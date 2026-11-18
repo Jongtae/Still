@@ -983,6 +983,8 @@ class Orchestration:
         #: #980: the owner message and reply of the Work this one follows up, when the
         #: follow-up judgment linked them ('' otherwise).  Read first for what the message refers to.
         self.continues = str(continues or '')
+        self.read_progress = ''
+        self.read_snapshot = None
         #: #1517: what the message carried besides its words ('1 photo'), for the outcome judgment.
         self.attachments = str(attachments or '')
         #: #240: what already waits for the owner's own decision in this conversation (kinds and when
@@ -1136,6 +1138,7 @@ class Orchestration:
     def _revision_context_digest(self):
         return digest({'request': self.request, 'conversation': self.conversation,
                        'sections': self.sections, 'steers': self.steers,
+                       **({'read_progress': self.read_progress} if self.read_progress else {}),
                        **({'corrections': list(self.corrections)} if getattr(self, 'corrections', ()) else {})})
 
     def _owner_context(self):
@@ -1240,8 +1243,10 @@ class Orchestration:
         while routing runs: the budget's remaining seconds and (#384) the current-context clock."""
         return digest(self._plan_inputs(candidates))
 
-    def _plan_inputs(self, candidates):
-        facts = dict(self._plan_context(candidates).facts)
+    def _plan_inputs(self, candidates, context=None):
+        if context is None:
+            context = self._plan_context(candidates)
+        facts = dict(context.facts)
         facts.pop('budget', None)
         if 'current_context' in facts:
             facts['current_context'] = without_moving_clock(facts['current_context'])
@@ -1260,14 +1265,48 @@ class Orchestration:
         inputs it would ask over are the same.
         """
         candidates = self.catalogue.available()
+        snapshot = self.read_snapshot
         inputs = self._input_digests(candidates)
         data, failure = self._ask(candidates)
+        if self.read_snapshot is not snapshot:
+            inputs = self._input_digests(candidates)
         inventory = tuple(dict(item) for item in getattr(self, 'plan_inventory', ()))
         return {'digest': self.plan_digest(candidates), 'data': data, 'failure': failure, 'inputs': inputs,
                 'profile_items': inventory}
 
     def _ask(self, candidates):
         """``(data, failure)`` for one plan call over ``candidates``."""
+        checkpoint_judgment = getattr(self.judgments, 'checkpoint_judgment', None)
+        if self.read_progress and checkpoint_judgment is not None:
+            from .work_download import INPUT_CHANGED, checkpoint_note
+
+            def ask():
+                context = self._plan_context(candidates)
+                inputs = self._plan_inputs(candidates, context)
+                self.plan_inventory = self._context_inventory
+                self.context_sent = False
+
+                def decide():
+                    data, failure = self._ask_plan(candidates, context)
+                    return data if not failure else None
+
+                return checkpoint_judgment(self.work_id, PURPOSE, inputs, context.facts['continues'],
+                                           decide, budget=self.budget, snapshot=self.read_snapshot,
+                                           retry_on_change=True)
+
+            data = ask()
+            if data is INPUT_CHANGED:
+                self.read_snapshot = self.judgments.checkpoint_snapshot(self.work_id)
+                if self.read_snapshot:
+                    self.read_progress = checkpoint_note(self.read_snapshot['checkpoint'])
+                    self.owner_corrected([text for _, text in self.read_snapshot['steers']])
+                    data = ask()
+            if data is not None and data is not INPUT_CHANGED:
+                return data, ''
+            return None, FALLBACK_BUDGET if self.budget_stop else FALLBACK_UNAVAILABLE
+        return self._ask_plan(candidates)
+
+    def _ask_plan(self, candidates, context=None):
         engine = getattr(self.judgments, 'engine', None)
         method = getattr(engine, 'structured', None)
         if method is None or not candidates:
@@ -1277,7 +1316,8 @@ class Orchestration:
         if code:
             self.budget_stop = code
             return None, FALLBACK_BUDGET
-        context = self._plan_context(candidates)
+        if context is None:
+            context = self._plan_context(candidates)
         self.plan_inventory = self._context_inventory
         try:
             if self.budget is not None and getattr(getattr(self.judgments, 'engine', None), 'work_budget', None) is not self.budget:
@@ -1625,11 +1665,26 @@ class Orchestration:
         observed = str(observations or 'none')[:OBSERVATION_CHARS]
         # Redacted, then bounded only by the delivered answer's own cap (#820 review): every claim is judged.
         reply = self._redact(answer)[:REPLY_CHARS]
+        admission = {}
+        spend_refusal = None
+
+        def spend():
+            nonlocal spend_refusal
+            try:
+                self.budget.spend_turn(reserve=True)
+            except Exception as exc:
+                spend_refusal = budget_stop_code(exc) or 'budget_unavailable'
+                raise
+
         try:
             if self.budget is not None and getattr(getattr(self.judgments, 'engine', None), 'work_budget', None) is not self.budget:
-                self.budget.spend_turn(reserve=True)
-        except Exception as exc:
-            self.budget_stop = budget_stop_code(exc) or 'budget_unavailable'
+                from .conversation_handoff import ConversationJudgments
+                if self.read_progress and isinstance(self.judgments, ConversationJudgments):
+                    admission['admit'] = spend
+                else:
+                    spend()
+        except Exception:
+            self.budget_stop = spend_refusal
             return NOT_JUDGED
         try:
             # #428: the owner's later words are part of what the reply must meet, on every attempt after them.
@@ -1639,6 +1694,8 @@ class Orchestration:
                             if self.attempts else '')
             judged = goal_reached(request, observed, str(failed or '')[:FAILURE_CHARS], work_id=self.work_id,
                                   answer=reply,
+                                  **admission,
+                                  **({'read_snapshot': self.read_snapshot} if self.read_progress else {}),
                                   **({'plan_reading': plan_reading} if plan_reading else {}),
                                   **({'reply_source': reply_source} if reply_source != 'worker' else {}),
                                   **({'reply_delivery': reply_delivery} if reply_delivery != 'to_owner' else {}),
@@ -1652,7 +1709,11 @@ class Orchestration:
                                       'may_rejudge': lambda: second_judgment_allowed(self.judgments, self.budget)}
                                      if effects else {}))
         except Exception:
-            return UNJUDGED
+            if spend_refusal is None:
+                return UNJUDGED
+        if spend_refusal is not None:
+            self.budget_stop = spend_refusal
+            return NOT_JUDGED
         verdict = getattr(judged, 'outcome', None)
         if verdict not in ('yes', 'no') and getattr(judged, 'refused', None) in BUDGET_CODES:
             # #627: the Work budget refused the judgment's turn: not judged, for that reason (never
@@ -1672,7 +1733,8 @@ class Orchestration:
 
     def _continues_text(self):
         """The linked earlier exchange (#980), redacted and bounded from its end, or 'none'."""
-        return self._redact(self.continues)[-CONTINUES_CHARS:] or 'none'
+        parts = '\n'.join(part for part in (self.continues, self.read_progress) if part)
+        return self._redact(parts)[-CONTINUES_CHARS:] or 'none'
 
     def may_judge(self):
         """Whether a judgment that can only end the Work may still be asked: not stopped, deadline not passed.
