@@ -177,6 +177,15 @@ class PlanFactsCarryConnections(unittest.TestCase):
             self.assertFalse(context.too_large())
             self.assertEqual(orchestration.sections['current_context'], current, 'the worker section is unchanged')
 
+    def test_the_code_run_line_is_a_route_line_too(self):
+        # #983: code-run secret sets have their own line; the plan still reads it as a connection.
+        from personal_agent.api_requests import CODE_RUN_LINE
+        browser, slots = self.route_lines()
+        code = CODE_RUN_LINE + 'example-set (api.example.com) [code_run secrets only: EXAMPLE_SET_KEY [header_or_body]]'
+        _orchestration, context = self.plan_facts(f'{self.snapshot()}\n{browser}\n{slots}\n{code}')
+        self.assertEqual(context.facts['connections'], f'{browser}\n{slots}\n{code}')
+        self.assertNotIn(code, context.facts['current_context'])
+
     def test_a_section_without_route_lines_reads_as_before(self):
         from personal_agent.orchestrator import CURRENT_CONTEXT_FACT_CHARS
         snapshot = self.snapshot() + ' ' + 'x' * 3000
