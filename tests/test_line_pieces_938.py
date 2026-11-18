@@ -11,6 +11,7 @@ follows the owner's payment autonomy as that row does; a piece of a row Still se
 never pays.  Both are stamped from the parent row, never from the call.
 """
 import json
+import unittest
 from unittest import mock
 
 from personal_agent import entrusted_lines as el
@@ -554,3 +555,112 @@ class OwnerView(_PieceCase):
         self.piece_with_run('succeeded', self.now + 30, delivery='sent')  # after this account started: the next one's
         text = self.service.preparations_service.line_pieces_account(account, self.store.job(job['id']))
         self.assertIn(msg('lines.account_pieces', count=1, delivered=1, kept=0, failed=0, open=0), text)
+
+
+class SettingsGroups(_PieceCase):
+    """#1005: Settings lists a line's finished pieces as one entry, and they take up no list room."""
+
+    piece_row, piece_with_run = OwnerView.piece_row, OwnerView.piece_with_run
+
+    def status(self):
+        return self.service.preparations_service.preparations_status()
+
+    def test_finished_pieces_leave_the_list_and_come_back_once_per_line(self):
+        root = self.line_row()
+        pending = self.piece_row(prep.STATE_SCHEDULED)
+        self.now += 10
+        self.piece_with_run('completed', self.now, state=prep.STATE_DELIVERED)
+        self.now += 10
+        newest = self.piece_with_run('failed', self.now, state=prep.STATE_FAILED)
+        self.now += 10
+        self.piece_row(prep.STATE_CANCELLED)
+        status = self.status()
+        listed = {row['id'] for row in status['preparations']}
+        self.assertIn(root['id'], listed)
+        self.assertIn(pending['id'], listed, 'a piece that still runs keeps its own row and actions')
+        self.assertFalse(listed & {piece['id'] for piece in self.pieces() if piece['state'] not in prep.ACTIVE_STATES})
+        [group] = status['piece_groups']
+        self.assertEqual((group['line_id'], group['line_task'], group['count']), (self.line_id, TASK, 3))
+        self.assertEqual(group['states'], {prep.STATE_DELIVERED: 1, prep.STATE_FAILED: 1, prep.STATE_CANCELLED: 1})
+        self.assertEqual([piece['state'] for piece in group['pieces']], [prep.STATE_CANCELLED, prep.STATE_FAILED, prep.STATE_DELIVERED])
+        self.assertEqual(group['pieces'][1]['id'], newest['id'])
+        self.assertEqual(group['pieces'][1]['last_result'], '조각 결과')
+        self.assertEqual(status['management']['pieces_finished']['ko'], msg('preparations.pieces_finished', 'ko'))
+
+    def test_finished_pieces_take_up_no_room_in_the_list_and_show_the_newest_few(self):
+        for _ in range(prep.FINISHED_PIECES_SHOWN + 3):
+            self.now += 1
+            self.piece_row(prep.STATE_DELIVERED, due_at=self.now - 60)
+        other = self.service.preparations.create(kind='reminder', goal='다른 알림', due_at=self.now + 60, timezone='Asia/Seoul',
+                                                 recurrence=None, channel='web', created_from=None, state=prep.STATE_SCHEDULED,
+                                                 accepted_by=prep.ACCEPTED_OWNER_REQUEST)
+        with self.store.db() as db:
+            db.execute('UPDATE preparations SET state=? WHERE id=?', (prep.STATE_DELIVERED, other['id']))
+        limited = self.service.preparations.rows(limit=2, finished_pieces=False)
+        self.assertEqual([row['id'] for row in limited], [other['id']])
+        self.assertEqual(len(self.service.preparations.rows(limit=200)), prep.FINISHED_PIECES_SHOWN + 4, 'the default read is unchanged')
+        [group] = self.status()['piece_groups']
+        self.assertEqual(group['count'], prep.FINISHED_PIECES_SHOWN + 3)
+        self.assertEqual(len(group['pieces']), prep.FINISHED_PIECES_SHOWN)
+
+    def test_no_group_without_finished_pieces(self):
+        self.line_row()
+        self.piece_row(prep.STATE_SCHEDULED)
+        self.assertEqual(self.status()['piece_groups'], [])
+
+
+GROUP_UI_CHECK = r"""
+ctx.api=async()=>({preparations:ctx.rows,piece_groups:ctx.groups,management:JSON.parse(process.argv[2])});
+const lines=node=>descendants(node).filter(n=>n.className==='settings-technical-line').map(n=>n.textContent);
+(async()=>{
+ const line={id:'r1',kind:'prepare',goal:'환불 지켜보기',state:'scheduled',due_local:'D1',recurrence:'daily',delivery:'send',last_result:'',line_id:'L1',line_task:'환불 지켜보기'};
+ const other={id:'r2',kind:'reminder',goal:'치과',state:'scheduled',due_local:'D2',recurrence:null,delivery:'send',last_result:''};
+ const piece={id:'r3',kind:'prepare',goal:'다음 조각',state:'scheduled',due_local:'D3',recurrence:null,delivery:'send',last_result:'',line_id:'L1',line_task:'환불 지켜보기'};
+ ctx.rows=[line,other,piece];
+ ctx.groups=[{line_id:'L1',line_task:'환불 지켜보기',count:3,states:{delivered:2,failed:1},
+  pieces:[{id:'g1',state:'failed',due_local:'T1',last_decision:'quiet',last_decision_reason:'run-did-not-finish',last_result:''},
+          {id:'g2',state:'delivered',due_local:'T2',last_decision:null,last_result:'환불 처리 중'}]},
+  {line_id:'L2',line_task:'신청 열림 확인',count:1,states:{delivered:1},pieces:[{id:'g3',state:'delivered',due_local:'T3',last_result:'열렸어요'}]}];
+ await ctx.loadPreparations();
+ const listed=rows();
+ assert.deepEqual(listed.map(n=>texts(n,'settings-row-title')[0]),['환불 지켜보기','치과','다음 조각','환불 지켜보기','신청 열림 확인'],
+  'each group follows its line\'s last listed row once; a line with only finished pieces comes at the end');
+ const group=listed[3];
+ assert.equal(texts(group,'settings-row-description')[0],'이 일의 끝난 조각 3개 · 완료 2, 실패 1 · T1 · 마지막 실행: 조용히 넘어감 (결과를 얻지 못함)');
+ assert.deepEqual(texts(group,'settings-state danger'),['실패']);
+ assert.deepEqual(buttons(group),[],'a finished piece has nothing to run, pause or cancel');
+ assert.deepEqual(lines(group),['실패 · T1 · 마지막 실행: 조용히 넘어감 (결과를 얻지 못함)','완료 · T2 · 환불 처리 중']);
+ assert.equal(descendants(group).find(n=>n.tag==='summary').textContent,'가장 늦게 끝난 조각 2개 보기');
+ const details=descendants(group).find(n=>n.tag==='details');details.open=true;details.ontoggle();
+ ctx.groups=[...ctx.groups];ctx.groups[0]={...ctx.groups[0],count:4};await ctx.loadPreparations();
+ assert.equal(descendants(rows()[3]).find(n=>n.tag==='details').open,true,'an opened group stays open on refresh');
+ vm.runInContext("setLanguage('en')",ctx);ctx.renderPreparations();
+ assert(texts(rows()[3],'settings-row-description')[0].startsWith('4 finished pieces of this work'));
+ ctx.rows=[];ctx.groups=[ctx.groups[1]];await ctx.loadPreparations();
+ assert.equal(rows().length,1,'finished pieces alone are not an empty list');
+ console.log('ok');
+})().catch(error=>{console.error(error);process.exit(1);});
+"""
+
+
+class SettingsGroupsUi(unittest.TestCase):
+    def test_settings_lists_a_lines_finished_pieces_as_one_entry(self):
+        import shutil
+        import subprocess
+        from pathlib import Path
+        from test_preparations import UI_CHECK
+        node = shutil.which('node')
+        if node is None:
+            raise unittest.SkipTest('Node is needed for the DOM-stub check')
+        app = Path(__file__).resolve().parents[1] / 'src' / 'personal_agent' / 'web' / 'app.js'
+        labels = self.service_labels()
+        check = UI_CHECK.split('(async()=>{')[0] + GROUP_UI_CHECK
+        result = subprocess.run([node, '-e', check, str(app), json.dumps(labels)], capture_output=True, text=True, timeout=30)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(result.stdout.strip().splitlines()[-1], 'ok')
+
+    @staticmethod
+    def service_labels():
+        keys = {'pieces_finished': 'preparations.pieces_finished', 'pieces_newest': 'preparations.pieces_newest',
+                **{'delivery_' + mode: 'preparations.delivery_' + mode for mode in ('send', 'keep', 'when_needed')}}
+        return {key: {lang: msg(message_id, lang) for lang in ('ko', 'en', 'ja', 'zh')} for key, message_id in keys.items()}
