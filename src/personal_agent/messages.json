@@ -11086,6 +11086,12 @@
   "ja": "この実行が予約した次の段階は、オーナーまたは仕事の整理によって取り消されました。再予約していません。進捗を報告してください。",
   "zh": "本次运行预约的下一步已被主人或随事项一起取消，未重新预约。请报告目前进展。"
  },
+ "preparations.piece_parent_ended": {
+  "ko": "이 실행의 준비가 취소되거나 끝나서 다음 조각을 예약하지 않았어요. 지금 어디까지 했는지 보고하세요.",
+  "en": "This run's preparation was cancelled or has ended, so no next piece was scheduled. Report where the work stands.",
+  "ja": "この実行の準備が取り消されたか終了したため、次の段階は予約していません。進捗を報告してください。",
+  "zh": "本次运行的准备已取消或结束，因此未预约下一步。请报告目前进展。"
+ },
  "preparations.line_pieces_daily": {
   "ko": "이 맡은 일은 오늘 다음 조각을 {maximum}번 예약해서 더 예약하지 않았어요. 지금 어디까지 했는지 보고하고 멈추세요.",
   "en": "This line has scheduled {maximum} pieces today, so no more were scheduled. Report where the work stands and stop.",

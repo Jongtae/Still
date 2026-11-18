@@ -62,6 +62,15 @@ class _PieceCase(_LineCase):
         return [row for row in self.service.preparations_service.line_rows(line_id)
                 if row.get('origin') == prep.ORIGIN_LINE_PIECE]
 
+    def running_slot(self, line_id):
+        """A running owner-accepted row of the line; the slot key of its current run."""
+        row = self.service.preparations.create(
+            kind='prepare', goal=f'확인 {self.now} {len(self.rows())}', due_at=self.now, timezone='Asia/Seoul',
+            recurrence=None, channel='web', created_from='settings', state=prep.STATE_SCHEDULED,
+            accepted_by=prep.ACCEPTED_OWNER_SETTINGS, line_id=line_id)
+        work_id = self.service.preparations.start(row, channel='web', chat_id=None, now=self.now)
+        return prep.slot_key(self.store.job(work_id)['request_key'])
+
     def direct_piece(self, line_id, parent_slot, seconds=3600):
         return self.service.preparations.create(
             kind='prepare', goal=HANDOFF, due_at=self.now + seconds, timezone='Asia/Seoul', recurrence=None,
@@ -217,48 +226,60 @@ class BoundTests(_PieceCase):
         # The cap is read in ``create``, apart from the shared scheduled-work budget (which charges runs).
         brief, _row = self.owner_line()
         for number in range(prep.LINE_PIECES_DAILY):
-            piece = self.direct_piece(brief['line_id'], f'preparation:p{number}:1')
+            piece = self.direct_piece(brief['line_id'], self.running_slot(brief['line_id']))
             # Each finishes, so the store-wide pending allowance is not what refuses the next.
             with self.store.db() as db:
                 db.execute("UPDATE preparations SET state='delivered' WHERE id=?", (piece['id'],))
         with self.assertRaises(prep.PreparationRefusal) as refused:
-            self.direct_piece(brief['line_id'], 'preparation:p-last:1')
+            self.direct_piece(brief['line_id'], self.running_slot(brief['line_id']))
         self.assertEqual(refused.exception.code, 'line_pieces_daily')
         # The next owner-local day starts a new count.
         self.now += 86400
-        self.assertTrue(self.direct_piece(brief['line_id'], 'preparation:p-next:1')['id'])
+        self.assertTrue(self.direct_piece(brief['line_id'], self.running_slot(brief['line_id']))['id'])
 
     def test_the_eleventh_pending_piece_in_the_store_is_refused(self):
         brief, _row = self.owner_line()
         for number in range(prep.MAX_PENDING_PIECES):
-            self.direct_piece(brief['line_id'], f'preparation:q{number}:1')
+            self.direct_piece(brief['line_id'], self.running_slot(brief['line_id']))
         with self.assertRaises(prep.PreparationRefusal) as refused:
-            self.direct_piece(brief['line_id'], 'preparation:q-last:1')
+            self.direct_piece(brief['line_id'], self.running_slot(brief['line_id']))
         self.assertEqual(refused.exception.code, 'pieces_limit')
 
     def test_a_started_piece_cannot_be_replaced_or_followed_by_a_second_child(self):
         brief, _row = self.owner_line()
-        piece = self.direct_piece(brief['line_id'], 'preparation:r:1')
+        slot = self.running_slot(brief['line_id'])
+        piece = self.direct_piece(brief['line_id'], slot)
         with self.store.db() as db:
             db.execute("UPDATE preparations SET state='running' WHERE id=?", (piece['id'],))
         with self.assertRaises(prep.PreparationRefusal) as refused:
-            self.direct_piece(brief['line_id'], 'preparation:r:1', seconds=7200)
+            self.direct_piece(brief['line_id'], slot, seconds=7200)
         self.assertEqual(refused.exception.code, 'piece_started')
 
     def test_a_run_whose_piece_was_cancelled_cannot_schedule_it_again(self):
         brief, _row = self.owner_line()
-        piece = self.direct_piece(brief['line_id'], 'preparation:c:1')
+        slot = self.running_slot(brief['line_id'])
+        piece = self.direct_piece(brief['line_id'], slot)
         self.service.cancel_preparation(piece['id'])
         with self.assertRaises(prep.PreparationRefusal) as refused:
-            self.direct_piece(brief['line_id'], 'preparation:c:1', seconds=7200)
+            self.direct_piece(brief['line_id'], slot, seconds=7200)
         self.assertEqual(refused.exception.code, 'piece_cancelled')
 
     def test_a_piece_scheduled_as_its_line_stops_is_refused_inside_the_transaction(self):
         brief, _row = self.owner_line()
+        slot = self.running_slot(brief['line_id'])
         self.service.preparations_service.stop_line(brief['line_id'])
         with self.assertRaises(prep.PreparationRefusal) as refused:
-            self.direct_piece(brief['line_id'], 'preparation:s:1')
+            self.direct_piece(brief['line_id'], slot)
         self.assertEqual(refused.exception.code, 'line_stopped')
+        self.assertEqual(self.pieces(brief['line_id']), [])
+
+    def test_a_parent_cancelled_before_the_piece_is_created_refuses_it(self):
+        brief, _row = self.owner_line()
+        slot = self.running_slot(brief['line_id'])
+        self.service.cancel_preparation(prep.preparation_of(slot))
+        with self.assertRaises(prep.PreparationRefusal) as refused:
+            self.direct_piece(brief['line_id'], slot)
+        self.assertEqual(refused.exception.code, 'piece_parent_ended')
         self.assertEqual(self.pieces(brief['line_id']), [])
 
     def test_a_piece_needs_its_parent_run(self):
@@ -350,6 +371,23 @@ class OutsideContentTests(_PieceCase):
         self.assertEqual(self.store.outside_content_sources(work_id), [])
 
 
+
+
+class NotificationHistoryTests(_PieceCase):
+    def test_a_piece_starts_with_the_chains_last_notification(self):
+        brief, _row = self.owner_line()
+        slot = self.running_slot(brief['line_id'])
+        parent = prep.preparation_of(slot)
+        with self.store.db() as db:
+            db.execute("UPDATE preparations SET last_decision='notified',last_decision_reason='changed',"
+                       "last_notified_digest='d1',last_notified_text='손절선 위',last_notified_at=? WHERE id=?",
+                       (self.now, parent))
+        piece = self.direct_piece(brief['line_id'], slot)
+        self.now = piece['due_at'] + 1
+        self.service.preparations.start(self.service.preparations.get(piece['id']), channel='web', chat_id=None, now=self.now)
+        started = self.service.preparations.get(piece['id'])
+        self.assertEqual((started['last_notified_digest'], started['last_notified_text'], started['last_decision']),
+                         ('d1', '손절선 위', 'notified'))
 
 
 class PaymentTests(Mode, _PieceCase):

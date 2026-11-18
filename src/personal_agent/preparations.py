@@ -380,6 +380,7 @@ REFUSALS = {
     'piece_too_soon': msg('preparations.piece_too_soon', minutes=MIN_EVERY_MINUTES),
     'piece_started': msg('preparations.piece_started'),
     'piece_cancelled': msg('preparations.piece_cancelled'),
+    'piece_parent_ended': msg('preparations.piece_parent_ended'),
     'line_pieces_daily': msg('preparations.line_pieces_daily', maximum=LINE_PIECES_DAILY),
     'pieces_limit': msg('preparations.pieces_limit', maximum=MAX_PENDING_PIECES),
     'piece_shape': msg('preparations.piece_shape'),
@@ -1537,6 +1538,24 @@ class Preparations:
                 {'category': detail.get('category', 'outside-content'), 'operation': ORIGIN_LINE_PIECE,
                  'source_work_id': source['job_id']}), now)
 
+    #: #938: what the send decision of a ``when_needed`` run compares against (``watch_decision``).
+    PIECE_HISTORY = ('last_decision', 'last_decision_reason', 'last_notified_digest', 'last_notified_text',
+                     'last_notified_at')
+
+    def _carry_piece_history(self, db, row):
+        """#938: a piece's first run decides its send against the chain's last notification, not a blank one.
+
+        Read from the parent row when the piece starts, after the parent's own run has settled.
+        """
+        if row.get('last_decision') is not None:
+            return
+        parent = db.execute(f"SELECT {','.join(self.PIECE_HISTORY)} FROM preparations WHERE id=?",
+                            (preparation_of(row.get('piece_of')),)).fetchone()
+        if parent is None or parent['last_decision'] is None:
+            return
+        db.execute(f"UPDATE preparations SET {','.join(name + '=?' for name in self.PIECE_HISTORY)} WHERE id=?",
+                   (*(parent[name] for name in self.PIECE_HISTORY), row['id']))
+
     def _piece(self, db, line_id, piece_of, due_at, now):
         """#938: the run's pending piece to replace, or None for a new one; a refusal when neither may be.
 
@@ -1546,6 +1565,12 @@ class Preparations:
         from .agent_runtime import not_run
         if line_refusal(db, line_id):
             raise not_run(PreparationRefusal('line_stopped'))
+        # The scheduling run is still its row's current slot run: a cancel between the run's
+        # qualification and this transaction refuses the piece instead of continuing the chain.
+        parent = db.execute('SELECT p.state,j.request_key FROM preparations p LEFT JOIN jobs j ON j.id=p.last_run_job_id '
+                            'WHERE p.id=?', (preparation_of(piece_of),)).fetchone()
+        if not parent or parent['state'] != STATE_RUNNING or slot_key(parent['request_key']) != piece_of:
+            raise not_run(PreparationRefusal('piece_parent_ended'))
         if due_at < now + PIECE_LEAD_SECONDS:
             raise not_run(PreparationRefusal('piece_too_soon'))
         child = db.execute('SELECT * FROM preparations WHERE origin=? AND line_id=? AND piece_of=? ORDER BY created_at LIMIT 1',
@@ -2454,6 +2479,7 @@ class Preparations:
                     return None
                 if current.get('origin') == ORIGIN_LINE_PIECE:
                     self._inherit_piece_marks(db, current, job_id, now)
+                    self._carry_piece_history(db, current)
             if counted:
                 # As in cloud daily_calls, charge admission, even if the engine later fails.
                 # Enqueue, counter and evidence commit together; queue-full charges nothing.
