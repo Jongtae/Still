@@ -7,6 +7,12 @@ from .document_reader import MAX_FILE_BYTES, read as read_document, supported as
 from . import folder_grants
 
 
+def active_file_roots(store, *, db=None):
+    """Recheck grants on use, including changes to the filesystem."""
+    roots = store.config('file_roots', [], db=db) if db is not None else store.config('file_roots', [])
+    return [root for root in roots if not folder_grants.blocked(root.get('path', ''), store)]
+
+
 def search_key(text):
     """The Python side of the store's ``unicode_search_key`` SQL function: NFKC, then casefold."""
     return unicodedata.normalize('NFKC',text).casefold()
@@ -91,11 +97,13 @@ class FileWorkspace:
             self.store.put('file_workspace',updated,db=db)
         return path,commit
 
-    def status(self): return self.store.config('file_workspace',{'references':[],'workspace':None})
+    def status(self, *, db=None):
+        return self.store.config('file_workspace',{'references':[],'workspace':None},
+                                 **({'db':db} if db is not None else {}))
 
-    def active(self):
+    def active(self, *, db=None):
         """Stored configuration minus any folder the current grant rules forbid."""
-        status=self.status()
+        status=self.status() if db is None else self.status(db=db)
         workspace=status.get('workspace')
         usable=workspace and not folder_grants.blocked(workspace,self.store)
         return {**status,'references':[ref for ref in status.get('references',[]) if not folder_grants.blocked(ref['path'],self.store)],

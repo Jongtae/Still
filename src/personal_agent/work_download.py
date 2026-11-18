@@ -5,6 +5,8 @@ import os
 import stat
 import uuid
 from contextlib import contextmanager
+from functools import partial
+from types import SimpleNamespace
 
 from .local_tools import normalize_public_url
 from .public_download import MAX_RANGE_BYTES, PublicDownload
@@ -13,6 +15,7 @@ RANGE_BYTES = MAX_RANGE_BYTES
 WORK_BYTES = 64 * RANGE_BYTES
 STAGING_BYTES = 256 * RANGE_BYTES
 PREVIEW_BYTES = 4096
+INPUT_CHANGED = object()
 
 class WorkDownloadError(ValueError):
     def __init__(self, message, code, *, ran=False):
@@ -47,19 +50,15 @@ def checkpoint_snapshot(store, work_id, *, db=None):
     checkpoint = store.read_checkpoint(work_id, db=db)
     if not checkpoint:
         return None
-    from . import folder_grants, trust_record, work_mode
-    roots = store.config('file_roots', [], db=db)
-    workspace = store.config('file_workspace', {'references': [], 'workspace': None}, db=db)
-    # The same stored folders and read-time exclusions as Capabilities.roots /
-    # FileWorkspace.active; connection authority is held in trust_record, not a Grant table.
-    folders = [*roots, *workspace.get('references', [])]
-    paths = [row['path'] for row in folders]
-    if workspace.get('workspace'):
-        paths.append(workspace['workspace'])
-    hands = store.config(trust_record.KEY, {}, db=db).get('hands', {})
+    from . import trust_record, work_mode
+    from .file_workspace import FileWorkspace, active_file_roots
+    roots = active_file_roots(store, db=db)
+    workspace = FileWorkspace(store).active(db=db)
+    # Use the trust registry's normalized authority from this transaction.
+    hands = trust_record.hands(SimpleNamespace(config=partial(store.config, db=db)))
     authority = {key: {field: value for field, value in row.items() if field != 'history'}
                  for key, row in hands.items()}
-    grants = (roots, workspace, [(path, folder_grants.blocked(path, store)) for path in paths], authority)
+    grants = (roots, workspace, authority)
     return {'checkpoint': public_checkpoint(checkpoint),
             'steers': [tuple(row) for row in db.execute(
                 'SELECT source_job_id,content FROM work_steers WHERE job_id=? ORDER BY created,source_job_id', (work_id,))],
@@ -73,19 +72,21 @@ def checkpoint_judgment(store, ledger, purpose, facts, note, call, redact, *, sn
 
     work_id = ledger.job_id
 
-    def current(db):
+    def writer_is_current(db):
         checkpoint = store.read_checkpoint(work_id, db=db)
         if (not note or not checkpoint or ledger.lapse(db=db) or checkpoint['resume_pending']
                 or checkpoint['epoch'] != ledger.epoch or store._read_checkpoint_stopped(db, work_id)
                 or not store.read_checkpoint_can_settle(work_id, ledger.epoch, db=db)):
             return False
-        mode = store.config('work_mode', None, db=db)
-        if mode is not None and (not isinstance(mode, dict) or mode.get('enabled') is not False):
-            return False
-        if not store._read_checkpoint_ready(db, work_id, checkpoint, eligible or (lambda *_: True),
-                                            expected_epoch=ledger.epoch):
-            return False
-        return snapshot is not None and checkpoint_snapshot(store, work_id, db=db) == snapshot
+        return store._read_checkpoint_ready(db, work_id, checkpoint, eligible or (lambda *_: True),
+                                            expected_epoch=ledger.epoch)
+
+    def discard(db):
+        # This row belongs to the dispatch even after its Work scope is fenced.
+        # Only its own pending registration may be removed.
+        return db.cursor().execute('DELETE FROM work_read_judgments '
+                                   'WHERE job_id=? AND input_digest=? AND epoch=? AND result IS NULL',
+                                   (work_id, key, ledger.epoch)).rowcount
 
     try:
         # Freeze the key before dispatch too: call() may mutate its input objects.
@@ -95,7 +96,7 @@ def checkpoint_judgment(store, ledger, purpose, facts, note, call, redact, *, sn
         return None
     with store.db() as db:
         db.execute('BEGIN IMMEDIATE')
-        if not current(db):
+        if not writer_is_current(db) or snapshot is None or checkpoint_snapshot(store, work_id, db=db) != snapshot:
             return None
         row = db.execute('SELECT epoch,result FROM work_read_judgments WHERE job_id=? AND input_digest=?',
                          (work_id, key)).fetchone()
@@ -109,15 +110,24 @@ def checkpoint_judgment(store, ledger, purpose, facts, note, call, redact, *, sn
     try:
         result = call()
         if result is None or (purpose == 'goal-reached' and result.get('outcome') not in ('yes', 'no')):
-            return None
-        result = redact_provenance_values(result, redact)
-        encoded = json.dumps(result, ensure_ascii=False, allow_nan=False)
+            encoded = None
+        else:
+            result = redact_provenance_values(result, redact)
+            encoded = json.dumps(result, ensure_ascii=False, allow_nan=False)
     except Exception:
+        encoded = None
+    # Process interruptions propagate with the pending registration intact.
+    if encoded is None:
+        with store.db() as db:
+            db.execute('BEGIN IMMEDIATE')
+            discard(db)
         return None
     with store.db() as db:
         db.execute('BEGIN IMMEDIATE')
-        if not current(db):
+        if not writer_is_current(db):
             return None
+        if checkpoint_snapshot(store, work_id, db=db) != snapshot:
+            return INPUT_CHANGED if discard(db) else None
         committed = db.execute('UPDATE work_read_judgments SET result=? '
                                'WHERE job_id=? AND input_digest=? AND epoch=? AND result IS NULL',
                                (encoded, work_id, key, ledger.epoch)).rowcount

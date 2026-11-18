@@ -1265,8 +1265,11 @@ class Orchestration:
         inputs it would ask over are the same.
         """
         candidates = self.catalogue.available()
+        snapshot = self.read_snapshot
         inputs = self._input_digests(candidates)
         data, failure = self._ask(candidates)
+        if self.read_snapshot is not snapshot:
+            inputs = self._input_digests(candidates)
         inventory = tuple(dict(item) for item in getattr(self, 'plan_inventory', ()))
         return {'digest': self.plan_digest(candidates), 'data': data, 'failure': failure, 'inputs': inputs,
                 'profile_items': inventory}
@@ -1275,16 +1278,32 @@ class Orchestration:
         """``(data, failure)`` for one plan call over ``candidates``."""
         checkpoint_judgment = getattr(self.judgments, 'checkpoint_judgment', None)
         if self.read_progress and checkpoint_judgment is not None:
-            context = self._plan_context(candidates)
-            inputs = self._plan_inputs(candidates, context)
-            self.plan_inventory = self._context_inventory
-            self.context_sent = False
-            def decide():
-                data, failure = self._ask_plan(candidates, context)
-                return data if not failure else None
-            data = checkpoint_judgment(self.work_id, PURPOSE, inputs, self._continues_text(),
-                                       decide, budget=self.budget, snapshot=self.read_snapshot)
-            return (data, '') if data is not None else (None, FALLBACK_BUDGET if self.budget_stop else FALLBACK_UNAVAILABLE)
+            from .work_download import INPUT_CHANGED, checkpoint_note
+
+            def ask():
+                context = self._plan_context(candidates)
+                inputs = self._plan_inputs(candidates, context)
+                self.plan_inventory = self._context_inventory
+                self.context_sent = False
+
+                def decide():
+                    data, failure = self._ask_plan(candidates, context)
+                    return data if not failure else None
+
+                return checkpoint_judgment(self.work_id, PURPOSE, inputs, context.facts['continues'],
+                                           decide, budget=self.budget, snapshot=self.read_snapshot,
+                                           retry_on_change=True)
+
+            data = ask()
+            if data is INPUT_CHANGED:
+                self.read_snapshot = self.judgments.checkpoint_snapshot(self.work_id)
+                if self.read_snapshot:
+                    self.read_progress = checkpoint_note(self.read_snapshot['checkpoint'])
+                    self.owner_corrected([text for _, text in self.read_snapshot['steers']])
+                    data = ask()
+            if data is not None and data is not INPUT_CHANGED:
+                return data, ''
+            return None, FALLBACK_BUDGET if self.budget_stop else FALLBACK_UNAVAILABLE
         return self._ask_plan(candidates)
 
     def _ask_plan(self, candidates, context=None):

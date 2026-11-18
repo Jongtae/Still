@@ -1,5 +1,6 @@
 """Model-free races at the read judgment and terminal publication boundaries (#1007)."""
 from concurrent.futures import ThreadPoolExecutor
+from contextlib import ExitStack
 from dataclasses import dataclass
 import json
 from threading import Event
@@ -7,7 +8,8 @@ from unittest import mock
 
 import pytest
 
-from personal_agent.agent_runtime import WORK_STOP_KEY, LedgerSuperseded, WorkBudget, WorkLedger
+from personal_agent.agent_runtime import Capabilities, WORK_STOP_KEY, LedgerSuperseded, WorkBudget, WorkLedger, run_agent
+from personal_agent.conversation_handoff import Judgment
 from personal_agent.quickstart_service import AgentService, WORK_SOURCES_KEY
 from personal_agent.quickstart_store import QuickStore
 from personal_agent.orchestrator import Catalogue
@@ -71,7 +73,10 @@ def change(case, kind):
         assert case.store.record_read_checkpoint(case.id, {**CHECKPOINT, 'received': 24, 'revision': 2},
                                                  epoch=case.budget.ledger.epoch)
     elif kind == 'mode': case.store.put('work_mode', {'enabled': False, 'revision': 2})
-    elif kind == 'grant': case.store.put('file_workspace', {'references': [], 'workspace': None, 'workspace_id': 'new-grant'})
+    elif kind == 'grant':
+        folder = case.store.root / 'granted-workspace'
+        folder.mkdir()
+        case.store.put('file_workspace', {'references': [], 'workspace': str(folder), 'workspace_id': 'new-grant'})
     elif kind == 'trust': case.store.put('trust_record', {'hands': {'fixture': {'state': 'forgotten', 'epoch': 'revoked'}}})
 
 
@@ -90,8 +95,7 @@ def test_built_state_must_match_at_both_transactions(case, kind, when):
     assert call.call_count == (when == 'before-commit')
     with case.store.db() as db:
         rows = db.execute('SELECT result FROM work_read_judgments').fetchall()
-    assert len(rows) == (when == 'before-commit')
-    assert all(row['result'] is None for row in rows)
+    assert not rows
 
 
 def orchestration(case, work=None):
@@ -116,6 +120,40 @@ def test_plan_binds_state_before_building_owner_corrections(case):
     ask.assert_not_called()
 
 
+@pytest.mark.parametrize('race', ['steer', 'checkpoint', 'second_change', 'stale_epoch'])
+def test_plan_rejudges_changed_input_at_most_once(case, race):
+    work, case.budget = case.restart()
+    orch = orchestration(case, work)
+    contexts = []
+
+    def ask(_candidates, context):
+        contexts.append(context.facts)
+        if len(contexts) == 1:
+            if race == 'stale_epoch':
+                case.restart()
+                change(case, 'mode')  # a mismatch still must not let the stale epoch retry
+            else:
+                change(case, 'checkpoint' if race == 'checkpoint' else 'steer')
+        elif race == 'second_change':
+            change(case, 'checkpoint')
+        return {'route': len(contexts)}, ''
+
+    with mock.patch.object(orch, '_ask_plan', side_effect=ask), \
+            mock.patch.object(orch.judgments, 'checkpoint_snapshot', wraps=orch.judgments.checkpoint_snapshot) as snapshot:
+        data, failure = orch._ask(orch.catalogue.workers)
+    assert snapshot.call_count == (0 if race == 'stale_epoch' else 1)
+    assert len(contexts) == (1 if race == 'stale_epoch' else 2)
+    assert 'owner_corrections' not in contexts[0]
+    if race == 'steer':
+        assert 'Use the corrected scope.' in contexts[1]['owner_corrections']
+    if race == 'checkpoint':
+        assert '24 of 32 bytes verified' in contexts[1]['continues']
+    if race in ('stale_epoch', 'second_change'):
+        assert data is None and failure
+    else:
+        assert (data, failure) == ({'route': 2}, '')
+
+
 def test_goal_reached_does_not_use_corrections_added_after_input_build(case):
     snapshot = case.snapshot()
     change(case, 'steer')
@@ -126,6 +164,66 @@ def test_goal_reached_does_not_use_corrections_added_after_input_build(case):
                 continues=reads.checkpoint_note(CHECKPOINT), read_snapshot=snapshot)
     assert judged.outcome == 'unavailable'
     ask.assert_not_called()
+
+
+def run_read_goal(case):
+    service = case.service
+    adapter = mock.Mock()
+    adapter.tool_turn.return_value = ({'content': 'Here is the comparison.'}, 'fixture')
+    capabilities = Capabilities(case.store, adapter, {}, None, case.id, lambda *_: None,
+                                budget=case.budget, judgments=service.decision_judge)
+    with service.work_decision_scope(case.id, case.budget):
+        return run_agent(
+            adapter, {'provider': 'fixture'}, None, [{'role': 'user', 'content': case.work['message']}],
+            '', capabilities, lambda *_: None, definitions=[],
+            read_progress=lambda: service.read_checkpoint_note(case.work, include_fresh=True),
+            original_goal=case.work['message'])
+
+
+@pytest.mark.parametrize('race', ['steer', 'checkpoint', 'second_change', 'stale_epoch'])
+def test_goal_rejudges_changed_input_at_most_once(case, race):
+    facts = []
+
+    def evaluate(inputs, *_):
+        facts.append(inputs)
+        if len(facts) == 1:
+            if race == 'stale_epoch':
+                with ThreadPoolExecutor(1) as pool:
+                    pool.submit(case.restart).result(10)
+                    pool.submit(change, case, 'mode').result(10)
+            else:
+                change(case, 'checkpoint' if race == 'checkpoint' else 'steer')
+        elif race == 'second_change':
+            change(case, 'checkpoint')
+        return Judgment('yes')
+
+    judge = case.service.decision_judge
+    with mock.patch.object(judge, '_evaluate_goal', side_effect=evaluate), \
+            mock.patch.object(judge, 'checkpoint_snapshot', wraps=judge.checkpoint_snapshot) as snapshot:
+        result = run_read_goal(case)
+    assert snapshot.call_count == (3 if race == 'stale_epoch' else 4)
+    assert len(facts) == (1 if race == 'stale_epoch' else 2)
+    assert facts[0]['owner_request'] == case.work['message']
+    if race == 'steer':
+        assert facts[1]['owner_request'] == case.work['message'] + '\n\nUse the corrected scope.'
+    if race == 'checkpoint':
+        assert '24 of 32 bytes verified' in facts[1]['observations']
+    if race in ('stale_epoch', 'second_change'):
+        assert result.goal_judgment == 'unavailable'
+    else:
+        assert result.goal_judgment == 'yes'
+        assert result.outcome == 'succeeded'
+
+
+@pytest.mark.parametrize('barrier', ['mode', 'missing_staging'])
+def test_first_run_read_is_judged_even_when_auto_resume_is_blocked(case, barrier, monkeypatch):
+    block(case, barrier, monkeypatch)
+    assert not case.store.read_checkpoint(case.id)['resumed']
+    with mock.patch.object(case.service.decision_judge, '_evaluate_goal', return_value=Judgment('yes')) as evaluate:
+        result = run_read_goal(case)
+    evaluate.assert_called_once()
+    assert result.goal_judgment == 'yes'
+    assert result.outcome == 'succeeded'
 
 
 def test_concurrent_current_epoch_calls_once_and_completed_result_survives_restart(case):
@@ -145,21 +243,30 @@ def test_concurrent_current_epoch_calls_once_and_completed_result_survives_resta
     _, later = case.restart()
     assert case.judge(mock.Mock(side_effect=AssertionError('completed result not reused')), budget=later) == {'winner': 'completed'}
     assert calls == ['called']
+    changed = mock.Mock(return_value={'winner': 'different facts'})
+    assert case.judge(changed, budget=later, facts={'answer': 'new observation'}) == {'winner': 'different facts'}
+    changed.assert_called_once()
 
 
 @pytest.mark.parametrize('new_completed', [False, True])
-def test_old_epoch_response_cannot_replace_new_registration_or_result(case, new_completed):
+@pytest.mark.parametrize('old_fails', [False, True])
+def test_old_epoch_response_cannot_replace_new_registration_or_result(case, new_completed, old_fails):
     entered, release_old, entered_new, release_new = Event(), Event(), Event(), Event()
     def old_call():
         entered.set()
         assert release_old.wait(10)
+        if old_fails:
+            raise ValueError('old dispatch failed')
         return {'winner': 'old'}
     def new_call():
         entered_new.set()
         assert release_new.wait(10)
         return {'winner': 'new'}
+    def judge_old():
+        with case.service.work_decision_scope(case.id, case.budget):
+            return case.judge(old_call)
     with ThreadPoolExecutor(2) as pool:
-        old = pool.submit(case.judge, old_call)
+        old = pool.submit(judge_old)
         assert entered.wait(10)
         _, later = case.restart()
         new = pool.submit(case.judge, new_call, budget=later)
@@ -178,6 +285,33 @@ def test_old_epoch_response_cannot_replace_new_registration_or_result(case, new_
         assert new.result(10) == {'winner': 'new'}
 
 
+@pytest.mark.parametrize('exit_type', [SystemExit, KeyboardInterrupt, GeneratorExit])
+def test_interrupted_judgment_stays_pending_until_recovery(case, exit_type):
+    call = mock.Mock(side_effect=exit_type('interrupted judgment'))
+    with pytest.raises(exit_type, match='interrupted judgment'):
+        case.judge(call, purpose='goal-reached')
+    call.assert_called_once_with()
+    with case.store.db() as db:
+        row = db.execute('SELECT epoch,result FROM work_read_judgments').fetchone()
+        assert row is not None
+        assert row['epoch'] == case.budget.ledger.epoch
+        assert row['result'] is None
+
+    retry = mock.Mock(return_value={'outcome': 'yes'})
+    assert case.judge(retry, purpose='goal-reached') is None
+    retry.assert_not_called()
+    _, later = case.restart()
+    assert later.ledger.epoch == case.budget.ledger.epoch + 1
+    assert case.judge(retry, budget=later, purpose='goal-reached') == {'outcome': 'yes'}
+    assert case.judge(retry, budget=later, purpose='goal-reached') == {'outcome': 'yes'}
+    retry.assert_called_once_with()
+    with case.store.db() as db:
+        rows = db.execute('SELECT epoch,result FROM work_read_judgments').fetchall()
+        assert len(rows) == 1
+        assert rows[0]['epoch'] == later.ledger.epoch
+        assert json.loads(rows[0]['result']) == {'outcome': 'yes'}
+
+
 @pytest.mark.parametrize('failure', ['raise', 'none', 'unavailable', 'unserializable-result'])
 def test_unavailable_judgment_never_completes_and_restarts_once(case, failure):
     call = mock.Mock(return_value={'outcome': 'unavailable'})
@@ -185,11 +319,15 @@ def test_unavailable_judgment_never_completes_and_restarts_once(case, failure):
     elif failure == 'none': call.return_value = None
     elif failure == 'unserializable-result': call.return_value = {'outcome': 'yes', 'bad': object()}
     assert case.judge(call, purpose='goal-reached') is None
-    assert case.judge(mock.Mock(side_effect=AssertionError('repeated admission')), purpose='goal-reached') is None
     with case.store.db() as db:
-        assert db.execute('SELECT result FROM work_read_judgments').fetchone()['result'] is None
+        assert db.execute('SELECT result FROM work_read_judgments').fetchone() is None
+    retry = mock.Mock(return_value={'outcome': 'yes'})
+    assert case.judge(retry, purpose='goal-reached') == {'outcome': 'yes'}
+    assert case.judge(retry, purpose='goal-reached') == {'outcome': 'yes'}
+    retry.assert_called_once_with()
     _, later = case.restart()
-    assert case.judge(lambda: {'outcome': 'yes'}, budget=later, purpose='goal-reached') == {'outcome': 'yes'}
+    assert case.judge(retry, budget=later, purpose='goal-reached') == {'outcome': 'yes'}
+    retry.assert_called_once_with()
 
 
 @pytest.mark.parametrize('facts', [{'bad': object()}, {1: 1, 'mixed': 2}, {'bad': float('nan')}])
@@ -212,6 +350,8 @@ def block(case, barrier, monkeypatch):
         case.store.put(case.budget.ledger.key, {**row, barrier: WORK_MODEL_TURNS if barrier == 'turns' else WORK_TOOL_ATTEMPTS})
     elif barrier == 'expired': case.now[0] += 10000
     elif barrier == 'mode': case.store.put('work_mode', {'enabled': True})
+    elif barrier == 'missing_staging': monkeypatch.setattr(reads, 'staged_checkpoint_available', lambda *_: False)
+    elif barrier == 'owner_wait': monkeypatch.setattr(case.service, 'work_waits_for_owner', lambda _: ['fixture'])
     elif barrier == 'revoked':
         # Inject the existing authority/continuation decision, not a new grant policy.
         original = case.service.may_continue
@@ -223,8 +363,13 @@ def block(case, barrier, monkeypatch):
                        (case.id, 'api_request', 'failed', '{"effect":"unknown"}', case.now[0]))
 
 
-@pytest.mark.parametrize('barrier', ['stop', 'paused', 'expired', 'mode', 'revoked', 'unknown', 'turns', 'attempts'])
-@pytest.mark.parametrize('boundary', ['judgment', 'recover', 'claim'])
+@pytest.mark.parametrize('boundary,barrier', [
+    pytest.param(boundary, barrier, id=f'{boundary}-{barrier}')
+    for boundary in ('judgment', 'recover', 'claim')
+    for barrier in ('stop', 'paused', 'expired', 'revoked', 'unknown', 'owner_wait', 'turns', 'attempts',
+                    'mode', 'missing_staging')
+    if boundary != 'judgment' or barrier not in ('mode', 'missing_staging')
+])
 def test_existing_boundaries_block_reuse_and_auto_resume(case, barrier, boundary, monkeypatch):
     assert case.judge(lambda: {'winner': 'prior'}) == {'winner': 'prior'}
     if boundary == 'claim':
@@ -317,6 +462,36 @@ def test_late_indirect_writers_and_orchestration_event_keep_the_old_epoch(case):
         assert not db.execute("SELECT 1 FROM tool_events WHERE status='late' OR tool='response_timing'").fetchone()
 
 
+def test_checkpoint_guard_uses_the_scope_at_execute_time(case):
+    _, budget = case.restart()
+    with case.store.db() as db:
+        db.execute('BEGIN IMMEDIATE')
+        with case.store.read_checkpoint_writer(case.id, case.budget.ledger.epoch):
+            with pytest.raises(LedgerSuperseded):
+                db.execute('INSERT INTO tool_events(job_id) VALUES (?)', (case.id,))
+    with ExitStack() as connection:
+        with case.store.read_checkpoint_writer(case.id, case.budget.ledger.epoch):
+            db = connection.enter_context(case.store.db())
+        db.execute('INSERT INTO tool_events(job_id) VALUES (?)', (case.id,))
+        with case.store.read_checkpoint_writer(case.id, budget.ledger.epoch):
+            db.execute('INSERT INTO tool_events(job_id) VALUES (?)', (case.id,))
+
+
+def test_checkpoint_guard_leaves_cte_reads_and_autocommit_transaction_free(case):
+    _, budget = case.restart()
+    with case.store.read_checkpoint_writer(case.id, case.budget.ledger.epoch), case.store.db() as db:
+        assert db.execute('WITH answer AS (SELECT 42) SELECT * FROM answer').fetchone()[0] == 42
+        assert not db.in_transaction
+        db.autocommit = True
+        with pytest.raises(LedgerSuperseded):
+            db.execute('INSERT INTO tool_events(job_id) VALUES (?)', (case.id,))
+        assert not db.in_transaction
+    with case.store.read_checkpoint_writer(case.id, budget.ledger.epoch), case.store.db() as db:
+        db.autocommit = True
+        db.execute('INSERT INTO tool_events(job_id) VALUES (?)', (case.id,))
+        assert not db.in_transaction
+
+
 def test_effective_folder_grant_is_rechecked_even_when_config_is_unchanged(case, tmp_path):
     folder = tmp_path / 'reference'
     folder.mkdir()
@@ -327,6 +502,15 @@ def test_effective_folder_grant_is_rechecked_even_when_config_is_unchanged(case,
     call = mock.Mock(side_effect=AssertionError('revoked folder reached model'))
     assert case.judge(call, snapshot=snapshot) is None
     call.assert_not_called()
+
+
+def test_configuring_unavailable_folders_does_not_change_effective_authority(case):
+    snapshot = case.snapshot()
+    path = str(case.store.root / 'unavailable-reference')
+    reference = {'id': 'missing', 'path': path}
+    case.store.put('file_roots', [reference])
+    case.store.put('file_workspace', {'references': [reference], 'workspace': path, 'workspace_id': 'missing'})
+    assert case.snapshot() == snapshot
 
 
 def test_observation_history_is_not_an_effective_grant_change(case):
@@ -425,7 +609,6 @@ def test_explicit_missing_build_snapshot_is_not_replaced_at_entry(case):
 
 
 def test_goal_entry_snapshot_reuses_each_coverage_once(case):
-    from personal_agent.conversation_handoff import Judgment
     judge = case.service.decision_judge
     with case.service.work_decision_scope(case.id, case.budget):
         with mock.patch.object(judge, '_evaluate_goal', return_value=Judgment('no')) as evaluate:

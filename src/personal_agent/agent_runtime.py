@@ -21,7 +21,7 @@ from .search_providers import ISO_COUNTRY_CODES, NATIVE_REASONS, describe_option
 from .document_reader import read as read_document, supported as supported_document, MAX_FILE_BYTES
 from . import folder_grants
 from . import work_mode
-from .file_workspace import FileWorkspace
+from .file_workspace import FileWorkspace, active_file_roots
 from .manifests import BUILTIN_MANIFEST, CONTEXT_GATED_ACTIONS, HOST_TOOLS, runtime_packages
 from .memory_service import PROFILE_KEY_GUIDANCE, CONNECTION_PREFERENCE_GUIDANCE, PROFILE_SECTION_CHARS
 from .prompt_files import prompt
@@ -3769,10 +3769,7 @@ class Capabilities:
   try:return str(registry.default() or '') if registry is not None and callable(getattr(registry,'default',None)) else ''
   except Exception:return ''
  def roots(self):
-  # Filesystem state can change while this Capabilities object is alive. Recheck
-  # each use so replacing a granted directory with a symlink cannot reuse a stale
-  # allowlist.
-  return [root for root in self.store.config('file_roots',[]) if not folder_grants.blocked(root.get('path',''),self.store)]
+  return active_file_roots(self.store)
  def workspace_references(self):
   """#182: the file workspace's reference folders the current grant rules allow, as read-only roots.
 
@@ -5961,7 +5958,7 @@ def work_awaiting_owner_text(capabilities):
  try:return awaiting_owner_text(work_awaiting_owner(capabilities.store,capabilities.job_id))[:AWAITING_OWNER_CHARS]
  except Exception:return ''
 
-def goal_judgment(judgments,goal,claim,observations,failures,work_id=None,redact=None,conversation='',owner_context=None,*,budget=None,attachments='',read_state='',awaiting='',conversation_turns=None,effects=(),reply_source='worker',reply_delivery='to_owner',plan_reading='',continues='',read_snapshot=None):
+def goal_judgment(judgments,goal,claim,observations,failures,work_id=None,redact=None,conversation='',owner_context=None,*,budget=None,attachments='',read_state='',awaiting='',conversation_turns=None,effects=(),reply_source='worker',reply_delivery='to_owner',plan_reading='',continues='',read_snapshot=None,retry_on_read_change=False):
  """``yes`` / ``no`` / ``unavailable``: did the reply serve the owner's message ``goal``?
 
  The one outcome judgment (#657, #820): one ``ConversationJudgments.goal_reached``
@@ -6017,11 +6014,15 @@ def goal_judgment(judgments,goal,claim,observations,failures,work_id=None,redact
                                    owner_context=owner,**({'conversation_messages':count} if count is not None else {}),
                                    **({'plan_reading':reading} if reading else {}),
                                    **({'continues':continuation, 'read_snapshot':read_snapshot} if continuation else {}),
+                                   **({'retry_on_read_change':True} if continuation and retry_on_read_change else {}),
                                    **({'attachments':attachments} if attachments else {}),
                                    **({'awaiting_owner':clean(awaiting)} if awaiting else {}),
                                    **({'recorded_effects':tuple(effects),
                                        'may_rejudge':lambda:second_judgment_allowed(judgments,budget)} if effects else {}))
  except Exception:return 'unavailable'
+ if retry_on_read_change:
+  from .work_download import INPUT_CHANGED
+  if judged is INPUT_CHANGED:return INPUT_CHANGED
  outcome=getattr(judged,'outcome',None)
  if outcome not in ('yes','no'):return goal_verdict('unavailable')
  note=getattr(judged,'note',None)
@@ -6272,6 +6273,24 @@ def run_agent(adapter,config,key,history,system,capabilities,record,scope='main'
   corrections=capabilities.store.work_steer_texts(capabilities.job_id)
   return '\n\n'.join((original_goal if original_goal is not None else goal,*corrections))
 
+ def judge_goal(claim,read_continuation,reply_source='worker'):
+  from .work_download import INPUT_CHANGED
+
+  def ask(note):
+   return goal_judgment(capabilities.judgments,checkpoint_goal(note),claim,observations,failed_steps_text(steps),
+                        capabilities.job_id,getattr(capabilities,'judgment_text',None),conversation,owner_context,budget=budget,
+                        attachments=attachment_facts(images=len(images)) if images else '',read_state=steps_read_state(steps),
+                        awaiting=work_awaiting_owner_text(capabilities),conversation_turns=conversation_turns,
+                        effects=recorded_effects(steps),reply_source=reply_source,reply_delivery=reply_delivery,
+                        plan_reading=capabilities.plan_reading,continues=note,read_snapshot=read_snapshot,
+                        retry_on_read_change=bool(note))
+
+  judgment=ask(read_continuation)
+  if judgment is INPUT_CHANGED:
+   note=checkpoint_progress()
+   judgment=ask(note) if note else INPUT_CHANGED
+  return goal_verdict('unavailable') if judgment is INPUT_CHANGED else judgment
+
  def conclude(content,claim=None,judgment=None,reply_source='worker'):
   """The run's result: ``succeeded`` needs an accepted done claim judged yes (#657)."""
   labels=source_labels(sources)
@@ -6285,12 +6304,7 @@ def run_agent(adapter,config,key,history,system,capabilities,record,scope='main'
    # the reply serve the owner's message, given every settled observation?  Whether
    # the model also called ``finish`` is bookkeeping, not the outcome.
    refs=[ref for ref,row in observations.items() if row[2]=='succeeded' and row[1] not in INTERNAL_STATE_ACTIONS]
-   judgment=goal_judgment(capabilities.judgments,checkpoint_goal(read_continuation),{'evidence_refs':refs,'summary':content},observations,failed_steps_text(steps),
-                          capabilities.job_id,getattr(capabilities,'judgment_text',None),conversation,owner_context,budget=budget,
-                            attachments=attachment_facts(images=len(images)) if images else '',read_state=steps_read_state(steps),
-                            awaiting=work_awaiting_owner_text(capabilities),conversation_turns=conversation_turns,
-                            effects=recorded_effects(steps),reply_source=reply_source,reply_delivery=reply_delivery,
-                            plan_reading=capabilities.plan_reading,continues=read_continuation,read_snapshot=read_snapshot)
+   judgment=judge_goal({'evidence_refs':refs,'summary':content},read_continuation,reply_source)
   if not needs_judgment and not invalid_calls:
    # Ordinary conversation: no tool ran (or only internal current-state
    # bookkeeping, #627), so there is nothing to observe.
@@ -6441,12 +6455,7 @@ def run_agent(adapter,config,key,history,system,capabilities,record,scope='main'
      if reason is None and claim['status']=='done':
       read_continuation=checkpoint_progress()
       judged+=1
-      judgment=goal_judgment(capabilities.judgments,checkpoint_goal(read_continuation),claim,observations,failed_steps_text(steps),capabilities.job_id,
-                             getattr(capabilities,'judgment_text',None),conversation,owner_context,budget=budget,
-                             attachments=attachment_facts(images=len(images)) if images else '',read_state=steps_read_state(steps),
-                             awaiting=work_awaiting_owner_text(capabilities),conversation_turns=conversation_turns,
-                            effects=recorded_effects(steps),reply_delivery=reply_delivery,plan_reading=capabilities.plan_reading,
-                            continues=read_continuation,read_snapshot=read_snapshot)
+      judgment=judge_goal(claim,read_continuation)
       # A "not shown" answer returns the claim once, so the model can take
       # another path; a second one, or no engine, ends the run below.
       if judgment=='no' and getattr(judgment,'retry_warranted',None) is not False and judged<GOAL_JUDGMENTS:reason='goal_not_observed'

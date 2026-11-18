@@ -100,21 +100,21 @@ class _StoreConnection(sqlite3.Connection):
 
     def _admit_checkpoint_write(self, sql):
         # A run's indirect Evidence/projection writers use this same boundary.
-        # Admit under SQLite's writer lock, once per transaction (the transaction
-        # may itself change running to terminal). Reads remain available to cleanup.
-        guard = getattr(self, 'read_checkpoint_guard', None)
-        command = sql.lstrip().split(None, 1)[0].upper()
-        if command == 'BEGIN' and not self.in_transaction:
-            self.read_checkpoint_admitted = False
-        if guard is not None and command in ('INSERT', 'UPDATE', 'DELETE', 'REPLACE', 'WITH'):
-            if not self.in_transaction:
-                super().execute('BEGIN IMMEDIATE')
-                self.read_checkpoint_admitted = False
-            if not getattr(self, 'read_checkpoint_admitted', False):
-                if not guard(self):
-                    from .agent_runtime import LedgerSuperseded
-                    raise LedgerSuperseded('superseded read checkpoint writer')
-                self.read_checkpoint_admitted = True
+        # Check before a write, keeping the caller's transaction mode. Once
+        # admitted, a transaction can itself change running to terminal.
+        command = sql.lstrip().split(None, 1)
+        if not self.in_transaction:
+            self.read_checkpoint_admitted = None
+        if not command or command[0].upper() not in ('INSERT', 'UPDATE', 'DELETE', 'REPLACE'):
+            return
+        guard = getattr(self.read_checkpoint_writer_scope, 'guard', None)
+        if guard is None or guard is self.read_checkpoint_admitted:
+            return
+        if not guard(self):
+            from .agent_runtime import LedgerSuperseded
+            raise LedgerSuperseded('superseded read checkpoint writer')
+        if self.in_transaction:
+            self.read_checkpoint_admitted = guard
 
     def execute(self, sql, parameters=(), /):
         self._admit_checkpoint_write(sql)
@@ -559,7 +559,8 @@ class QuickStore:
     def db(self):
         conn = sqlite3.connect(self.path, timeout=10, factory=_StoreConnection)
         conn.row_factory = sqlite3.Row
-        conn.read_checkpoint_guard = getattr(self._checkpoint_writer, 'guard', None)
+        conn.read_checkpoint_writer_scope = self._checkpoint_writer
+        conn.read_checkpoint_admitted = None
         conn.create_function(
             'unicode_search_key', 1,
             lambda value: unicodedata.normalize('NFKC', str(value or '')).casefold(),

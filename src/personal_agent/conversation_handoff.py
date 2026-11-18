@@ -1014,7 +1014,7 @@ class ConversationJudgments:
     def goal_reached(self, request, observations, failed_steps='', work_id=None, answer='', conversation='',
                      owner_context='', continues='', attachments='', awaiting_owner='', conversation_messages=None,
                      recorded_effects=(), may_rejudge=None, reply_source='worker', reply_delivery='to_owner',
-                     plan_reading='', read_snapshot=...):
+                     plan_reading='', read_snapshot=..., retry_on_read_change=False):
         """Did the reply serve the owner's ``request`` (#657, #820)?  The one outcome judgment.
 
         One ``judge`` call over the owner's message (never cut), the recent
@@ -1060,7 +1060,12 @@ class ConversationJudgments:
             return {key: getattr(result, key) for key in Judgment.__slots__}
 
         if self.checkpoint_judgment is not None and continues and not recorded_effects:
-            result = self.checkpoint_judgment(work_id, 'goal-reached', facts, continues, evaluate, snapshot=read_snapshot)
+            result = self.checkpoint_judgment(work_id, 'goal-reached', facts, continues, evaluate, snapshot=read_snapshot,
+                                              **({'retry_on_change': True} if retry_on_read_change else {}))
+            if retry_on_read_change:
+                from .work_download import INPUT_CHANGED
+                if result is INPUT_CHANGED:
+                    return INPUT_CHANGED
         else:
             result = evaluate()
         return Judgment(**result) if result else Judgment(JUDGMENT_UNAVAILABLE)

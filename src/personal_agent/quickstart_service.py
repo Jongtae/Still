@@ -8157,8 +8157,9 @@ class AgentService:
         from .work_download import checkpoint_snapshot
         return checkpoint_snapshot(self.store, work_id)
 
-    def read_checkpoint_judgment(self, work_id, purpose, facts, note, call, *, budget=None, snapshot=...):
-        from .work_download import checkpoint_judgment
+    def read_checkpoint_judgment(self, work_id, purpose, facts, note, call, *, budget=None, snapshot=...,
+                                 retry_on_change=False):
+        from .work_download import INPUT_CHANGED, checkpoint_judgment
         # Explicit None preserves an input built before a checkpoint existed.
         if snapshot is ...:snapshot=self.read_checkpoint_snapshot(work_id)
         budget = budget or self.current_decision_budget()
@@ -8168,8 +8169,9 @@ class AgentService:
                 return call()
         if not note or ledger is None or ledger.job_id != work_id:
             return None
-        return checkpoint_judgment(self.store, ledger, purpose, facts, note, call, self.redact_judgment_text,
-                                   snapshot=snapshot, eligible=self.can_resume_read_checkpoint)
+        result = checkpoint_judgment(self.store, ledger, purpose, facts, note, call, self.redact_judgment_text,
+                                     snapshot=snapshot, eligible=self.can_judge_read_checkpoint)
+        return None if result is INPUT_CHANGED and not retry_on_change else result
 
     def action_continuation_note(self, job, *, include_read=True):
         read_checkpoint = self.read_checkpoint_note(job) if include_read else ''
@@ -9876,17 +9878,19 @@ class AgentService:
     def mark_telegram_connected(self):
         return self.telegram_delivery.mark_telegram_connected()
 
-    def can_resume_read_checkpoint(self, work_id, checkpoint):
+    def can_judge_read_checkpoint(self, work_id, _checkpoint):
         """Use the foreground Work's existing Stop, owner-wait and effect rules."""
         job = self.store.job(work_id)
         if not job or prep.preparation_of(job.get('request_key')) or self.work_stopped(work_id):
             return False
-        from .work_download import staged_checkpoint_available
-        if work_mode.active(self.store) or not staged_checkpoint_available(self.store, checkpoint):
-            return False
         if not self.may_continue(work_id, 'resume', owner_waits=bool(self.work_waits_for_owner(job)))[0]:
             return False
         return self.may_continue(work_id, 'redelegate')[0]
+
+    def can_resume_read_checkpoint(self, work_id, checkpoint):
+        from .work_download import staged_checkpoint_available
+        return (not work_mode.active(self.store) and staged_checkpoint_available(self.store, checkpoint)
+                and self.can_judge_read_checkpoint(work_id, checkpoint))
 
     def recover_interrupted_work(self):
         """Recover verified read checkpoints and settle other interrupted Works."""
