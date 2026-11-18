@@ -1,0 +1,396 @@
+{
+  "version": "recall-heldout/1",
+  "base_digest": "f1b603b07a85e8595c9082993982105cc5819ab4cc1d99d795cf56b99a49535d",
+  "additions_digest": "81c082a4bc8838e721b3a8c04e6a9904f66700dd5007553eeebb074a6b6444f9",
+  "rows": [
+    {
+      "ref": "t5c-quillrest",
+      "key": "profile.v5.zq.k00",
+      "content": "Quillrest cradle: its felt pad stays wrapped in linen tape."
+    },
+    {
+      "ref": "t5c-loupe",
+      "key": "profile.v5.zq.k01",
+      "content": "Jeweler loupe lens gets a microfiber wipe before every appraisal."
+    },
+    {
+      "ref": "t5c-darning",
+      "key": "profile.v5.zq.k02",
+      "content": "Darning egg sits in the mending tin beside spare buttons."
+    },
+    {
+      "ref": "t5c-chalkline",
+      "key": "profile.v5.zq.k03",
+      "content": "Chalk line reel gets refilled with blue chalk after each framing job."
+    },
+    {
+      "ref": "t5c-onggi",
+      "key": "profile.v5.zq.k04",
+      "content": "옹기단지 숨구멍은 겨울 전에 들기름으로 문질러 둔다."
+    },
+    {
+      "ref": "t5c-hanji",
+      "key": "profile.v5.zq.k05",
+      "content": "한지등갓 찢어진 틈은 쌀풀로 덧붙인다."
+    },
+    {
+      "ref": "t5c-bamboomat",
+      "key": "profile.v5.zq.k06",
+      "content": "대자리 결 사이 먼지는 칫솔로 쓸어낸다."
+    },
+    {
+      "ref": "t5c-brassbowl",
+      "key": "profile.v5.zq.k07",
+      "content": "놋그릇 얼룩은 기왓장 가루로 문질러 광을 낸다."
+    },
+    {
+      "ref": "t5c-whetstone",
+      "key": "profile.v5.zq.k08",
+      "content": "숫돌 평면은 사포 위에 물을 뿌리고 원을 그리며 고른다."
+    },
+    {
+      "ref": "t5c-strawmat",
+      "key": "profile.v5.zq.k09",
+      "content": "맷방석 짚 올이 풀리면 삼끈으로 엮어 맨다."
+    },
+    {
+      "ref": "t5c-brazier",
+      "key": "profile.v5.zq.k10",
+      "content": "화로 잿더미는 완전히 식은 뒤 철제 통에 모은다."
+    },
+    {
+      "ref": "t5c-mortar",
+      "key": "profile.v5.zq.k11",
+      "content": "절구 공이는 쓰고 나면 거꾸로 세워 말린다."
+    },
+    {
+      "ref": "t5c-kettle",
+      "key": "profile.v5.zq.k12",
+      "content": "주전자 바닥 물때는 구연산 가루로 불려 닦는다."
+    },
+    {
+      "ref": "t5c-barrow",
+      "key": "profile.v5.zq.k13",
+      "content": "외바퀴수레 바람통은 두 주마다 확인한다."
+    },
+    {
+      "ref": "t5c-hourglass",
+      "key": "profile.v5.zq.k14",
+      "content": "모래시계는 삼 분짜리로 부엌 창가에 둔다."
+    },
+    {
+      "ref": "t5c-pedometer",
+      "key": "profile.v5.zq.k15",
+      "content": "만보기는 주머니가 아니라 허리띠 왼쪽에 찬다."
+    },
+    {
+      "ref": "t5c-colander",
+      "key": "profile.v5.zq.k16",
+      "content": "Colander hangs from hooks above our stove."
+    },
+    {
+      "ref": "t5c-thermos",
+      "key": "profile.v5.zq.k17",
+      "content": "Thermos flask silicone seal gets replaced each autumn."
+    },
+    {
+      "ref": "t5c-ironboard",
+      "key": "profile.v5.zq.k18",
+      "content": "다리미판 커버천은 계절마다 세탁기로 빤다."
+    },
+    {
+      "ref": "t5c-dehumid",
+      "key": "profile.v5.zq.k19",
+      "content": "Dehumidifier bucket gets emptied before bedtime."
+    },
+    {
+      "ref": "t5c-knitting",
+      "key": "profile.v5.zq.k20",
+      "content": "털실 바구니 속 대바늘은 굵기별로 노끈으로 묶어 둔다."
+    },
+    {
+      "ref": "t5c-snorkel",
+      "key": "profile.v5.zq.k21",
+      "content": "Snorkel mask band: loosen two notches prior to storing."
+    },
+    {
+      "ref": "t5c-pickleball",
+      "key": "profile.v5.zq.k22",
+      "content": "Pickleball edgeguard gets checked weekly."
+    },
+    {
+      "ref": "t5c-lantern",
+      "key": "profile.v5.zq.k23",
+      "content": "Lantern wick was trimmed after the last camping trip."
+    }
+  ],
+  "cases": [
+    {
+      "id": "h5c-quillrest",
+      "split": "heldout",
+      "kind": "cross-language",
+      "query": "깃펜받침대 펠트덧댐 감싸개 종류?",
+      "needed": [
+        "t5c-quillrest"
+      ],
+      "traps": [],
+      "note": "[author:claude] [fresh] [cut] Older target outside the newest candidate window and alphabetical fill."
+    },
+    {
+      "id": "h5c-loupe",
+      "split": "heldout",
+      "kind": "cross-language",
+      "query": "보석감정용 확대경알 청소천?",
+      "needed": [
+        "t5c-loupe"
+      ],
+      "traps": [],
+      "note": "[author:claude] [fresh] [cut] Older target outside the newest candidate window and alphabetical fill."
+    },
+    {
+      "id": "h5c-darning",
+      "split": "heldout",
+      "kind": "cross-language",
+      "query": "양말깁기용 나무알 넣어두는 깡통?",
+      "needed": [
+        "t5c-darning"
+      ],
+      "traps": [],
+      "note": "[author:claude] [fresh] [cut] Older target outside the newest candidate window and alphabetical fill."
+    },
+    {
+      "id": "h5c-chalkline",
+      "split": "heldout",
+      "kind": "cross-language",
+      "query": "먹줄통 분필가루 보충시점?",
+      "needed": [
+        "t5c-chalkline"
+      ],
+      "traps": [],
+      "note": "[author:claude] [fresh] [cut] Older target outside the newest candidate window and alphabetical fill."
+    },
+    {
+      "id": "h5c-onggi",
+      "split": "heldout",
+      "kind": "cross-language",
+      "query": "Earthenware crock breathing pores winter oiling?",
+      "needed": [
+        "t5c-onggi"
+      ],
+      "traps": [],
+      "note": "[author:claude] [fresh] [cut] Older target outside the newest candidate window and alphabetical fill."
+    },
+    {
+      "id": "h5c-hanji",
+      "split": "heldout",
+      "kind": "cross-language",
+      "query": "Mulberry lampshade tear patching paste?",
+      "needed": [
+        "t5c-hanji"
+      ],
+      "traps": [],
+      "note": "[author:claude] [fresh] [cut] Older target outside the newest candidate window and alphabetical fill."
+    },
+    {
+      "id": "h5c-bamboomat",
+      "split": "heldout",
+      "kind": "cross-language",
+      "query": "Bamboo summer sleeping slat grime removal?",
+      "needed": [
+        "t5c-bamboomat"
+      ],
+      "traps": [],
+      "note": "[author:claude] [fresh] [cut] Older target outside the newest candidate window and alphabetical fill."
+    },
+    {
+      "id": "h5c-brassbowl",
+      "split": "heldout",
+      "kind": "cross-language",
+      "query": "Brassware tarnish polishing grit?",
+      "needed": [
+        "t5c-brassbowl"
+      ],
+      "traps": [],
+      "note": "[author:claude] [fresh] [cut] Older target outside the newest candidate window and alphabetical fill."
+    },
+    {
+      "id": "h5c-whetstone",
+      "split": "heldout",
+      "kind": "paraphrase",
+      "query": "숫돌을 평평하게 되살리기?",
+      "needed": [
+        "t5c-whetstone"
+      ],
+      "traps": [],
+      "note": "[author:claude] [fresh] [particle] [cut] The query word carries a particle; the stored noun is bare."
+    },
+    {
+      "id": "h5c-strawmat",
+      "split": "heldout",
+      "kind": "paraphrase",
+      "query": "맷방석이 해어지면 보수재료?",
+      "needed": [
+        "t5c-strawmat"
+      ],
+      "traps": [],
+      "note": "[author:claude] [fresh] [particle] [cut] The query word carries a particle; the stored noun is bare."
+    },
+    {
+      "id": "h5c-brazier",
+      "split": "heldout",
+      "kind": "paraphrase",
+      "query": "화로에서 꺼낸 잿가루 처리법?",
+      "needed": [
+        "t5c-brazier"
+      ],
+      "traps": [],
+      "note": "[author:claude] [fresh] [particle] [cut] The query word carries a particle; the stored noun is bare."
+    },
+    {
+      "id": "h5c-mortar",
+      "split": "heldout",
+      "kind": "paraphrase",
+      "query": "절구에 찧고 공이건조법?",
+      "needed": [
+        "t5c-mortar"
+      ],
+      "traps": [],
+      "note": "[author:claude] [fresh] [particle] [cut] The query word carries a particle; the stored noun is bare."
+    },
+    {
+      "id": "h5c-kettle",
+      "split": "heldout",
+      "kind": "paraphrase",
+      "query": "주전자에 하얗게 낀 침전물 세척제?",
+      "needed": [
+        "t5c-kettle"
+      ],
+      "traps": [],
+      "note": "[author:claude] [fresh] [particle] [cut] The query word carries a particle; the stored noun is bare."
+    },
+    {
+      "id": "h5c-barrow",
+      "split": "heldout",
+      "kind": "paraphrase",
+      "query": "외바퀴수레로 짐 옮기기 앞서 바람점검주기?",
+      "needed": [
+        "t5c-barrow"
+      ],
+      "traps": [],
+      "note": "[author:claude] [fresh] [particle] [cut] The query word carries a particle; the stored noun is bare."
+    },
+    {
+      "id": "h5c-hourglass",
+      "split": "heldout",
+      "kind": "paraphrase",
+      "query": "잘록한 유리관 알갱이 낙하식 시간측정기 위치?",
+      "needed": [
+        "t5c-hourglass"
+      ],
+      "traps": [],
+      "note": "[author:claude] [fresh] [cut] Older target outside the newest candidate window and alphabetical fill."
+    },
+    {
+      "id": "h5c-pedometer",
+      "split": "heldout",
+      "kind": "paraphrase",
+      "query": "걸음수 헤아리는 소형기계 착용부위?",
+      "needed": [
+        "t5c-pedometer"
+      ],
+      "traps": [],
+      "note": "[author:claude] [fresh] [cut] Older target outside the newest candidate window and alphabetical fill."
+    },
+    {
+      "id": "h5c-colander",
+      "split": "heldout",
+      "kind": "paraphrase",
+      "query": "Pasta draining perforated bowl hanging spot?",
+      "needed": [
+        "t5c-colander"
+      ],
+      "traps": [],
+      "note": "[author:claude] [fresh] [cut] Older target outside the newest candidate window and alphabetical fill."
+    },
+    {
+      "id": "h5c-thermos",
+      "split": "heldout",
+      "kind": "paraphrase",
+      "query": "Vacuum bottle gasket swap timing?",
+      "needed": [
+        "t5c-thermos"
+      ],
+      "traps": [],
+      "note": "[author:claude] [fresh] [cut] Older target outside the newest candidate window and alphabetical fill."
+    },
+    {
+      "id": "h5c-ironboard",
+      "split": "heldout",
+      "kind": "paraphrase",
+      "query": "옷주름 펴는 받침대 천커버 세탁시기?",
+      "needed": [
+        "t5c-ironboard"
+      ],
+      "traps": [],
+      "note": "[author:claude] [fresh] [cut] Older target outside the newest candidate window and alphabetical fill."
+    },
+    {
+      "id": "h5c-dehumid",
+      "split": "heldout",
+      "kind": "paraphrase",
+      "query": "Moisture extracting appliance reservoir dumping hour?",
+      "needed": [
+        "t5c-dehumid"
+      ],
+      "traps": [],
+      "note": "[author:claude] [fresh] [cut] Older target outside the newest candidate window and alphabetical fill."
+    },
+    {
+      "id": "h5c-knitting",
+      "split": "heldout",
+      "kind": "short-follow-up",
+      "query": "그건 어떤식으로 보관했었지?",
+      "needed": [
+        "t5c-knitting"
+      ],
+      "traps": [],
+      "note": "[author:claude] [fresh] [cut] Older target outside the newest candidate window and alphabetical fill.",
+      "context": "뜨개질 연장 얘기로 돌아가자."
+    },
+    {
+      "id": "h5c-snorkel",
+      "split": "heldout",
+      "kind": "short-follow-up",
+      "query": "Elastic tightness while packing?",
+      "needed": [
+        "t5c-snorkel"
+      ],
+      "traps": [],
+      "note": "[author:claude] [fresh] [cut] Older target outside the newest candidate window and alphabetical fill.",
+      "context": "Underwater goggles again."
+    },
+    {
+      "id": "h5c-pickleball",
+      "split": "heldout",
+      "kind": "lexical-control",
+      "query": "pickleball edgeguard",
+      "needed": [
+        "t5c-pickleball"
+      ],
+      "traps": [],
+      "note": "[author:claude] [fresh] Lexical control: the request words are in the fact."
+    },
+    {
+      "id": "h5c-lantern",
+      "split": "heldout",
+      "kind": "harm-control",
+      "query": "favorite lantern hue?",
+      "needed": [],
+      "traps": [],
+      "note": "[author:claude] [fresh] [incidental-noise] Harm control: a lexical lure that does not answer the question.",
+      "irrelevant": [
+        "t5c-lantern"
+      ]
+    }
+  ]
+}

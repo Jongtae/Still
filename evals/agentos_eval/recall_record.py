@@ -13,7 +13,7 @@ from unittest import mock
 
 from . import recall_pairs as pairs
 from .recall_regression import (FLAGS, TERMS_VERSION, PLAN_VERSION, Executor, fixture_scope,
-    raw_row, digest, filter_digest, terms_prompt_digest, safe_catalogue, prompt_digest, layer, seed_fixture,
+    raw_row, digest, filter_digest, terms_prompt_digest, safe_catalogue, prompt_digest, layer, compose, seed_fixture,
     apply_terms, validate_terms, validate_plans, terms_status_counts, load_recording)
 
 
@@ -269,7 +269,10 @@ def write_recordings(args, terms, plans, cap, phase_counts, *, failure, stop, id
     plans['runs'] = {str(r):{c['id']:plans['runs'][str(r)][c['id']]
         for rr,c in order if rr==r and c['id'] in plans['runs'].get(str(r),{})}
         for r in range(1,args.heldout_runs+1) if plans['runs'].get(str(r))}
-    plans['complete'] = failure is None and evidence != 'dry-run (no model call)'
+    split = getattr(args,'splits','all')
+    plans['complete'] = failure is None and evidence != 'dry-run (no model call)' and split == 'all'
+    if split != 'all' and failure is None and stop is None:
+        stop = dict(reason=f'{split} split only; the other split not recorded')
     plans['identity'] = identity
     session = dict(max_calls=cap.max_calls,admitted=cap.used,refused=int(cap.refused),
         reached=cap.used>=cap.max_calls if cap.max_calls else False,by_phase=dict(phase_counts),stop_reason=failure,
@@ -300,21 +303,33 @@ def record(args, *, factory=None, sandbox_factory=None, requalify=None):
     seed = validate_start(args)
     base = pairs.load(args.fixture)
     additions = json.loads(Path(args.additions).read_text())
-    data = layer(base,additions)
-    order = run_order(base,additions,args.heldout_runs)
+    heldout = json.loads(Path(args.heldout_layer).read_text()) if getattr(args,'heldout_layer',None) else None
+    data = compose(base,additions,heldout)
+    # A fresh held-out layer replaces the base held-out cases in the run order too.
+    order_base = dict(base,cases=[c for c in base['cases'] if c['split']=='dev'] + heldout['cases']) if heldout else base
+    order = run_order(order_base,additions,args.heldout_runs)
     dry_run = getattr(args,'dry_run',False)
     if dry_run:
         order = dry_run_order(order,additions,args.dry_run_cases)
+    splits = getattr(args,'splits','all')
+    if splits != 'all':
+        # Dev first (#827): record one split; --resume adds the other later.
+        order = [(r,c) for r,c in order if c['split']==splits]
     terms,resume = load_inputs(args,data,order)
+    # Terms of an earlier composition: apply them to the rows it shares, key only the rest live.
+    terms_base = load_recording(args.terms_base) if getattr(args,'terms_base',None) else None
+    if terms_base is not None and (terms is not None or heldout is None):
+        raise ValueError('--terms-base needs --heldout-layer and replaces --terms')
     reused = terms is not None
     cap = judgments.CallCap(0 if dry_run else args.max_calls)
     # Adopt SandboxPool's per-seed qualification cache and stable slot path,
     # without starting its server/ports. Relocating a strict CLI binding would
     # otherwise force qualification again on every resume.
-    anchor = getattr(args,'resume',None) or getattr(args,'terms',None)
+    # --terms-base binds to its recording's sandbox too: the route qualification does not depend on the fixture.
+    anchor = getattr(args,'resume',None) or getattr(args,'terms',None) or getattr(args,'terms_base',None)
     anchor = Path(anchor).expanduser().resolve().parent if anchor else Path(args.out).expanduser().resolve()
-    cache_key = ((resume or {}).get('sandbox_cache_key') or
-                 (terms or {}).get('sandbox_cache_key') or digest(str(anchor)))
+    cache_key = ((resume or {}).get('sandbox_cache_key') or (terms or {}).get('sandbox_cache_key') or
+                 (terms_base or {}).get('sandbox_cache_key') or digest(str(anchor)))
     if not isinstance(cache_key,str) or not re.fullmatch('[0-9a-f]{64}',cache_key):
         raise ValueError('Invalid sandbox cache key')
     pool = SandboxPool(size=1,seed=seed,
@@ -396,6 +411,12 @@ def record(args, *, factory=None, sandbox_factory=None, requalify=None):
             if reused:
                 apply_terms(service.store,data,terms,refs)
             else:
+                if terms_base is not None:
+                    # The shared rows keep the earlier composition's recorded terms (guarded writes);
+                    # the product's terms pass then keys only the rows it never saw.
+                    apply_terms(service.store,layer(base,additions),terms_base,refs)
+                    terms['terms_base'] = dict(digest=digest(terms_base),fixture_digest=terms_base['fixture_digest'],
+                        reused_rows=len(terms_base['rows']))
                 record_terms(service,data,refs,cap,blocked=cap.refused,progress=terms,dry_run=dry_run)
         phase_counts['terms'] = 0 if reused else terms['calls']
         runtime = judgments.effective_runtime(service,audit)
