@@ -2766,6 +2766,20 @@ class QuickStore:
                    (work_id, epoch, json.dumps(value)))
         return True
 
+    def rebind_read_checkpoint(self, work_id, *, epoch):
+        """Move verified progress to the claimed owner continuation's epoch."""
+        if type(epoch) is not int:
+            return False
+        with self.db() as db:
+            db.execute('BEGIN IMMEDIATE')
+            if (not self.read_checkpoint_can_settle(work_id, epoch, db=db)
+                    or self._read_checkpoint_stopped(db, work_id)):
+                return False
+            return bool(db.execute(
+                'UPDATE work_read_checkpoints SET epoch=? WHERE job_id=? AND resume_pending=0 AND epoch<?',
+                (epoch, work_id, epoch),
+            ).rowcount)
+
     def _read_checkpoint_ready(self, db, work_id, checkpoint, predicate, *, expected_epoch):
         """Check eligibility and spending limits before admitting checkpoint work."""
         from .agent_runtime import WORK_MODEL_TURNS, WORK_TOOL_ATTEMPTS

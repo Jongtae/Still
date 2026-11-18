@@ -284,32 +284,121 @@ class TestReadWorkEntryIntegration1007(handoff.HandoffTestCase):
         self.assertEqual(self.wire.offsets, [0, 4, 8])
         self.assertEqual(self.staged(job), DATA)
 
+    def pause_completed_download(self, job):
+        service = self.service
+        work_budget = service.work_budget
+        budgets = []
+
+        def limited_budget(work_id):
+            budget = work_budget(work_id)
+            budget.attempts = 3
+            budgets.append(budget)
+            return budget
+
+        self.plan = [fetch(0), fetch(4), fetch(8), fetch(len(DATA))]
+        self.text = 'The download finished before the budget boundary.'
+        with patch.object(service, 'work_budget', limited_budget):
+            self.assertTrue(service.run_one())
+        self.assertEqual(self.store.job(job)['status'], 'partial')
+        self.assertEqual(self.staged(job), DATA)
+        checkpoint = self.store.read_checkpoint(job)
+        self.assertEqual(checkpoint['received'], checkpoint['total'])
+        old_budget, = budgets
+        self.assertFalse(old_budget.ledger.counts()['active'])
+        return old_budget, checkpoint
+
+    def continue_download(self, job):
+        offer = self.service.budget_continue_offer(job)
+        self.assertEqual(offer['state'], 'offered')
+        self.assertTrue(self.service.budget_continue_decision({'work_id': job, 'nonce': offer['nonce']})['resumed'])
+        self.text = ANSWER
+        self.plan = [fetch(len(DATA)), ('public_download', {'operation': 'preview', 'offset': 0})]
+        self.claim_completion()
+
+    def assert_completed_continuation(self, job, checkpoint):
+        finished = self.store.job(job)
+        self.assertEqual(finished['status'], 'succeeded')
+        self.assertEqual(finished['goal_outcome'], 'reached')
+        self.assertIn(ANSWER, finished['response'])
+        rebound = self.store.read_checkpoint(job)
+        self.assertGreater(rebound['epoch'], checkpoint['epoch'])
+        self.assertEqual({**rebound, 'epoch': checkpoint['epoch']}, checkpoint)
+        self.assertTrue(any(
+            row['epoch'] == rebound['epoch'] and row['result'] and json.loads(row['result'])['outcome'] == 'yes'
+            for row in self.rows('work_read_judgments', job)
+        ))
+        self.assertEqual(self.wire.offsets, [0, 4, 8])
+
+    def test_budget_continue_judges_completed_download_and_refuses_old_commit(self):
+        job = self.enqueue('read-budget-completed')
+        service = self.service
+        transport = service.adapter.transport
+        reserved, release = threading.Event(), threading.Event()
+        pending = None
+
+        def late_decision():
+            reserved.set()
+            if not release.wait(timeout=10):
+                raise WorkerReleased()
+            return {'outcome': 'yes', 'value': 'stale judgment'}
+
+        def reserve_before_pause(*args, **kwargs):
+            nonlocal pending
+            checkpoint = self.store.read_checkpoint(job)
+            if pending is None and checkpoint and checkpoint['received'] == len(DATA):
+                pending = pool.submit(
+                    service.read_checkpoint_judgment, job, 'goal-reached', {'owner_request': REQUEST},
+                    service.read_checkpoint_note({'id': job}, include_fresh=True), late_decision,
+                    budget=service.current_decision_budget(),
+                )
+                self.assertTrue(reserved.wait(timeout=10))
+            return transport(*args, **kwargs)
+
+        with ThreadPoolExecutor(max_workers=1) as pool:
+            try:
+                with patch.object(service.adapter, 'transport', reserve_before_pause):
+                    old_budget, checkpoint = self.pause_completed_download(job)
+                stale_run = WorkRun(self.store.job(job), self.context_clock())
+                stale_run.work_budget = old_budget
+                self.continue_download(job)
+                checked = []
+
+                def finish_stale_worker(*args, **kwargs):
+                    if not checked:
+                        epoch = service.current_decision_budget().ledger.epoch
+                        self.assertGreater(epoch, old_budget.ledger.epoch)
+                        self.assertEqual(self.store.read_checkpoint(job)['epoch'], epoch)
+                        before = (self.store.job(job), self.rows('messages', job), self.rows('work_read_judgments', job))
+                        self.assertEqual(len(before[2]), 1)
+                        self.assertIsNone(before[2][0]['result'])
+                        release.set()
+                        self.assertIsNone(pending.result(timeout=10))
+                        self.assertIs(service._finish_work(stale_run), False)
+                        self.assertEqual(
+                            (self.store.job(job), self.rows('messages', job), self.rows('work_read_judgments', job)),
+                            before,
+                        )
+                        checked.append(True)
+                    return transport(*args, **kwargs)
+
+                with patch.object(service.adapter, 'transport', finish_stale_worker):
+                    self.assertTrue(service.run_one())
+                self.assertEqual(checked, [True])
+            finally:
+                release.set()
+        self.assert_completed_continuation(job, checkpoint)
+
     def test_budget_continue_retries_failed_early_budget_lookup(self):
         job = self.enqueue('read-budget-lookup-failure')
         service = self.service
         work_budget = service.work_budget
-
-        def limited_budget(work_id):
-            budget = work_budget(work_id)
-            budget.attempts = 1
-            return budget
-
-        self.plan = [fetch(0), fetch(4)]
-        self.text = 'The first range was read.'
-        with patch.object(service, 'work_budget', limited_budget):
-            self.assertTrue(service.run_one())
-        self.assertEqual(self.store.job(job)['status'], 'partial')
-        self.assertEqual(self.staged(job), DATA[:4])
-
-        offer = service.budget_continue_offer(job)
-        self.assertTrue(service.budget_continue_decision({'work_id': job, 'nonce': offer['nonce']})['resumed'])
+        _, checkpoint = self.pause_completed_download(job)
+        self.continue_download(job)
         claimed = service._claim_queued_work()
         self.assertEqual(claimed['id'], job)
         self.assertNotIn('read_checkpoint_resume', claimed)
         self.assertEqual(self.store.job(job)['status'], 'running')
 
-        self.text = ANSWER
-        self.finish_script()
         with patch.object(service, 'work_budget', wraps=work_budget) as lookup:
             def fail_first_lookup(work_id):
                 if lookup.call_count == 1:
@@ -319,7 +408,32 @@ class TestReadWorkEntryIntegration1007(handoff.HandoffTestCase):
             lookup.side_effect = fail_first_lookup
             self.assertTrue(service.work_executor._run_claimed(claimed))
         self.assertGreaterEqual(lookup.call_count, 2)
-        self.assertEqual(self.store.job(job)['status'], 'succeeded')
+        self.assert_completed_continuation(job, checkpoint)
+
+    def test_rebind_requires_a_current_running_unstopped_writer(self):
+        job = self.enqueue('read-budget-rebind-refused')
+        service = self.service
+        old_budget, checkpoint = self.pause_completed_download(job)
+        self.continue_download(job)
+        admitted = service.work_budget(job).ledger
+        self.assertGreater(admitted.epoch, checkpoint['epoch'])
+        self.assertEqual(self.store.job(job)['status'], 'queued')
+        self.assertFalse(self.store.rebind_read_checkpoint(job, epoch=admitted.epoch))
+        self.assertEqual(self.store.read_checkpoint(job), checkpoint)
+
+        self.assertEqual(service._claim_queued_work()['id'], job)
+        self.assertEqual(self.store.job(job)['status'], 'running')
+        # Budget renewal advances the ledger before the reopen. Even an
+        # intermediate epoch newer than the checkpoint is a stale writer.
+        stale_epoch = admitted.epoch - 1
+        self.assertGreater(stale_epoch, old_budget.ledger.epoch)
+        self.assertFalse(self.store.rebind_read_checkpoint(job, epoch=stale_epoch))
+        self.assertEqual(self.store.read_checkpoint(job), checkpoint)
+
+        self.store.put(WORK_STOP_KEY, [job])
+        self.assertTrue(service.work_stopped(job))
+        self.assertFalse(self.store.rebind_read_checkpoint(job, epoch=admitted.epoch))
+        self.assertEqual(self.store.read_checkpoint(job), checkpoint)
 
     def test_duplicate_claim_after_restart_preserves_identity_scope_and_budget(self):
         job = self.enqueue()

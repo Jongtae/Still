@@ -182,8 +182,9 @@ class WorkExecutor:
         if 'read_checkpoint_resume' not in job and service.store.read_checkpoint(job['id']):
             try:
                 budget = service.work_budget(job['id'])
+                service.store.rebind_read_checkpoint(job['id'], epoch=budget.ledger.epoch)
             except Exception as exc:
-                LOG.warning('early work budget lookup failed job=%s kind=%s',job['id'],type(exc).__name__)
+                LOG.warning('early checkpoint admission failed job=%s kind=%s',job['id'],type(exc).__name__)
                 return self._execute_claimed(job, budget=None, retry_budget=True)
 
         def epoch():
@@ -208,6 +209,7 @@ class WorkExecutor:
                         # can admit writes, including the ledger's own write.
                         if retry_budget:
                             run.work_budget=service.work_budget(job['id'])
+                            service.store.rebind_read_checkpoint(job['id'], epoch=run.work_budget.ledger.epoch)
                             writer_scope.enter_context(service.store.read_checkpoint_writer(
                                 job['id'],run.work_budget.ledger.epoch))
                         if service.fold_delivered_steer(job):return True
