@@ -6307,7 +6307,7 @@ def run_agent(adapter,config,key,history,system,capabilities,record,scope='main'
    except ToolError as stop:
     record('model','stopped',json.dumps({'scope':scope,'code':stop.code,'reason':str(stop)},ensure_ascii=False))
     return _budget_end(stop,executions,sources,successful,incomplete,verified,config,actual,draft)
-   messages=[{k:v for k,v in m.items() if k!='reasoning_details'} for m in messages]
+   messages=[{k:v for k,v in m.items() if k not in ('reasoning_details','openai_reasoning')} for m in messages]
    model_options={'report_observed':True}
    if images:model_options['images']=images
    message,actual=adapter.tool_turn(active_config,key,messages,definitions,**model_options)

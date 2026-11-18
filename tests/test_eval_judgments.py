@@ -20,6 +20,7 @@ s = j.load_still(ROOT / 'src')
 d = s.decision
 from personal_agent.providers import ModelAdapter, ProviderError
 from test_decision_routes import ServiceFixture, careless, oracle, parse_prompt, schema_answer
+from test_openai_responses_994 import responses_reply
 
 
 class Clock:
@@ -65,8 +66,8 @@ class Transport:
             raise ProviderError('fixture offline')
         if self.mode == 'timeout':
             raise ProviderError('fixture timeout', status='timeout')
-        schema = body['tools'][0]['function']['parameters']
-        purpose, facts = parse_prompt(body['messages'][-1]['content'])
+        schema = body['tools'][0]['parameters']
+        purpose, facts = parse_prompt(body['input'][-1]['content'])
         if self.mode == 'malformed':
             result = {'unexpected': 'bad'}
         elif self.scripted:
@@ -83,8 +84,9 @@ class Transport:
         if self.mode == 'malformed':
             result = {'unexpected': 'bad'}
         result = {**result, 'confidence': 0.99}
-        return {'model': 'gpt-4o-mini', 'choices': [{'message': {'role': 'assistant', 'tool_calls': [
-            {'id': 'fixture-call', 'type': 'function', 'function': {'name': 'decide', 'arguments': json.dumps(result)}}]}}]}
+        return responses_reply({'role': 'assistant', 'tool_calls': [
+            {'id': 'fixture-call', 'type': 'function', 'function': {'name': 'decide', 'arguments': json.dumps(result)}}]},
+            'gpt-4o-mini')
 
 
 def engine(transport, audit, cap=None):
@@ -149,7 +151,7 @@ class JudgmentTests(unittest.TestCase):
         cases['cases'] = copy.deepcopy(cases['cases'])
         cases['cases'][0]['input']['owner_context'] = context
         _, transport, _ = self.measure(cases)
-        rendered = transport.calls[0]['messages'][-1]['content']
+        rendered = transport.calls[0]['input'][-1]['content']
         self.assertIn('\nowner_context: ' + context + '\n', rendered)
         # This is the same fact the production orchestrator passes.
         orch = s.orchestrator.Orchestration(None, s.orchestrator.Catalogue(**cases['catalogue']),
@@ -157,7 +159,7 @@ class JudgmentTests(unittest.TestCase):
         self.assertEqual(context, orch._owner_context())
         # Optional omission still yields the caller's original default.
         _, transport, _ = self.measure(subset(self.cases, 'goal-served'))
-        _, facts = parse_prompt(transport.calls[0]['messages'][-1]['content'])
+        _, facts = parse_prompt(transport.calls[0]['input'][-1]['content'])
         self.assertEqual(facts['owner_context'], 'none')
 
     def test_plan_reading_delivery_uses_the_measured_callers_signature(self):
@@ -181,7 +183,7 @@ class JudgmentTests(unittest.TestCase):
                 self.assertEqual(row['outcome'], 'decided')
                 self.assertEqual(row['plan_reading_delivered'], delivered)
                 self.assertEqual(len(transport.calls), 1)
-                _, facts = parse_prompt(transport.calls[0]['messages'][-1]['content'])
+                _, facts = parse_prompt(transport.calls[0]['input'][-1]['content'])
                 if delivered:
                     self.assertEqual(facts['plan_reading'], reading)
                 else:
@@ -232,9 +234,9 @@ class JudgmentTests(unittest.TestCase):
                 self.assertEqual(row['semantic_correct'], actual == question)
                 self.assertEqual(row['error'], 'none' if actual == question else 'wrong_choice')
                 self.assertEqual(row['observed']['ask_location'], 'nonempty' if actual else 'empty')
-                _, facts = parse_prompt(transport.calls[0]['messages'][-1]['content'])
+                _, facts = parse_prompt(transport.calls[0]['input'][-1]['content'])
                 self.assertEqual(facts['owner_profile'], selected['cases'][0]['input']['owner_context'])
-                schema = transport.calls[0]['tools'][0]['function']['parameters']
+                schema = transport.calls[0]['tools'][0]['parameters']
                 self.assertIn('ask_location', schema['required'])
 
     def test_926_direct_reply_expectation_scores_both_directions(self):
@@ -256,7 +258,7 @@ class JudgmentTests(unittest.TestCase):
                 self.assertEqual(row['observed']['direct_reply'], actual)
                 self.assertEqual(row['semantic_correct'], actual == expected)
                 self.assertEqual(row['error'], 'none' if actual == expected else 'wrong_choice')
-                _, facts = parse_prompt(transport.calls[0]['messages'][-1]['content'])
+                _, facts = parse_prompt(transport.calls[0]['input'][-1]['content'])
                 self.assertEqual(facts['owner_profile'], case['input']['owner_context'])
                 prepared = case['input'].get('prepared')
                 self.assertIn(f'prepared ({len(prepared)} chars)' if prepared else 'prepared (empty)',
@@ -274,7 +276,7 @@ class JudgmentTests(unittest.TestCase):
         cases['cases'][0]['input']['current_context'] = 'Now: 2026-11-17 09:24 KST'
         [case] = cases['cases']
         rows, transport, _ = self.measure(cases, scripted=[planned(case['expect'])])
-        _, facts = parse_prompt(transport.calls[0]['messages'][-1]['content'])
+        _, facts = parse_prompt(transport.calls[0]['input'][-1]['content'])
         self.assertIn('2026-11-17 09:24', facts['current_context'])
 
     def test_202_cases_validate_and_plan_with_optional_fields(self):

@@ -839,13 +839,17 @@ class AgentService:
         #: #749: the Settings login window's observed outcome (in memory; a restart forgets it).
         self._settings_login=None
         self._signin_view,self._signin_view_refreshing={},False
-        self.worker_lock=threading.Lock()
         # #970 D1: each claimed Work runs in a lane off the work loop, which only dispatches.
         # The registry holds a Work id from its claim until its tail (``_after_work``) finished;
         # the loop's per-Work passes (deliveries, sweeps, settlements) leave such a Work alone.
         self.work_lanes_held={}
+        self.steer_messages=set()
         self.work_lanes_lock=threading.Lock()
-        self.work_lane_spawn=lambda target,name:threading.Thread(target=target,name=name,daemon=True).start()
+        # Read once per service lifetime; changing the setting takes effect on restart.
+        configured_lanes=self.store.config('work_lanes',3)
+        self.work_lanes=configured_lanes if type(configured_lanes) is int and configured_lanes>0 else 3
+        self._work_pool=None
+        self.work_lane_spawn=self._spawn_work_lane
         # #655: the owner's configured search providers, read at call time.
         # #678: the connected AI's own search runs over this service's model
         # transport, so an injected test transport is also the search wire.
@@ -5089,7 +5093,8 @@ class AgentService:
             self.preparations.connection_wait_notice(db,job['id'],message.lastrowid,now)
 
     def work_stopped(self, job_id):
-        """Did the owner Stop or cancel this running Work (#606 T1)?"""
+        """Did the owner Stop/cancel this Work, or shut down the service?"""
+        if self.stop.is_set():return True
         state=self.presence.get(job_id)
         if (state is not None and state.stopped) or work_stop_requested(self.store,job_id):
             return True
@@ -8448,6 +8453,31 @@ class AgentService:
             calls.append(call)
         return self.cli_host_actions({**meta,'tool_calls':calls})==()
 
+    def record_connector_overlap(self, db, job_id, tool, detail):
+        """#970: observed connection use by overlapping Works, never an admission lock.
+
+        Reuse the effect ledger's target identity; keep only IDs, not call arguments.
+        The caller owns the event transaction so simultaneous observations cannot miss each other.
+        """
+        from .agent_runtime import _call_target, TARGET_API, TARGET_CONNECTION
+        try:detail=json.loads(detail) if isinstance(detail,str) else detail
+        except (TypeError,ValueError):return
+        target=_call_target(tool,detail)
+        if not target or target[0] not in (TARGET_API,TARGET_CONNECTION):return
+        peers=set()
+        for row in db.execute("SELECT e.job_id,e.tool,e.detail FROM tool_events e JOIN jobs j ON j.id=e.job_id "
+                              "WHERE j.status='running' AND e.status='succeeded' AND e.job_id!=?",(job_id,)):
+            try:other=_call_target(row['tool'],json.loads(row['detail']))
+            except (TypeError,ValueError):continue
+            if other and other[:2]==target[:2]:peers.add(row['job_id'])
+        for peer in sorted(peers):
+            receipt={'other_work_id':peer,'kind':target[0],'identity':target[1]}
+            encoded=json.dumps(receipt,sort_keys=True)
+            if not db.execute("SELECT 1 FROM tool_events WHERE job_id=? AND tool='connector_overlap' AND detail=?",
+                              (job_id,encoded)).fetchone():
+                db.execute('INSERT INTO tool_events(job_id,tool,status,detail,created) VALUES (?,?,?,?,?)',
+                           (job_id,'connector_overlap','observed',encoded,time.time()))
+
     def record_connector_calls(self, job_id, calls, engine=None):
         """Record the AI-side calls a worker's own stream shows, and fail closed on one Still never allowed.
 
@@ -8495,6 +8525,7 @@ class AgentService:
                 observed.append(detail)
                 event=db.execute('INSERT INTO tool_events(job_id,tool,status,detail,created) VALUES (?,?,?,?,?)',
                                  (job_id,'connector_read',call['status'],json.dumps(detail,ensure_ascii=False),time.time()))
+                if call['status']=='succeeded':self.record_connector_overlap(db,job_id,'connector_read',detail)
                 if decided:observations.append((event.lastrowid,detail,call['status']))
                 if call['status']=='succeeded' and not decided:
                     undecided.append(detail['evidence'])
@@ -9345,17 +9376,26 @@ class AgentService:
         if self.intent_classifier.has_local_candidate(job.get('message')):return False
         commands=self.lane_work_ids(LANE_COMMAND)
         with self.store.db() as db:
+            db.execute('BEGIN IMMEDIATE')
+            current=db.execute("SELECT status FROM jobs WHERE id=?",(task_id,)).fetchone()
+            if not current or current['status']!='queued':return False
             rows=db.execute("SELECT id FROM jobs WHERE status='running' AND chat_id IS ? AND channel=? AND id!=? ORDER BY created DESC",
                             (job.get('chat_id'),job.get('channel'),task_id)).fetchall()
-        running=next((row['id'] for row in rows if row['id'] not in commands),None)
-        if running is None:return False
+            running=next((row['id'] for row in rows if row['id'] not in commands),None)
+            if running is None:return False
+            with self.side_answer_lock:
+                if task_id in self.steer_messages:return False
+                self.steer_messages.add(task_id)
         # #308 S1: the running Work's finish guard waits (bounded) for this judgment.
         with self.steer_judged:self.steer_judging[running]+=1
         def judge():
             try:self.judge_steer(running,task_id,text)
-            finally:self._steer_judgment_done(running)
+            finally:
+                with self.side_answer_lock:self.steer_messages.discard(task_id)
+                self._steer_judgment_done(running)
         try:self.steer_spawn(judge)
         except Exception:
+            with self.side_answer_lock:self.steer_messages.discard(task_id)
             self._steer_judgment_done(running)
             raise
         return True
@@ -9394,7 +9434,8 @@ class AgentService:
             return False
 
     def start_side_answer(self, running, task_id):
-        """Reserve one queued, independent owner turn; never acquire the worker lock."""
+        """Reserve one queued, independent owner turn on the single-lane rollback path."""
+        if self.work_lanes!=1:return False
         # Lock order matches claim: SQLite first, then the in-memory reservation.
         with self.store.db() as db:
             db.execute('BEGIN IMMEDIATE')
@@ -9657,8 +9698,23 @@ class AgentService:
     def sweep_after_work(self, now=None):
         return self.work_executor.sweep_after_work(now)
 
-    #: #970 D1: tool-capable Works that may run at once.  Slice 1 keeps one.
-    WORK_LANES=1
+    def _spawn_work_lane(self, target, name):
+        if name=='agentos-command-lane':
+            return threading.Thread(target=target,name=name,daemon=True).start()
+        from concurrent.futures import ThreadPoolExecutor
+        with self.work_lanes_lock:
+            if self._work_pool is None:
+                self._work_pool=ThreadPoolExecutor(max_workers=self.work_lanes,thread_name_prefix='agentos-work-lane')
+            pool=self._work_pool
+        return pool.submit(target)
+
+    def shutdown_work_lanes(self):
+        # Executor threads are joined at interpreter exit too. Signal the
+        # budget/CLI cancellation path before waiting, not just the dispatcher.
+        self.stop.set()
+        # Do not cancel claimed tasks: each must reach the ordinary terminal/fencing path.
+        with self.work_lanes_lock:pool=self._work_pool
+        if pool is not None:pool.shutdown(wait=True)
 
     def dispatch_work(self):
         """The work loop's dispatcher pass (#970): claimed Works run in lanes, never on this thread."""
@@ -9847,9 +9903,12 @@ class AgentService:
         def work():
             next_purge_check=0.0
             next_unknown_check=0.0
-            while not self.stop.is_set():
-                next_purge_check,next_unknown_check=self._work_iteration(next_purge_check,next_unknown_check)
-                self.stop.wait(.3)
+            try:
+                while not self.stop.is_set():
+                    next_purge_check,next_unknown_check=self._work_iteration(next_purge_check,next_unknown_check)
+                    self.stop.wait(.3)
+            finally:
+                self.shutdown_work_lanes()
         def poll():
             while not self.stop.is_set():
                 self.receive_telegram()

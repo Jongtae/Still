@@ -270,12 +270,14 @@ class SteeredRunTests(_RunCase):
         args = {'kind': 'prepare', 'goal': NEW_GOAL, 'due': prep.iso(self.clock[0] + 3600, 'UTC'), 'recurrence': 'daily'}
         with self.assertRaises(ToolError) as refused:
             schedule({**args, 'replaces': row['id']})
-        self.assertEqual(refused.exception.code, 'unattended_run')
+        # #938: an unsteered run of a qualifying line row is held to the piece rule, which refuses a replace.
+        self.assertEqual(refused.exception.code, 'line_piece_invalid')
         self.steer(run)
         for extra in ({'replaces': other['id']},):
             with self.subTest(extra=extra), self.assertRaises(ToolError) as refused:
                 schedule({**args, **extra})
-            self.assertEqual(refused.exception.code, 'unattended_run')
+            # #938: without ``replaces`` the call is a piece of the line, and this one (recurring) is no piece.
+            self.assertEqual(refused.exception.code, 'line_piece_invalid' if not extra else 'unattended_run')
         result = schedule({**args, 'replaces': row['id']})
         self.assertTrue(result['scheduled'], result)
         new = self.preps.get(result['preparation_id'])

@@ -200,7 +200,7 @@ class ProfileTests(unittest.TestCase):
         # #1572 review P2: the Work that waited holds the profile under its own name, not the keep-alive's.
         self.assertEqual(self.profile.occupancy(), 'work')
         with self.assertRaises(ToolError) as refused:
-            self.profile._acquire('work-2')  # any other holder is still refused at once
+            self.profile._acquire('work-2', wait_seconds=0)  # single-lane rollback remains fail-fast
         self.assertEqual(str(refused.exception), bs.BUSY_WORK_TEXT)
 
 

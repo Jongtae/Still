@@ -23,6 +23,7 @@ class Lanes(unittest.TestCase):
         self.addCleanup(self.temp.cleanup)
         self.store = QuickStore(self.temp.name)
         self.calls = []
+        self.store.put("work_lanes", 1)
 
         def transport(url, body, headers=None, timeout=60):
             self.calls.append(url)
@@ -45,6 +46,10 @@ class Lanes(unittest.TestCase):
     def status(self, work):
         return self.store.job(work)['status']
 
+    def finish(self, work):
+        with self.store.db() as db:
+            db.execute("UPDATE jobs SET status='succeeded' WHERE id=?", (work,))
+
     def run_lane(self, index=0):
         name, target = self.spawned.pop(index)
         target()
@@ -57,7 +62,9 @@ class OwnerFirstClaims(Lanes):
         second = self.background('scheduled check two', 'api-2')
         owner = self.owner('what is on today', 'owner-1')
         self.assertEqual(self.service._claim_queued_work()['id'], owner)
+        self.finish(owner)
         self.assertEqual(self.service._claim_queued_work()['id'], first)
+        self.finish(first)
         self.assertEqual(self.service._claim_queued_work()['id'], second)
         self.assertIs(self.service._claim_queued_work(), False)
 
@@ -70,6 +77,7 @@ class OwnerFirstClaims(Lanes):
         with self.store.db() as db:
             db.execute("UPDATE jobs SET relation_kind='retry',related_job_id=? WHERE id=?", (original, retry))
         self.assertEqual(self.service._claim_queued_work()['id'], retry)
+        self.finish(retry)
         self.assertEqual(self.service._claim_queued_work()['id'], background)
 
     def test_a_waiting_owner_work_holds_its_conversation_but_not_others(self):
@@ -79,8 +87,10 @@ class OwnerFirstClaims(Lanes):
         background = self.background('scheduled check', 'api-1')
         self.service.side_answer_flight.add(held)
         self.assertEqual(self.service._claim_queued_work()['id'], other)
+        self.finish(other)
         self.assertEqual(self.service._claim_queued_work()['id'], background)
         self.assertIs(self.service._claim_queued_work(), False, 'the second message never runs before the first')
+        self.finish(background)
         self.service.side_answer_flight.discard(held)
         self.assertEqual(self.service._claim_queued_work()['id'], held)
         self.assertEqual(self.status(behind), 'queued')
@@ -108,6 +118,7 @@ class CommandLane(Lanes):
         claimed = set()
         while (job := self.service._claim_queued_work(lanes=(LANE_WORK,))):
             claimed.add(job['id'])
+            self.finish(job['id'])
         self.assertEqual(claimed, {natural, scheduled, photo, resumed, retry})
 
     def test_a_command_is_answered_while_a_tool_capable_work_runs_with_no_model_call(self):
@@ -117,7 +128,7 @@ class CommandLane(Lanes):
         self.assertEqual(self.status(running), 'running')
         queued = self.owner('another long request', 'owner-2')
         command = self.owner('/notes', 'owner-3')
-        with self.service.worker_lock:  # the tool-capable lane is busy
+        if self.service.lane_work_ids(LANE_WORK):  # the tool-capable lane is busy
             self.assertEqual(self.service.dispatch_work(), 1)
             self.assertEqual(self.spawned[-1][0], 'agentos-command-lane')
             self.run_lane(-1)
@@ -177,8 +188,13 @@ class Dispatcher(Lanes):
         done = self.store.enqueue('earlier request', 'owner-0', channel='telegram:g', chat_id=42, owner_typed=True)
         with self.store.db() as db:
             db.execute("UPDATE jobs SET status='succeeded',response='earlier answer',delivery='pending' WHERE id=?", (done,))
-        self.service.work_lane_spawn = lambda target, name: threading.Thread(target=target, name=name, daemon=True).start()
-        entered, release = threading.Event(), threading.Event()
+        entered, release, finished = threading.Event(), threading.Event(), threading.Event()
+        def spawn(target, name):
+            def run():
+                try:target()
+                finally:finished.set()
+            threading.Thread(target=run, name=name, daemon=True).start()
+        self.service.work_lane_spawn = spawn
 
         def long_route(run):
             entered.set()
@@ -193,9 +209,7 @@ class Dispatcher(Lanes):
             self.assertLess(time.monotonic() - started, 5, 'the work loop never waits for the Work')
             self.assertEqual(self.store.job(done)['delivery'], 'sent', 'another Work\'s reply went out meanwhile')
             release.set()
-            for _ in range(100):
-                if not self.service.lane_work_ids():break
-                time.sleep(.05)
+            self.assertTrue(finished.wait(10))
         self.assertEqual(self.service.lane_work_ids(), frozenset())
 
 

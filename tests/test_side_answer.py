@@ -21,6 +21,7 @@ class SideAnswerTests(_SteerCase):
 
     def setUp(self):
         super().setUp()
+        self.service.work_lanes = 1
         self.side_calls = []
         self.side_questions = []
         self.side_script = lambda: result()
@@ -177,7 +178,8 @@ class SideAnswerTests(_SteerCase):
 
     def test_main_claim_first_discards_side_commit(self):
         side_id, complete = self.delayed()
-        # Another service has no in-memory reservation (restart/racing host).
+        # Restart fences the old running Work and has no in-memory reservation.
+        self.store.recover()
         restarted = self.make_service()
         def claim():
             self.assertEqual(restarted._claim_queued_work()['id'], side_id)
@@ -465,9 +467,7 @@ class SideAnswerTests(_SteerCase):
              mock.patch.object(self.service, '_prepare_worker_turn', side_effect=AssertionError('worker phase')), \
              mock.patch.object(self.service.owner_acts, 'settle', side_effect=AssertionError('owner settlement')), \
              mock.patch.object(self.service.owner_model, 'enqueue', side_effect=AssertionError('owner upkeep')):
-            # Holding the worker lock also proves the side lane never takes it.
-            with self.service.worker_lock:
-                complete()
+            complete()
         self.assertEqual(self.replies({'id': side_id}), [ANSWER])
 
 
@@ -478,5 +478,8 @@ class SideAnswerTests(_SteerCase):
         self.assertEqual(self.store.job(side_id)['status'], 'queued')
         self.assertEqual(self.side_calls, [])
         self.assertEqual([e['status'] for e in self.events(side_id, 'side_answer')], ['unavailable'])
+        self.assertFalse(self.service.run_one(), 'the original Work still holds the one lane')
+        with self.store.db() as db:
+            db.execute("UPDATE jobs SET status='succeeded' WHERE request_key='other'")
         self.assertTrue(self.service.run_one())
         self.assertEqual(len(self.replies({'id': side_id})), 1)

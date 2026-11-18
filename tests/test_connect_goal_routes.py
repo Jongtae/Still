@@ -213,9 +213,9 @@ class GoalRouteWorkerHandoff(Harness):
         self.assertIn(request, self.engine.turns[0]['prompt'])
         self.assertNotIn(notes, sent['instructions'])
         body = self.transport.bodies[0]
-        self.assertIn(notes, body['messages'][0]['content'])
-        self.assertIn(agent_runtime.GOAL_FIRST_GUIDANCE, body['messages'][0]['content'])
-        self.assertEqual(body['messages'][-1], {'role': 'user', 'content': request})
+        self.assertIn(notes, body['input'][0]['content'])
+        self.assertIn(agent_runtime.GOAL_FIRST_GUIDANCE, body['input'][0]['content'])
+        self.assertEqual(body['input'][-1], {'role': 'user', 'content': request})
 
     def test_bare_limitation_is_replanned_and_unbound_proposal_stays_incomplete(self):
         request = 'Compare LumenForge phase records, using Z-17 only.'

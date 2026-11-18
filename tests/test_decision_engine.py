@@ -20,17 +20,18 @@ from personal_agent.decision import (DEFAULT_DECISION_MODEL, MAX_CONTEXT_CHARS, 
 from personal_agent.providers import ModelAdapter, ProviderError
 from personal_agent.quickstart_service import AgentService
 from personal_agent.quickstart_store import QuickStore
+from test_openai_responses_994 import responses_reply
 
 OPENAI = {'provider': 'openai', 'endpoint': 'https://api.openai.com/v1', 'model': DEFAULT_DECISION_MODEL}
 ANTHROPIC = {'provider': 'anthropic', 'endpoint': 'https://api.anthropic.com', 'model': 'claude-x'}
 
 
 def openai_tool_reply(arguments, model='gpt-4o-mini-2024-07-18'):
-    """The recorded shape of an OpenAI-compatible tool call."""
-    return {'model': model, 'choices': [{'message': {
+    """The raw Responses shape of an OpenAI tool call."""
+    return responses_reply({
         'role': 'assistant', 'content': None,
         'tool_calls': [{'id': 'call_1', 'type': 'function',
-                        'function': {'name': 'decide', 'arguments': json.dumps(arguments)}}]}}]}
+                        'function': {'name': 'decide', 'arguments': json.dumps(arguments)}}]}, model)
 
 
 class ScriptedTransport:
@@ -119,7 +120,7 @@ class ModelEngineTests(unittest.TestCase):
         for extra in ({'plan_reading': 'Read private-value before answering.'}, {}, {'plan_reading': ''}):
             result = judgments.goal_reached('The owner words.', 'none', answer='Reply.', **extra)
             self.assertEqual(result.outcome, 'yes')
-        rendered = [call['body']['messages'][-1]['content'] for call in transport.calls]
+        rendered = [call['body']['input'][-1]['content'] for call in transport.calls]
         self.assertIn('\nplan_reading: Read [redacted] before answering.\n', rendered[0])
         self.assertIn('\nowner_request: The owner words.\n', rendered[0])
         self.assertIn("plan's reading of what the request needs: a hypothesis to check, not the owner's words", rendered[0])
@@ -141,7 +142,7 @@ class ModelEngineTests(unittest.TestCase):
         self.assertEqual(judgments.closing_reaction('안녕', ('🎉',)), '🎉')
         self.assertEqual(len(transport.calls), 3)
         for index, call in enumerate(transport.calls):
-            assembled = '\n'.join(message['content'] for message in call['body']['messages'])
+            assembled = '\n'.join(message['content'] for message in call['body']['input'])
             with self.subTest(generator=index):
                 self.assertEqual(assembled.count(prompt('voice')), 1)
                 for removed in ("language and register of the owner's", 'as the professional the request calls for',
@@ -162,7 +163,7 @@ class ModelEngineTests(unittest.TestCase):
             '요청', '답', 'failed', 'not_reached', '정정', preference, 'correction')
         self.assertEqual(data, {'notes': '', 'change': '', 'blocker': ''})
         [call] = transport.calls
-        assembled = '\n'.join(message['content'] for message in call['body']['messages'])
+        assembled = '\n'.join(message['content'] for message in call['body']['input'])
         self.assertEqual(assembled.count(prompt('voice')), 1)
         self.assertIn(preference, assembled)
         self.assertIn('apply to change, which is shown to the owner', assembled)
@@ -178,13 +179,13 @@ class ModelEngineTests(unittest.TestCase):
         self.assertEqual(decision.confidence.observed_model, 'gpt-4o-mini-2024-07-18')
         # One call, to the pinned endpoint, forced onto the decide tool, with the decision timeout.
         call = transport.calls[0]
-        self.assertEqual(call['url'], 'https://api.openai.com/v1/chat/completions')
+        self.assertEqual(call['url'], 'https://api.openai.com/v1/responses')
         self.assertEqual(call['body']['tool_choice'], 'required')
-        self.assertEqual(call['body']['tools'][0]['function']['name'], 'decide')
+        self.assertEqual(call['body']['tools'][0]['name'], 'decide')
         self.assertEqual(call['timeout'], 7)
         self.assertEqual(call['headers'], {'Authorization': 'Bearer sk-test'})
         # Only the rendered context and the question travel.
-        prompt = call['body']['messages'][-1]['content']
+        prompt = call['body']['input'][-1]['content']
         self.assertIn('owner_message: 취소해줘', prompt)
         self.assertIn('waiting_connection: Gmail', prompt)
         # The audit names outcome and identity, never reasoning text.
@@ -214,7 +215,7 @@ class ModelEngineTests(unittest.TestCase):
         engine, _audit = engine_for(transport)
         chosen = engine.choose(self.context(), ('a', 'b'), 'which?')
         self.assertEqual((chosen.outcome, chosen.choice), (OUTCOME_DECIDED, 'b'))
-        self.assertEqual(transport.calls[0]['body']['tools'][0]['function']['parameters']['properties']['choice']['enum'],
+        self.assertEqual(transport.calls[0]['body']['tools'][0]['parameters']['properties']['choice']['enum'],
                          ['a', 'b', NO_CANDIDATE])
         self.assertEqual(engine.choose(self.context(), ('a', 'b'), 'which?').outcome, OUTCOME_MALFORMED)
         scored = engine.score(self.context(), 'how?', (0, 10))
@@ -223,11 +224,11 @@ class ModelEngineTests(unittest.TestCase):
 
     def test_every_failure_is_an_explicit_outcome_and_none_becomes_an_answer(self):
         cases = (
-            ('no tool call', {'choices': [{'message': {'role': 'assistant', 'content': 'yes'}}]}, OUTCOME_MALFORMED),
-            ('bad json', {'choices': [{'message': {'role': 'assistant', 'tool_calls': [
-                {'id': '1', 'type': 'function', 'function': {'name': 'decide', 'arguments': '{not json'}}]}}]}, OUTCOME_MALFORMED),
-            ('other tool', {'choices': [{'message': {'role': 'assistant', 'tool_calls': [
-                {'id': '1', 'type': 'function', 'function': {'name': 'other', 'arguments': '{}'}}]}}]}, OUTCOME_MALFORMED),
+            ('no tool call', responses_reply({'role': 'assistant', 'content': 'yes'}), OUTCOME_MALFORMED),
+            ('bad json', responses_reply({'role': 'assistant', 'tool_calls': [
+                {'id': '1', 'type': 'function', 'function': {'name': 'decide', 'arguments': '{not json'}}]}), OUTCOME_MALFORMED),
+            ('other tool', responses_reply({'role': 'assistant', 'tool_calls': [
+                {'id': '1', 'type': 'function', 'function': {'name': 'other', 'arguments': '{}'}}]}), OUTCOME_MALFORMED),
             ('non-boolean answer', openai_tool_reply({'answer': 'yes', 'confidence': 0.9}), OUTCOME_MALFORMED),
             ('confidence out of range', openai_tool_reply({'answer': True, 'confidence': 1.7}), OUTCOME_MALFORMED),
             ('timeout', ProviderError('timed out', status='timeout'), OUTCOME_TIMEOUT),
@@ -388,7 +389,7 @@ class ExplainedGoalDimensions(unittest.TestCase):
         self.assertEqual(len(transport.calls), 1)
         self.assertEqual(len(audit), 1)
         self.assertNotIn('Latest correction', json.dumps(audit))
-        schema = transport.calls[0]['body']['tools'][0]['function']['parameters']
+        schema = transport.calls[0]['body']['tools'][0]['parameters']
         self.assertIn('dimensions', schema['required'])
         self.assertIn('retry_warranted', schema['required'])
 
@@ -422,7 +423,7 @@ class JudgmentHistoryCounts(unittest.TestCase):
                                    {}, [], conversation='\n'.join(turns), conversation_turns=turns)
         self.assertEqual(verdict, 'yes')
         self.assertEqual(audit[0]['context_messages'], 1)
-        self.assertNotIn('wholly outside', transport.calls[0]['body']['messages'][-1]['content'])
+        self.assertNotIn('wholly outside', transport.calls[0]['body']['input'][-1]['content'])
 
     def test_a_context_not_sent_never_claims_its_history_was_received(self):
         engine, audit = engine_for(ScriptedTransport(), route=lambda: None)
@@ -450,7 +451,7 @@ class StructuredOptionalFields(unittest.TestCase):
                 decision=engine.structured(DecisionContext('fixture'),'question',schema,
                                            lambda data:isinstance(data.get('result'),str))
                 self.assertEqual(decision.outcome,OUTCOME_DECIDED if accepted else OUTCOME_MALFORMED)
-                wire=transport.calls[0]['body']['tools'][0]['function']['parameters']
+                wire=transport.calls[0]['body']['tools'][0]['parameters']
                 self.assertEqual(set(wire['required']),set(wire['properties']))
                 self.assertEqual(set(wire),{'type','additionalProperties','properties','required'})
                 self.assertEqual(len(transport.calls),1)

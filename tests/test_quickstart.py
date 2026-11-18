@@ -28,6 +28,7 @@ from personal_agent.providers import ModelAdapter, ProviderError
 from personal_agent.file_workspace import FileWorkspace
 from scripted_capability_need import capability_need_engine
 from test_conversation_connector_handoff import MODEL_ENDPOINT, scripted_mail_worker
+from test_openai_responses_994 import responses_reply
 
 
 VALIDATION = Path(__file__).resolve().parents[1] / 'scripts' / 'validation'
@@ -54,6 +55,9 @@ class QuickstartTests(unittest.TestCase):
             if url.endswith('/api/chat'):
                 if probing:return {'message':{'content':'','tool_calls':[{'function':{'name':'agentos_connection_probe','arguments':{}}}]}}
                 return {'message':{'content':'Ollama response'}}
+            if url.endswith('/responses'):
+                if probing:return responses_reply({'tool_calls':[{'id':'probe','function':{'name':'agentos_connection_probe','arguments':'{}'}}]}, 'verified/model:free')
+                return responses_reply({'content':'Compatible response'})
             if url.endswith('/chat/completions'):
                 if probing:return {'model':'verified/model:free','choices':[{'message':{'tool_calls':[{'id':'probe','function':{'name':'agentos_connection_probe','arguments':'{}'}}]}}]}
                 return {'choices':[{'message':{'content':'Compatible response'}}]}
