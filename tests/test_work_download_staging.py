@@ -58,7 +58,7 @@ def test_host_call_uses_verified_offset_and_projects_only_public_fields(download
     assert first['artifact'] == second['artifact']
     assert calls == [(0, None, None), (4, '"fixture"', len(PAYLOAD))]
     result = caps.execute('public_download', {'operation': 'preview', 'offset': 0})
-    assert result['content'] == 'verified'
+    assert result['content'] == '********'
     assert store.read_checkpoint(work_id)['received'] == 8
 
 
@@ -69,7 +69,7 @@ def test_uncommitted_tail_is_not_visible_and_is_replaced(download):
     path = store.private / 'work-downloads' / ref['artifact']
     with path.open('ab') as output:
         output.write(b'extra uncommitted bytes')
-    assert caps.execute('public_download', {'operation': 'preview', 'offset': 0})['content'] == 'veri'
+    assert caps.execute('public_download', {'operation': 'preview', 'offset': 0})['content'] == '****'
     caps.execute('public_download', {**args, 'offset': 4})
     assert path.read_bytes() == b'verified'
 
@@ -158,14 +158,38 @@ def test_completed_preview_masks_credentials_extending_far_beyond_window(downloa
     assert result['content'] == expected[:work_download.PREVIEW_BYTES].decode()
 
 
-@pytest.mark.parametrize('fragment', [b'sk-ab', b'-----BEGIN PRIVATE KEY-----\nYWJj!ZGVm'])
+@pytest.mark.parametrize('fragment', [
+    b'sk-ab',
+    b'123456789:ABCDEFGHIJKLMNOPQRST',
+    '한.글@예\u00a0시'.encode(),
+    b'-----BEGIN PRIVATE KEY-----\nYWJj!ZGVm',
+    b':' * (2 * work_download._CREDENTIAL_CONTEXT_BYTES),
+], ids=['provider-prefix', 'numeric-token', 'utf8-and-punctuation', 'open-pem', 'beyond-preview-context'])
 def test_preview_masks_credential_fragment_at_incomplete_checkpoint(download, monkeypatch, fragment):
     _, _, _, caps, _ = download
-    prefix = b'Note.'
+    prefix = '안내.\t'.encode()
     payload = prefix + fragment
     stage_payload(caps, monkeypatch, payload, total=len(payload) + 50)
     result = caps.execute('public_download', {'operation': 'preview', 'offset': 0})
-    assert result['content'] == prefix.decode() + '*' * len(fragment)
+    assert result['content'] == (prefix + b'*' * len(fragment))[:work_download.PREVIEW_BYTES].decode()
+
+
+def test_preview_reveals_ordinary_word_when_checkpoint_completes(download, monkeypatch):
+    _, _, _, caps, _ = download
+    partial = b'Readable text ordinary'
+    payload = partial + b' word'
+    stage_payload(caps, monkeypatch, partial, total=len(payload))
+    preview = {'operation': 'preview', 'offset': 0}
+    assert caps.execute('public_download', preview)['content'] == 'Readable text ********'
+
+    def read_range(reader, url, offset, length, **kwargs):
+        part = payload[offset:offset + length]
+        return DownloadedRange(part, '"fixture"', len(payload), 'a' * 64, hashlib.sha256(part).hexdigest())
+
+    monkeypatch.setattr(work_download.PublicDownload, 'read_range', read_range)
+    complete = caps.execute('public_download', {'operation': 'fetch', 'url': URL, 'offset': len(partial)})
+    assert complete['received'] == complete['total'] == len(payload)
+    assert caps.execute('public_download', preview)['content'] == payload.decode()
 
 
 def test_preview_reads_bounded_redaction_context_in_large_prose(download, monkeypatch):

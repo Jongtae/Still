@@ -26,11 +26,7 @@ INPUT_CHANGED = object()
 _CREDENTIAL_RUN_BYTES = b'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-_/+= \t\r\n\v\f'
 _CREDENTIAL_CONTEXT_BYTES = 48 * 1024
 _PREVIEW_SCAN_CHUNK = 16 * 1024
-_CREDENTIAL_START = re.compile(
-    r'-----BEGIN (?:[A-Z]{1,20} )?PRIVATE KEY-----'
-    r'|\b(?:[spr]k[-_]|gh[pousr]_|github_pat_|hf_|npm_|glpat-|GOCSPX-|'
-    r'xox[abposr]-|xapp-|AIza|AKIA|ASIA|eyJ)'
-)
+_ASCII_WHITESPACE = re.compile(rb'\s')
 _PEM_BOUNDARY = re.compile(r'-----(BEGIN|END) (?:[A-Z]{1,20} )?PRIVATE KEY-----')
 
 class WorkDownloadError(ValueError):
@@ -313,14 +309,7 @@ def _preview_context_edge(source, position, limit):
     return position
 
 
-def _incomplete_credential_spans(data, text):
-    trailing_bytes = len(data) - len(data.rstrip(_CREDENTIAL_RUN_BYTES))
-    if trailing_bytes:
-        # The run is ASCII, so its byte and character lengths are equal.
-        start = len(text) - trailing_bytes
-        if _CREDENTIAL_START.search(text, start):
-            yield start, len(text)
-
+def _incomplete_credential_spans(text):
     # A complete PEM can contain punctuation anywhere in its bounded body.
     # Keep an open header masked while an END line could still arrive.
     max_body, max_marker = 8192, 50
@@ -331,7 +320,7 @@ def _incomplete_credential_spans(data, text):
         yield boundary.start(), len(text)
 
 
-def _mask_preview(data, offset, size, values, ledger, *, incomplete_tail=False):
+def _mask_preview(data, offset, size, values, ledger, *, incomplete_tail=False, unsettled_start=None):
     from .bounded_execution import SECRET_PATTERN
     from .quickstart_store import QuickStore
 
@@ -340,8 +329,11 @@ def _mask_preview(data, offset, size, values, ledger, *, incomplete_tail=False):
     text = re.sub(r'[\udc80-\udcff]', '\ufffd', decoded)
     spans = QuickStore._retired_spans(text, ledger)
     spans.extend(match.span() for match in SECRET_PATTERN.finditer(text))
+    if unsettled_start is not None:
+        start = len(data[:unsettled_start].decode('utf-8', errors='surrogateescape'))
+        spans.append((start, len(text)))
     if incomplete_tail:
-        spans.extend(_incomplete_credential_spans(data, text))
+        spans.extend(_incomplete_credential_spans(text))
     for value in values:
         start = text.find(value)
         while start != -1:
@@ -394,7 +386,10 @@ def preview(store, job_id, offset):
     except Exception:
         raise WorkDownloadError(msg('agent_runtime.redaction_unavailable'), 'redaction_unavailable') from None
     received = checkpoint['received']
+    total = checkpoint['total']
+    incomplete = total is None or received < total
     size = min(PREVIEW_BYTES, received - offset)
+    unsettled_start = None
     with _staging_directory(store) as directory:
         fd = _staged_file(directory, checkpoint['artifact'], os.O_RDONLY)
         with os.fdopen(fd, 'rb') as source:
@@ -403,10 +398,21 @@ def preview(store, job_id, offset):
             end = min(received, _preview_context_edge(source, offset + size, received) + literal_context)
             source.seek(start)
             data = _read_preview_bytes(source, end - start)
-    total = checkpoint['total']
-    incomplete_tail = end == received and (total is None or received < total)
+            if incomplete:
+                tail_start = 1 + max(data.rfind(byte) for byte in b' \t\n\r\v\f')
+                if tail_start < offset + size - start:
+                    # The bounded credential context may stop within a long run.
+                    position = end
+                    while position < received:
+                        block = _read_preview_bytes(source, min(_PREVIEW_SCAN_CHUNK, received - position))
+                        if _ASCII_WHITESPACE.search(block):
+                            break
+                        position += len(block)
+                    if position == received:
+                        unsettled_start = tail_start
     try:
-        content = _mask_preview(data, offset - start, size, values, ledger, incomplete_tail=incomplete_tail)
+        content = _mask_preview(data, offset - start, size, values, ledger,
+                                incomplete_tail=incomplete and end == received, unsettled_start=unsettled_start)
     except Exception:
         raise WorkDownloadError(msg('agent_runtime.redaction_unavailable'), 'redaction_unavailable') from None
     return {**public_checkpoint(checkpoint), 'offset': offset, 'content': content}
