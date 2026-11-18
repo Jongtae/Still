@@ -2,7 +2,7 @@
 
 ## Status
 
-This is the design proposal for [#938](https://github.com/Jongtae/Still/issues/938). It changes no code.
+This is the design proposal for [#938](https://github.com/Jongtae/Still/issues/938). Slice 1 (the scheduling path) is implemented in the change that amends the contracts below; slices 2 and 3 are not.
 
 The implementation is a separate change. It widens what an unattended run may do, so it needs the escalated review in the [Development Constitution](../development-constitution.en.md#escalated-review): a Codex review of the final head, required CI on that head, and a merge by the owner. That change also amends the contract text listed under *Contract amendments*.
 

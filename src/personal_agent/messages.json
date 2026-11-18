@@ -11056,6 +11056,54 @@
   "ja": "{when}に予約しました。オーナーには個別に知らせず、設定で確認・取り消しできます。",
   "zh": "已预约在{when}。不会另行通知主人，可在设置中查看和取消。"
  },
+ "preparations.piece_scheduled": {
+  "ko": "이 맡은 일의 다음 조각을 {when}에 예약했어요. 소유자에게 따로 알리지 않으며, 맡은 일 목록에서 보이고 맡은 일을 멈추면 함께 취소돼요. 답은 지금 어디까지 했는지로 끝내세요.",
+  "en": "Scheduled this line's next piece for {when}. The owner is not told separately; it shows in the line's entry and is cancelled when the line stops. End your answer with where the work stands.",
+  "ja": "この仕事の次の段階を{when}に予約しました。オーナーには個別に知らせず、仕事の一覧に表示され、仕事を止めると一緒に取り消されます。回答はいまどこまで進んだかで締めてください。",
+  "zh": "已将此事项的下一步预约在{when}。不会另行通知主人；它显示在该事项的条目中，事项停止时一并取消。请以目前进展到哪里结束你的回答。"
+ },
+ "preparations.piece_replaced": {
+  "ko": "이 실행이 앞서 예약한 다음 조각을 {when}으로 고쳐 두었어요. 실행 한 번에 다음 조각은 하나뿐이에요.",
+  "en": "Updated the next piece this run had already scheduled; it now runs at {when}. A run has one next piece.",
+  "ja": "この実行が先に予約した次の段階を{when}に直しました。1回の実行につき次の段階は1つだけです。",
+  "zh": "已把本次运行先前预约的下一步改为{when}。每次运行只有一个下一步。"
+ },
+ "preparations.piece_too_soon": {
+  "ko": "다음 조각은 지금부터 {minutes}분 뒤 이후로만 예약할 수 있어요. 지금 필요한 일은 이 실행에서 하세요.",
+  "en": "A next piece is scheduled at least {minutes} minutes from now. Do what is needed now in this run.",
+  "ja": "次の段階は今から{minutes}分後以降にしか予約できません。今必要なことはこの実行で行ってください。",
+  "zh": "下一步只能预约在{minutes}分钟之后。现在需要做的请在本次运行中完成。"
+ },
+ "preparations.piece_started": {
+  "ko": "이 실행이 예약한 다음 조각이 이미 시작됐어요. 새로 예약하지 않았어요.",
+  "en": "The next piece this run scheduled has already started. Nothing new was scheduled.",
+  "ja": "この実行が予約した次の段階はすでに始まっています。新しく予約していません。",
+  "zh": "本次运行预约的下一步已经开始。未新建预约。"
+ },
+ "preparations.piece_cancelled": {
+  "ko": "이 실행이 예약한 다음 조각은 소유자나 맡은 일 정리로 취소됐어요. 다시 예약하지 않았어요. 지금 어디까지 했는지 보고하세요.",
+  "en": "The next piece this run scheduled was cancelled, by the owner or with its line. It was not scheduled again. Report where the work stands.",
+  "ja": "この実行が予約した次の段階は、オーナーまたは仕事の整理によって取り消されました。再予約していません。進捗を報告してください。",
+  "zh": "本次运行预约的下一步已被主人或随事项一起取消，未重新预约。请报告目前进展。"
+ },
+ "preparations.line_pieces_daily": {
+  "ko": "이 맡은 일은 오늘 다음 조각을 {maximum}번 예약해서 더 예약하지 않았어요. 지금 어디까지 했는지 보고하고 멈추세요.",
+  "en": "This line has scheduled {maximum} pieces today, so no more were scheduled. Report where the work stands and stop.",
+  "ja": "この仕事は今日すでに{maximum}回次の段階を予約したため、これ以上予約していません。進捗を報告して止めてください。",
+  "zh": "此事项今天已预约{maximum}次下一步，因此不再预约。请报告目前进展并停止。"
+ },
+ "preparations.pieces_limit": {
+  "ko": "기다리는 다음 조각이 모두 {maximum}개라 더 예약하지 않았어요. 지금 어디까지 했는지 보고하세요.",
+  "en": "{maximum} next pieces are already waiting in total, so this one was not scheduled. Report where the work stands.",
+  "ja": "待機中の次の段階が合計{maximum}件あるため予約していません。進捗を報告してください。",
+  "zh": "等待中的下一步共有{maximum}个，因此未预约。请报告目前进展。"
+ },
+ "preparations.piece_shape": {
+  "ko": "이 실행이 예약할 수 있는 건 같은 맡은 일의 다음 조각 하나뿐이에요: kind prepare, 반복이나 지켜보는 기간 없음, replaces 없음. 바꾸지 않았어요.",
+  "en": "This run can schedule only the next piece of its own line: kind prepare, no recurrence or watch window, no replaces. Nothing was scheduled.",
+  "ja": "この実行が予約できるのは同じ仕事の次の段階1つだけです（kind prepare、繰り返しや見守り期間なし、replaces なし）。予約していません。",
+  "zh": "本次运行只能为同一事项预约一个下一步：kind prepare，无重复或观察期，无 replaces。未预约。"
+ },
  "preparations.day_plan_offer": {
   "ko": "매일 아침 오늘 일정과 최근 대화를 보고, 필요해질 만한 것을 미리 준비해 둬요.\n조사하고 준비만 하며, 결제나 변경은 하지 않아요.",
   "en": "Each morning I read today's schedule and our recent conversation and prepare what you are likely to need.\nI only research and prepare; I never pay for or change anything.",

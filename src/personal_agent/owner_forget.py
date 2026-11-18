@@ -309,6 +309,13 @@ class OwnerForget:
         for row in rows:
             db.execute('UPDATE procedure_versions SET state=? WHERE id=?', (FORGOTTEN, row['id']))
         self.lines.suppress_pending_bundles(line_id, db)
+        # #938: the line's pending pieces are cancelled with it.  Undo restores the brief versions only;
+        # the owner restarts the work by asking.
+        from . import preparations as prep
+        db.execute(f"UPDATE preparations SET state=?,last_outcome=?,updated_at=? WHERE line_id=? AND origin=? "
+                   f"AND state IN ({','.join('?' * len(prep.PIECE_PENDING_STATES))})",
+                   (prep.STATE_CANCELLED, prep.STATE_CANCELLED, now, line_id, prep.ORIGIN_LINE_PIECE,
+                    *prep.PIECE_PENDING_STATES))
         return {'rows': [{'table': 'procedure_versions', 'id': row['id'], 'prior': row['state']} for row in rows],
                 'line': line_id}
 
