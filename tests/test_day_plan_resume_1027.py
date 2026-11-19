@@ -261,19 +261,21 @@ class ResumeOffers(Mode, _Plan, OwnerActCase):
         child = self.service.preparation_scheduler(root, '')({
             'kind': 'prepare', 'goal': '이어서 확인', 'due': self.due_iso(600)})
         self.assertEqual(child['accepted_by'], prep.ACCEPTED_LINE_PIECE_OWNER)
-        for run in (root, self.start_piece(child['preparation_id'])):
+        # #1044: each run pays its own amount; a piece never resends its line run's exact request (#1020).
+        for amount, run in enumerate((root, self.start_piece(child['preparation_id'])), start=10):
+            pay = dict(PAY, body=f'{{"amount":"{amount}"}}')
             self.assertFalse(self.service.payment_autonomy_settings()['enabled'])
             sent = []
             api = ApiRequests(self.store, run['id'], approvals=self.service.browser_approvals_for(run),
                               transport=lambda *args, **kwargs: sent.append(args) or (200, {}, b'{}'))
             with self.assertRaises(ToolError) as refusal:
-                api.call(PAY)
+                api.call(pay)
             self.assertEqual(refusal.exception.code, 'unattended_run')
             self.assertEqual(sent, [])
             self.assertEqual(self.receipts(run['id']), [])
             self.assertIsNone(self.service._browser_request(run['id']))
             self.switch(True)
-            api.call(PAY)
+            api.call(pay)
             self.assertEqual(len(sent), 1)
             self.assertEqual(self.receipts(run['id'])[0]['authorized_by'], 'payment-autonomy')
             self.switch(False)
