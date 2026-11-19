@@ -2,8 +2,10 @@
 import hashlib
 import io
 import json
+import os
 from pathlib import Path
 import subprocess
+from textwrap import dedent
 from types import SimpleNamespace
 from unittest import mock
 
@@ -131,6 +133,71 @@ def test_completed_download_reaches_code_and_authenticated_owner_only(tmp_path):
     staged.write_bytes(b'?' * len(data))
     headers, _ = get(service, artifact['download_url'], cookie)
     assert b' 404 ' in headers.splitlines()[0]
+
+
+@pytest.mark.skipif(os.environ.get('AGENTOS_REAL_SANDBOX_TESTS') != '1', reason='starts a real sandbox and proxy')
+def test_real_sandbox_download_is_read_only_and_work_scoped(tmp_path):
+    secret = 'orchid river silver cloud'
+    data = b'\xff\x00\x03\n' + secret.encode()
+    other_data = b'another Work download'
+    store = QuickStore(tmp_path)
+    store.secret('model_key', secret)
+    clock = lambda: 0
+    net = network(clock, Opener([
+        Response(data, status=200, headers=[]),
+        Response(other_data, status=200, headers=[]),
+    ]))
+    caps = active_work(store, 'consumer', net, clock)
+    artifact = fetch(caps)['artifact']
+    other = active_work(store, 'unrelated', net, clock)
+    other_artifact = fetch(other)['artifact']
+    other_path = (store.private / 'work-downloads' / other_artifact).resolve()
+    assert other_path.read_bytes() == other_data
+
+    code = dedent(f'''\
+        import hashlib
+        import os
+        from pathlib import Path
+
+        download = Path(os.environ['STILL_DOWNLOAD_FILE'])
+        try:
+            digest = hashlib.sha256(download.read_bytes()).hexdigest()
+        except OSError as exc:
+            print('READ_FAILED', exc)
+        else:
+            print('READ_OK', digest)
+
+        try:
+            download.write_bytes(b'changed')
+        except OSError:
+            print('WRITE_FILE_DENIED')
+        else:
+            print('WRITE_FILE_OPENED')
+
+        try:
+            download.with_name('sibling').write_bytes(b'new file')
+        except OSError:
+            print('WRITE_SIBLING_DENIED')
+        else:
+            print('WRITE_SIBLING_OPENED')
+
+        try:
+            Path({str(other_path)!r}).read_bytes()
+        except OSError:
+            print('OTHER_DENIED')
+        else:
+            print('OTHER_OPENED')
+        ''')
+    result = caps.execute('code_run', {'code': code, 'download_artifact': artifact})
+    assert result['exit_status'] == 0, result['stderr']
+    masked = data.replace(secret.encode(), b'*' * len(secret))
+    assert result['stdout'].splitlines() == [
+        f'READ_OK {hashlib.sha256(masked).hexdigest()}',
+        'WRITE_FILE_DENIED',
+        'WRITE_SIBLING_DENIED',
+        'OTHER_DENIED',
+    ]
+    assert 'OPENED' not in result['stdout']
 
 
 def test_approved_rerun_reuses_the_verified_download(tmp_path):
