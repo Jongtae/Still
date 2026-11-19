@@ -865,8 +865,9 @@ class TelegramSurface(ConversationSurface):
                            and notification['generation']==generation and notification['chat_id']==sender
                            and notification['message_id']==message.get('message_id') and proposals)
                     if exact:
-                        service.answer_preparation_proposal(notification,proposals,parts[2]=='accept')
-                        changed=True
+                        text=service.answer_preparation_proposal(notification,proposals,parts[2]=='accept')
+                        changed=service.store.notification(notification['id'])['state']!='sent'
+                        if not changed:alert=(text,True)
             elif authorized and isinstance(data,str) and data.startswith('p7m:'):
                 # #818: the owner's yes/no for one candidate (or all open ones) of a
                 # memory prompt.  Exact: this notification, sent, this chat and

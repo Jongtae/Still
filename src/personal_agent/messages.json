@@ -11170,6 +11170,36 @@
   "ja": "毎朝、今日の予定と最近の会話を見て、必要になりそうなことを先に準備しておきます。\n調べて準備するだけで、支払いや変更は行いません。",
   "zh": "每天早上我会查看今天的日程和最近的对话，提前准备你可能需要的内容。\n我只做调查和准备，不会付款或更改任何内容。"
  },
+ "preparations.invalid_line_resume_offer": {
+  "ko": "오늘 한 번 실행할 일과 그 한도를 한두 줄로 적어 이어 하기를 제안해 주세요.",
+  "en": "Offer a single run for today and describe the work and its limits in one or two lines.",
+  "ja": "今日一度だけ行う作業とその範囲を一、二行で示して、再開を提案してください。",
+  "zh": "请提议今天运行一次，并用一两行说明工作及其限制。"
+ },
+ "preparations.line_resume_unavailable": {
+  "ko": "이 일은 이어 하기를 제안할 수 없어요.",
+  "en": "This line is ineligible for a resume offer.",
+  "ja": "この仕事の再開は提案できません。",
+  "zh": "这项工作无法提议恢复。"
+ },
+ "preparations.line_resume_already_offered": {
+  "ko": "오늘 이 일을 이어 하자고 이미 제안했어요.",
+  "en": "This line has already had a resume offer today.",
+  "ja": "この仕事の再開は今日すでに提案しました。",
+  "zh": "今天已经提议恢复这项工作。"
+ },
+ "preparations.line_resume_stale": {
+  "ko": "이 제안이 바뀌었거나 기한이 지났어요. 이어 하기를 시작하지 않았어요.",
+  "en": "This offer changed or expired. The line was not resumed.",
+  "ja": "提案が変わったか、期限が過ぎました。仕事は再開していません。",
+  "zh": "这项提议已更改或过期，工作未恢复。"
+ },
+ "preparations.line_resume_proposed": {
+  "ko": "오늘 이 일을 이어 하자고 제안했어요. 소유자가 수락해야 예약돼요.",
+  "en": "Proposed resuming this line today. It is scheduled only when the owner accepts.",
+  "ja": "今日この仕事を再開する提案を作りました。オーナーが承諾すると予約されます。",
+  "zh": "已提议今天恢复这项工作，主人接受后才会预约。"
+ },
  "button.line_stop": {
   "ko": "그만하기",
   "en": "Stop",

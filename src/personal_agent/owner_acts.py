@@ -291,7 +291,7 @@ class OwnerActs:
                 'parts': parts}
 
     # -- settle --------------------------------------------------------------------
-    def settle(self, answer, job):
+    def settle(self, answer, job, *, by='answer'):
         """Settle the one item a judged answer named, through its own path.
 
         Returns ``{'text', 'note', 'source', 'focus'}``: what the owner is told
@@ -347,7 +347,8 @@ class OwnerActs:
                 proposals = (service.offered_proposals(notification)[0]
                              if notification and notification['state'] == 'sent' else [])
                 if proposals:
-                    result['text'] = service.answer_preparation_proposal(notification, proposals, approve, by='answer')
+                    result['text'] = service.answer_preparation_proposal(notification, proposals, approve, by=by,
+                                                                         owner_work_id=job.get('id'))
         return result
 
     # -- a reaction ----------------------------------------------------------------
@@ -375,12 +376,12 @@ class OwnerActs:
             return None
         if item['kind'] == KIND_MEMORY_SAVED and approve:
             return item['kind']   # keeping what was remembered needs nothing settled
-        self._settle_and_tell(surface, chat, generation, job, {'item': item, 'approve': approve, 'rest': ''})
+        self._settle_and_tell(surface, chat, generation, job, {'item': item, 'approve': approve, 'rest': ''}, by='button')
         return item['kind']
 
-    def _settle_and_tell(self, surface, chat, generation, job, answer):
+    def _settle_and_tell(self, surface, chat, generation, job, answer, *, by='answer'):
         """Settle a reaction's or a button's answer and tell the owner on ``surface``."""
-        settled = self.settle(answer, job)
+        settled = self.settle(answer, job, by=by)
         # #299 review: told only to the owner who answered, in the pairing they answered in; a re-pairing
         # during the settlement drops the reply instead of retargeting it.
         if settled.get('text') and not surface.send_owner(settled['text'], owner=chat, generation=generation):

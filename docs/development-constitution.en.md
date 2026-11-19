@@ -149,6 +149,7 @@ These defaults stay as they are:
 
 - payment autonomy is off until the owner turns it on;
 - a run Still set up on its own never pays, and a scheduled execution never approves itself. One narrow exception (owner decision 2026-11-18, [#938](https://github.com/Jongtae/Still/issues/938), tracker [#973](https://github.com/Jongtae/Still/issues/973)): a piece that a run of an entrusted line schedules for that line follows the owner's payment autonomy setting as the row whose run scheduled it does, when the chain's root is a row the owner accepted. Still records that standing from the parent row; a piece never sets or raises it. A piece descended from a row Still set up on its own (the look back, the daily plan, a row set up in an owner-typed Work without the owner asking) still never pays, and with payment autonomy off a piece still needs per-action approval, which an unattended run cannot ask for;
+- a row the owner accepts from a Still offer is owner-accepted. The row and any qualifying line pieces follow the owner’s current payment autonomy (#1027);
 - only the authenticated owner-interaction path settles an approval: a message the owner typed, or a supported button bound to the exact action;
 - stored secret values are kept out of text;
 - forgetting does what the owner asked.

@@ -39,8 +39,6 @@ DAY_PLAN_GOAL = prompt('day_plan') + '\n\n' + DAY_PLAN_LINES
 DAY_PLAN_KEY = 'day_plan'
 #: #780: the recent conversation a plan run is shown, as an owner-present Work is.
 PLAN_HISTORY_MESSAGES = 16
-#: #798: the periodic account's brief: a method for giving an account of a line, never a topic.
-LINE_ACCOUNT_GOAL = prompt('line_account')
 BUNDLE_SETTLE_SECONDS = 1800
 BUNDLE_CHARS = el.BUNDLE_CHARS
 
@@ -257,6 +255,9 @@ class PreparationsService:
             # #780: the daily plan's own run sets up reading-and-reporting work; what it sets up never
             # pays (``SELF_SET``) and cannot schedule in turn, so one misled plan run stays bounded.
             planning=self.day_plan_run(job) and self.day_plan_on()
+            resume_offer=args.get('resume_line') is True
+            if resume_offer and not planning:
+                raise not_run(ToolError(UNATTENDED_APPROVAL_TEXT,'unattended_run'))
             steers=service.owner_steer_words(job)
             steered=bool(service.unattended_work(job) and not planning and steers)
             if service.unattended_work(job) and not planning:
@@ -276,6 +277,8 @@ class PreparationsService:
             now=service.preparations.clock()
             try:
                 fields=service.preparation_fields(args,now,lambda goal:service.repeats_refused_watch(job['id'],goal))
+                if resume_offer and not self.piece_shaped(args,args.get('line')):
+                    raise not_run(prep.PreparationRefusal('invalid_line_resume_offer'))
                 spec=(checks.prove(service.store,job['id'],fields['check_args'],fields['window'][0])
                       if fields['check_args'] is not None else None)
             except prep.PreparationRefusal as exc:
@@ -289,6 +292,8 @@ class PreparationsService:
             delivery_mode=fields['delivery_mode']
             # #780: what a plan run wants the owner to hear goes where the owner last talked to Still.
             channel=service.preparation_channel(self.owner_last_work() if planning else job,kind,args.get('delivery'))
+            if resume_offer:
+                return self.offer_line_resume(job,args.get('line'),fields,channel)
             summary=prep.proposal_summary({'kind':kind,'goal_text':goal,'due_at':due_at,'timezone':timezone,
                                            'recurrence':prep.RECURRENCE_WINDOW if window else recurrence,
                                            'every_seconds':window and window[0],'until_at':window and window[1],
@@ -406,6 +411,26 @@ class PreparationsService:
             return result
         return schedule
 
+    def offer_line_resume(self, job, line_id, fields, channel):
+        """#1027: make an offer through #659 without scheduling or changing the line."""
+        service=self.service
+        try:
+            with service.store.db() as db:
+                db.execute('BEGIN IMMEDIATE')
+                if prep.Preparations.run_refusal(db,job['id'],service.preparations.clock()):
+                    raise not_run(ToolError(UNATTENDED_APPROVAL_TEXT,'unattended_run'))
+                row=service.preparations.create(kind=fields['kind'],goal=fields['goal'],due_at=fields['due_at'],
+                                                timezone=fields['timezone'],recurrence=None,channel=channel,
+                                                created_from=job['id'],state=prep.STATE_PROPOSED,
+                                                delivery_mode=fields['delivery_mode'],title=fields['title'],offer=fields['offer'],
+                                                origin=prep.ORIGIN_LINE_RESUME,line_id=line_id,db=db)
+        except prep.PreparationRefusal as exc:
+            raise ToolError(str(exc),exc.code,**ran_field(exc)) from None
+        return {'preparation_id':row['id'],'kind':row['kind'],'state':row['state'],'scheduled':False,
+                'requires_owner_acceptance':True,'accepted_by':None,'line_id':line_id,
+                'due':prep.iso(row['due_at'],row['timezone']),'delivery':service.preparation_delivery(row),
+                'next_step':msg('preparations.line_resume_proposed')}
+
     def piece_parent(self, job):
         """#938 (D1): the row ``job`` is the current run of, when that run may schedule its line's next piece.
 
@@ -418,7 +443,7 @@ class PreparationsService:
         preparation_id=prep.preparation_of((job or {}).get('request_key'))
         row=service.preparations.get(preparation_id) if preparation_id else None
         if not (row and row.get('line_id') and row['kind']==prep.KIND_PREPARE
-                and row.get('origin') in (None,prep.ORIGIN_LINE_PIECE)
+                and row.get('origin') in (None,prep.ORIGIN_LINE_PIECE,prep.ORIGIN_LINE_RESUME)
                 and row.get('accepted_by') in prep.LINE_PIECE_PARENTS
                 and row['state']==prep.STATE_RUNNING and row.get('last_run_job_id')==job.get('id')):
             return None
@@ -600,6 +625,8 @@ class PreparationsService:
         items=[]
         for row in rows:
             state=row['state']
+            resume_offer=row.get('origin')==prep.ORIGIN_LINE_RESUME
+            if resume_offer and not service.lines.readable(row['line_id']):continue
             reason=None
             if state==prep.STATE_RUNNING and ws.is_awaiting_connection(row['last_work_status']):
                 state,reason='blocked','awaiting_connection'
@@ -610,8 +637,10 @@ class PreparationsService:
                   'result_ready_at':prep.iso(row['prepared_at'],row['timezone']) if row.get('prepared_at') else None,
                   'placed_in_later_requests':row['offered_works']}
             if reason:item['reason']=reason
+            if resume_offer:
+                item.update(line_id=row['line_id'],resume_offer=True,declined=row['last_outcome']=='declined')
             items.append(item)
-        return 'earlier_plans: '+service._redact_known_secrets(json.dumps(items,ensure_ascii=False,separators=(',',':')))
+        return 'earlier_plans: '+service._redact_known_secrets(json.dumps(items,ensure_ascii=False,separators=(',',':'))) if items else ''
 
     def preparation_delivery(self, row):
         """``send`` / ``keep`` / ``when_needed`` / ``bundle`` for one preparation row."""
@@ -1144,7 +1173,13 @@ class PreparationsService:
         """
         service=self.service
         rows=service.preparations.proposed_from(job['id'])
-        if rows:service.queue_notification(job,'preparation_proposed',fingerprint=prep.digest(prep.proposal_page(rows)[0]))
+        if rows:
+            target=job
+            if self.day_plan_run(job):
+                # The plan's result stays local. Its offer goes to the owner's latest conversation.
+                owner=self.owner_last_work()
+                if owner:target={**job,'channel':owner['channel'],'chat_id':owner['chat_id']}
+            service.queue_notification(target,'preparation_proposed',fingerprint=prep.digest(prep.proposal_page(rows)[0]))
         with service.store.db() as db:
             scheduled=[row['id'] for row in db.execute("SELECT id FROM preparations WHERE created_from=? AND state='scheduled' "
                                                       "AND accepted_by IN (?,?,?) ORDER BY created_at",
@@ -1310,7 +1345,7 @@ class PreparationsService:
         if not shown or prep.digest(shown)!=notification['fingerprint']:return [],0
         return shown,remaining
 
-    def answer_preparation_proposal(self, notification, proposals, accept, by='button'):
+    def answer_preparation_proposal(self, notification, proposals, accept, by='button', owner_work_id=None):
         """The owner's yes or no to exactly the ``proposals`` one sent message offered (#659; #172 judged answers).
 
         The button's path, shared with a judged reply or reaction.  An accepted
@@ -1318,20 +1353,38 @@ class PreparationsService:
         Returns what the message now says.
         """
         service=self.service
-        accepted,expired=[],[]
+        accepted,expired,stale=[],[],[]
+        capacity_refusal=None
         for row in proposals:
-            if not accept:
-                service.cancel_preparation(row['id'])
-                continue
             try:
-                service.preparations.accept(row['id'],prep.ACCEPTED_OWNER_BUTTON if by=='button' else prep.ACCEPTED_OWNER_ANSWER)
-                accepted.append(row)
+                resume_offer=row.get('origin')==prep.ORIGIN_LINE_RESUME
+                if accept:
+                    service.preparations.accept(row['id'],prep.ACCEPTED_OWNER_BUTTON if by=='button' else prep.ACCEPTED_OWNER_ANSWER,
+                                                offer_digest=prep.digest([row]) if resume_offer else None,
+                                                accepted_from=owner_work_id if resume_offer else None)
+                    accepted.append(row)
+                elif resume_offer:
+                    service.preparations.decline_line_resume(row['id'],prep.digest([row]))
+                else:
+                    service.cancel_preparation(row['id'])
             except prep.PreparationRefusal as exc:
+                if resume_offer and exc.code=='too_many':
+                    capacity_refusal=str(exc)
+                    continue
+                if resume_offer and exc.code in ('line_resume_stale','invalid_state','not_found'):
+                    # It may have changed between binding the message and settling the button.
+                    stale.append(row)
+                    continue
                 # #395: a watch whose window ended while the message waited is not started.
                 if exc.code!='expired':raise
                 service.cancel_preparation(row['id'])
                 expired.append(row)
-        result_kind=('preparation_accepted' if accepted else 'preparation_expired') if accept else 'preparation_denied'
+        if capacity_refusal and not (accepted or expired or stale):
+            return capacity_refusal  # Keep the exact offer open so the owner can retry.
+        if accept:
+            result_kind='preparation_accepted' if accepted else 'preparation_expired' if expired else 'preparation_already_settled'
+        else:
+            result_kind='preparation_denied' if len(stale)<len(proposals) else 'preparation_already_settled'
         LOG.info('preparation %s by owner %s work=%s count=%s expired=%s','accept' if accept else 'deny',by,
                  notification['job_id'],len(proposals),len(expired))
         service.store.update_notification(notification['id'],result_kind,fingerprint=(
@@ -1339,6 +1392,10 @@ class PreparationsService:
         markup=service.preparation_cancel_markup(notification['id']) if accepted else {'inline_keyboard':[]}
         text=service.notification_text(result_kind)
         if accepted and expired:text+='\n'+service.notification_text('preparation_expired')
+        if stale:
+            stale_text=msg('preparations.line_resume_stale')
+            text=stale_text if result_kind=='preparation_already_settled' else text+'\n'+stale_text
+        if capacity_refusal:text+='\n'+capacity_refusal
         if isinstance(notification.get('message_id'),int):
             try:service.telegram.edit_message_text(notification['chat_id'],notification['message_id'],text,markup)
             except ProviderError:pass
@@ -1408,6 +1465,8 @@ class PreparationsService:
                          # #798: the entrusted line this row works for, by its task sentence.
                          'line_id':row.get('line_id'),'line_task':lines.get(row.get('line_id')),
                          'line_account':row.get('origin')==prep.ORIGIN_LINE_ACCOUNT})
+            if row['state']==prep.STATE_PROPOSED and row.get('origin')==prep.ORIGIN_LINE_RESUME:
+                rows[-1]['resume_offer_fingerprint']=prep.digest([row])
             if row.get('check_spec'):
                 try:
                     view=checks.owner_view(service.store,row)
@@ -1475,8 +1534,18 @@ class PreparationsService:
             return service.preparations_status()
         preparation_id=body.get('id')
         if not isinstance(preparation_id,str) or not preparation_id:raise ValueError(msg('quickstart_service.select_preparation'))
-        if operation=='accept':service.preparations.accept(preparation_id,prep.ACCEPTED_OWNER_SETTINGS)
-        elif operation=='cancel':service.cancel_preparation(preparation_id)
+        if operation in ('accept','cancel'):
+            row=service.preparations.get(preparation_id)
+            fingerprint=body.get('fingerprint')
+            if row and row.get('origin')==prep.ORIGIN_LINE_RESUME and (row['state']==prep.STATE_PROPOSED or fingerprint is not None):
+                if operation=='accept':
+                    service.preparations.accept(preparation_id,prep.ACCEPTED_OWNER_BUTTON,offer_digest=fingerprint)
+                else:
+                    service.preparations.decline_line_resume(preparation_id,fingerprint)
+            elif operation=='accept':
+                service.preparations.accept(preparation_id,prep.ACCEPTED_OWNER_SETTINGS)
+            else:
+                service.cancel_preparation(preparation_id)
         elif operation=='delete':service.preparations.delete(preparation_id)
         elif operation=='pause':service.preparations.pause(preparation_id)
         elif operation=='resume':service.preparations.resume(preparation_id)
@@ -1524,8 +1593,8 @@ class PreparationsService:
     def line_judgment_input(self, now, *, refs, exclude=(), lines_only=False):
         """Bounded lines/proposals/requests JSON and the whitelist of actually shown requests.
 
-        ``lines_only`` is the daily plan's input: it may only link work to a line, so it is shown the
-        lines and no proposals or owner requests (no owner words reach it outside its own history).
+        ``lines_only`` is the daily plan's input: it includes eligibility for a resume offer, without
+        raw owner requests or the look back's proposals.
         """
         from .current_context import owner_today
         service=self.service
@@ -1550,6 +1619,9 @@ class PreparationsService:
                           'state':'waiting' if self.waiting_line(brief) else brief['state'],
                           'stood_by':provenance.get('by','owner'),'stood_on':owner_today(service.store,service.lines.first_saved(brief['line_id'])),
                           'use':use,'stopped_on':owner_today(service.store,brief['saved']) if brief['state']==el.STATE_STOPPED else None})
+            if lines_only:
+                lines[-1].update(open_matters=brief['open_matters'],
+                                 can_offer_resume=bool(service.preparations.line_resume_target(brief['line_id'])))
         if lines_only:
             block={'lines':lines}
             while len(json.dumps(block,ensure_ascii=False))>om.LINE_INPUT_CHARS//2 and lines:lines.pop()
@@ -2122,9 +2194,7 @@ class PreparationsService:
     def line_has_pending_work(self, line_id, exclude=None):
         """Whether a work row is scheduled, apart from the periodic account and the given row."""
         with self.service.store.db() as db:
-            return db.execute('SELECT 1 FROM preparations WHERE line_id=? AND state=? '
-                              'AND origin IS NOT ? AND id IS NOT ? LIMIT 1',
-                              (line_id,prep.STATE_SCHEDULED,prep.ORIGIN_LINE_ACCOUNT,exclude)).fetchone() is not None
+            return prep.Preparations.line_has_pending_work(db,line_id,exclude)
 
     def line_schedule_note(self, brief, row):
         """The line's scheduling outlook after this row's current or first run."""
@@ -2281,25 +2351,15 @@ class PreparationsService:
         """
         service=self.service
         stood=service.lines.provenance(brief['line_id']).get('by')=='look-back'
-        rule=el.account_rule(brief['account_every_days'])
-        now=service.preparations.clock()
-        zone_name=service.home_zone() or 'UTC'
         with service.store.db() as db:
             db.execute('BEGIN IMMEDIATE')
             restart=self.line_start_restart(brief['line_id'],db)
             if stood and self.line_row_started(brief['line_id'],'account',restart,db):return None
-            rows=[row for row in self.line_rows(brief['line_id'],db) if row.get('origin')==prep.ORIGIN_LINE_ACCOUNT]
             # A cancelled account also stays cancelled on a tick; only a new owner act may restart it.
-            existing=any(row['state'] in prep.ACTIVE_STATES for row in rows) or (stood and not restart and bool(rows))
-            result=None if existing else service.preparations.create(kind=prep.KIND_PREPARE,goal=LINE_ACCOUNT_GOAL,
-                                           due_at=now+brief['account_every_days']*86400,timezone=zone_name,
-                                           recurrence=prep.normalize_rrule(rule),
-                                           channel=channel or service.preparation_channel(job,prep.KIND_PREPARE,'send'),
-                                           bundle_channel=bundle_channel,
-                                           created_from=job['id'],state=prep.STATE_SCHEDULED,
-                                           accepted_by=accepted_by,origin=prep.ORIGIN_LINE_ACCOUNT,
-                                           title=el.excerpt(msg('lines.account_title',task=brief['task']),prep.TITLE_MAX_CHARS),
-                                           line_id=brief['line_id'],db=db)
+            result=service.preparations.ensure_line_account(
+                brief,created_from=job['id'],db=db,accepted_by=accepted_by,bundle_channel=bundle_channel,
+                channel=channel or service.preparation_channel(job,prep.KIND_PREPARE,'send'),
+                replace_inactive=not stood or bool(restart))
             if stood:self.record_line_row_started(job['id'],brief['line_id'],'account',restart,db)
             return result
 
@@ -2671,7 +2731,7 @@ class PreparationsService:
         line_id=args.get('line')
         current=service.lines.current(line_id) if isinstance(line_id,str) and line_id else None
         if current is None:raise el.LineRefusal('line_not_found')
-        _before,after=service.lines.write(line_id,job['id'],None,'restarted',lambda brief:{**brief,'state':el.STATE_ACTIVE})
+        after=service.lines.restart(line_id,job['id'])
         if service.lines.provenance(line_id).get('by')=='look-back':
             # The owner's act is an announcement even when the already-active brief did not change.
             with service.store.db() as db:
