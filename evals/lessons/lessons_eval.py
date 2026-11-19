@@ -23,7 +23,7 @@ from agentos_eval import cli, paths, scoring
 from agentos_eval.budget import JudgeBudget, estimate_tokens
 from agentos_eval.redaction import Redactor
 from personal_agent.owner_forget import FORGOTTEN
-from personal_agent.owner_model import WorkingNotes, normalized, notes_points
+from personal_agent.owner_model import LESSONS_MIGRATION_KEY, WorkingLessons, WorkingNotes, normalized, notes_points
 from personal_agent.procedures import NOTES_SLOT
 from personal_agent.quickstart_store import FORGOTTEN_MESSAGE_IDS, QuickStore
 
@@ -93,8 +93,18 @@ def learned_lessons(store):
 
 
 def carried_lessons(store):
-    """Read the points carried in the brief. Replace this adapter when storage moves to items."""
-    return notes_points(WorkingNotes(store).block().partition('\n')[2])
+    """Read the lessons the brief carries.
+
+    Since #1031 step 1 each lesson is its own Memory row and the brief carries the
+    ``working_lessons`` block (``WorkingLessons.block``). A snapshot taken before the
+    one-time lessons migration ran still carried the current working-notes version.
+    """
+    if store.config(LESSONS_MIGRATION_KEY) is not None:
+        shown = WorkingLessons(store).block('')
+        refs = {lesson['ref']: lesson['text'] for lesson in WorkingLessons(store).current()}
+        return [text for ref, text in refs.items() if f'({ref})' in shown]
+    current = WorkingNotes(store).current()
+    return current['points'] if current else []
 
 
 def match_lessons(learned, carried, threshold=0.8):

@@ -156,12 +156,12 @@ class ModelEngineTests(unittest.TestCase):
     def test_self_review_notification_line_receives_the_voice_and_owner_preference(self):
         from personal_agent.prompt_files import prompt
         transport = ScriptedTransport(openai_tool_reply({
-            'notes': '', 'change': '', 'blocker': '', 'confidence': 0.93}))
+            'lessons': [], 'change': '', 'blocker': '', 'confidence': 0.93}))
         engine, _audit = engine_for(transport)
         preference = '일할 땐 짧게, 힘든 얘기엔 다정하게 말해 줘'
         data, _decision = ConversationJudgments(engine).self_review(
             '요청', '답', 'failed', 'not_reached', '정정', preference, 'correction')
-        self.assertEqual(data, {'notes': '', 'change': '', 'blocker': ''})
+        self.assertEqual(data, {'lessons': [], 'change': '', 'blocker': ''})
         [call] = transport.calls
         assembled = '\n'.join(message['content'] for message in call['body']['input'])
         self.assertEqual(assembled.count(prompt('voice')), 1)

@@ -2273,6 +2273,9 @@ class WorkingLessons:
 
     def __init__(self, store, clock=time.time):
         self.store, self.clock = store, clock
+        # As ``WorkingNotes`` did: the receipt and tombstone tables these lessons rely on exist from start-up
+        # (other readers, such as entrusted lines, query them).
+        OwnerForget(store, clock)
 
     def _owner_key(self):
         from .agent_runtime import MEMORY_OWNER
