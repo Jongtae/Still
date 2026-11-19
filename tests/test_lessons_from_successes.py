@@ -130,6 +130,23 @@ class EvidenceRule(Lessons):
         self.assertEqual(len(om.WorkingLessons(self.store).current()), 1)
         self.assertEqual(detail['lessons_evidence']['tonight_misses'], 1)
 
+    def test_a_miss_and_its_own_correction_are_one_occasion(self):
+        """Review: the correction Work of an earlier miss shows tonight as a done turn; together they are one request."""
+        miss, correction = self.settled('earlier miss'), self.settled('the correction')
+        detail = self.look_back(self.lesson('t1', 'm1'), [('t1', 'the correction', 'answer', TONIGHT, 'done')],
+                                [('m1', 'earlier miss', 'answer', YESTERDAY, 'corrected', 'the correction')],
+                                source_works={'t1': correction}, earlier_works={'m1': (miss, correction)})
+        self.assertEqual(om.WorkingLessons(self.store).current(), [])
+        self.assertIn('one-occasion', reasons(detail['dropped']))
+
+    def test_a_retried_miss_and_its_retry_are_one_occasion(self):
+        miss, retry = self.settled('earlier miss'), self.settled('again please')
+        detail = self.look_back(self.lesson('t1', 'm1'), [('t1', 'again please', 'answer', TONIGHT, 'done')],
+                                [('m1', 'earlier miss', 'answer', YESTERDAY, 'retried', 'again please')],
+                                source_works={'t1': retry}, earlier_works={'m1': (miss, retry)})
+        self.assertEqual(om.WorkingLessons(self.store).current(), [])
+        self.assertIn('one-occasion', reasons(detail['dropped']))
+
     def test_two_occasions_on_one_owner_day_are_one_day(self):
         detail = self.look_back(self.lesson('t1', 's1'), [('t1', 'today', 'answer', '2026-11-04 20:00', 'done')],
                                 [('s1', 'this morning', 'answer', '2026-11-04 08:00', 'done', '')])
@@ -228,6 +245,60 @@ class GeneralRule(Lessons):
                          ['이 주인의 표는 날짜 열이 맨 왼쪽'])
         self.assertEqual(reasons(detail['dropped']).count('general-rule'), 1)
 
+    def test_the_checks_respect_the_call_cap(self):
+        """Review: with the rolling cap spent, no check is sent and nothing unchecked is kept."""
+        real = self.upkeep.allowance
+        spent = {'now': False}
+
+        def allowance(now):
+            return (0, om.STOPPED_CAP) if spent['now'] else real(now)
+        self.upkeep.allowance = allowance
+        original = self.service.decision_judge.engine._structured
+
+        def structured(context, question, schema):
+            result = original(context, question, schema)
+            if context.purpose == om.DREAM_PURPOSE:
+                spent['now'] = True
+            return result
+        self.service.use_decision_engine(FixtureDecisionEngine(structured=structured, judge=lambda c, p: (
+            self.checks.append((c, p)) or BinaryDecision(OUTCOME_DECIDED, True, fixture_confidence(0.9)))
+            if c.purpose == om.LESSON_CHECK_PURPOSE else None))
+        detail = self.two_occasions(add_lesson('이 주인의 보고서는 결론 한 줄을 맨 위에'))
+        self.assertEqual(self.checks, [])
+        self.assertEqual(om.WorkingLessons(self.store).current(), [])
+        self.assertIn(om.REFUSED_BUDGET, reasons(detail['dropped']))
+
+    def test_the_check_is_read_with_the_cited_works(self):
+        """Review: the check runs inside a read scope naming the Works the lesson came from (#818)."""
+        import contextlib
+        tonight, earlier = self.settled('tonight work'), self.settled('earlier work')
+        anchor = self.settled('anchor')
+        active, seen = [None], []
+
+        @contextlib.contextmanager
+        def read_scope(works):
+            previous, active[0] = active[0], sorted(works)
+            try:
+                yield
+            finally:
+                active[0] = previous
+        structured = self.service.decision_judge.engine._structured
+
+        def judge(context, proposition):
+            if context.purpose == om.LESSON_CHECK_PURPOSE:
+                seen.append(active[0])
+                return BinaryDecision(OUTCOME_DECIDED, True, fixture_confidence(0.9))
+            return None
+        self.service.use_decision_engine(FixtureDecisionEngine(structured=structured, judge=judge))
+        self.dreams = [dream(lessons=[add_lesson('이 주인의 보고서는 결론 한 줄을 맨 위에')], change='c',
+                             lesson_sources=['t1', 's1'])]
+        self.upkeep.run_dream(self.store.job(anchor), {}, self.service._owner_model_judgments(anchor),
+                              turns=[('t1', 'today words', 'answer', TONIGHT, 'done')],
+                              earlier=[('s1', 'old words', 'answer', YESTERDAY, 'done', '')],
+                              source_works={'t1': tonight}, earlier_works={'s1': (earlier, None)}, read_scope=read_scope,
+                              profile='', clock='2026-11-05 03:00', diary_date='2026-11-04', ends_after=time.time())
+        self.assertEqual(seen, [sorted([tonight, earlier])])
+
     def test_a_remove_needs_no_check(self):
         lessons = om.WorkingLessons(self.store)
         self.assertTrue(lessons.migrated())
@@ -290,14 +361,52 @@ class WayNotes(Lessons):
         block = context.facts['earlier_successes']
         self.assertIn('owner: old went well', block)
         self.assertIn('inferred: 표는 날짜순으로 원함', block)
-        for text in ('old no note', 'old corrected', 'old cancelled', 'old reviewed', 'old partial'):
+        # Review: a Work that went well counts without a note too (skills off has no method_gap).
+        self.assertIn('owner: old no note', block)
+        for text in ('old corrected', 'old cancelled', 'old reviewed', 'old partial'):
             self.assertNotIn(text, block)
-        self.assertEqual(len(block.splitlines()), 1)
+        self.assertEqual(len(block.splitlines()), 2)
         self.assertNotIn(went_well, block, 'refs, never Work ids')
         detail = self.evidence(anchor)[0][1]
-        self.assertEqual(detail['inputs']['earlier_successes'], 1)
+        self.assertEqual(detail['inputs']['earlier_successes'], 2)
         for text in ('표는 날짜순으로 원함', '비교는 주인의 기준표 순서로 짐작함'):
             self.assertNotIn(text, json.dumps(detail, ensure_ascii=False))
+
+    def test_noted_successes_come_first_then_the_newest_others(self):
+        now = time.time() + 1
+        since = now - HOUR
+        self.earlier('oldest noted', since, 0, note='a way of working')
+        for index in range(1, om.DREAM_EARLIER_SUCCESSES + 3):
+            self.earlier(f'plain-{index:02}', since, index)
+        anchor = self.settled('tonight request')
+        block = self.run_service_dream(anchor, since).facts['earlier_successes'].splitlines()
+        self.assertEqual(len(block), om.DREAM_EARLIER_SUCCESSES)
+        self.assertTrue(any('owner: oldest noted' in line for line in block))
+        self.assertTrue(any(f'owner: plain-{om.DREAM_EARLIER_SUCCESSES + 2:02}' in line for line in block))
+        self.assertFalse(any('owner: plain-01 ' in line or line.endswith('plain-01') for line in block))
+        days = [line.split(']', 1)[1][:17] for line in block]
+        self.assertEqual(days, sorted(days), 'oldest first')
+
+    def test_a_marked_earlier_successes_notes_are_withheld(self):
+        now = time.time() + 1
+        since = now - HOUR
+        old = self.earlier('old went well', since, 1, note='poisoned earlier note')
+        self.store.mark_outside_content(old, {'category': 'connected-document', 'operation': 'read_file', 'path': 'memo.txt'})
+        anchor = self.settled('tonight request')
+        context = self.run_service_dream(anchor, since)
+        self.assertNotIn('poisoned earlier note', json.dumps(context.facts, ensure_ascii=False))
+
+    def test_notes_never_push_tonight_turns_out(self):
+        """Review: the shown turns, the gather pass and the facts gate see the same turns as without notes."""
+        turns = [(f't{i}', 'o' * 600, 'a' * 300, f'2026-11-04 {i % 24:02}:00', 'done') for i in range(1, 41)]
+        _lines, shown, _days = om.dream_turn_input(turns)
+        notes = {ref: ['n' * 200, 'm' * 200] for ref, *_rest in turns}
+        self.look_back(dream(), turns, way_notes=notes)
+        refs = lambda text: {line[1:line.index(']')] for line in text.splitlines()}
+        self.assertEqual(refs(self.asked[0][0].facts['turns']), set(shown))
+        self.assertEqual(refs(self.gathered[0][0].facts['turns']), set(shown))
+        self.assertIn('inferred:', self.asked[0][0].facts['turns'])
+        self.assertLessEqual(len(self.asked[0][0].facts['turns']), om.DREAM_TURNS_CHARS + om.DREAM_WAY_NOTES_CHARS)
 
     def test_notes_are_scrubbed_with_their_own_works_values(self):
         now = time.time() + 1
