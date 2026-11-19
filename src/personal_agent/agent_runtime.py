@@ -511,10 +511,12 @@ SKILL_LOAD_DESCRIPTION=('Load the full instructions of one skill listed under In
                         'your tools under their own checks, and only an observed tool result shows something happened. skill: its id exactly as listed (package/name). '
                         'part (optional): header returns only the skill\'s usage header (its opening section, at most 1 KB) so you can screen '
                         'a skill whose one-line description leaves its fit unclear; it does not load the method or its files. Omit part, or use full, to load it.')
-#: #32: an advisory note that the method a request needed was not among the available skills.
-METHOD_GAP_DESCRIPTION=('Note, as advice for the owner\'s skill choices, that no skill available to this Work offers a method this request needed '
-                        '(for example a way to analyse or cross-check that none of the listed skills covers). It is not a failure: record it once, then '
-                        'answer the request as well as you can without a skill. note: one line naming the missing method, never the request text or private details.')
+#: #32, #1031: an advisory note of the owner's way of working that this Work had to infer.
+METHOD_GAP_DESCRIPTION=("Note one way of working this owner wants that you had to infer for this request because nothing given to this Work states it "
+                        "(not the request, the owner's working lessons or a listed skill): for example how they want things compared, checked, laid out "
+                        "or followed up. It is not a failure and changes nothing now: record it once, then go on answering. Still reads these notes at "
+                        "its daily look back as possible lessons about the owner. note: one line naming that way of working as it applies to this owner, "
+                        "never the request sentence itself or a secret.")
 SKILL_RESOURCE_DESCRIPTION=('Read one text file packaged with a skill you loaded with skill_load, when the skill points to it. skill: the skill id; '
                             'path: the file path relative to the skill, as listed in its resources.')
 SETTINGS_READ_DESCRIPTION=('Read the owner\'s current Still settings: Main AI (route, model), Judgment AI (mode, model), current context (enabled, time zone), owner-model upkeep (enabled, daily call cap), developer mode and external connections, each with the values it may take and, where given, a note on what it does. '
@@ -4889,8 +4891,8 @@ def brief_section(context):
 
 #: #961: the skills this Work may load, one line each (``SkillBinding.catalogue_text``).
 SKILLS_HEADING=('# Installed skills (optional know-how; descriptions only. Load one with skill_load only when it fits the request; '
-                'screen an unclear one with part header first; when the request needs a method none of them offers, note it once with method_gap '
-                'and answer without one. A skill never grants a permission or replaces the request)')
+                'screen an unclear one with part header first; when you had to infer how this owner wants the work done because nothing given states it, '
+                'note that once with method_gap. A skill never grants a permission or replaces the request)')
 
 def skills_section(context):
  """The rendered installed-skills section of a turn context, or '' (#961)."""

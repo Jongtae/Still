@@ -785,13 +785,12 @@ class SkillBinding:
         # description is already in the catalogue the Work was given.
         return {**self.identity(entry), 'part': 'header', 'header': head,
                 'header_truncated': cut,
-                'note': '머리말만 읽었어요. 요청에 맞으면 skill_load로 전체 방법을 읽고, 맞는 스킬이 없으면 method_gap에 남기세요.'}
+                'note': '머리말만 읽었어요. 요청에 맞으면 skill_load로 전체 방법을 읽고, 맞는 스킬이 없으면 스킬 없이 답하세요.'}
 
     def gap(self, note):
-        """An advisory note that no skill this Work could use offered the method it needed (#32).
+        """Note a way of working for this owner that the Work had to infer (#1031).
 
-        Bounded, never a failure and never a block: the Work goes on answering
-        without a skill.  The note is the method that was missing, not the request.
+        The note is bounded. Recording it neither fails nor blocks the Work.
         """
         text = ' '.join(str(note or '').split())
         if not text:
@@ -800,7 +799,7 @@ class SkillBinding:
             raise SkillError(msg('skills.gap_limit', count=MAX_GAP_NOTES), 'skill_limit')
         self.gap_notes += 1
         return {'method_gap': text[:MAX_GAP_CHARS], 'advisory': True,
-                'note': '기록만 했어요. 실패가 아니니 스킬 없이 요청에 계속 답하세요.'}
+                'note': '기록만 했어요. 실패가 아니니 요청에 계속 답하세요.'}
 
     def resource(self, skill, path):
         entry = self._entry(skill)

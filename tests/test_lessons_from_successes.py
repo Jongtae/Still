@@ -95,6 +95,7 @@ class EvidenceRule(Lessons):
         self.assertEqual(sources[0], self.anchor, 'the anchor Work stays first, as the notice and undo use it')
         self.assertIn(tonight, sources)
         self.assertIn(earlier, sources)
+        self.assertEqual(len(sources), len(set(sources)), 'each Work once')
         self.assertEqual(detail['lessons_evidence'], {'tonight': 1, 'tonight_misses': 0, 'earlier_misses': 0,
                                                       'earlier_successes': 1, 'rule': 'occasions'})
         block = self.asked[0][0].facts['earlier_successes']
@@ -103,6 +104,18 @@ class EvidenceRule(Lessons):
         self.assertEqual(detail['inputs']['earlier_successes'], 1)
         for text in ('earlier words', 'earlier answer', 'tonight words'):
             self.assertNotIn(text, json.dumps(detail))
+
+    def test_the_anchor_cited_as_a_turn_is_recorded_once(self):
+        earlier = self.settled('earlier work')
+        anchor = self.settled('anchor')
+        self.dreams = [self.lesson('t1', 's1')]
+        self.upkeep.run_dream(self.store.job(anchor), {}, self.service._owner_model_judgments(anchor),
+                              turns=[('t1', 'tonight words', 'answer', TONIGHT, 'done')],
+                              earlier=[('s1', 'earlier words', 'answer', YESTERDAY, 'done', '')],
+                              source_works={'t1': anchor}, earlier_works={'s1': (earlier, None)}, profile='',
+                              clock='2026-11-05 03:00', diary_date='2026-11-04', ends_after=time.time())
+        [row] = lesson_rows(self.store)
+        self.assertEqual(json.loads(row['source_works']), [anchor, earlier])
 
     def test_a_success_tonight_and_an_earlier_miss_are_two_occasions(self):
         detail = self.look_back(self.lesson('t1', 'm1'), [('t1', 'today', 'answer', TONIGHT, 'done')],
