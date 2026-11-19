@@ -640,8 +640,8 @@ finally:
         before=len(self.calls)
         self.script_worker(('find_files',{'query':'PRIVATE-DOCUMENT-TEXT'}),('read_file',{'root_id':'saved-results','path':'Stored.md'}))
         searched=self.store.enqueue('저장된 작업공간에서 “PRIVATE-DOCUMENT-TEXT” 찾아줘','natural-search');self.service.run_one()
-        # The answer is the worker's; the source it read is named from Still's record.
-        self.assertEqual(self.store.job(searched)['response'],'Compatible response\n\n조회 출처:\n저장된 결과: Stored.md')
+        # #1014: the answer is the worker's as written; Still appends no source block of its own.
+        self.assertEqual(self.store.job(searched)['response'],'Compatible response')
         worker=[message for url,body,_headers in self.calls[before:] if url.endswith('/chat/completions')
                 for message in body['messages']]
         self.assertFalse(any('[Still observation' in str(message.get('content')) for message in worker if message.get('role')=='user'))
@@ -653,7 +653,7 @@ finally:
         self.assertEqual(self.store.job(ordinary)['status'],'succeeded')
         # #820: the earlier document Works stay in the external model's history.
         worker=[body for url,body,_headers in self.calls[before:] if url.endswith('/chat/completions') and body.get('tools')]
-        self.assertIn('저장된 결과: Stored.md',json.dumps(worker,ensure_ascii=False))
+        self.assertIn('PRIVATE-DOCUMENT-TEXT',json.dumps(worker,ensure_ascii=False))
 
     def test_workspace_summary_runs_on_a_subscription_engine(self):
         # #826 (owner decision): the approved reference excerpt reaches the CLI worker like any other worker.
@@ -983,7 +983,8 @@ finally:
         self.assertEqual(self.store.job(job['id'])['status'],'succeeded')
         sent=[call[1] for call in self.calls if call[0].endswith('/chat/completions')]
         self.assertTrue(any('Aurora launches on Friday' in json.dumps(body) for body in sent))
-        self.assertIn('컨텍스트:',self.store.job(job['id'])['response'])
+        # #1014: no host context-source block; the shared item stays in the Work's context record.
+        self.assertNotIn('컨텍스트:',self.store.job(job['id'])['response'])
 
     def test_an_old_task_card_s_progress_button_returns_safe_owner_bound_evidence(self):
         generation=self.pair()

@@ -573,7 +573,7 @@ class FirstUseEndToEndAcceptance(unittest.TestCase):
             # #820: no page approval is set up first; the page is read at its public address.
             self.model_plan = [('web_search', '{"query": "노이즈캔슬링 헤드폰 비교"}'),
                                ('public_page_read', json.dumps({'url': PAGE_URL}))]
-            self.model_text = ('관찰됨: Model A 재생 시간 30시간. '
+            self.model_text = (f'관찰됨: Model A 재생 시간 30시간 ({PAGE_URL}). '
                                '확인되지 않음: 가격과 재고는 페이지에 없었습니다.')
             research = self.says(14, '웹에서 노이즈캔슬링 헤드폰 비교해서 찾아봐')
             self.drain()
@@ -590,9 +590,9 @@ class FirstUseEndToEndAcceptance(unittest.TestCase):
             # worker's now, so no Still-side discrimination is evidenced.
             self.assertIn('관찰됨', job['response'])
             self.assertIn('확인되지 않음', job['response'])
-            # This one is real product evidence: `model_text` contains no URL,
-            # so the citation was appended by the product.
-            self.assertIn(PAGE_URL, job['response'])
+            # #1014: citing is the worker's, too; Still appends no source block,
+            # so the page the worker cited appears once, as the worker wrote it.
+            self.assertEqual(job['response'].count(PAGE_URL), 1)
             # The egress layer was asked for exactly the bounded plan, and
             # the page read carried only its address (#820: no approved scope).
             self.assertEqual([plan['tool'] for plan in self.network.plans],

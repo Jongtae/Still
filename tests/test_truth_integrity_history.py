@@ -421,7 +421,7 @@ class FallbackTextTests(TruthIntegrityTestCase):
         self.assertIn('아직 파일을 찾지 않았어요', job['response'])
         self.assertNotIn('일치하는 파일이 없어요', job['response'])
         # The fallback text itself still says "not checked" for any caller.
-        self.assertEqual(fallback_response([('find_files', {'files': [], 'needs_setup': True})], []),
+        self.assertEqual(fallback_response([('find_files', {'files': [], 'needs_setup': True})]),
                          QUALIFIER_NOTES['setup-required'])
 
     def test_a_capped_search_says_it_is_incomplete(self):

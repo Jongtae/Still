@@ -209,12 +209,6 @@
   "ja": "検索や読み取りが上限で止まったため、一部だけ確認しました。確認できていない部分が残っています。",
   "zh": "搜索或读取在上限处停止，只确认了一部分，还有未确认的部分。"
  },
- "agent_runtime.sources_looked_up": {
-  "ko": "조회 출처:",
-  "en": "Sources looked up:",
-  "ja": "参照した出典:",
-  "zh": "查询来源："
- },
  "agent_runtime.the_tools_finished_but_i_didn": {
   "ko": "도구 실행은 끝났지만 결과를 설명하는 답변을 받지 못했어요. 요청이 완료됐는지는 확인되지 않았어요. 실행 기록을 확인해 주세요.",
   "en": "The tools finished, but I didn't get an answer describing the result, so it's not confirmed the request was completed. Please check the run record.",
@@ -6891,12 +6885,6 @@
   "en": "The completion check was unavailable, so I couldn't confirm whether the request was finished.",
   "ja": "完了を判断する機能が使えず、依頼が終わったか確認できませんでした。",
   "zh": "无法使用完成判断功能，所以没能确认请求是否完成。"
- },
- "service.context_sources": {
-  "ko": "컨텍스트 출처:",
-  "en": "Context sources:",
-  "ja": "コンテキストの出典:",
-  "zh": "上下文来源："
  },
  "cloud_engines.not_configured": {
   "ko": "{provider} 설정이 아직 끝나지 않아 실행하지 않았어요. 설정 > AI에서 다음 값을 채워 주세요: {names}. 다른 AI로 자동 전환하지 않았어요.",

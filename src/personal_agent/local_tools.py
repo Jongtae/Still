@@ -731,4 +731,4 @@ def weather_answer(result):
         lines.append('위치 기준: 저장된 장소(측정한 현재 위치가 아님)')
     elif basis:
         lines.append('위치 기준: 공유한 장소(현재 위치가 아님)')
-    return ('\n'.join(lines)+"\nOpen-Meteo 기상 모델 기반 현재 날씨와 예보입니다.\n\n조회 출처:\n"+'\n'.join(result['sources']))
+    return '\n'.join(lines)+"\nOpen-Meteo 기상 모델 기반 현재 날씨와 예보입니다."

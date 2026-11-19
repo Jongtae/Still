@@ -1913,11 +1913,8 @@ class WorkExecutor:
             # history so its answer is filtered from later turns
             # routed to a subscription CLI or needing approval (#574).
             service.record_file_workspace_document_job(job['id'])
-        if run.context_sources:
-            # #173 slice C: the owner-selected context this Work was given, from Still's own
-            # typed record (``run.context_sources``), shown like looked-up sources; what the
-            # answer itself says no longer suppresses or changes it.
-            run.response+='\n\n'+msg('service.context_sources')+'\n'+'\n'.join(dict.fromkeys(run.context_sources))
+        # #1014: no host source block is appended; the owner-selected context this Work
+        # was given stays in its context attachment and information-use record.
 
     def _read_checkpoint_can_settle(self, run, *, db=None, terminal=False):
         ledger = getattr(run.work_budget, 'ledger', None)

@@ -1217,7 +1217,7 @@ class LoadMoreTests(unittest.TestCase):
         self.assertTrue(recorded['navigation_refused'], 'a refused navigation stays visible in the durable record')
         self.assertTrue(recorded['text_truncated'], 'partial loaded text is not recorded as complete')
         self.assertNotIn('비밀', json.dumps(summary, ensure_ascii=False))
-        self.assertIn('2번 더 불러와', fallback_response([('browser_read', result)], []))
+        self.assertIn('2번 더 불러와', fallback_response([('browser_read', result)]))
 
 
 class CommitControlTests(unittest.TestCase):
