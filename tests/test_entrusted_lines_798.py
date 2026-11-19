@@ -15,7 +15,7 @@ from personal_agent.messages import msg
 from personal_agent.owner_forget import OwnerForget
 from personal_agent.quickstart_store import QuickStore
 
-from test_preparations import CHAT, _Case, call
+from test_preparations import CHAT, _Case, call, engine
 
 TASK = '매일 아침 관심 목록을 확인해 정리해 주기'
 PROMISE = '매일 아침 9시에 정리한 내용을'
@@ -186,7 +186,7 @@ class ContinuityTests(_LineCase):
         brief, work = self.open_line(recurrence=None)
         [row] = self.work_rows(brief['line_id'])
         lines = self.service.preparations_service
-        self.line_call('이제 그만해 줘', action='stop', line=brief['line_id'])
+        self.line_call('이제 그만해 줘', action='stop', line=brief['line_id'], scope='line')
         listing = lines.lines_listing()
         self.assertEqual(listing['lines'][0]['state'], el.STATE_STOPPED)
         self.assertNotIn('nothing_scheduled', listing['lines'][0])
@@ -384,6 +384,12 @@ class RunTests(_LineCase):
         self.assertEqual(self.service.preparations_service.line_version_read(run['id']), (brief['line_id'], 2))
 
     def test_a_stop_during_a_run_ends_it_at_its_next_step_and_its_reply_is_not_sent(self):
+        self.check_stop_during_run(end_line=True)
+
+    def test_stopping_current_work_ends_the_run_at_its_next_step_and_suppresses_its_reply(self):
+        self.check_stop_during_run(end_line=False)
+
+    def check_stop_during_run(self, *, end_line):
         brief, _work = self.open_line(delivery='send')
         [row] = self.work_rows(brief['line_id'])
         self.deliver_all()
@@ -391,7 +397,7 @@ class RunTests(_LineCase):
         calls = []
 
         def first_step(body):
-            self.service.preparations_service.stop_line(brief['line_id'], 'owner-work')
+            self.service.preparations_service.stop_line(brief['line_id'], 'owner-work', end_line=end_line)
             return {'content': None, 'tool_calls': [call('notes', 'list_notes')]}
 
         def after(body):
@@ -497,13 +503,14 @@ class ListAndStopTests(_LineCase):
         brief, _work = self.open_line(delivery='send')
         self.deliver_all()
         self.telegram.clear()
-        result = self.line_call('그만해', action='stop', line=brief['line_id'])
-        self.assertEqual((result['state'], result['changed']), (el.STATE_STOPPED, True))
+        result = self.line_call('맡은 일 자체를 끝내 줘', action='stop', line=brief['line_id'], scope='line')
+        self.assertEqual((result['state'], result['changed'], result['scope']), (el.STATE_STOPPED, True, 'line'))
         rows = self.service.preparations_service.line_rows(brief['line_id'])
         self.assertTrue(rows and all(row['state'] == prep.STATE_CANCELLED for row in rows))
         self.deliver_all()
         confirmation = msg('lines.stopped', task=TASK)
         self.assertEqual(sum(body.get('text') == confirmation for body in self.sends()), 1)
+        self.assertNotIn(msg('lines.work_stopped', task=TASK), self.texts())
         self.assertNotIn('되돌', confirmation)
         self.telegram.clear()
         self.now += 30 * 86400
@@ -512,18 +519,77 @@ class ListAndStopTests(_LineCase):
         self.deliver_all()
         self.assertFalse(self.sends(), 'nothing after the confirmation')
         # Only the owner restarts it; a stopped line takes no new schedule.
-        seen = []
+        for explicitly_requested in (False, True):
+            with self.subTest(explicitly_requested=explicitly_requested):
+                self.service.use_decision_engine(engine(preparation=explicitly_requested))
+                result, body = self.schedule_again(brief['line_id'])
+                self.assertEqual(result['code'], 'line_stopped')
+                self.assertNotIn(el.REF_PREFIX + brief['line_id'], text_of(body))
 
+    def schedule_again(self, line_id):
+        seen = []
         def schedule(body):
             return {'content': None, 'tool_calls': [call('again', 'schedule_preparation', kind='prepare', goal='다시',
-                                                          due=self.due_iso(600), line=brief['line_id'])]}
+                                                          due=self.due_iso(600), line=line_id)]}
 
         def answer(body):
-            seen.extend(tool_results(body, 'schedule_preparation'))
-            return {'content': '멈춘 일이에요.'}
+            seen.append((tool_results(body, 'schedule_preparation')[-1], body))
+            return {'content': '알겠습니다.'}
         self.script = [schedule, answer]
         self.receive('관심 목록 정리 예약해')
-        self.assertEqual(seen[-1]['code'], 'line_stopped')
+        return seen[-1]
+
+    def test_default_scope_stops_only_current_work(self):
+        brief, _work = self.open_line()
+        result = self.line_call('그만해', action='stop', line=brief['line_id'])
+        self.assertEqual((result['state'], result['changed'], result['scope']), (el.STATE_ACTIVE, True, 'work'))
+        self.assertEqual(self.service.lines.current(brief['line_id']), brief)
+        self.assertTrue(all(row['state'] == prep.STATE_CANCELLED
+                            for row in self.service.preparations_service.line_rows(brief['line_id'])))
+
+    def test_work_stop_keeps_the_same_brief_and_allows_new_schedules(self):
+        brief, _work = self.open_line(delivery='send')
+        line_id = brief['line_id']
+        [row] = self.work_rows(line_id)
+        self.now = row['due_at'] + 1
+        self.assertTrue(self.tick())
+        self.assertTrue(self.service.run_one())
+        [run] = self.runs(row['id'])
+        self.assertEqual(self.store.job(run['id'])['delivery'], 'pending')
+
+        self.telegram.clear()
+        result = self.line_call('지금 하던 건 그만해', action='stop', line=line_id, scope='work')
+        self.assertEqual((result['state'], result['changed'], result['scope']), (el.STATE_ACTIVE, True, 'work'))
+        self.assertEqual(self.service.lines.current(line_id), brief)
+        self.assertTrue(all(row['state'] == prep.STATE_CANCELLED
+                            for row in self.service.preparations_service.line_rows(line_id)))
+        self.assertEqual(self.store.job(run['id'])['delivery'], 'cancelled')
+        self.deliver_all()
+        self.assertEqual(self.texts().count(msg('lines.work_stopped', task=TASK)), 1)
+        self.assertNotIn(msg('lines.stopped', task=TASK), self.texts())
+
+        for explicitly_requested, accepted_by in ((False, prep.ACCEPTED_OWNER_WORK),
+                                                  (True, prep.ACCEPTED_OWNER_REQUEST)):
+            self.service.use_decision_engine(engine(preparation=explicitly_requested))
+            scheduled, body = self.schedule_again(line_id)
+            self.assertIn(el.REF_PREFIX + line_id, text_of(body))
+            self.assertTrue(scheduled['scheduled'], scheduled)
+            replacement = self.service.preparations.get(scheduled['preparation_id'])
+            self.assertEqual((replacement['line_id'], replacement['accepted_by']), (line_id, accepted_by))
+        # A subsequent run the owner accepted may continue its mission in pieces.
+        run_id = self.service.preparations.start(replacement, channel='web', chat_id=None, now=replacement['due_at'])
+        self.assertIsNotNone(run_id)
+        piece = self.service.preparation_scheduler(self.store.job(run_id), '')(
+            {'kind': 'prepare', 'goal': '다음 확인', 'due': self.due_iso(1200), 'line': line_id})
+        self.assertEqual(piece['accepted_by'], prep.ACCEPTED_LINE_PIECE_OWNER)
+
+    def test_invalid_stop_scope_changes_nothing(self):
+        brief, _work = self.open_line()
+        result = self.line_call('그만해', action='stop', line=brief['line_id'], scope='invalid')
+        self.assertEqual(result['code'], 'invalid_arguments')
+        self.assertEqual(self.service.lines.current(brief['line_id']), brief)
+        self.assertTrue(all(row['state'] == prep.STATE_SCHEDULED
+                            for row in self.service.preparations_service.line_rows(brief['line_id'])))
 
     def test_the_announcements_stop_control_stops_the_line(self):
         brief, _work = self.open_line()
@@ -583,8 +649,11 @@ class FormatTests(_LineCase):
             el.validate({**valid, 'rules': [{'text': RULE, 'amount': 10}]})
         from personal_agent.agent_runtime import DEFINITIONS
         [definition] = [item for item in DEFINITIONS if item['function']['name'] == 'entrusted_line']
-        self.assertFalse(set(definition['function']['parameters']['properties'])
+        parameters = definition['function']['parameters']
+        self.assertFalse(set(parameters['properties'])
                          & {'authority', 'rung', 'amount', 'subject', 'grant', 'payment'})
+        self.assertEqual(parameters['properties']['scope']['enum'], ['work', 'line'])
+        self.assertNotIn('scope', parameters['required'])
 
     def test_a_stored_brief_that_cannot_be_read_stops_the_lines_run(self):
         brief, _work = self.open_line()

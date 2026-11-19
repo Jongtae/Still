@@ -284,7 +284,7 @@ class StoodLineTraceTests(base.Lines):
         return self.store.job(last)
 
     def do_owner_stop(self, args):
-        self.helper.line_handler(self.last_turn_job())({'action': 'stop', 'line': self.line_id})
+        self.helper.line_handler(self.last_turn_job())({'action': 'stop', 'line': self.line_id, 'scope': 'line'})
 
     def do_owner_restart(self, args):
         self.helper.line_handler(self.last_turn_job())({'action': 'restart', 'line': self.line_id})

@@ -461,18 +461,20 @@ SCHEDULE_PREPARATION_ARGUMENTS={
 ENTRUSTED_LINE_DESCRIPTION=(
  'Keep entrusted work in one line across schedules (#798). Open it with the task in the owner\'s words, report promise '
  'and standing rules (one per line), then schedule with schedule_preparation line. Reuse the line for the same work. '
- 'For owner corrections, revise with rule (or drop_rule) only for a standing change. If unclear, apply it today only '
- 'and say so. Daily limits and today-only corrections govern that day\'s work. The mission continues until its end '
- 'condition is met, the owner ends it, or you judge it complete or impossible and report why. Record the end and reason '
- 'in open_matters when available. Honor a recorded end. '
- 'list answers what you are handling for the owner; read gives one line\'s brief and latest outcomes when it '
- 'bears on a question; stop ends it and everything under it. A line grants nothing: approvals and payment stay as they are. '
- 'Still tells the owner itself when a line opens, takes a standing rule or stops; do not repeat that message.')
+ 'Revise with rule (or drop_rule) only for a standing correction; if unclear, apply it today only and say so. '
+ 'Daily limits and today-only corrections govern that day\'s work. The mission continues until its end condition is met, '
+ 'the owner ends it, or you judge it complete or impossible and report why; record the end and reason in open_matters '
+ 'and honor a recorded end. list answers what you handle for the owner; read gives a line\'s brief and latest outcomes. '
+ 'For stop, choose the scope from the owner\'s words; if unclear, stop current work only and say in your reply that the '
+ 'mission is still held and that they can ask to end it. A line grants nothing: approvals and payment stay as they are. '
+ 'Still tells the owner when a line opens, takes a standing rule or stops; do not repeat that.')
 ENTRUSTED_LINE_ARGUMENTS={
  'action':('list, read, open, revise, undo, stop or restart. Only a Work the owner started may open, revise, undo, stop or restart, '
            'with two exceptions for a scheduled run of a line: one the owner steered may revise or stop its own line as their words ask; '
            'a run of a line the owner set up may revise its own line\'s open_matters only.'),
  'line':'The line id (from list, read or open), for every action but list and open.',
+ 'scope':('For stop only. "work" (default) cancels current and pending runs and keeps the mission active. '
+          '"line" ends the mission and cancels its work.'),
  'expected_version':'For revise: the version you read (list, read or open). A newer version wins and is shown to you.',
  'version':'For undo: the version to undo (the current one).',
  'account_every_days':'How often the line gives an account of itself (default 7): 1-12 days, or whole weeks up to 84 days.',
@@ -621,7 +623,7 @@ DEFINITIONS=[
  schema('weather',WEATHER_DESCRIPTION,{'city':STRING,'country':STRING,'location_ref':STRING}),
  schema('propose_current_state',PROPOSE_CURRENT_STATE_DESCRIPTION,described({'predicate':{'type':'string','enum':['current_place','work_mode','availability_hint']},'value':STRING,'place_ref':STRING,'source':STRING,'until':STRING,'supersedes':STRING},PROPOSE_CURRENT_STATE_ARGUMENTS),['predicate']),
  schema('schedule_preparation',SCHEDULE_PREPARATION_DESCRIPTION,described({'kind':{'type':'string','enum':['reminder','prepare']},'goal':STRING,'due':STRING,'timezone':STRING,'recurrence':{'type':'string','enum':['daily','weekdays','weekly']},'rrule':STRING,'every_minutes':STRING,'until':STRING,'max_runs':STRING,'report_every_minutes':STRING,'delivery':{'type':'string','enum':['send','keep','when_needed']},'title':STRING,'offer':STRING,'replaces':STRING,'line':STRING,'check':STRING},SCHEDULE_PREPARATION_ARGUMENTS),['kind','goal','due']),
- schema('entrusted_line',ENTRUSTED_LINE_DESCRIPTION,described({'action':{'type':'string','enum':['list','read','open','revise','undo','stop','restart']},'line':STRING,'task':STRING,'report_promise':STRING,'rules':STRING,'rule':STRING,'drop_rule':STRING,'open_matters':STRING,'expected_version':STRING,'version':STRING,'account_every_days':STRING},ENTRUSTED_LINE_ARGUMENTS),['action']),
+ schema('entrusted_line',ENTRUSTED_LINE_DESCRIPTION,described({'action':{'type':'string','enum':['list','read','open','revise','undo','stop','restart']},'line':STRING,'scope':{'type':'string','enum':['work','line']},'task':STRING,'report_promise':STRING,'rules':STRING,'rule':STRING,'drop_rule':STRING,'open_matters':STRING,'expected_version':STRING,'version':STRING,'account_every_days':STRING},ENTRUSTED_LINE_ARGUMENTS),['action']),
  schema('tell_owner',TELL_OWNER_DESCRIPTION,{'text':STRING},['text']),
  schema('ask_location',ASK_LOCATION_DESCRIPTION,described({'reason':STRING,'button_label':STRING,'mode':{'type':'string','enum':['ask','with_answer']}},ASK_LOCATION_ARGUMENTS),['reason']),
  schema('skill_load',SKILL_LOAD_DESCRIPTION,{'skill':STRING,'part':{'type':'string','enum':['full','header']}},['skill']),

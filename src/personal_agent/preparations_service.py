@@ -17,7 +17,7 @@ from . import condition_checks as checks
 from . import preparations as prep
 from . import owner_model as om
 from . import work_status as ws
-from .agent_runtime import ToolError, WorkLedger, not_run, ran_field
+from .agent_runtime import WORK_STOP_KEEP, WORK_STOP_KEY, ToolError, WorkLedger, not_run, ran_field
 from .api_credentials import CredentialError
 from .conversation_handoff import JUDGMENT_NO, JUDGMENT_YES
 from .conversation_projection import earlier_turn_line
@@ -439,7 +439,7 @@ class PreparationsService:
         goal is the handoff the run writes.  Who stands behind it, where it goes and how it is told are
         inherited from ``parent`` and never read from the call: ``prep.piece_standing`` (payment follows
         the chain's owner-accepted root; owner decision 2026-11-18), the parent's channel and delivery
-        mode.  ``Preparations.create`` re-checks the line and the bounds in its transaction and keeps one
+        mode.  The parent run, line and bounds are re-checked in the same transaction that keeps one
         child per run.  No proposal, no message, no declined-goal judgment: the owner's line and its stop
         control stand for it.
         """
@@ -456,12 +456,17 @@ class PreparationsService:
         accepted_by=prep.piece_standing(parent['accepted_by'])
         if accepted_by is None:raise refused('line_piece_invalid')
         try:
-            row=service.preparations.create(kind=prep.KIND_PREPARE,goal=fields['goal'],due_at=fields['due_at'],
-                                            timezone=fields['timezone'],recurrence=None,channel=parent['channel'],
-                                            created_from=job['id'],state=prep.STATE_SCHEDULED,accepted_by=accepted_by,
-                                            delivery_mode=parent.get('delivery_mode'),title=fields['title'],offer=fields['offer'],
-                                            origin=prep.ORIGIN_LINE_PIECE,line_id=parent['line_id'],
-                                            piece_of=prep.slot_key(job['request_key']))
+            with service.store.db() as db:
+                db.execute('BEGIN IMMEDIATE')
+                refusal=prep.Preparations.run_refusal(db,job['id'],now)
+                if refusal in (prep.LINE_STOPPED,prep.LINE_UNREADABLE):raise refused('line_stopped')
+                if refusal:raise not_run(ToolError(UNATTENDED_APPROVAL_TEXT,'unattended_run'))
+                row=service.preparations.create(kind=prep.KIND_PREPARE,goal=fields['goal'],due_at=fields['due_at'],
+                                                timezone=fields['timezone'],recurrence=None,channel=parent['channel'],
+                                                created_from=job['id'],state=prep.STATE_SCHEDULED,accepted_by=accepted_by,
+                                                delivery_mode=parent.get('delivery_mode'),title=fields['title'],offer=fields['offer'],
+                                                origin=prep.ORIGIN_LINE_PIECE,line_id=parent['line_id'],
+                                                piece_of=prep.slot_key(job['request_key']),db=db)
         except prep.PreparationRefusal as exc:
             raise ToolError(str(exc),exc.code,**ran_field(exc)) from None
         replaced=bool(row.get('piece_replaced'))
@@ -2310,35 +2315,64 @@ class PreparationsService:
         """The worker's next step, with the notice to say in the reply when Still could not send it."""
         return next_step if not untold else msg('lines.say_in_reply',text=untold)
 
-    def stop_line(self, line_id, work_id=None):
-        """Stop a line: its brief becomes stopped and every pending row of it is cancelled; ``(brief, changed)``.
+    def stop_line(self, line_id, work_id=None, *, end_line=True):
+        """Cancel the line's work and optionally end its brief. Return ``(brief, changed)``.
 
-        A run already going stops at its next step (``run_refusal``).  Nothing earlier is undone.
+        The announcement button ends the line. Within the tool, the owner may stop just its work.
+        A running row refuses at its next step through the Work Stop or line-state check.
         """
         service=self.service
         with service.store.db() as db:
             db.execute('BEGIN IMMEDIATE')
-            before,after=service.lines.write(line_id,work_id,None,'stopped',lambda brief:{**brief,'state':el.STATE_STOPPED},db=db)
-            rows=self.line_rows(line_id,db)
-            # Only replies still waiting are suppressed, including committed bundle Works.
-            runs=[row['last_run_job_id'] for row in rows if row.get('last_run_job_id')]
-            if runs:
-                db.execute(f"UPDATE jobs SET delivery='cancelled' WHERE delivery='pending' AND id IN ({','.join('?'*len(runs))})",runs)
+            if end_line:
+                before,after=service.lines.write(line_id,work_id,None,'stopped',
+                                                 lambda brief:{**brief,'state':el.STATE_STOPPED},db=db)
+            else:
+                before=after=service.lines.current(line_id,db)
+                if after is None:raise el.LineRefusal('line_not_found')
+                if after['state']!=el.STATE_ACTIVE:return after,False
+            changes_before=db.total_changes
+            keys=prep.line_works_sql('request_key')
+            db.execute(f"UPDATE jobs SET delivery='cancelled' WHERE delivery='pending' AND {keys}",(line_id,))
+            if not end_line:
+                # Fence replies that have yet to be produced by a paired run.
+                db.execute("UPDATE jobs SET delivery='cancelled' WHERE delivery='none' AND chat_id IS NOT NULL "
+                           "AND id IN (SELECT last_run_job_id FROM preparations WHERE line_id=? AND state=?)",
+                           (line_id,prep.STATE_RUNNING))
+                # The brief stays active, so retire reports waiting to be bundled or notified.
+                db.execute(f"UPDATE jobs SET delivery='cancelled' WHERE delivery='none' AND {keys} "
+                           "AND EXISTS(SELECT 1 FROM tool_events e WHERE e.job_id=jobs.id AND e.tool='preparation' "
+                           "AND json_type(e.detail,'$.outcome') IS NOT NULL AND EXISTS(SELECT 1 FROM tool_events h "
+                           "WHERE h.tool='line_held' AND json_extract(h.detail,'$.preparation_id')="
+                           "json_extract(e.detail,'$.preparation_id') AND h.created<=e.created)) "
+                           "AND NOT EXISTS(SELECT 1 FROM tool_events b WHERE b.job_id=jobs.id AND b.tool='line_bundled') "
+                           "AND NOT EXISTS(SELECT 1 FROM telegram_notifications n WHERE n.job_id=jobs.id AND n.kind=?)",
+                           (line_id,prep.NOTIFY_KIND))
+                db.execute("UPDATE telegram_notifications SET state='cancelled' WHERE kind=? AND state='queued' "
+                           f"AND job_id IN (SELECT id FROM jobs WHERE {keys})",(prep.NOTIFY_KIND,line_id))
             service.lines.suppress_pending_bundles(line_id,db)
-        for row in rows:
-            if row['state'] in prep.ACTIVE_STATES:
-                try:service.cancel_preparation(row['id'])
-                except prep.PreparationRefusal:continue
-        LOG.info('line stopped id=%s changed=%s',line_id,after['version']!=before['version'])
-        return after,after['version']!=before['version']
+            replies_changed=db.total_changes!=changes_before
+            cancelled=[]
+            for row in self.line_rows(line_id,db):
+                if row['state'] not in prep.ACTIVE_STATES:continue
+                if not end_line and row['state']==prep.STATE_RUNNING and row['last_run_job_id']:
+                    # Ordinary row cancellation lets a running Work finish. This stop reaches its next step.
+                    service.store.append_config_list(WORK_STOP_KEY,row['last_run_job_id'],WORK_STOP_KEEP,db=db)
+                cancelled.append(service.preparations.cancel(row['id'],db=db))
+        for row in cancelled:self.withdraw_cancelled_location(row)
+        changed=(after['version']!=before['version']) if end_line else bool(cancelled or replies_changed)
+        LOG.info('line stop id=%s end_line=%s changed=%s',line_id,end_line,changed)
+        return after,changed
 
     def stopped_line_run(self, job):
-        """Whether ``job`` is a run of a line that was stopped (or whose brief is gone) since it started."""
+        """Whether a line stop already cancelled this reply, or the brief is stopped or gone."""
         preparation_id=prep.preparation_of((job or {}).get('request_key'))
         if not preparation_id:return False
         with self.service.store.db() as db:
-            row=db.execute('SELECT line_id FROM preparations WHERE id=?',(preparation_id,)).fetchone()
-            return bool(row and prep.line_refusal(db,row['line_id']))
+            row=db.execute('SELECT p.line_id,j.delivery FROM preparations p JOIN jobs j ON j.id=? WHERE p.id=?',
+                           (job['id'],preparation_id)).fetchone()
+            return bool(row and row['line_id'] and
+                        (row['delivery']=='cancelled' or prep.line_refusal(db,row['line_id'])))
 
     def undo_line_version(self, line_id, version, work_id=None):
         """Put back the brief as it was before ``version``, only while ``version`` is still current."""
@@ -2480,7 +2514,7 @@ class PreparationsService:
         """The ``entrusted_line`` handler bound to one Work (#798).
 
         ``list`` and ``read`` answer from the store.  ``open``, ``revise``, ``undo``, ``stop`` and
-        ``restart`` write a brief version and are refused unless the owner's own typed message
+        ``restart`` are refused unless the owner's own typed message
         started this Work: a scheduled run, a continuation or a replayed turn cannot add a rule,
         widen a limit or resume a stopped line.  A rule change on a line that touched a
         money-marked connection is made only when the owner's message asks for exactly it.
@@ -2504,13 +2538,7 @@ class PreparationsService:
                 authority=self.own_line_authority(job,action,args.get('line'))
                 if authority is None:raise refused('unattended_run')
                 if action=='revise':return self._line_revise(job,args,authority)
-                current=service.lines.current(args.get('line'))
-                if (current is not None and service.store.outside_content_sources(job['id'])
-                        and not self.steer_asked(job,'stop this entrusted work and everything under it: '+current['task'],
-                                                 self.line_owner_rules(current))):
-                    # After outside content a stop, too, is only what the owner's words asked for.
-                    raise refused('line_change_needs_owner')
-                return self._line_stop(job,args)
+                return self._line_stop(job,args,steered=True)
             except el.LineConflict as exc:
                 raise refused('line_version_conflict',str(exc.current_version)) from None
             except el.LineRefusal as exc:
@@ -2615,12 +2643,23 @@ class PreparationsService:
         after=self.undo_line_version(args.get('line'),version,job['id'])
         return {**el.public_brief(after),'next_step':msg('lines.undone_next')}
 
-    def _line_stop(self, job, args):
+    def _line_stop(self, job, args, *, steered=False):
+        service=self.service
         line_id=args.get('line')
-        if not isinstance(line_id,str) or self.service.lines.current(line_id) is None:raise el.LineRefusal('line_not_found')
-        after,changed=self.stop_line(line_id,job['id'])
-        untold=self.line_notice(job,el.NOTICE_STOPPED,line_id,after['version']) if changed else ''
-        return {**el.public_brief(after),'changed':changed,'next_step':self.told(msg('lines.stopped_next'),untold)}
+        scope=args.get('scope','work')
+        if scope not in ('work','line'):raise el.LineRefusal('line_invalid_scope')
+        current=service.lines.current(line_id) if isinstance(line_id,str) else None
+        if current is None:raise el.LineRefusal('line_not_found')
+        if steered and service.store.outside_content_sources(job['id']):
+            change=('end this entrusted mission and stop everything under it' if scope=='line' else
+                    'stop the current work and pending runs while keeping this entrusted mission active')
+            if not self.steer_asked(job,f"{change}: {current['task']}",self.line_owner_rules(current)):
+                raise el.LineRefusal('line_change_needs_owner')
+        after,changed=self.stop_line(line_id,job['id'],end_line=scope=='line')
+        kind,next_key=(el.NOTICE_STOPPED,'lines.stopped_next') if scope=='line' else (
+            el.NOTICE_WORK_STOPPED,'lines.work_stopped_next' if after['state']==el.STATE_ACTIVE else 'lines.refused_line_stopped')
+        untold=self.line_notice(job,kind,line_id,after['version']) if changed else ''
+        return {**el.public_brief(after),'scope':scope,'changed':changed,'next_step':self.told(msg(next_key),untold)}
 
     def _line_restart(self, job, args):
         service=self.service
@@ -2775,4 +2814,6 @@ class PreparationsService:
             return service._redact_known_secrets(str(text or ''))
         if kind.startswith(el.NOTICE_STOPPED):
             return service._redact_known_secrets(msg('lines.stopped',task=brief['task']))
+        if kind.startswith(el.NOTICE_WORK_STOPPED):
+            return service._redact_known_secrets(msg('lines.work_stopped',task=brief['task']))
         return None

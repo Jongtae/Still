@@ -349,6 +349,7 @@ class EntrustedLines:
                             "AND json_extract(s.detail,'$.bundle_id')=json_extract(e.detail,'$.bundle_id') "
                             "AND json_extract(s.detail,'$.line_id')=json_extract(e.detail,'$.line_id')) "
                             "ORDER BY j.created,j.id",(bundle['id'],)).fetchall()
+            if not any(job['bundle_line_id']==line_id for job in jobs):continue
             for job in jobs:
                 try:brief=self.current(job['bundle_line_id'],db) if job['bundle_line_id']!=line_id else None
                 except LineRefusal:brief=None
@@ -385,7 +386,8 @@ from .messages import msg  # noqa: E402 - the catalogue is only needed by the te
 #: Notification kinds, each followed by ``<line_id>:<version>`` (one notice per Work and kind).
 NOTICE_OPENED, NOTICE_RULE, NOTICE_STOPPED = 'line_opened:', 'line_rule:', 'line_stopped:'
 NOTICE_PLAN = 'line_plan:'
-NOTICE_KINDS = (NOTICE_OPENED, NOTICE_RULE, NOTICE_STOPPED, NOTICE_PLAN)
+NOTICE_WORK_STOPPED = 'line_work_stopped:'
+NOTICE_KINDS = (NOTICE_OPENED, NOTICE_RULE, NOTICE_STOPPED, NOTICE_PLAN, NOTICE_WORK_STOPPED)
 #: The Evidence row recording which brief version a Work read.
 READ_EVENT = 'entrusted_line_read'
 OUTCOME_DELIVERED, OUTCOME_KEPT, OUTCOME_FAILED, OUTCOME_OPEN = 'delivered', 'kept', 'failed', 'open'
