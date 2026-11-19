@@ -870,6 +870,17 @@ def preparation_of(work_request_key):
     return key[len(REQUEST_KEY_PREFIX):].rsplit(':', 1)[0] or None
 
 
+def preparation_lineage(db, preparation_id):
+    """Read the host's line linkage, including after deleting a completed row."""
+    row = db.execute('SELECT line_id,origin,created_from,piece_of FROM preparations WHERE id=?',
+                     (preparation_id,)).fetchone()
+    if row is not None:
+        return row
+    deleted = db.execute("SELECT detail FROM tool_events WHERE job_id=? AND tool='preparation_lineage' AND status='deleted'",
+                         (preparation_id,)).fetchone()
+    return json.loads(deleted['detail']) if deleted else None
+
+
 def line_works_sql(column):
     """#938: SQL matching Works (by ``column``, a request key) of any row of one line; one parameter, the line id.
 
@@ -2103,11 +2114,19 @@ class Preparations:
     def delete(self, preparation_id):
         """Remove the row.  Its past Works and their Evidence stay."""
         with self.store.db() as db:
-            row = db.execute('SELECT state FROM preparations WHERE id=?', (preparation_id,)).fetchone()
+            db.execute('BEGIN IMMEDIATE')
+            row = db.execute('SELECT state,line_id,origin,created_from,piece_of FROM preparations WHERE id=?',
+                             (preparation_id,)).fetchone()
             if row is None:
                 raise PreparationRefusal('not_found')
             if row['state'] == STATE_RUNNING:
                 raise PreparationRefusal('running')
+            if row['line_id']:
+                # A later piece can still carry dispatch receipts from the deleted row's Works.
+                # Keep only the host linkage, with no goal or result text.
+                lineage = {key: row[key] for key in ('line_id', 'origin', 'created_from', 'piece_of')}
+                db.execute('INSERT INTO tool_events(job_id,tool,status,detail,created) VALUES (?,?,?,?,?)',
+                           (preparation_id, 'preparation_lineage', 'deleted', json.dumps(lineage), self.clock()))
             db.execute('DELETE FROM preparations WHERE id=?', (preparation_id,))
             self._clear_closed_budget_skips(db)
         return {'deleted': True, 'id': preparation_id}

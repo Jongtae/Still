@@ -237,6 +237,18 @@ def reserve_outbound(store, work_id, url):
     return reservations
 
 
+def cancel_outbound(store, reservations):
+    """Remove the echo holds for an attempt refused before transport."""
+    if not reservations:
+        return
+    try:
+        with store.db() as db:
+            db.executemany("DELETE FROM tool_events WHERE id=? AND tool=? AND status='pending'",
+                           ((event, OUTBOUND_POST) for _, event, _ in reservations))
+    finally:
+        _release_live_reservations(store, reservations)
+
+
 def observe_outbound(store, reservations, url, status, raw):
     """Every finished attempt settles; unidentified sends bound authority by time.
 

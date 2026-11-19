@@ -37,6 +37,7 @@ import http.client
 import ipaddress
 import json
 import re
+import secrets
 import socket
 import ssl
 import time
@@ -200,6 +201,8 @@ def slots(store):
                      'max_age_seconds': max_age if isinstance(max_age, int) and 0 < max_age <= MAX_AGE_LIMIT else DEFAULT_MAX_AGE}
         if 'credential_ref' in slot:
             out[name]['credential_ref'] = slot['credential_ref']
+        if 'registration_id' in slot:
+            out[name]['registration_id'] = slot['registration_id']
         if slot.get('kind') == CODE_KIND:
             try:
                 if 'credential_ref' not in slot or 'oauth' in slot:
@@ -219,6 +222,12 @@ def slots(store):
             except (ValueError, TypeError):
                 out.pop(name, None)
     return out
+
+
+def dispatch_slot_matches(slot, receipt):
+    """A matching revision cannot carry a receipt across a slot recreation."""
+    return (slot['revision'] == receipt.get('revision')
+            and slot.get('registration_id') == receipt.get('registration_id'))
 
 
 def save_slot(store, name, hosts, secret, *, header='Authorization', scheme='Bearer', subject_field=None,
@@ -290,7 +299,7 @@ def save_slot(store, name, hosts, secret, *, header='Authorization', scheme='Bea
     if len(note) > MAX_NOTE_CHARS or any(value in note for value in private_values):
         raise ApiError(f'API 설명은 {MAX_NOTE_CHARS}자 이하이고 비밀값을 담지 않아야 합니다.', 'api_slot_invalid')
     row = {'note': note, 'hosts': _normal_hosts(hosts), 'header': header, 'scheme': scheme or '', 'subject': subject, 'money': money,
-           'revision': int(previous.get('revision') or 0) + 1, 'saved_at': time.time()}
+           'revision': int(previous.get('revision') or 0) + 1, 'registration_id': secrets.token_hex(16), 'saved_at': time.time()}
     if max_age_seconds is not None:
         row['max_age_seconds'] = max_age_seconds
     if code is not None:
@@ -1132,7 +1141,8 @@ class ApiRequests:
                     raise ApiError(str(exc), 'payment_autonomy_changed') from None
             detail = {'scope': 'api', 'evidence': {'engine': 'agentos', 'kind': 'api-slot',
                       'identity': slot['name'], 'operation': method, 'effect': effect, 'host': destination,
-                      'input_digest': identity, 'revision': slot['revision'], 'work_id': self.work_id,
+                      'input_digest': identity, 'revision': slot['revision'], 'registration_id': slot.get('registration_id'),
+                      'work_id': self.work_id,
                       'call_ref': current_effect_call_ref(), 'request_ref': request_ref}}
             return db.execute('INSERT INTO tool_events(job_id,tool,status,detail,created) VALUES (?,?,?,?,?)',
                               (chain[-1]['id'], 'api_dispatch', 'dispatching', json.dumps(detail), self.clock())).lastrowid
@@ -1174,7 +1184,7 @@ class ApiRequests:
         values = list(select(data, ref_field))
         if (not claim or not claim.get('request_ref') or values != [claim['request_ref']]
                 or claim.get('kind') != 'api-slot' or claim.get('identity') != slot['name']
-                or claim.get('host') != record['source']['host'] or claim.get('revision') != slot['revision']):
+                or claim.get('host') != record['source']['host'] or not dispatch_slot_matches(slot, claim)):
             return False
         # Outside-content provenance applies before this read (or judgment) can carry authority.
         self.store.mark_outside_content(self.work_id, {'operation': 'api_request', 'category': 'owner-api'})
@@ -1437,6 +1447,9 @@ class ApiRequests:
             # #208 review: work mode switched on during this call (a retry, or after the token
             # exchange) refuses before anything is handed off; a reservation made for this
             # attempt is released, since nothing left.
+            from .agent_runtime import handed_off
+            from .direct_message_surface import reserve_outbound, cancel_outbound, observe_outbound, _release_live_reservations
+            reservations = []
             try:
                 refuse_in_work_mode(self.store, url)
                 # #209 (#284 review): a declared intranet host's answers are checked before anything
@@ -1444,6 +1457,11 @@ class ApiRequests:
                 checked = intranet_addresses(self.store, url, self.resolver)
                 if checked is not None:
                     self._pins[url] = checked
+                if identity:
+                    # Commit the echo reservation before transport, then check authority
+                    # again. The reservation can wait behind a competing SQLite writer.
+                    reservations = reserve_outbound(self.store, self.work_id, url)
+                    refuse_in_work_mode(self.store, url)
                 if getattr(self, '_payment_ticket', None):
                     binding, label, ticket = self._payment_ticket
                     try:
@@ -1461,21 +1479,14 @@ class ApiRequests:
                     if current is None or fingerprint(slot['name'], current) != fingerprint(slot['name'], slot):
                         raise ApiError('API 연결이 바뀌어 요청을 보내지 않았습니다.', 'needs_setup',
                                        requires=f"api-slot:{slot['name']}")
-            except Exception as exc:
-                if write_ticket:self.approvals.self_set_write_release(write_ticket)
-                if identity and (write_ticket or isinstance(exc, ApiError)):
-                    self._release_effect(claim)
-                raise
-            from .agent_runtime import handed_off
-            from .direct_message_surface import reserve_outbound, observe_outbound, _release_live_reservations
-            # Platform formats stay in their adapters. Commit a reservation before
-            # transport so even ingestion on another thread/process cannot outrun
-            # the response identity (or promote an unknown send after a crash).
-            try:
-                reservations = reserve_outbound(self.store, self.work_id, url) if identity else []
             except Exception:
-                if write_ticket:self.approvals.self_set_write_release(write_ticket)
-                self._release_effect(claim)  # no transport; preserve the existing no-replay boundary
+                try:
+                    cancel_outbound(self.store, reservations)
+                finally:
+                    try:
+                        if write_ticket:self.approvals.self_set_write_release(write_ticket)
+                    finally:
+                        self._release_effect(claim)
                 raise
             try:
                 handed_off()   # #233: the request leaves Still's own checks here

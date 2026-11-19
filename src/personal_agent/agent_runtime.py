@@ -2528,34 +2528,38 @@ def unknown_effect(value):
 EFFECT_CONTINUATION = 'effect_continuation'
 
 
+class EffectAncestryError(ValueError):
+ """The host cannot verify a line piece's carried effects."""
+
+
 def effect_work_chain(db, work_id):
  """Follow request relations and host-created line-piece handoffs for effect evidence.
 
  A piece keeps its own allowance. Only a preparation's recorded creator and
  exact parent slot on the same line carry its mandate and replay fence.
  """
- from .preparations import ORIGIN_LINE_PIECE, preparation_of, slot_key
+ from .preparations import ORIGIN_LINE_PIECE, preparation_lineage, slot_key
  chain, seen = [], set()
  while work_id:
   segment = WorkLedger.request_chain(db, work_id)
   ids = {work['id'] for work in segment}
   if seen & ids:
-   raise ValueError('invalid effect ancestry')
+   raise EffectAncestryError('invalid effect ancestry')
   seen.update(ids)
   chain.extend(segment)
   root = segment[-1]
   preparation = preparation_of(root['request_key'])
   if not preparation:
    break
-  piece = db.execute('SELECT * FROM preparations WHERE id=? AND origin=?', (preparation, ORIGIN_LINE_PIECE)).fetchone()
-  if not piece:
+  piece = preparation_lineage(db, preparation)
+  if not piece or piece['origin'] != ORIGIN_LINE_PIECE:
    break
   work_id = piece['created_from']
   parent = db.execute('SELECT request_key FROM jobs WHERE id=?', (work_id,)).fetchone()
+  parent_lineage = preparation_lineage(db, preparation_of(parent['request_key'])) if parent else None
   if (not parent or slot_key(parent['request_key']) != piece['piece_of']
-      or not db.execute('SELECT 1 FROM preparations WHERE id=? AND line_id=?',
-                        (preparation_of(parent['request_key']), piece['line_id'])).fetchone()):
-   raise ValueError('missing line-piece parent')
+      or not parent_lineage or parent_lineage['line_id'] != piece['line_id']):
+   raise EffectAncestryError('missing line-piece parent')
  return chain
 
 
@@ -2677,9 +2681,15 @@ def _call_target(action,detail):
  if action in BROWSER_ACTIONS and host:return effect_target(TARGET_PAGE,host,(host,))
  return None
 
-def reconciled_effect_keys(store, work_id):
+def work_state_change_short(store, work_id, steps):
+ """An applied reconciliation can account for a failed call. A not-applied receipt
+ still holds completion, even when the original call was cut off by a restart.
+ """
  observed, _ = external_effect_events(store, work_id)
- return dispatch_call_keys([(event,row) for event,row in observed if row.get('resolution')], ())
+ if any(row.get('resolution') == 'not-applied' for _,row in observed):
+  return True
+ applied = [(event,row) for event,row in observed if row.get('resolution') == 'applied']
+ return state_change_short(steps, reconciled=dispatch_call_keys(applied, ()))
 
 
 def dispatch_call_keys(observed, pending):
@@ -2715,8 +2725,8 @@ def unknown_effect_targets(store, work_id, *, include_claims=True):
   exists=db.execute('SELECT 1 FROM jobs WHERE id=?',(work_id,)).fetchone()
   chain=effect_work_chain(db,work_id) if exists else [{'id':work_id}]
   ids=[work['id'] for work in chain]
-  rows=db.execute("SELECT tool,status,detail FROM tool_events WHERE job_id IN ("+','.join('?' for _ in ids)+") ORDER BY id",ids).fetchall()
- calls,arguments=[],{}
+  rows=db.execute("SELECT job_id,tool,status,detail FROM tool_events WHERE job_id IN ("+','.join('?' for _ in ids)+") ORDER BY id",ids).fetchall()
+ calls,arguments={},{}
  for row in rows:
   try:detail=json.loads(row['detail'] or '{}')
   except (TypeError,ValueError):detail=None
@@ -2727,16 +2737,17 @@ def unknown_effect_targets(store, work_id, *, include_claims=True):
    # Still's own records (a CLI turn, bookkeeping): an unknown they carry cannot be scoped.
    if unknown_effect(detail):targets.append(None)
    continue
-  key=(detail.get('scope'),detail.get('call_id'))
+  key=(row['job_id'],detail.get('scope'),detail.get('call_id'))
   if row['status']=='running':
    for field in ('arguments','target'):
     if field in detail:arguments[(key,field)]=detail[field]
   else:
    detail={**{field:arguments[(key,field)] for field in ('arguments','target') if (key,field) in arguments},**detail}
-  calls.append((row['tool'],row['status'],detail))
- for action,effect,_status,detail in call_effects(calls,with_detail=True):
-  if effect==EFFECT_UNKNOWN and not dispatch_call_accounted(detail,accounted):
-   targets.append(_call_target(action,detail))
+  calls.setdefault(row['job_id'],[]).append((row['tool'],row['status'],detail))
+ for work_calls in calls.values():
+  for action,effect,_status,detail in call_effects(work_calls,with_detail=True):
+   if effect==EFFECT_UNKNOWN and not dispatch_call_accounted(detail,accounted):
+    targets.append(_call_target(action,detail))
  return targets
 
 def unknown_effect_holds(targets,target):
@@ -6457,7 +6468,9 @@ def run_agent(adapter,config,key,history,system,capabilities,record,scope='main'
    result.outcome='succeeded'
   # #630: the CLI route's floor (``goal_upgrade_allowed``) on this route too: a judged yes never
   # outranks a state change that fell short.
-  elif (claim is None or claim['status']=='done') and judgment=='yes' and not invalid_calls and not state_change_short(steps,reconciled=reconciled_effect_keys(capabilities.store,capabilities.job_id) if hasattr(capabilities.store,'db') else None):
+  elif ((claim is None or claim['status']=='done') and judgment=='yes' and not invalid_calls
+        and not (work_state_change_short(capabilities.store,capabilities.job_id,steps)
+                 if hasattr(capabilities.store,'db') else state_change_short(steps))):
    result.outcome='succeeded'
   else:result.outcome='partial' if successful or held_partial or read_continuation else 'failed'
   unknown=[]
@@ -6568,6 +6581,8 @@ def run_agent(adapter,config,key,history,system,capabilities,record,scope='main'
     judgment=judge_goal({'evidence_refs':refs,'summary':content},read_continuation,reply_source)
     judged+=1
     if judgment=='no' and judged<GOAL_JUDGMENTS and budget.left().get('turns',0)>0:
+     if not effect_continuation_scope(capabilities.store,capabilities.job_id):
+      record(EFFECT_CONTINUATION,'claimed',json.dumps({'epoch':getattr(budget.ledger,'epoch',None)}))
      messages.extend((message,{'role':'system','content':prompt('effect_continuation')
                                 +'\n'+(getattr(judgment,'gap','') or GOAL_NOT_SHOWN)}))
      draft=None

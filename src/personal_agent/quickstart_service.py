@@ -1232,7 +1232,14 @@ class AgentService:
         ``since`` (an event id) limits the calls and owner waits to one attempt.  The reasons come in
         ``CONTINUE_REASONS`` order and read as ``CONTINUE_TEXT``; an empty tuple means the Work may continue.
         """
-        return self.settings_continuation_service.continuation_reasons(work_id, purpose, since=since, owner_waits=owner_waits, unaccounted=unaccounted)
+        from .agent_runtime import EffectAncestryError
+        try:
+            return self.settings_continuation_service.continuation_reasons(
+                work_id, purpose, since=since, owner_waits=owner_waits, unaccounted=unaccounted)
+        except EffectAncestryError:
+            # Older deletions may have left no lineage. That leaves the
+            # carried effects unknown, but the failed run must still settle.
+            return ('unknown',)
 
     def may_continue(self, work_id, purpose, **kwargs):
         """``(ok, reason)`` of the one continuation rule (#618 E2): ``reason`` is the strongest, or None."""
@@ -5322,10 +5329,10 @@ class AgentService:
         ``since`` (an event id, #632) limits the recorded calls and sign-in requests to one run;
         the pending approval and sign-in rows are read as they are now.
         """
-        from .agent_runtime import reconciled_effect_keys, state_change_short
+        from .agent_runtime import work_state_change_short
         if (self._browser_request(job_id) or {}).get('state')=='requested' or self.sign_in_requested(job_id,since=since):
             return False
-        return not state_change_short(self.work_steps(job_id,since=since), reconciled=reconciled_effect_keys(self.store,job_id))
+        return not work_state_change_short(self.store,job_id,self.work_steps(job_id,since=since))
 
     def sign_in_requested(self, job_id, since=0):
         """Whether this Work's worker itself asked for the owner's sign-in (#981).
@@ -5817,11 +5824,11 @@ class AgentService:
         Direct route: the run's own #657 completion judgment, no new call.
         CLI route: one ``goal_reached`` judgment over the final answer and the
         tool evidence Still recorded for this attempt.  A raised worker
-        failure is ``worker_failed``.  An attempt that ran any action outside
-        the effect-free reads, or left an unknown effect, is never
-        re-delegated (C8). Known effects may still be judged for completion;
-        unknown effects and unobserved native actions cannot establish success.  #787: a
-        ``browser_open`` counts as a read only when the call declared ``read``
+        failure is ``worker_failed``. An observed effect permits re-delegation
+        only when remaining work can use replay-fenced routes (C8).
+        Unknown effects and unobserved native actions cannot establish success or
+        permit re-delegation.  #787: a ``browser_open`` counts as a read only
+        when the call declared ``read``
         or ``navigate`` (``page_load_only``); a click, typing, a declared
         ``mutate``/``payment`` or an undeclared open stays an effect.
         #795: ``unmediated`` is an attempt whose CLI ran on the trusted-local
@@ -5868,13 +5875,14 @@ class AgentService:
             observations=read_checkpoint+'\n'+observations[:max(0,16000-len(read_checkpoint)-1)]
         if recalled:observations=recalled+'\n'+observations[:max(0,16000-len(recalled)-1)]
         receipt_note = self.effect_progress_note({'id': job_id})
+        effect_ledger = None
         if receipt_note:
             observations = receipt_note+'\n'+observations[:max(0,16000-len(receipt_note)-1)]
             ledger = getattr(self.current_decision_budget(),'ledger',None)
             if (effect == 'changed' and not owner_needed and not unaccounted and ledger is not None
                     and not ledger.lapse() and self.may_continue(job_id,'effect-resume')[0]):
-                # The replacement gets the receipts and remaining mandate. The broker still
-                # fences the exact dispatch independently of the plan and the selected worker.
+                # Carry the receipts into the replacement brief and fence its routes before dispatch.
+                effect_ledger = ledger
                 effect = False
                 orchestration.continues = receipt_note
 
@@ -5909,7 +5917,19 @@ class AgentService:
                 and (result is None or getattr(result,'judgment',None) is None)):
             judged=orchestration.evaluate_answer(answer,observations,failed_steps,final=True,effects=effects,
                 reply_source=reply_source,reply_delivery=reply_delivery)
-        return orchestration.next(attempt,evaluation,answer=str(answer or '')[:600],failed=summary,effect=effect,judged=judged)
+        following = orchestration.next(attempt,evaluation,answer=str(answer or '')[:600],
+                                       failed=summary,effect=effect,judged=judged)
+        if following is not None and effect_ledger is not None:
+            from .agent_runtime import EFFECT_CONTINUATION, effect_continuation_scope
+            if not effect_continuation_scope(self.store, job_id):
+                with self.store.db() as db:
+                    db.execute('BEGIN IMMEDIATE')
+                    if effect_ledger.lapse(db=db):
+                        return None
+                    detail = json.dumps({'epoch': effect_ledger.epoch})
+                    db.execute('INSERT INTO tool_events(job_id,tool,status,detail,created) VALUES (?,?,?,?,?)',
+                               (job_id, EFFECT_CONTINUATION, 'claimed', detail, time.time()))
+        return following
 
     def cancel_superseded_work(self, work_ids, notify=True):
         """Cancel parked Work whose resume path a newer request replaced.
@@ -8199,6 +8219,11 @@ class AgentService:
         effect_note = self.effect_progress_note(job)
         if effect_note and (mandate := self.effect_mandate(job,job.get('message'))) != job.get('message'):
             effect_note += '\n\n' + self._redact_known_secrets(mandate)
+        if effect_note and 'read_checkpoint_resume' in job:
+            from .agent_runtime import steer_note
+            corrections = self.store.work_steer_texts(job['id'])
+            if corrections:
+                effect_note += '\n\n' + self._redact_known_secrets(steer_note(corrections))
         if not continued:return '\n\n'.join(filter(None,(effect_note,read_checkpoint))) or None
         completed,unknown=self.connector_effect_progress(job['id'])
         lines=['Still observed continuation of this same Work, not a new owner request. Preserve its original goal and complete only remaining obligations. Do not repeat completed actions or switch workers to repeat an effect.']
@@ -8293,8 +8318,16 @@ class AgentService:
                 and binding['state_digest']==state['state_digest'])
 
     def _connector_effect_seen(self, db, work_id, input_digest):
-        for row in db.execute("SELECT status,detail FROM tool_events WHERE job_id=? AND tool='connector_permission'",
-                              (work_id,)):
+        from .agent_runtime import effect_continuation_scope, effect_work_chain
+        if effect_continuation_scope(self.store, work_id):
+            observed, _ = self.connector_effect_progress(work_id)
+            # There is no common replay key between an API call and a CLI tool.
+            if any(receipt.get('kind') == 'api-slot' for receipt in observed):
+                return True
+        works = [work['id'] for work in effect_work_chain(db, work_id)]
+        placeholders = ','.join('?' for _ in works)
+        for row in db.execute(f"SELECT status,detail FROM tool_events WHERE job_id IN ({placeholders}) AND tool='connector_permission'",
+                              works):
             old=json.loads(row['detail']).get('evidence',{})
             if row['status'] in ('claiming','allowed') and old.get('input_digest')==input_digest and old.get('effect') in ('mutate','payment'):
                 return True
@@ -8313,8 +8346,9 @@ class AgentService:
             if ledger is not None and ledger.lapse(db=db):return None
             if self._unknown_effect_holds(job['id'],target):return None
             if not self._connector_authority_current(job,target,binding,detail['evidence']['effect'],detail['evidence']['operation']):return None
-            if any(work_stop_requested(self.store,work['id']) or self._connector_effect_seen(db,work['id'],input_digest)
-                   for work in effect_work_chain(db,job['id'])):return None
+            if (self._connector_effect_seen(db,job['id'],input_digest) or
+                    any(work_stop_requested(self.store,work['id']) for work in effect_work_chain(db,job['id']))):
+                return None
             return db.execute('INSERT INTO tool_events(job_id,tool,status,detail,created) VALUES (?,?,?,?,?)',
                               (job['id'],'connector_permission','claiming',json.dumps(detail,ensure_ascii=False),time.time())).lastrowid
 
@@ -9905,16 +9939,23 @@ class AgentService:
         return self.telegram_delivery.mark_telegram_connected()
 
     def effect_mandate(self, job, default):
-        """The parent slot's original request remains the mandate of its effect handoff."""
+        """Carry the original request and its ancestors' owner corrections into an effect handoff."""
         from .agent_runtime import effect_work_chain, external_effect_events
         if not any(external_effect_events(self.store,job['id'])):
             return default
         with self.store.db() as db:
             chain = effect_work_chain(db,job['id'])
-        root = chain[-1]
-        if self.store.work_request_forgotten(root['id']):
-            raise ValueError('The original Work request is no longer available.')
-        return '\n\n'.join((root['message'], *self.store.work_steer_texts(root['id']))) if root['id'] != job['id'] else default
+            root = chain[-1]
+            if self.store.work_request_forgotten(root['id']):
+                raise ValueError('The original Work request is no longer available.')
+            if root['id'] == job['id']:
+                return default
+            # The active Work's own steers reach its worker and judgment through the live path.
+            ancestors = [work['id'] for work in chain[1:]]
+            placeholders = ','.join('?' for _ in ancestors)
+            steers = db.execute(f'SELECT content FROM work_steers WHERE job_id IN ({placeholders}) ORDER BY created, rowid',
+                                ancestors)
+            return '\n\n'.join((root['message'], *(row['content'] for row in steers)))
 
     def effect_progress_note(self, job):
         from .agent_runtime import effect_receipt_note
@@ -9943,12 +9984,12 @@ class AgentService:
             return False
         observed,pending = external_effect_events(self.store,work_id)
         slots = None
-        from .api_requests import slots as registered_slots
+        from .api_requests import dispatch_slot_matches, slots as registered_slots
         for _event, receipt in (*observed,*pending):
             if receipt.get('kind')=='api-slot':
                 if slots is None:slots = {**self.connection_slots(job), **registered_slots(self.store)}
                 current = slots.get(receipt['identity'])
-                if not current or current['revision']!=receipt.get('revision'):
+                if not current or not dispatch_slot_matches(current, receipt):
                     return False
         return bool(observed or pending)
 
