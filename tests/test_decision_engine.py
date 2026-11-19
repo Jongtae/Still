@@ -281,7 +281,7 @@ class ModelEngineTests(unittest.TestCase):
         decision = engine.judge(self.context(), 'withdraws?')
         self.assertEqual((decision.outcome, decision.answer, decision.confidence.provider), (OUTCOME_DECIDED, False, 'anthropic'))
         self.assertEqual(transport.calls[0]['url'], 'https://api.anthropic.com/v1/messages')
-        self.assertEqual(transport.calls[0]['body']['tool_choice'], {'type': 'any'})
+        self.assertEqual(transport.calls[0]['body']['tool_choice'], {'type': 'auto'})
 
 
 class ConversationJudgmentTests(unittest.TestCase):

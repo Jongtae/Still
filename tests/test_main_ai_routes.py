@@ -175,7 +175,7 @@ class MainAiRouteTests(unittest.TestCase):
         self.assertEqual(result['judgment'], {'state': 'active'})
         active = result['decision_route']['active']
         self.assertEqual((active['source'], active['destination'], active['requested_model']),
-                         ('follow', 'api.anthropic.com', 'claude-haiku-4-5'))
+                         ('follow', 'api.anthropic.com', 'claude-haiku-5-5'))
         self.assertTrue(active['available'])
         self.assertEqual({call['host'] for call in self.transport.calls}, {'api.anthropic.com'})
 
@@ -351,7 +351,7 @@ class MainAiRouteTests(unittest.TestCase):
     def test_anthropic_follow_defaults_to_haiku(self):
         self._save('anthropic', ANTHROPIC_KEY)
         active = self._activate({'route': 'anthropic'})['decision_route']['active']
-        self.assertEqual((active['model_policy'], active['requested_model']), ('fastest_qualified', 'claude-haiku-4-5'))
+        self.assertEqual((active['model_policy'], active['requested_model']), ('fastest_qualified', 'claude-haiku-5-5'))
 
     def test_explicit_follow_failure_keeps_previous_judgment(self):
         self._save('openai', OPENAI_KEY)

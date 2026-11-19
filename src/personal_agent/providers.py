@@ -83,6 +83,14 @@ def _error_reason(detail):
     return ' '.join(f'({part})' if part is param else part for part in (kind,param) if part)
 
 
+#: Current Claude models think by default and the thinking counts toward
+#: ``max_tokens``; Anthropic's recommended non-streaming cap (#1047).
+ANTHROPIC_MAX_TOKENS = 16000
+#: Provider-owned replay data on an assistant message: OpenAI's encrypted
+#: reasoning items and Claude's original content blocks (signed thinking).
+_REPLAY_KEYS = {'openai': 'openai_reasoning', 'anthropic': 'anthropic_content'}
+
+
 def validate_model(config):
     provider = config.get('provider', '')
     if provider not in ('ollama', 'compatible', 'openai', 'anthropic'):
@@ -230,8 +238,9 @@ class ModelAdapter:
         """
         import uuid
         cfg=validate_model(config);provider=cfg['provider']
-        if provider!='openai':
-            messages=[{k:v for k,v in m.items() if k!='openai_reasoning'} for m in messages]
+        # Each provider's own replay data reaches only that provider (#1047).
+        foreign=tuple(k for owner,k in _REPLAY_KEYS.items() if owner!=provider)
+        messages=[{k:v for k,v in m.items() if k not in foreign} for m in messages]
         messages=self._messages_with_images(messages,images,provider)
         try:
             if provider=='openai':
@@ -264,10 +273,17 @@ class ModelAdapter:
                     message['tool_calls']=[{'id':'call_'+uuid.uuid4().hex,'type':'function','function':{'name':c['function']['name'],'arguments':json.dumps(c['function']['arguments'])}} for c in message['tool_calls']]
             else:
                 if not key:raise ValueError(msg('providers.enter_anthropic_key'))
-                converted=[]
+                converted=[];system=[]
                 for m in messages:
-                    if m['role']=='system':continue
-                    if m['role']=='tool':entry={'role':'user','content':[{'type':'tool_result','tool_use_id':m['tool_call_id'],'content':m['content']}]}
+                    # Only the leading system messages form the top-level
+                    # `system`; a later one is appended as text, so the prefix
+                    # signed into replayed thinking blocks never changes (#1047).
+                    if m['role']=='system' and not converted:system.append(m['content']);continue
+                    if m['role']=='system':entry={'role':'user','content':[{'type':'text','text':m.get('content') or ' '}]}
+                    elif m['role']=='tool':entry={'role':'user','content':[{'type':'tool_result','tool_use_id':m['tool_call_id'],'content':m['content']}]}
+                    elif m['role']=='assistant' and isinstance(m.get('anthropic_content'),list):
+                        # Claude's own blocks, signed thinking included, go back unchanged.
+                        entry={'role':'assistant','content':list(m['anthropic_content'])}
                     elif m['role']=='assistant' and m.get('tool_calls'):
                         blocks=[{'type':'text','text':m['content']}] if m.get('content') else []
                         blocks += [{'type':'tool_use','id':c['id'],'name':c['function']['name'],'input':json.loads(c['function']['arguments'])} for c in m['tool_calls']]
@@ -276,13 +292,18 @@ class ModelAdapter:
                     else:entry={'role':m['role'],'content':[{'type':'text','text':m.get('content') or ' '}]}
                     if converted and converted[-1]['role']==entry['role']:converted[-1]['content']+=entry['content']
                     else:converted.append(entry)
-                choice={'type':'any'} if tool_choice=='required' else {'type':'auto'}
-                data=self._send(cfg['endpoint']+'/v1/messages',{'model':cfg['model'],'system':'\n'.join(m['content'] for m in messages if m['role']=='system'),'messages':converted,'tools':[{'name':t['function']['name'],'description':t['function']['description'],'input_schema':t['function']['parameters']} for t in tools],'max_tokens':4096,'tool_choice':choice},{'x-api-key':key,'anthropic-version':'2023-06-01'},timeout)
+                # Always `auto`: current Claude models (Opus 5.5, Sonnet 5.5)
+                # reject a forced `any`/`tool` choice with a 400, and every
+                # caller that needs a call checks the returned call itself (#1047).
+                choice={'type':'auto'}
+                data=self._send(cfg['endpoint']+'/v1/messages',{'model':cfg['model'],'system':'\n'.join(system),'messages':converted,'tools':[{'name':t['function']['name'],'description':t['function']['description'],'input_schema':t['function']['parameters']} for t in tools],'max_tokens':ANTHROPIC_MAX_TOKENS,'tool_choice':choice},{'x-api-key':key,'anthropic-version':'2023-06-01'},timeout)
                 message={'role':'assistant','content':'\n'.join(c['text'] for c in data['content'] if c['type']=='text')}
                 calls=[{'id':c['id'],'type':'function','function':{'name':c['name'],'arguments':json.dumps(c['input'])}} for c in data['content'] if c['type']=='tool_use']
                 if calls:message['tool_calls']=calls
+                if any(c.get('type') in ('thinking','redacted_thinking') for c in data['content']):
+                    message['anthropic_content']=data['content']
             if not isinstance(message,dict) or message.get('role','assistant')!='assistant':raise TypeError()
-            message={k:v for k,v in message.items() if k in ('role','content','tool_calls','reasoning_details','openai_reasoning')};message['role']='assistant'
+            message={k:v for k,v in message.items() if k in ('role','content','tool_calls','reasoning_details','openai_reasoning','anthropic_content')};message['role']='assistant'
             if report_observed:
                 actual=data.get('model') if isinstance(data,dict) else None
                 return message,actual[:200] if isinstance(actual,str) and actual else ''
@@ -296,6 +317,7 @@ class ModelAdapter:
         headers = {'Authorization': 'Bearer '+key} if key else {}
         if provider!='openai':
             messages=[{k:v for k,v in m.items() if k!='openai_reasoning'} for m in messages]
+        messages=[{k:v for k,v in m.items() if k!='anthropic_content'} for m in messages]
         try:
             if provider == 'ollama':
                 data = self.transport(endpoint+'/api/chat', {'model': model, 'messages': messages, 'stream': False}, headers)
@@ -311,7 +333,7 @@ class ModelAdapter:
                     raise ValueError(msg('providers.enter_anthropic_key'))
                 system = '\n'.join(m['content'] for m in messages if m['role'] == 'system')
                 history = [m for m in messages if m['role'] != 'system']
-                data = self.transport(endpoint+'/v1/messages', {'model': model, 'system': system, 'messages': history, 'max_tokens': 2048}, {'x-api-key': key, 'anthropic-version': '2023-06-01'})
+                data = self.transport(endpoint+'/v1/messages', {'model': model, 'system': system, 'messages': history, 'max_tokens': ANTHROPIC_MAX_TOKENS}, {'x-api-key': key, 'anthropic-version': '2023-06-01'})
                 content = '\n'.join(c['text'] for c in data['content'] if c.get('type') == 'text')
             if not isinstance(content, str) or not content.strip():
                 raise ProviderError(msg('providers.no_text_response'))

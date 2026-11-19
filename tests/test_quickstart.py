@@ -341,7 +341,7 @@ class QuickstartTests(unittest.TestCase):
             self.assertTrue(self.service.test_model()['ok'])
             self.assertTrue(self.service.settings()['model_test']['ok'])
         self.assertEqual(self.calls[-1][2]['anthropic-version'],'2023-06-01')
-        self.assertEqual(self.calls[-1][1]['tool_choice'],{'type':'any'})
+        self.assertEqual(self.calls[-1][1]['tool_choice'],{'type':'auto'})
 
     def test_text_only_connection_is_not_marked_tool_ready(self):
         def text_only(url,body,headers=None,timeout=60):
