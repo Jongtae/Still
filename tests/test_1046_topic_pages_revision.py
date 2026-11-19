@@ -150,10 +150,11 @@ def test_a_page_never_rewritten_whole_still_holds(page):
 
 # --- weak matches get no page ----------------------------------------------------------------------------------
 
-def test_a_weak_match_gets_no_page():
+def test_only_a_request_matching_no_term_gets_no_page():
+    # Amended before scoring: a one-term match is not the weak signal on #1043's data, so it keeps its page.
     assert tp.attach_page(0) is False
-    assert tp.attach_page(1) is False
-    assert tp.attach_page(2) is True
+    assert tp.attach_page(1) is True
+    assert tp.attach_page(3) is True
 
 
 def test_without_a_page_b_and_c_equal_a():

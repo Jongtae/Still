@@ -329,7 +329,9 @@ def in_window(works, start, end):
 
 
 def attach_page(strength):
-    return strength >= 2
+    # Any match attaches the page. #1046 first required two terms; #1043's tuning data showed that a
+    # one-term match is not the weak signal (see the README's amendment before scoring).
+    return strength >= 1
 
 
 def decide(summary):

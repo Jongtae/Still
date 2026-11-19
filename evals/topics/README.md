@@ -231,9 +231,26 @@ re-runs. This section was committed before any revised page was built or judged.
   - of the state items sharing a thread (compared case- and space-insensitively), only the newest is shown;
   - the hidden count is stated in one line. Items stay on the page with their history; only the rendering hides
     them, so nothing is rewritten.
-- **No page for a weak match.** A page is attached only when the request matches at least two of the topic's terms
-  (`topic_pages.attach_page`). Without a page, B and C both equal A for that request (C is length-matched to the
-  page, so zero).
+- ~~**No page for a weak match.**~~ Dropped before any scoring; see the amendment below. A page is attached
+  whenever the request matches the topic, as in #1043 (`topic_pages.attach_page`). Without a page, B and C both
+  equal A for that request.
+
+### Amendment before scoring (same day, before any label, page or judgment of this split)
+
+The first version of this section attached no page when the request matched only one of the topic's terms. After
+`heldout` selected this split, its match-strength counts (no outcome, no request text) showed 17 of 19 regular
+requests match one term. Checking #1043's tuning data by match strength then showed the gate rests on a mislabel:
+
+| #1043 group (per-request B−A, averaged over runs) | requests | needed facts | misleading items |
+| --- | --- | --- | --- |
+| regular, one term | 19 | +11.8 points | +0.33 |
+| regular, two or more terms | 5 | +23.8 points | +0.47 |
+| "weak" extras, one term | 10 | +1.9 points | +0.17 |
+
+The "weak" extras match one term just as most regular requests do. They differ by selection: they are the overflow
+of the largest topics after the first six requests. So the term count does not mark a request a page cannot help,
+and the gate would have removed the page from most of the requests that gained. The gate is dropped and nothing
+replaces it. The other three fixes and the decision rule are unchanged. The weak group stays reported on its own.
 
 ### Requests: an uninspected time split
 
