@@ -9,15 +9,18 @@ from unittest import mock
 
 import pytest
 
-from personal_agent import work_download, work_mode
+from personal_agent import api_requests, work_download, work_mode
 from personal_agent.agent_runtime import Capabilities, ToolError, WorkBudget, WorkLedger, evidence_summary
 from personal_agent.bounded_execution import ExecutionError
+from personal_agent.browser_jar import MemoryKey
+from personal_agent.code_run import CodeRunError, CodeRunner
 from personal_agent.local_tools import LocalTools, PublicPageReader
 from personal_agent.quickstart import make_handler
 from personal_agent.quickstart_service import AgentService
 from personal_agent.quickstart_store import QuickStore
 
 from test_code_run import FakeProcess
+from test_code_run_secrets import FakeApprovals
 from test_orchestrator import Harness, NO_TOOL_CALLS, plan
 from test_public_download_1009 import Opener, Response
 
@@ -128,6 +131,57 @@ def test_completed_download_reaches_code_and_authenticated_owner_only(tmp_path):
     staged.write_bytes(b'?' * len(data))
     headers, _ = get(service, artifact['download_url'], cookie)
     assert b' 404 ' in headers.splitlines()[0]
+
+
+def test_approved_rerun_reuses_the_verified_download(tmp_path):
+    data = b'fixture data'
+    digest = hashlib.sha256(data).hexdigest()
+    clock = lambda: 0
+    store = QuickStore(tmp_path)
+    caps = active_work(store, 'approval', network(clock, Opener([Response(data, status=200, headers=[])])), clock)
+    artifact = fetch(caps)['artifact']
+    host = 'api.example.org'
+    store.api_slot_key = MemoryKey()
+    api_requests.save_slot(store, 'fixture', [host], {'KEY': 'fixture-api-key'}, money=True, encrypted=True,
+                           code={'fields': [{'name': 'KEY', 'label': 'Key', 'use': 'header_or_body'}], 'reads': []})
+    approvals = FakeApprovals()
+
+    class DataProcess(FakeProcess):
+        def _lines(self):
+            done = subprocess.run(self.config['argv'], cwd=self.config['workdir'], env=self.config['env'],
+                                  capture_output=True, text=True)
+            if done.returncode == 0:
+                self._requests = [{'method': 'POST', 'host': host, 'path': '/fixture', 'bodyText': done.stdout.strip()}]
+            self._result = {'stdout': done.stdout, 'stderr': done.stderr, 'exit': done.returncode}
+            yield from super()._lines()
+
+    def runner(process):
+        return CodeRunner(store, caps.job_id, node='/fixture/node', popen=lambda *args, **kwargs: process,
+                          install=lambda *_: tmp_path, approvals=approvals, download_budget=caps.budget)
+
+    code = ('from pathlib import Path\nimport os, hashlib\n'
+            'data = Path(os.environ["STILL_DOWNLOAD_FILE"]).read_bytes()\n'
+            'print(hashlib.sha256(data).hexdigest())')
+    first = DataProcess()
+    result = runner(first).run({'code': code, 'download_artifact': artifact, 'secrets': 'fixture',
+                                'approval_note': 'Submit the digest.'})
+    assert result['stdout'].strip() == digest
+    assert [row['allow'] for row in first.decisions] == [False]
+    [(binding, _)] = approvals.requested
+    approvals.granted.append(binding)
+
+    resumed = DataProcess()
+    result = runner(resumed).run({'rerun': 'approved'})
+    assert result['stdout'].strip() == digest
+    assert result['download_artifact'] == artifact
+    assert [row['allow'] for row in resumed.decisions] == [True]
+
+    (store.private / 'work-downloads' / artifact).write_bytes(b'?' * len(data))
+    corrupt = DataProcess()
+    with pytest.raises(CodeRunError) as refused:
+        runner(corrupt).run({'rerun': 'approved'})
+    assert refused.value.code == 'read_checkpoint_corrupt'
+    assert corrupt.config is None
 
 
 def test_one_call_commits_each_range_and_stops_at_work_byte_cap(tmp_path, monkeypatch):

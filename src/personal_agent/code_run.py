@@ -669,7 +669,7 @@ class CodeRunner:
         if not callable(getattr(self.store, 'put', None)):
             return
         keep = {key: args[key] for key in ('code', 'hosts', 'packages', 'secrets', 'effect', 'timeout_seconds', 'approval_note',
-                                          'approval_fields', 'library') if isinstance(args, dict) and key in args}
+                                          'approval_fields', 'library', 'download_artifact') if isinstance(args, dict) and key in args}
         rows = self._approval_runs()
         rows[self.work_id] = keep
         # Bounded: the newest runs only.
