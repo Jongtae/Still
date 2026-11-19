@@ -64,7 +64,8 @@ class Dream(Harness):
             return None  # no plan, and upkeep proposes nothing
 
         def judge(context, proposition):
-            if context.purpose == 'goal-reached':
+            # #1031 step 2: a dream lesson that adds or rewords is checked as about this owner; yes by default here.
+            if context.purpose in ('goal-reached', om.LESSON_CHECK_PURPOSE):
                 return BinaryDecision(OUTCOME_DECIDED, True, fixture_confidence())
             return None
         self.service.use_decision_engine(FixtureDecisionEngine(structured=structured, judge=judge))
@@ -492,7 +493,9 @@ class Misses(Dream):
         self.assertIn('[m1] 2026-11-03 10:00 (retried) owner:', context.facts['earlier_misses'])
         self.assertIn('correction: correction words', context.facts['earlier_misses'])
         self.assertNotIn('earlier_misses', self.gathered[0][0].facts)
-        self.assertEqual(detail['lessons_evidence'], {'tonight_misses': 1, 'earlier_misses': 1, 'rule': 'misses'})
+        # #1031 step 2: one evidence rule for both outcomes, two occasions on two owner days, one tonight.
+        self.assertEqual(detail['lessons_evidence'], {'tonight': 1, 'tonight_misses': 1, 'earlier_misses': 1,
+                                                      'earlier_successes': 0, 'rule': 'occasions'})
         self.assertEqual(detail['inputs']['earlier_misses'], 1)
         for text in ('earlier words', 'earlier answer', 'correction words'):
             self.assertNotIn(text, json.dumps(detail))
@@ -512,11 +515,13 @@ class Misses(Dream):
         self.assertEqual(om.WorkingLessons(self.store).current(), [])
         self.assertIn({'note': 'lesson', 'op': 'add', 'reason': 'one-day'}, detail['dropped'])
 
-    def test_a_done_turn_does_not_make_two_misses(self):
-        self.look_back(dream(lessons=[add_lesson('비교에는 기준을 먼저 확인')], change='비교 기준', lesson_sources=['t1', 'm1']),
-                       [('t1', 'today', 'answer', '2026-11-04 10:00', 'done')],
-                       [('m1', 'old', 'answer', '2026-11-03 10:00', 'failed', '')])
-        self.assertEqual(om.WorkingLessons(self.store).current(), [])
+    def test_a_done_turn_and_an_earlier_miss_are_two_occasions(self):
+        """#1031 step 2: what went well counts as an occasion too (the #641 rule needed two misses)."""
+        detail = self.look_back(dream(lessons=[add_lesson('비교에는 기준을 먼저 확인')], change='비교 기준', lesson_sources=['t1', 'm1']),
+                                [('t1', 'today', 'answer', '2026-11-04 10:00', 'done')],
+                                [('m1', 'old', 'answer', '2026-11-03 10:00', 'failed', '')])
+        self.assertEqual(len(om.WorkingLessons(self.store).current()), 1)
+        self.assertEqual(detail['lessons_evidence']['rule'], 'occasions')
 
     def test_the_existing_two_tonight_days_rule_still_holds_with_earlier_refs(self):
         detail = self.look_back(dream(lessons=[add_lesson('비교에는 기준을 먼저 확인')], change='비교 기준', lesson_sources=['t1', 't2', 'm1']),
