@@ -312,7 +312,8 @@ GOLD_SCHEMA = _object(
 BUILD_SCHEMA = _object(topics=_array(_object(
     topic_id=STRING,
     ops=_array(_object(op=_enum('add', 'update', 'remove'), section=_enum('', *pages.SECTIONS),
-                       id=STRING, text=STRING, quote=STRING, reason=STRING, source=STRING)),
+                       id=STRING, text=STRING, quote=STRING, reason=STRING, source=STRING,
+                       thread=STRING, expires=STRING)),
 )))
 DRAFT_SCHEMA = _object(reply=STRING)
 JUDGE_SCHEMA = _object(contexts=_array(_object(
@@ -477,14 +478,23 @@ def kept_topics(members_days, heldout_from, min_days=5):
             if len({day for day in days if day < heldout_from}) >= min_days]
 
 
+def _cutoffs(args):
+    return {'heldout_from': args.heldout_from, 'heldout_to': getattr(args, 'heldout_to', None)}
+
+
+def _check_cutoffs(saved, cutoffs):
+    if saved and any(saved.get(key) != value for key, value in cutoffs.items()):
+        raise ValueError('cutoff_mismatch')
+
+
 def _find(args, store, works):
     path = _output_child(args.out, 'topics.json')
     saved = _read(path, {})
+    cutoffs = _cutoffs(args)
     if not saved:
         progress_path = _output_child(args.out, 'find.json')
-        progress = _read(progress_path, {'heldout_from': args.heldout_from, 'chunks': {}})
-        if progress['heldout_from'] != args.heldout_from:
-            raise ValueError('cutoff_mismatch')
+        progress = _read(progress_path, dict(cutoffs, chunks={}))
+        _check_cutoffs(progress, cutoffs)
         chunks = _chunks(_finder_lines(works, args.heldout_from))
         if _finder_calls(len(chunks)) > MAX_FIND_CALLS:
             raise PlanExceeded(f'Finder input requires more than {MAX_FIND_CALLS} calls.')
@@ -522,10 +532,9 @@ def _find(args, store, works):
             dict(topic, id=f't{index}', members=sum(day < args.heldout_from for day in members_days[topic['id']]))
             for index, topic in enumerate((topic for topic in drafts if topic['id'] in keep), 1)
         ]
-        saved = {'heldout_from': args.heldout_from, 'topics': kept}
+        saved = dict(cutoffs, topics=kept)
         _save(path, saved)
-    if saved['heldout_from'] != args.heldout_from:
-        raise ValueError('cutoff_mismatch')
+    _check_cutoffs(saved, cutoffs)
     print('topics', len(saved['topics']), 'members', *(topic['members'] for topic in saved['topics']))
 
 
@@ -542,13 +551,13 @@ def match_strength(terms, text):
     )
 
 
-def _heldout_candidates(store, topics, works, cutoff):
+def _heldout_candidates(store, topics, works, cutoff, heldout_to=None):
     direct = _direct_members(store, topics, first_only=True)
     ranked = sorted(topics, key=lambda topic: int(topic['id'][1:]))
     assigned = {topic['id']: [] for topic in ranked}
     with store.db() as db:
-        for work in works:
-            if work['day'] < cutoff or work['relation_kind'] is not None:
+        for work in pages.in_window(works, cutoff, heldout_to):
+            if work['relation_kind'] is not None:
                 continue
             work_id = work['id']
             matching = [topic for topic in ranked if work_id in direct[topic['id']]]
@@ -583,20 +592,26 @@ def _sample(candidates):
 def _heldout(args, store, works):
     path = _output_child(args.out, 'heldout.json')
     saved = _read(path, {})
+    cutoffs = _cutoffs(args)
     if not saved:
         found = _topics(args)
-        if args.heldout_from < found['heldout_from']:
+        if args.heldout_from < found['heldout_from'] or found.get('heldout_to') != cutoffs['heldout_to']:
             raise ValueError('cutoff_mismatch')
-        candidates = _heldout_candidates(store, found['topics'], works, args.heldout_from)
-        saved = {'heldout_from': args.heldout_from, 'requests': _sample(candidates)}
+        candidates = _heldout_candidates(store, found['topics'], works, args.heldout_from, cutoffs['heldout_to'])
+        saved = dict(cutoffs, requests=_sample(candidates))
         _save(path, saved)
-    if saved['heldout_from'] != args.heldout_from:
-        raise ValueError('cutoff_mismatch')
+    _check_cutoffs(saved, cutoffs)
     print('heldout', len(saved['requests']), 'weak', sum(work['weak'] for work in saved['requests']))
 
 
+def _saved_heldout(args, default=None):
+    saved = _read(_output_child(args.out, 'heldout.json'), default)
+    _check_cutoffs(saved, _cutoffs(args))
+    return saved
+
+
 def _requests(args):
-    return _read(_output_child(args.out, 'heldout.json'))['requests']
+    return _saved_heldout(args)['requests']
 
 
 GOLD_INSTRUCTION = (
@@ -697,7 +712,10 @@ BUILD_INSTRUCTION = (
     "Add uses section and text; update uses the existing item id and text; remove uses the existing item id "
     "and reason. Supply a verbatim quote of the owner's words from the cited Work for every added or updated "
     "standard. Any optional quote must also be verbatim from that Work. Keep decisions and latest state with "
-    "dates. Change only what that day's Works change. Never restate or rewrite the page. Return each active topic "
+    "dates. For each state item, give a short thread label naming what it tracks. Reuse an existing item's thread "
+    "when the new item replaces or continues it, and prefer an update over a new add for the same thread. "
+    "Give an expires date (YYYY-MM-DD) for the last day the state holds, or leave it empty when open-ended. "
+    "Change only what that day's Works change. Never restate or rewrite the page. Return each active topic "
     "with empty ops when nothing changes. Use an empty string for unused fields. Write text in Korean when "
     "the owner writes Korean."
 )
@@ -707,7 +725,8 @@ def _clean_page(store, page):
     return dict(
         page, name=_clean(store, page['name']), summary=_clean(store, page['summary']),
         items=[dict(item, text=_clean(store, item['text']),
-                    quote=_clean(store, item['quote']) if item['quote'] else None)
+                    quote=_clean(store, item['quote']) if item['quote'] else None,
+                    thread=_clean(store, item['thread']) if item.get('thread') else None)
                for item in page['items']],
     )
 
@@ -733,7 +752,7 @@ def _build(args, store, works):
             page = _clean_page(store, entry['page'])
             for item in page['items']:
                 item['source'] = aliases[item['source']]
-            rendered = pages.render(page, include_ids=True)
+            rendered = pages.render(page, include_ids=True, as_of=day)
             listing = '\n'.join(
                 f"work:{aliases[work['id']]} [{work['day']}] owner: {work['owner_text']} / "
                 f"assistant (excerpt): {work['reply']}"
@@ -885,6 +904,11 @@ def _transcript_block(store, queries, at, exclude_works, target_chars, aliases):
     return ('\n'.join([heading, *selected]) if selected else ''), ids
 
 
+def arm_texts(a, page_text, search, *, attach):
+    return {'A': a, 'B': f'{a}\n\n{page_text}' if attach and page_text else a,
+            'C': f'{a}\n\n{search}' if attach and search else a}
+
+
 def _contexts(args, store):
     path = _run_file(args, 'contexts.json')
     saved = _read(path, {})
@@ -917,19 +941,18 @@ def _contexts(args, store):
         if page is not None:
             pages.assert_no_leak(page, request)
             if page['items']:
-                page_text = pages.render(_clean_page(store, page))
-        terms = topics[request['topic_id']]['terms']
-        # Each term alone too, so C can fill the page's length with whole exchanges (3 per query).
-        queries = [' '.join([*terms, text]), ' '.join(terms), text, *terms]
-        search, _ = _transcript_block(store, queries, at, aliases, len(page_text), aliases)
-        context = {
-            'A': a,
-            'B': a + '\n\n' + page_text if page_text else a,
-            'C': a + '\n\n' + search if search else a,
-        }
+                page_text = pages.render(_clean_page(store, page), as_of=request['day'])
+        attach = pages.attach_page(request['match_strength'])
+        search = ''
+        if attach and page_text:
+            terms = topics[request['topic_id']]['terms']
+            # Each term alone too, so C can fill the page's length with whole exchanges (3 per query).
+            queries = [' '.join([*terms, text]), ' '.join(terms), text, *terms]
+            search, _ = _transcript_block(store, queries, at, aliases, len(page_text), aliases)
+        context = arm_texts(a, page_text, search, attach=attach)
         saved[request['id']] = dict(
-            context, chars={**{arm: len(value) for arm, value in context.items()},
-                            'page': len(page_text), 'search': len(search)},
+            context, attached=attach and bool(page_text),
+            chars={**{arm: len(value) for arm, value in context.items()}, 'page': len(page_text), 'search': len(search)},
         )
         _save(path, saved)
     if not path.exists():
@@ -947,7 +970,7 @@ DRAFT_INSTRUCTION = (
 
 
 def _drafts(args, store):
-    if args.run != 1:
+    if args.run != 1 or getattr(args, 'heldout_to', None) is not None:
         print('drafts 0')
         return
     path = _run_file(args, 'drafts.json')
@@ -1088,8 +1111,10 @@ def _judge(args, store):
 
 SCORES = {'yes': 1.0, 'partial': 0.5, 'no': 0.0}
 GROUPS = ('scored', 'control', 'weak')
+MISLEADING_METRICS = ('misleading', 'traps', 'misleading_other')
 METRICS = (
-    'needed', 'needed_weak', 'essential', 'misleading', *(f'misleading_{group}' for group in GROUPS),
+    'needed', 'needed_weak', 'essential',
+    *(key for metric in MISLEADING_METRICS for key in (metric, *(f'{metric}_{group}' for group in GROUPS))),
     'lesson_present', 'exploratory_follow', 'characters', 'downgraded',
 )
 PAIRS = (('B', 'A'), ('C', 'A'), ('B', 'C'))
@@ -1120,9 +1145,10 @@ def _run_scores(judged, gold, requests, contexts):
             else:
                 score['needed'].extend(values)
                 score['essential'].extend(value for value, fact in zip(values, facts) if fact['weight'] == 'essential')
-            misleading = len(entry['traps']) + len(entry['misleading_other'])
-            score['misleading'].append(misleading)
-            score[f'misleading_{group}'].append(misleading)
+            traps, other = len(entry['traps']), len(entry['misleading_other'])
+            for metric, value in zip(MISLEADING_METRICS, (traps + other, traps, other)):
+                score[metric].append(value)
+                score[f'{metric}_{group}'].append(value)
             score['exploratory_follow'].extend(mark == 'followed' for mark in entry['lessons']
                                                if mark in ('followed', 'not_followed'))
             score['lesson_present'].extend(mark == 'yes' for mark in entry['lesson_present'])
@@ -1140,22 +1166,30 @@ def _run_scores(judged, gold, requests, contexts):
     }
 
 
-def _paired_deltas(judgments, requests):
-    pairs = {pair: {} for pair in PAIRS}
+def _paired_deltas(judgments, requests, *, metrics=('needed', 'traps', 'misleading_other'), pairs=PAIRS):
+    samples = {(metric, left, right): {} for metric in metrics for left, right in pairs}
     for judged in judgments:
         for work_id, arms in judged.items():
-            if requests[work_id]['weak'] or not arms['A']['needed']:
+            request = requests[work_id]
+            if request['weak']:
                 continue
-            values = {arm: _mean(SCORES[mark] for mark in arms[arm]['needed']) for arm in ARMS}
-            for left, right in PAIRS:
-                _, deltas = pairs[left, right].setdefault(work_id, (requests[work_id]['topic_id'], []))
-                deltas.append(values[left] - values[right])
+            for metric in metrics:
+                if metric == 'needed':
+                    if not arms['A']['needed']:
+                        continue
+                    values = {arm: _mean(SCORES[mark] for mark in arms[arm]['needed']) for arm in ARMS}
+                else:
+                    values = {arm: len(arms[arm][metric]) for arm in ARMS}
+                for left, right in pairs:
+                    paired = samples[metric, left, right]
+                    _, deltas = paired.setdefault(work_id, (request['topic_id'], []))
+                    deltas.append(values[left] - values[right])
     return {
-        f'{left}_minus_{right}': {
+        f'{left}_minus_{right}' + ('' if metric == 'needed' else f'_{metric}'): {
             'mean': _mean(mean(deltas) for _, deltas in paired.values()),
             'ci95': pages.bootstrap_delta(paired), 'pairs': len(paired),
         }
-        for (left, right), paired in pairs.items()
+        for (metric, left, right), paired in samples.items()
     }
 
 
@@ -1180,10 +1214,12 @@ def _call_counts(args):
 
 
 def _call_plan(find=MAX_FIND_CALLS, gold=MAX_REQUESTS + MAX_WEAK, replay_days=MAX_REPLAY_DAYS,
-               max_retries=MAX_RETRIES):
-    counts = {'find': find, 'gold': gold * 2, 'build': replay_days * 3,
+               max_retries=MAX_RETRIES, *, bounded=False):
+    attempts = 2  # every gold and judge item may be retried once on an invalid output
+    counts = {'find': find, 'gold': gold * attempts, 'build': replay_days * 3,
               'build_retries': min(replay_days, max_retries) * 3,
-              'drafts': min(gold, MAX_DRAFT_REQUESTS) * len(DRAFT_ARMS), 'judge': gold * 2 * 3}
+              'drafts': 0 if bounded else min(gold, MAX_DRAFT_REQUESTS) * len(DRAFT_ARMS),
+              'judge': gold * attempts * 3}
     return dict(counts, total=sum(counts.values()))
 
 
@@ -1197,21 +1233,25 @@ def _judge_prompt_chars(sample):
 
 
 def _plan_counts(args, store, works, cutoff):
+    heldout_to = getattr(args, 'heldout_to', None)
     before = sum(work['day'] < cutoff for work in works)
     chunks = len(_chunks(_finder_lines(works, cutoff)))
     found = _read(_output_child(args.out, 'topics.json'), {})
+    _check_cutoffs(found, {'heldout_to': heldout_to})
+    saved = _saved_heldout(args, {})
     candidates = {}
     if found:
-        candidates = _heldout_candidates(store, found['topics'], works, cutoff)
-        sample = _sample(candidates)
+        candidates = _heldout_candidates(store, found['topics'], works, cutoff, heldout_to)
+        sample = saved['requests'] if saved else _sample(candidates)
         last_day = max((request['day'] for request in sample), default='')
         replay_works = _with_membership(store, found['topics'], works, last_day)
         replay_days = len({work['day'] for work in replay_works if work['topics']})
     else:
-        eligible = [work for work in works if work['day'] >= cutoff and work['relation_kind'] is None
+        eligible = [work for work in pages.in_window(works, cutoff, heldout_to) if work['relation_kind'] is None
                     and len(work['owner_text'].strip()) >= 6]
-        sample = sorted(eligible, key=lambda work: len(work['owner_text']), reverse=True)[:MAX_REQUESTS + MAX_WEAK]
-        last_day = max((work['day'] for work in eligible), default='')
+        longest = sorted(eligible, key=lambda work: len(work['owner_text']), reverse=True)
+        sample = saved['requests'] if saved else longest[:MAX_REQUESTS + MAX_WEAK]
+        last_day = max((work['day'] for work in (sample if saved else eligible)), default='')
         replay_days = len({work['day'] for work in works if work['day'] <= last_day})
     return {
         'works_before': before,
@@ -1220,8 +1260,9 @@ def _plan_counts(args, store, works, cutoff):
         'heldout_candidates': sum(map(len, candidates.values())) if found else None,
         'heldout_limit': len(sample),
         'largest_judge_prompt_chars_approx': _judge_prompt_chars(sample),
-        'projected_calls': _call_plan(_finder_calls(chunks), len(sample), replay_days, args.max_retries),
-        'default_calls': _call_plan(),
+        'projected_calls': _call_plan(_finder_calls(chunks), len(sample), replay_days, args.max_retries,
+                                      bounded=heldout_to is not None),
+        'default_calls': _call_plan(bounded=heldout_to is not None),
     }
 
 
@@ -1256,10 +1297,10 @@ def _decision_runs(runs):
         {
             arm: {
                 'needed': run[arm]['needed'],
-                'misleading': (
-                    sum(run['groups'][group] * run[arm][f'misleading_{group}'] for group in ('scored', 'control'))
+                **{metric: (
+                    sum(run['groups'][group] * run[arm][f'{metric}_{group}'] for group in ('scored', 'control'))
                     / max(1, run['groups']['scored'] + run['groups']['control'])
-                ),
+                ) for metric in MISLEADING_METRICS},
             }
             for arm in ARMS
         }
@@ -1267,17 +1308,30 @@ def _decision_runs(runs):
     ]
 
 
+def _first_two_complete(runs):
+    return [run['run'] for run in runs[:2]] == [1, 2] and all(run['complete'] for run in runs[:2])
+
+
 def _stop_summary(runs, judgments, requests):
-    if [run['run'] for run in runs[:2]] != [1, 2] or not all(run['complete'] for run in runs[:2]):
+    if not _first_two_complete(runs):
         return False, None
-    delta = _paired_deltas(judgments[:2], requests)['B_minus_A']
+    delta = _paired_deltas(judgments[:2], requests, metrics=('needed',), pairs=(('B', 'A'),))['B_minus_A']
     ci = delta['ci95'] if delta['pairs'] else None
-    return pages.early_stop(_decision_runs(runs[:2]), ci=ci), ci
+    return pages.early_stop_revised(_decision_runs(runs[:2]), ci=ci), ci
+
+
+def _snapshot_day(out, store, works):
+    snapshot = _output_child(out, 'snapshot')
+    if snapshot.is_dir():
+        tz = ZoneInfo(resolve_local_timezone(store))
+        # Opening the store can migrate the database. The snapshot directory was staged during backup.
+        return datetime.fromtimestamp(snapshot.stat().st_mtime, tz).date().isoformat()
+    return max((work['day'] for work in works), default='')
 
 
 def _report(args, store, works):
     gold, gold_skipped = _load_stage(_output_child(args.out, 'gold.json'))
-    saved = _read(_output_child(args.out, 'heldout.json'), {})
+    saved = _saved_heldout(args, {})
     requests = {request['id']: request for request in saved.get('requests', [])}
     runs, judgments, builds = [], [], []
     for run in (1, 2, 3):
@@ -1295,6 +1349,7 @@ def _report(args, store, works):
                 'run': run, 'judged': len(judged),
                 'judge_skipped': len(judge_skipped), 'drafts_skipped': len(drafts_skipped),
                 'scored': groups['scored'], 'groups': groups,
+                'attached': sum(context.get('attached', False) for context in contexts.values()),
                 'complete': bool(saved) and _complete(judged, gold, requests, gold_skipped, judge_skipped),
                 **_run_scores(judged, gold, requests, contexts),
             })
@@ -1309,14 +1364,22 @@ def _report(args, store, works):
         aggregates[arm]['downgraded_total'] = sum(run[arm]['downgraded'] for run in runs)
     deltas = _paired_deltas(judgments, requests)
     stopped, stop_ci = _stop_summary(runs, judgments, requests)
-    complete = stopped or (len(runs) == 3 and all(run['complete'] for run in runs))
-    decision = pages.decide({'runs': _decision_runs(runs), 'ci_b_minus_a': deltas['B_minus_A']['ci95'],
-                             'ci_b_minus_c': deltas['B_minus_C']['ci95']})
-    decision['integrate'] = complete and not stopped and decision['integrate']
+    decision_runs = _decision_runs(runs)
+    all_complete = len(runs) == 3 and all(run['complete'] for run in runs)
+    historical_stop = _first_two_complete(runs) and pages.early_stop(decision_runs, ci=stop_ci)
+    summary = {'runs': decision_runs, 'ci_b_minus_a': deltas['B_minus_A']['ci95'],
+               'ci_b_minus_c': deltas['B_minus_C']['ci95']}
+    decision = pages.decide(summary)
+    decision['integrate'] = all_complete and not historical_stop and decision['integrate']
+    revised = pages.decide_revised(summary)
+    revised['integrate'] = all_complete and not stopped and revised['integrate']
+    heldout_to = getattr(args, 'heldout_to', None)
     report = {
         'runs': runs, 'builds': builds, 'gold_skipped': len(gold_skipped),
         'aggregate': aggregates, 'paired_deltas': deltas, 'decision': decision,
-        'complete': complete, 'early_stop': stopped, 'early_stop_ci_b_minus_a': stop_ci,
+        'decision_revised': revised, 'complete': stopped or all_complete,
+        'early_stop': stopped, 'early_stop_ci_b_minus_a': stop_ci,
+        'provisional': heldout_to is not None and heldout_to <= _snapshot_day(args.out, store, works),
         'plan': _plan_counts(args, store, works, saved.get('heldout_from', args.heldout_from)),
         'budget': _call_counts(args),
     }
@@ -1328,8 +1391,7 @@ def _skip_third_run(args):
     if args.run != 3:
         return False
     gold, gold_skipped = _load_stage(_output_child(args.out, 'gold.json'))
-    requests = {request['id']: request
-                for request in _read(_output_child(args.out, 'heldout.json'), {}).get('requests', [])}
+    requests = {request['id']: request for request in _saved_heldout(args, {}).get('requests', [])}
     stages = [_load_stage(_output_child(args.out, f'run{run}', 'judged.json')) for run in (1, 2)]
     if not requests or not all(_complete(run, gold, requests, gold_skipped, skipped) for run, skipped in stages):
         return False
@@ -1355,6 +1417,7 @@ def main(argv=None):
             command.add_argument('--db', required=True)
         else:
             command.add_argument('--heldout-from', type=date.fromisoformat, default=date.fromisoformat(DEFAULT_HELDOUT_FROM))
+            command.add_argument('--heldout-to', type=date.fromisoformat)
         if name in ('build', 'contexts', 'drafts', 'judge'):
             command.add_argument('--run', type=int, required=True, choices=(1, 2, 3))
     args = parser.parse_args(argv)
@@ -1366,6 +1429,9 @@ def main(argv=None):
             _snapshot(args)
             return 0
         args.heldout_from = args.heldout_from.isoformat()
+        if args.heldout_to is not None:
+            args.heldout_to = args.heldout_to.isoformat()
+        _saved_heldout(args, {})
         store = _open_snapshot(args.out)
         if getattr(args, 'run', None) and _skip_third_run(args):
             print('early_stop 1')

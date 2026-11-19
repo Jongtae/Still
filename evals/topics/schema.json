@@ -17,7 +17,8 @@
       "properties": {
         "op": { "enum": ["add", "update"] },
         "day": { "$ref": "#/$defs/day" },
-        "source": { "type": "string", "minLength": 1 }
+        "source": { "type": "string", "minLength": 1 },
+        "order": { "type": "integer", "minimum": 1 }
       }
     },
     "item": {
@@ -31,6 +32,8 @@
         "quote": { "type": ["string", "null"], "minLength": 1 },
         "source": { "type": "string", "minLength": 1 },
         "day": { "$ref": "#/$defs/day" },
+        "thread": { "type": ["string", "null"], "minLength": 1 },
+        "expires": { "anyOf": [{ "$ref": "#/$defs/day" }, { "type": "null" }] },
         "history": {
           "type": "array",
           "minItems": 1,
@@ -68,7 +71,9 @@
       "additionalProperties": false,
       "required": [
         "needed", "needed_weak", "essential", "misleading", "misleading_scored", "misleading_control",
-        "misleading_weak", "lesson_present", "exploratory_follow", "characters", "downgraded"
+        "misleading_weak", "traps", "traps_scored", "traps_control", "traps_weak", "misleading_other",
+        "misleading_other_scored", "misleading_other_control", "misleading_other_weak",
+        "lesson_present", "exploratory_follow", "characters", "downgraded"
       ],
       "properties": {
         "needed": { "$ref": "#/$defs/share" },
@@ -78,6 +83,14 @@
         "misleading_scored": { "type": "number", "minimum": 0 },
         "misleading_control": { "type": "number", "minimum": 0 },
         "misleading_weak": { "type": "number", "minimum": 0 },
+        "traps": { "type": "number", "minimum": 0 },
+        "traps_scored": { "type": "number", "minimum": 0 },
+        "traps_control": { "type": "number", "minimum": 0 },
+        "traps_weak": { "type": "number", "minimum": 0 },
+        "misleading_other": { "type": "number", "minimum": 0 },
+        "misleading_other_scored": { "type": "number", "minimum": 0 },
+        "misleading_other_control": { "type": "number", "minimum": 0 },
+        "misleading_other_weak": { "type": "number", "minimum": 0 },
         "lesson_present": { "$ref": "#/$defs/share" },
         "exploratory_follow": { "anyOf": [{ "$ref": "#/$defs/share" }, { "type": "null" }] },
         "characters": { "type": "number", "minimum": 0 },
@@ -87,13 +100,16 @@
     "run": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["run", "judged", "judge_skipped", "drafts_skipped", "scored", "groups", "complete", "A", "B", "C"],
+      "required": [
+        "run", "judged", "judge_skipped", "drafts_skipped", "scored", "groups", "attached", "complete", "A", "B", "C"
+      ],
       "properties": {
         "run": { "enum": [1, 2, 3] },
         "judged": { "$ref": "#/$defs/count" },
         "judge_skipped": { "$ref": "#/$defs/count" },
         "drafts_skipped": { "$ref": "#/$defs/count" },
         "scored": { "$ref": "#/$defs/count" },
+        "attached": { "$ref": "#/$defs/count" },
         "groups": {
           "type": "object",
           "additionalProperties": false,
@@ -142,7 +158,9 @@
       "additionalProperties": false,
       "required": [
         "needed", "needed_weak", "essential", "misleading", "misleading_scored", "misleading_control",
-        "misleading_weak", "lesson_present", "exploratory_follow", "characters", "downgraded",
+        "misleading_weak", "traps", "traps_scored", "traps_control", "traps_weak", "misleading_other",
+        "misleading_other_scored", "misleading_other_control", "misleading_other_weak",
+        "lesson_present", "exploratory_follow", "characters", "downgraded",
         "downgraded_total"
       ],
       "properties": {
@@ -153,6 +171,14 @@
         "misleading_scored": { "$ref": "#/$defs/spread" },
         "misleading_control": { "$ref": "#/$defs/spread" },
         "misleading_weak": { "$ref": "#/$defs/spread" },
+        "traps": { "$ref": "#/$defs/spread" },
+        "traps_scored": { "$ref": "#/$defs/spread" },
+        "traps_control": { "$ref": "#/$defs/spread" },
+        "traps_weak": { "$ref": "#/$defs/spread" },
+        "misleading_other": { "$ref": "#/$defs/spread" },
+        "misleading_other_scored": { "$ref": "#/$defs/spread" },
+        "misleading_other_control": { "$ref": "#/$defs/spread" },
+        "misleading_other_weak": { "$ref": "#/$defs/spread" },
         "lesson_present": { "$ref": "#/$defs/spread" },
         "exploratory_follow": { "anyOf": [{ "$ref": "#/$defs/spread" }, { "type": "null" }] },
         "characters": { "$ref": "#/$defs/spread" },
@@ -174,6 +200,16 @@
         "pairs": { "$ref": "#/$defs/count" }
       }
     },
+    "countDelta": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["mean", "ci95", "pairs"],
+      "properties": {
+        "mean": { "type": "number" },
+        "ci95": { "type": "array", "minItems": 2, "maxItems": 2, "items": { "type": "number" } },
+        "pairs": { "$ref": "#/$defs/count" }
+      }
+    },
     "callPlan": {
       "type": "object",
       "additionalProperties": false,
@@ -192,8 +228,8 @@
       "type": "object",
       "additionalProperties": false,
       "required": [
-        "runs", "builds", "gold_skipped", "aggregate", "paired_deltas", "decision", "complete", "early_stop",
-        "early_stop_ci_b_minus_a", "plan", "budget"
+        "runs", "builds", "gold_skipped", "aggregate", "paired_deltas", "decision", "decision_revised",
+        "complete", "early_stop", "early_stop_ci_b_minus_a", "provisional", "plan", "budget"
       ],
       "properties": {
         "runs": { "type": "array", "maxItems": 3, "items": { "$ref": "#/$defs/run" } },
@@ -212,11 +248,20 @@
         "paired_deltas": {
           "type": "object",
           "additionalProperties": false,
-          "required": ["B_minus_A", "C_minus_A", "B_minus_C"],
+          "required": [
+            "B_minus_A", "C_minus_A", "B_minus_C", "B_minus_A_traps", "C_minus_A_traps", "B_minus_C_traps",
+            "B_minus_A_misleading_other", "C_minus_A_misleading_other", "B_minus_C_misleading_other"
+          ],
           "properties": {
             "B_minus_A": { "$ref": "#/$defs/delta" },
             "C_minus_A": { "$ref": "#/$defs/delta" },
-            "B_minus_C": { "$ref": "#/$defs/delta" }
+            "B_minus_C": { "$ref": "#/$defs/delta" },
+            "B_minus_A_traps": { "$ref": "#/$defs/countDelta" },
+            "C_minus_A_traps": { "$ref": "#/$defs/countDelta" },
+            "B_minus_C_traps": { "$ref": "#/$defs/countDelta" },
+            "B_minus_A_misleading_other": { "$ref": "#/$defs/countDelta" },
+            "C_minus_A_misleading_other": { "$ref": "#/$defs/countDelta" },
+            "B_minus_C_misleading_other": { "$ref": "#/$defs/countDelta" }
           }
         },
         "decision": {
@@ -234,9 +279,29 @@
             }
           }
         },
+        "decision_revised": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["integrate", "reasons"],
+          "properties": {
+            "integrate": { "type": "boolean" },
+            "reasons": {
+              "type": "array",
+              "uniqueItems": true,
+              "items": {
+                "enum": [
+                  "not_every_run_vs_a", "within_noise_vs_a", "ci_vs_a_includes_zero",
+                  "not_every_run_vs_c", "within_noise_vs_c", "ci_vs_c_includes_zero",
+                  "more_traps", "more_misleading_other"
+                ]
+              }
+            }
+          }
+        },
         "complete": { "type": "boolean" },
         "early_stop": { "type": "boolean" },
         "early_stop_ci_b_minus_a": { "anyOf": [{ "$ref": "#/$defs/interval" }, { "type": "null" }] },
+        "provisional": { "type": "boolean" },
         "plan": {
           "type": "object",
           "additionalProperties": false,

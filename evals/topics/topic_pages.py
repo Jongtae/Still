@@ -2,6 +2,7 @@
 
 from collections import Counter, defaultdict
 from copy import deepcopy
+from datetime import date
 from hashlib import sha256
 import math
 import random
@@ -43,7 +44,7 @@ def _nonempty(text):
     return isinstance(text, str) and bool(text.strip())
 
 
-def _apply_op(page, op, sources):
+def _apply_op(page, op, sources, order):
     if not isinstance(op, dict) or op.get('op') not in ('add', 'update', 'remove'):
         return 'bad_op'
     kind = op['op']
@@ -54,6 +55,17 @@ def _apply_op(page, op, sources):
         return 'bad_op'
     if not _nonempty(op.get('reason' if kind == 'remove' else 'text')):
         return 'bad_op'
+    if kind != 'remove':
+        thread = op.get('thread', '')
+        expires = op.get('expires', '')
+        if not isinstance(thread, str) or not isinstance(expires, str):
+            return 'bad_op'
+        if expires:
+            try:
+                if len(expires) != 10 or date.fromisoformat(expires).isoformat() != expires:
+                    return 'bad_op'
+            except ValueError:
+                return 'bad_op'
 
     source = op.get('source')
     if source is None or (isinstance(source, str) and not source.strip()):
@@ -87,8 +99,9 @@ def _apply_op(page, op, sources):
             return 'bad_op'
         item = {'id': item_id, 'section': section, 'history': []}
         page['items'].append(item)
-    item.update(text=op['text'], quote=quote, source=source, day=day)
-    item['history'].append({'op': kind, 'day': day, 'source': source})
+    item.update(text=op['text'], quote=quote, source=source, day=day,
+                thread=compact(thread) or item.get('thread'), expires=expires or item.get('expires'))
+    item['history'].append({'op': kind, 'day': day, 'source': source, 'order': order})
     return None
 
 
@@ -112,8 +125,10 @@ def apply_answer(page, answer, *, day, sources):
     if len(targeted) > max(2, math.ceil(len(existing) / 2)):
         report['refused'].append({'index': None, 'code': 'rewrite'})
         return page, report
+    # Same-day updates must be ordered across items, even if their list positions are unchanged.
+    latest_order = max((item['history'][-1].get('order', 0) for item in page['items'] if item['history']), default=0)
     for index, op in enumerate(ops):
-        code = _apply_op(page, op, sources)
+        code = _apply_op(page, op, sources, latest_order + index + 1)
         if code:
             report['refused'].append({'index': index, 'code': code})
         else:
@@ -126,26 +141,65 @@ def _item_line(item, include_ids):
     text = compact(item['text'])
     if include_ids:
         text = f"[{item['id']}] {text}"
+    if item['section'] == 'state':
+        details = [f"as of {item['day']}"]
+        if item.get('expires'):
+            details.append(f"until {item['expires']}")
+        if include_ids and item.get('thread'):
+            details.append(f"thread: {item['thread']}")
+        details.append(ref)
+        if item['quote']:
+            text = f'"{item["quote"]}" — {text}'
+        return f'- {text} ({", ".join(details)})'
     if item['quote']:
         return f'- "{item["quote"]}" — {text} ({ref}, {item["day"]})'
     return f'- [{item["day"]}] {text} ({ref})'
 
 
-def render(page, budget=PAGE_CHARS, *, include_ids=False):
+def _recency(positioned_item):
+    position, item = positioned_item
+    latest = item['history'][-1] if item['history'] else {}
+    return item['day'], latest.get('day', ''), latest.get('order', 0), position
+
+
+def render(page, budget=PAGE_CHARS, *, include_ids=False, as_of=None):
     name, summary = compact(page['name']), compact(page['summary'])
     header = (
         f'topic_page "{name}" — {summary} (from earlier conversations; '
         'each item cites its source Work):'
     )
     lines = [header, *HEADINGS]
-    items = sorted(page['items'], key=lambda item: item['day'], reverse=True)
+    items, threads, hidden = [], set(), 0
+    for _, item in sorted(enumerate(page['items']), key=_recency, reverse=True):
+        if as_of is not None and item['section'] == 'state':
+            thread = compact(item.get('thread') or '').casefold()
+            superseded = thread in threads
+            if thread:
+                # Expiry of the newest item does not revive the state it replaced.
+                threads.add(thread)
+            if superseded or (item.get('expires') and item['expires'] < as_of):
+                hidden += 1
+                continue
+        items.append(item)
+    items.sort(key=lambda item: SECTIONS.index(item['section']))
+
+    notice = []
+    if hidden:
+        noun = 'item' if hidden == 1 else 'items'
+        notice.append(f'{hidden} older state {noun} not shown (expired or superseded).')
     omitted = len(items)
-    footer = lambda count: f'{count} more items omitted by the context limit.'
-    reserved = len(footer(omitted)) + 1 if omitted else 0
+
+    def footers(count):
+        return [*notice, f'{count} more items omitted by the context limit.'] if count else notice
+
+    reserved = sum(len(line) + 1 for line in footers(omitted))
     while lines and len('\n'.join(lines)) + reserved > budget:
         lines.pop()
     if not lines:
-        return footer(omitted) if omitted and len(footer(omitted)) <= budget else ''
+        rendered = '\n'.join(footers(omitted))
+        if len(rendered) <= budget:
+            return rendered
+        return next((line for line in footers(omitted) if len(line) <= budget), '')
 
     used = len('\n'.join(lines))
     selected = defaultdict(list)
@@ -153,7 +207,7 @@ def render(page, budget=PAGE_CHARS, *, include_ids=False):
         if HEADINGS[SECTIONS.index(item['section'])] not in lines:
             continue
         line = _item_line(item, include_ids)
-        remaining = len(footer(omitted - 1)) + 1 if omitted > 1 else 0
+        remaining = sum(len(line) + 1 for line in footers(omitted - 1))
         if used + len(line) + 1 + remaining <= budget:
             selected[item['section']].append(line)
             used += len(line) + 1
@@ -161,8 +215,7 @@ def render(page, budget=PAGE_CHARS, *, include_ids=False):
     rendered = [lines[0]]
     for section, heading in zip(SECTIONS, lines[1:]):
         rendered.extend([heading, *selected[section]])
-    if omitted:
-        rendered.append(footer(omitted))
+    rendered.extend(footers(omitted))
     return '\n'.join(rendered)
 
 
@@ -271,6 +324,14 @@ def before_window(works, heldout_from):
     return [work for work in works if work['day'] < heldout_from]
 
 
+def in_window(works, start, end):
+    return [work for work in works if start <= work['day'] and (end is None or work['day'] < end)]
+
+
+def attach_page(strength):
+    return strength >= 2
+
+
 def decide(summary):
     runs = summary['runs']
     a, b = ([run[arm]['needed'] for run in runs] for arm in 'AB')
@@ -293,6 +354,32 @@ def early_stop(runs, ci=None):
     return len(runs) >= 2 and ((ci is not None and ci[1] < MIN_GAIN) or all(
         run['B']['needed'] <= run['A']['needed'] and run['B']['misleading'] > run['A']['misleading']
         for run in runs[:2]
+    ))
+
+
+def decide_revised(summary):
+    runs = summary['runs']
+    b = [run['B']['needed'] for run in runs]
+    reasons = []
+    for arm in 'AC':
+        baseline = [run[arm]['needed'] for run in runs]
+        deltas = [right - left for left, right in zip(baseline, b)]
+        label = arm.lower()
+        if not runs or any(delta <= 0 for delta in deltas):
+            reasons.append(f'not_every_run_vs_{label}')
+        if runs and mean(deltas) <= max(max(baseline) - min(baseline), max(b) - min(b)):
+            reasons.append(f'within_noise_vs_{label}')
+        if summary[f'ci_b_minus_{label}'][0] <= 0:
+            reasons.append(f'ci_vs_{label}_includes_zero')
+    for metric in ('traps', 'misleading_other'):
+        if runs and mean(run['B'][metric] - run['A'][metric] for run in runs) > 0:
+            reasons.append(f'more_{metric}')
+    return {'integrate': not reasons, 'reasons': reasons}
+
+
+def early_stop_revised(runs, ci=None):
+    return early_stop(runs, ci) or (len(runs) >= 2 and all(
+        run['B']['needed'] <= run['C']['needed'] for run in runs[:2]
     ))
 
 
