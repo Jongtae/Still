@@ -427,6 +427,34 @@ def test_replacement_is_atomic_to_the_scheduler(case, monkeypatch):
     assert not wake_job(c, old)
 
 
+@pytest.mark.parametrize('mode', ['scheduled', 'running', 'existing_proposal'])
+def test_can_replace_check_at_cap(case, mode):
+    c = case
+    old = prepared(c)
+    if mode == 'running':
+        tick(c, {'stdout': 'hit'})
+        assert current(c, old)['state'] == prep.STATE_RUNNING
+    for i in range(prep.MAX_ACTIVE_CHECKS - 1):
+        schedule(c, goal=f'Other check {i}')
+
+    goal = 'Report the revised observation'
+    if mode == 'existing_proposal':
+        other_work = c.store.enqueue('Propose a check', 'proposal')
+        proposal = c.preps.create(kind='prepare', goal=goal, due_at=old['due_at'], timezone='UTC',
+            recurrence=None, channel='web', created_from=other_work, state=prep.STATE_PROPOSED,
+            window=(15, old['until_at'], old['max_runs']), check=json.loads(old['check_spec']))
+
+    new = schedule(c, goal=goal, replaces=old['id'])
+    assert new['id'] != old['id']
+    if mode == 'existing_proposal':
+        assert new['id'] == proposal['id']
+    assert new['state'] == prep.STATE_SCHEDULED
+    assert current(c, old)['state'] == prep.STATE_CANCELLED
+    with pytest.raises(runtime.ToolError) as exc:
+        schedule(c, goal='Eleventh distinct check')
+    assert exc.value.code == 'too_many_checks'
+
+
 def test_cap_rechecked_on_resume_accept_restore_and_unpause(case):
     c = case
     first = prepared(c, goal='Paused')

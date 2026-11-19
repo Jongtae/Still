@@ -1496,7 +1496,7 @@ class Preparations:
     def create(self, *, kind, goal, due_at, timezone, recurrence, channel, created_from, state,
                accepted_by=None, owner=OWNER, window=None, delivery_mode=None, title=None, offer=None, origin=None,
                report_every_minutes=None, line_id=None, max_runs=None, requested_until=None, bundle_channel=None, accepted_from=None,
-               piece_of=None, db=None, check=None):
+               piece_of=None, db=None, check=None, replaces=None):
         """One new row (idempotent for the same Work, kind, goal and slot).
 
         #574: when another Work already proposed the same kind, goal, due and
@@ -1512,6 +1512,7 @@ class Preparations:
         ``ORIGIN_DREAM`` marks a look-back suggestion (#583); #717: it starts scheduled (``ACCEPTED_DREAM``).
         #798: ``line_id`` is the entrusted line this row works for; the caller checked it is active.
         ``db`` joins a caller's transaction, so creation and its recovery evidence commit together.
+        ``replaces`` is the validated row the caller will cancel in that transaction, excluded from the check cap.
 
         #938: ``piece_of`` is the slot key of the run that schedules this piece of its line (origin
         ``ORIGIN_LINE_PIECE``).  In this transaction the line must still be active (a stop at the same
@@ -1598,7 +1599,7 @@ class Preparations:
             if active >= MAX_ACTIVE:
                 raise not_run(PreparationRefusal('too_many'))
             if state == STATE_SCHEDULED:
-                self._check_admission(db, check_spec)
+                self._check_admission(db, check_spec, replaces)
             row = {'id': uuid.uuid4().hex[:16], 'owner': owner, 'kind': kind, 'goal_text': goal, 'due_at': due_at,
                    'timezone': timezone, 'recurrence': recurrence, 'channel': channel, 'state': state,
                    'last_run_job_id': None, 'last_outcome': None, 'prepared_result_ref': None, 'prepared_at': None, 'prepared_text': None,
@@ -1653,11 +1654,12 @@ class Preparations:
             from .agent_runtime import not_run
             raise not_run(PreparationRefusal('too_many_checks'))
 
-    def accept(self, preparation_id, accepted_by, *, accepted_from=None, db=None):
+    def accept(self, preparation_id, accepted_by, *, accepted_from=None, db=None, replaces=None):
         """``proposed`` → ``scheduled``: the owner's explicit yes.
 
         #395: a watch whose window has already ended is refused (``expired``)
         in the same UPDATE, so a late yes never reads as a running watch.
+        As in ``create``, ``replaces`` excludes the row the caller will cancel in the same transaction.
         """
         now = self.clock()
         owns_transaction = db is None
@@ -1667,7 +1669,7 @@ class Preparations:
             row = db.execute("SELECT check_spec FROM preparations WHERE id=? AND state='proposed' "
                              "AND until_at>?", (preparation_id, now)).fetchone()
             if row:
-                self._check_admission(db, row['check_spec'], preparation_id)
+                self._check_admission(db, row['check_spec'], replaces)
             changed = db.execute("UPDATE preparations SET state='scheduled',accepted_by=?,accepted_from=?,updated_at=? WHERE id=? AND state='proposed' "
                                  'AND (recurrence IS NOT ? OR until_at>=?) AND (check_spec IS NULL OR until_at>?)',
                                  (accepted_by, accepted_from, now, preparation_id, RECURRENCE_WINDOW, now, now)).rowcount

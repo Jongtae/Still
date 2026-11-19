@@ -347,11 +347,11 @@ class PreparationsService:
                                                  accepted_by=accepted_by,accepted_from=accepted_from,
                                                  window=window,delivery_mode=delivery_mode,title=title,offer=offer,
                                                  report_every_minutes=fields['report_every_minutes'],line_id=line_id,
-                                                 requested_until=fields['requested_until'],check=spec,db=db)
+                                                 requested_until=fields['requested_until'],check=spec,db=db,replaces=replaces)
                     # #574: another Work's identical proposal is this one; the owner's own Work accepts it.
                     already=bool(row.get('already_proposed'))
                     if already and accepted:
-                        row=service.preparations.accept(row['id'],accepted_by,accepted_from=accepted_from,db=db)
+                        row=service.preparations.accept(row['id'],accepted_by,accepted_from=accepted_from,db=db,replaces=replaces)
                     if db is not None and row['state']==prep.STATE_SCHEDULED and replaces!=row['id']:
                         stopped=service.preparations.cancel(replaces,db=db)
             except prep.PreparationRefusal as exc:
