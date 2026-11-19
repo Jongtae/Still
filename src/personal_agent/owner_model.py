@@ -140,13 +140,18 @@ DREAM_TURNS = 40
 DREAM_OWNER_CHARS = 600
 DREAM_ANSWER_CHARS = 300
 DREAM_TURNS_CHARS = 12000
-#: #496: earlier observed misses are lesson evidence only, never another fact-gathering window.
+DREAM_WAY_NOTES_CHARS = 3000
+#: #496, #1031: earlier Works are lesson evidence only, never another fact-gathering window.
 MISS_OUTCOMES = ('failed', 'corrected', 'retried')
 TURN_OUTCOMES = ('done', 'partial', 'failed', 'corrected', 'retried')
 DREAM_EARLIER_DAYS = 7
 DREAM_EARLIER_MISSES = 12
+DREAM_EARLIER_SUCCESSES = 12
 DREAM_CORRECTION_CHARS = 300
 DREAM_EARLIER_CHARS = 4000
+DREAM_EARLIER_SUCCESS_CHARS = 4000
+DREAM_WAY_NOTE_CHARS = 300
+LESSON_CHECK_PURPOSE = 'lesson-owner-specific'
 #: #420: the dream's one judgment runs on the engine's strongest model and may take this long
 #: (inside the run's own ``RUN_SECONDS`` deadline).
 DREAM_TIMEOUT_SECONDS = 240
@@ -554,6 +559,7 @@ DREAM_QUESTION += ('\n\nThe shared Voice instructions below apply to diary and c
 
 DREAM_GATHER_QUESTION = prompt('owner_model_dream_gather').format(categories=', '.join(CATEGORIES),
                                                                   gather_limit=DREAM_GATHER_LIMIT)
+LESSON_CHECK_QUESTION = prompt('owner_model_lesson_check')
 
 #: #424: why a dream ends a line.  ``restates``: the proposal says the same thing as that line (a tidy-up).
 #: ``replaced``: an owner turn the proposal cites (``turn``) replaced or ended it.  ``unsure``: the judgment
@@ -687,7 +693,12 @@ def validate_line_actions(items, refs, request_refs, limit=LINE_ACTIONS):
     return kept, dropped
 
 
-def dream_turn_input(turns):
+def _dream_way_note_suffix(notes):
+    text = '; '.join(filter(None, map(_one_line, notes)))[:DREAM_WAY_NOTE_CHARS]
+    return ' | inferred: ' + text if text else ''
+
+
+def dream_turn_input(turns, notes=None):
     """The look back's whole newest turns and shown refs, shared with the owner-run replay."""
     refs = {turn[0]: turn[1] for turn in turns}
     # #452: each turn's owner date ('YYYY-MM-DD' of its local time), when the caller gave one.
@@ -706,6 +717,15 @@ def dream_turn_input(turns):
         used -= len(lines.pop(0)) + 1
     shown = {line[1:line.index(']')] for line in lines}
     refs = {ref: owner for ref, owner in refs.items() if ref in shown}
+    if notes:
+        remaining = DREAM_WAY_NOTES_CHARS
+        for index in range(len(lines) - 1, -1, -1):
+            line = lines[index]
+            ref = line[1:line.index(']')]
+            suffix = _dream_way_note_suffix(notes.get(ref, ()))
+            if len(suffix) <= remaining:
+                lines[index] += suffix
+                remaining -= len(suffix)
     return lines, refs, turn_days
 
 
@@ -1359,21 +1379,37 @@ class Upkeep:
         forgot is withheld (#367); the caller drops what upkeep would not read (typed markers).  Only Works whose
         text is the owner's own words (#423, ``OWNER_WORDS_SQL``) are read."""
         from .quickstart_store import OWNER_WORDS_SQL, forgotten_turn
-        from .conversation_handoff import FOLLOWUP_CORRECTION, FOLLOWUP_RETRY
+        from .conversation_handoff import FOLLOWUP_CANCEL, FOLLOWUP_CORRECTION, FOLLOWUP_RETRY
         with self.store.db() as db:
             rows = db.execute(
-                f"SELECT j.id,j.request_key,j.provider,j.created,j.status,"
+                f"SELECT j.id,j.request_key,j.provider,j.created,j.status,j.relation_kind,"
                 f"CASE WHEN {forgotten_turn('user', 'j.id')} THEN '' ELSE j.message END AS message,"
                 f"CASE WHEN {forgotten_turn('assistant', 'j.id')} THEN '' ELSE j.response END AS response "
                 f"FROM jobs j WHERE j.created>? AND j.created<=? AND j.status IN {ws.sql_in(ws.AVAILABLE_RESULT)} "
                 f"AND {OWNER_WORDS_SQL} ORDER BY j.created DESC LIMIT ?", (since, until, limit if limit is not None else -1)).fetchall()
-            # #496: the later correction and retry links in one batch; forgotten words remain withheld.
+            # #496, #1031: later links in one batch; forgotten words remain withheld.
             links = db.execute(
                 f"SELECT c.id,c.related_job_id,c.relation_kind,c.created,"
                 f"CASE WHEN {forgotten_turn('user', 'c.id')} THEN '' ELSE c.message END AS message "
                 f"FROM jobs c JOIN jobs j ON c.related_job_id=j.id WHERE j.created>? AND j.created<=? "
-                f"AND c.id<>j.id AND c.created>=j.created AND c.relation_kind IN (?,?) ORDER BY c.created DESC,c.id",
-                (since, until, FOLLOWUP_CORRECTION, FOLLOWUP_RETRY)).fetchall()
+                f"AND c.id<>j.id AND c.created>=j.created AND c.relation_kind IN (?,?,?) ORDER BY c.created DESC,c.id",
+                (since, until, FOLLOWUP_CORRECTION, FOLLOWUP_RETRY, FOLLOWUP_CANCEL)).fetchall()
+            # Bind just the selected Works as one parameter, even when there is no count limit.
+            work_ids = json.dumps([row['id'] for row in rows])
+            reviewed = {row['job_id'] for row in db.execute(
+                'SELECT job_id FROM owner_model_upkeep WHERE kind=? AND job_id IN (SELECT value FROM json_each(?))',
+                (KIND_SELF_REVIEW, work_ids))}
+            notes = db.execute(
+                "SELECT e.job_id, CASE WHEN json_valid(e.detail) THEN "
+                "CASE WHEN json_type(e.detail,'$.evidence.method_gap')='text' THEN "
+                "json_extract(e.detail,'$.evidence.method_gap') END END AS note "
+                "FROM tool_events e WHERE e.tool='method_gap' AND e.status='succeeded' "
+                "AND e.job_id IN (SELECT value FROM json_each(?)) "
+                f"AND NOT {forgotten_turn('assistant', 'e.job_id')} ORDER BY e.created,e.id", (work_ids,)).fetchall()
+        way_notes = {}
+        for row in notes:
+            if row['note'] and row['note'].strip():
+                way_notes.setdefault(row['job_id'], []).append(row['note'])
         result = []
         linked = {}
         for link in links:
@@ -1382,8 +1418,11 @@ class Upkeep:
             work = dict(row)
             following = linked.get(work['id'], [])
             work['linked_kinds'] = {link['relation_kind'] for link in following}
-            work['correction'] = next((link for link in following if link['relation_kind'] == FOLLOWUP_CORRECTION),
-                                      following[0] if following else None)
+            corrections = [link for link in following if link['relation_kind'] != FOLLOWUP_CANCEL]
+            work['correction'] = next((link for link in corrections if link['relation_kind'] == FOLLOWUP_CORRECTION),
+                                      corrections[0] if corrections else None)
+            work['reviewed'] = work['id'] in reviewed
+            work['way_notes'] = way_notes.get(work['id'], [])
             result.append(work)
         return result
 
@@ -1825,7 +1864,7 @@ class Upkeep:
         # Invalid operation names are arbitrary model text, so never retain them as Evidence.
         return [{**item, 'op': ''} if item.get('op') not in (*_LESSON_OPS, None) else item for item in dropped]
 
-    def _save_lessons(self, lessons, current, ops, change, work_id, judgments, dropped, detail, *, origin):
+    def _save_lessons(self, lessons, current, ops, change, work_id, judgments, dropped, detail, *, origin, sources=None):
         """Save operations that still have their authority, recording only ids and counts."""
         if self.allowance(self.clock())[1] == STOPPED_PAUSED:
             detail['stopped'] = STOPPED_PAUSED
@@ -1838,7 +1877,7 @@ class Upkeep:
                 dropped.append(_lesson_drop(item['op'], 'lesson-withheld'))
             else:
                 visible.append(item)
-        result = lessons.apply(visible, change, work_id, origin=origin,
+        result = lessons.apply(visible, change, work_id, origin=origin, sources=sources,
                                expected_rows={ident: item['memory_id'] for ident, item in current.items()})
         dropped.extend(result['dropped'])
         if applied := result['applied']:
@@ -1850,26 +1889,26 @@ class Upkeep:
 
     # -- one dream (#402) ---------------------------------------------------
     def run_dream(self, job, row, judgments, *, turns, profile, clock, diary_date, ends_after, cancelled=None, source_works=None,
-                  preparations='', suggest=None, earlier=(), earlier_works=None, read_scope=None, lines='', line_refs=None, stand=None,
-                  line_read=None):
+                  preparations='', suggest=None, earlier=(), earlier_works=None, way_notes=None, read_scope=None, lines='',
+                  line_refs=None, stand=None, line_read=None):
         """Look back over ``turns`` once and keep the owner model in order; returns ``(state, calls, event_status, detail)``.
 
         ``job`` is the anchor Work (the newest request the dream covers): what is kept is attributed to
         it and its notice tells the owner, with an undo, as upkeep's saves do (#918 slice a).  ``turns``
         are ``(ref, owner words, answer[, local time[, outcome]])`` tuples the caller scrubbed, oldest first; ``profile`` the
         snapshot with short ids and no lessons. ``source_works`` optionally maps turn refs to
-        their Work ids (#443); omitted by legacy callers. One ``structured`` judgment
-        (``ConversationJudgments.owner_model_dream``), then Still's deterministic checks:
-        ``validate_dream`` for facts, ``validate_lessons`` and two separate cited turns for working
-        lessons, the size bound, a secret shape and the pause for the daily record (``diary_date``).
-        #496: ``earlier`` holds scrubbed ``(m ref, owner words, answer, local time, outcome, correction words)``
-        misses for lessons only; two misses on different dates, including one tonight, also ground lessons.
+        their Work ids (#443); omitted by legacy callers. After fact gathering, the look back validates
+        its proposals and checks that each new or reworded lesson is owner-specific.
+        #496, #1031: ``earlier`` holds scrubbed ``(ref, owner words, answer, local time, outcome, correction words)``
+        misses and successes for lessons only. A lesson needs two cited occasions on separate owner days,
+        at least one tonight. ``way_notes`` maps refs to the worker's scrubbed notes about the owner's way.
         Facts may end any profile row that existed at ``ends_after`` (the claim).  #583: the same
         judgment may suggest standing preparations; ``preparations`` names the active ones (so they are
         not suggested again) and ``suggest(kept, judgments)`` -> ``(outcomes, calls)`` stores those that
         pass ``validate_suggestions`` as proposals, never while paused.
         """
         from .agent_runtime import MEMORY_OWNER, SECRET_SHAPED_VALUE, memory_value_has_secret
+        from .conversation_handoff import JUDGMENT_NO, JUDGMENT_YES
         lessons = WorkingLessons(self.store, self.clock)
         if not lessons.migrated():
             return STATE_UNAVAILABLE, 0, EVENT_UNAVAILABLE, {'sent': False, 'stopped': STOPPED_MIGRATION}
@@ -1881,35 +1920,40 @@ class Upkeep:
                   if self.store.outside_content_sources(work)}
         turns = [(ref, owner, '' if (source_works or {}).get(ref) in marked else answer, *rest)
                  for ref, owner, answer, *rest in turns]
+        way_notes = {ref: notes for ref, notes in (way_notes or {}).items()
+                     if (source_works or {}).get(ref) not in marked
+                     and not marked.intersection((earlier_works or {}).get(ref, ()))}
         from .quickstart_store import owner_words_work
-        clean_earlier = []
+        line_input = lines
+        lines, refs, turn_days = dream_turn_input(turns, way_notes)
+        # Earlier refs never enter the facts or suggestions gates.
+        misses, successes = [], []
         for ref, owner, answer, when, outcome, correction in earlier:
+            if outcome not in MISS_OUTCOMES and outcome != 'done':
+                continue
             works = (earlier_works or {}).get(ref, ())
-            if any(work in marked for work in works):
+            if marked.intersection(works):
                 answer = ''
                 # Later correction text is eligible only on the owner channel.
                 if len(works) < 2 or not owner_words_work(self.store.job(works[1])):
                     correction = ''
-            clean_earlier.append((ref, owner, answer, when, outcome, correction))
-        earlier = clean_earlier
-        line_input = lines
-        lines, refs, turn_days = dream_turn_input(turns)
-        # #496: a separately bounded lesson-only block. Its refs never enter the facts or suggestions gates.
-        misses, used = [], 0
-        for ref, owner, answer, when, outcome, correction in earlier:
-            if outcome not in MISS_OUTCOMES:
-                continue
             line = (f"[{ref}] {when} ({outcome}) owner: {' '.join(str(owner or '').split())[:DREAM_OWNER_CHARS] or '(withheld)'}"
-                    f" | assistant: {' '.join(str(answer or '').split())[:DREAM_ANSWER_CHARS] or 'none'}"
-                    f" | correction: {' '.join(str(correction or '').split())[:DREAM_CORRECTION_CHARS] or 'none'}")
-            misses.append((ref, str(when)[:10] if when else None, line))
-            used += len(line) + 1
-        while misses and used > DREAM_EARLIER_CHARS:
-            used -= len(misses.pop(0)[2]) + 1
-        lesson_days = {**turn_days, **{ref: day for ref, day, _line in misses}}
+                    f" | assistant: {' '.join(str(answer or '').split())[:DREAM_ANSWER_CHARS] or 'none'}")
+            if outcome in MISS_OUTCOMES:
+                line += f" | correction: {' '.join(str(correction or '').split())[:DREAM_CORRECTION_CHARS] or 'none'}"
+            line += _dream_way_note_suffix(way_notes.get(ref, ()))
+            block = successes if outcome == 'done' else misses
+            block.append((ref, str(when)[:10] if when else None, line))
+        for block, cap in ((misses, DREAM_EARLIER_CHARS), (successes, DREAM_EARLIER_SUCCESS_CHARS)):
+            used = sum(len(line) + 1 for _ref, _day, line in block)
+            while block and used > cap:
+                used -= len(block.pop(0)[2]) + 1
+        earlier_days = {ref: day for ref, day, _line in misses + successes}
         miss_refs = {turn[0] for turn in turns if turn[0] in refs and len(turn) > 4 and turn[4] in MISS_OUTCOMES}
-        earlier_refs = {ref for ref, _day, _line in misses}
-        lesson_refs = set(refs) | earlier_refs
+        earlier_miss_refs = {ref for ref, _day, _line in misses}
+        earlier_success_refs = {ref for ref, _day, _line in successes}
+        earlier_refs = earlier_miss_refs | earlier_success_refs
+        lesson_refs = refs.keys() | earlier_refs
         snapshot = profile if callable(profile) else (lambda: profile)
         today = MemoryService(self.store, now=self.clock, private_read_sink=MemoryService.NO_EGRESS_GUARD)._today()
 
@@ -1919,13 +1963,15 @@ class Upkeep:
                           if not row['memory_key'].startswith(LESSON_PREFIX)}
 
         # #818: each call's audit row is also linked to the Works its bounded input actually carries
-        # (``read_scope``, ``AgentService.judgments_read``): the shown turns, and the shown earlier misses.
+        # (``read_scope``, ``AgentService.judgments_read``).
         scope = read_scope or (lambda works: contextlib.nullcontext())
         shown_works = [source_works[ref] for ref in refs if source_works and ref in source_works]
-        missed_works = [work for ref in earlier_refs for work in (earlier_works or {}).get(ref, ()) if work]
+        shown_earlier_works = [work for ref, _day, _line in misses + successes
+                               for work in (earlier_works or {}).get(ref, ()) if work]
         # #416: the first pass only finds facts in the turns; what it keeps is in the profile the look back reads.
+        gather_lines, _, _ = dream_turn_input([turn for turn in turns if turn[0] in refs])
         with scope(shown_works):
-            found, gather = judgments.owner_model_dream_gather('\n'.join(lines), snapshot(), clock, work_id=job['id'],
+            found, gather = judgments.owner_model_dream_gather('\n'.join(gather_lines), snapshot(), clock, work_id=job['id'],
                                                                cancelled=cancelled)
         calls = 1 if call_sent(gather) else 0
         self.count(job['id'], calls, KIND_DREAM)
@@ -1948,12 +1994,14 @@ class Upkeep:
             return STATE_DONE, calls, EVENT_RECORDED, {'gather': first, 'sent': bool(calls), 'applied': gathered,
                                                        'dropped': [], 'lessons': None, 'diary': None,
                                                        'stopped': stopped or STOPPED_DEADLINE,
-                                                       'inputs': {'turns': len(lines)}}
-        with scope([*shown_works, *missed_works, *(line_refs or {}).values()]):
+                                                       'inputs': {'turns': len(lines), 'earlier_successes': 0}}
+        with scope([*shown_works, *shown_earlier_works, *(line_refs or {}).values()]):
             data, decision = judgments.owner_model_dream('\n'.join(lines), snapshot(), current_text,
                                                          previous['content'] if previous else '', clock,
                                                          work_id=job['id'], cancelled=cancelled, preparations=preparations,
-                                                         earlier='\n'.join(line for _ref, _day, line in misses), lines=line_input)
+                                                         earlier='\n'.join(line for _ref, _day, line in misses),
+                                                         earlier_successes='\n'.join(line for _ref, _day, line in successes),
+                                                         lines=line_input)
         if line_input and line_read and call_sent(decision):line_read(line_input)
         confidence = decision.confidence
         calls += 1 if call_sent(decision) else 0
@@ -1963,7 +2011,7 @@ class Upkeep:
                   'confidence': confidence.probability, 'sent': bool(calls),
                   'gather': first,
                   'inputs': {'turns': len(lines), 'turns_chars': sum(len(line) for line in lines), 'clock': bool(clock),
-                             'earlier_misses': len(misses),
+                             'earlier_misses': len(misses), 'earlier_successes': len(successes),
                              'working_lessons': len(current), 'working_lessons_chars': len(current_text),
                              'previous_diary': bool(previous)}}
         if data is None:
@@ -1994,23 +2042,37 @@ class Upkeep:
             dropped.extend(self._lesson_evidence_drops(refused))
             if ops:
                 cited = dream_refs(data.get('lesson_sources'), lesson_refs)
-                # #452: separate occasions are separate days when the turns are dated; two requests of one
-                # conversation are one occasion (the audit found one task's settings made standing this way).
-                tonight_cited = set(cited or ()) & set(refs)
-                days = {turn_days.get(ref) for ref in tonight_cited}
-                occasions = len(tonight_cited) >= 2 and (None in days or len(days) >= 2)
-                cited_misses = set(cited or ()) & (miss_refs | earlier_refs)
-                miss_days = {lesson_days.get(ref) for ref in cited_misses}
-                repeated_misses = (len(cited_misses) >= 2 and None not in miss_days and len(miss_days) >= 2
-                                   and bool(cited_misses & miss_refs))
-                rule = ('occasions' if occasions else 'misses') if cited and (occasions or repeated_misses) else None
-                detail['lessons_evidence'] = {'tonight_misses': len(cited_misses & miss_refs),
-                                              'earlier_misses': len(cited_misses & earlier_refs), 'rule': None}
+                cited = cited or []
+                tonight_cited = set(cited) & refs.keys()
+                earlier_cited = {ref: (earlier_works or {}).get(ref, ()) for ref in cited if ref in earlier_refs}
+                cited_works = {ref: pair[0] for ref, pair in earlier_cited.items() if pair and pair[0]}
+                cited_works.update({ref: source_works[ref] for ref in tonight_cited
+                                    if source_works and source_works.get(ref)})
+                corrections = {pair[1]: cited_works.get(ref, ref) for ref, pair in earlier_cited.items()
+                               if ref in earlier_miss_refs and len(pair) > 1 and pair[1]}
+                # Seed the earlier days first so a cited correction keeps the miss's day.
+                occasion_days = {cited_works.get(ref, ref): earlier_days[ref] for ref in earlier_cited}
+                tonight_occasions = {}
+                for ref in tonight_cited:
+                    work = cited_works.get(ref, ref)
+                    occasion = corrections.get(work, work)
+                    tonight_occasions[ref] = occasion
+                    occasion_days.setdefault(occasion, turn_days.get(ref))
+                days = set(occasion_days.values()) - {None}
+                legacy_turns = len(set(tonight_occasions.values())) >= 2 and any(
+                    ref not in turn_days and occasion_days[occasion] is None
+                    for ref, occasion in tonight_occasions.items())
+                detail['lessons_evidence'] = {'tonight': len(tonight_cited),
+                                              'tonight_misses': len(tonight_cited & miss_refs),
+                                              'earlier_misses': len(earlier_miss_refs.intersection(cited)),
+                                              'earlier_successes': len(earlier_success_refs.intersection(cited)),
+                                              'rule': None}
                 refused = None
-                if not rule and (not cited or len(cited) < 2):
-                    # A lesson about how to serve the owner needs two separate occasions (#402).
-                    refused = 'one-occasion' if cited else 'sources'
-                elif not rule:
+                if not cited:
+                    refused = 'sources'
+                elif len(occasion_days) < 2:
+                    refused = 'one-occasion'
+                elif not tonight_cited or (len(days) < 2 and not legacy_turns):
                     refused = 'one-day'
                 elif len(current) > 1 and sum(item['op'] in ('remove', 'update') for item in ops) * 2 > len(current):
                     refused = 'lessons-rewrite'
@@ -2019,10 +2081,47 @@ class Upkeep:
                 if refused:
                     dropped.extend(_lesson_drop(item['op'], refused) for item in ops)
                 else:
-                    self._save_lessons(lessons, current, ops, change, job['id'], judgments, dropped, detail,
-                                       origin=ORIGIN_DREAM)
-                    if detail.get('lessons'):
-                        detail['lessons_evidence']['rule'] = rule
+                    checked = []
+                    checks_exhausted = False
+                    lesson_works = list(dict.fromkeys(cited_works[ref] for ref in cited if ref in cited_works))
+                    for index, item in enumerate(ops):
+                        left, stop_reason = self.allowance(self.clock())
+                        if stop_reason == STOPPED_PAUSED:
+                            stopped = STOPPED_PAUSED
+                        elif cancelled and cancelled():
+                            stopped = STOPPED_DEADLINE
+                        if stopped in (STOPPED_PAUSED, STOPPED_DEADLINE):
+                            dropped.extend(_lesson_drop(op['op'], stopped) for op in checked + ops[index:])
+                            checked = []
+                            break
+                        if item['op'] == 'remove':
+                            checked.append(item)
+                            continue
+                        if checks_exhausted or left <= 0:
+                            checks_exhausted = True
+                            dropped.append(_lesson_drop(item['op'], REFUSED_BUDGET))
+                            continue
+                        with scope(lesson_works):
+                            verdict, check = judgments.lesson_owner_specific(item['text'], item['why'], work_id=job['id'],
+                                                                             cancelled=cancelled)
+                        if call_sent(check):
+                            calls += 1
+                            self.count(job['id'], calls, KIND_DREAM)
+                            detail['sent'] = True
+                        if verdict.outcome == JUDGMENT_YES:
+                            checked.append(item)
+                        else:
+                            reason = 'general-rule' if verdict.outcome == JUDGMENT_NO else 'general-rule-unjudged'
+                            dropped.append(_lesson_drop(item['op'], reason))
+                    if checked and cancelled and cancelled():
+                        stopped = STOPPED_DEADLINE
+                        dropped.extend(_lesson_drop(item['op'], stopped) for item in checked)
+                        checked = []
+                    if checked:
+                        self._save_lessons(lessons, current, checked, change, job['id'], judgments, dropped, detail,
+                                           origin=ORIGIN_DREAM, sources=lesson_works)
+                        if detail.get('lessons'):
+                            detail['lessons_evidence']['rule'] = 'occasions'
             stopped = detail.get('stopped') or stopped
         if stopped != STOPPED_PAUSED:
             calls, stopped = self._lines(job, data.get('lines'), refs, line_refs or {}, source_works or {},
@@ -2310,10 +2409,12 @@ class WorkingLessons:
             attempt += 1
             candidate = f'{norm}\n{attempt}'
 
-    def _save(self, db, key, text, owner_key, work_id, origin, why=None):
+    def _save(self, db, key, text, owner_key, work_id, origin, why=None, sources=None):
+        # The anchor Work first (the notice and undo use it), then each cited Work once.
+        source_works = list(dict.fromkeys(([work_id] if work_id else []) + [work for work in sources or () if work]))
         return self.store._save_memory(
             db, key, text, owner_key, self.store._work_binding(work_id) if work_id else None,
-            origin=origin, source_works=[work_id] if work_id else None, basis=BASIS_INFERRED, evidence=why)
+            origin=origin, source_works=source_works or None, basis=BASIS_INFERRED, evidence=why)
 
     @staticmethod
     def _forgotten_texts(db, owner_key):
@@ -2350,11 +2451,12 @@ class WorkingLessons:
                         json.dumps(fingerprint), state, None, self.clock(), conversation[0]))
             break
 
-    def apply(self, ops, change, work_id, *, origin, expected_rows=None):
+    def apply(self, ops, change, work_id, *, origin, expected_rows=None, sources=None):
         """Apply validated operations in one transaction, rechecking current state.
 
         Upkeep supplies the row ids that its judgment saw, so a replaced row
         cannot be updated or removed on the strength of older wording.
+        ``sources`` are the cited Work ids, following the anchor Work.
         """
         from .agent_runtime import MEMORY_OWNER, SECRET_SHAPED_VALUE, memory_value_has_secret
         from .current_context import redact_known_secrets
@@ -2403,7 +2505,7 @@ class WorkingLessons:
                                (reason, self.clock(), memory_id))
                     del current[ident]
                 else:
-                    memory_id = self._save(db, key, text, owner_key, work_id, origin, why)['id']
+                    memory_id = self._save(db, key, text, owner_key, work_id, origin, why, sources=sources)['id']
                     ident = key[len(LESSONS_PREFIX):]
                     current[ident] = {'key': key, 'memory_id': memory_id, 'text': text, 'ref': MEMORY_PREFIX + memory_id}
                 applied[index] = {**change_record, 'id': ident, 'memory_id': memory_id}

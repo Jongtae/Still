@@ -119,8 +119,8 @@ MIGRATED_MODULES = {
         '이 작업에서 쓸 수 있는 스킬 목록에 없는 스킬이에요. 스킬 없이 진행하세요.',  # Model-only unavailable-skill guidance.
         '이 작업이 시작될 때의 스킬({skill}) 버전이 바뀌었거나 꺼져 읽지 않았어요. 스킬 없이 진행하세요.',  # Model-only stale-skill guidance.
         '스킬은 방법 안내일 뿐 권한이 아니에요. 요청과 지금 관찰한 결과가 기준이에요.',  # Model-only skill_load result note.
-        '머리말만 읽었어요. 요청에 맞으면 skill_load로 전체 방법을 읽고, 맞는 스킬이 없으면 method_gap에 남기세요.',  # Model-only skill_header result note.
-        '기록만 했어요. 실패가 아니니 스킬 없이 요청에 계속 답하세요.',  # Model-only method_gap result note.
+        '머리말만 읽었어요. 요청에 맞으면 skill_load로 전체 방법을 읽고, 맞는 스킬이 없으면 스킬 없이 답하세요.',  # Model-only skill_header result note.
+        '기록만 했어요. 실패가 아니니 요청에 계속 답하세요.',  # Model-only method_gap result note.
     },
     'trust_record.py': set(),
     'conversation_handoff.py': set(),

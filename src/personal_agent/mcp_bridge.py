@@ -373,9 +373,10 @@ def tool_error_result(exc, action, secret_redactor=None):
     typed ``ToolError`` or #605 input request is Still's own text, verbatim.  #819: any other exception
     reaches the worker with its own message, after the stored-secret pass and bounded (``_error_text``).
     """
+    from .agent_runtime import dispatch_event_field
     code, retry, effect = classify_failure(exc, action)
     text = str(exc) if code == 'input_required' or isinstance(exc, ToolError) else _error_text(exc, secret_redactor)
-    typed = {'code': code, 'retry': retry, 'effect': effect, **ran_field(exc), **executed_field(exc), **observed_field(exc)}
+    typed = {'code': code, 'retry': retry, 'effect': effect, **ran_field(exc), **executed_field(exc), **observed_field(exc), **dispatch_event_field(exc)}
     if getattr(exc, 'requires', None):
         typed['requires'] = exc.requires
     return {'content': [{'type': 'text', 'text': text}], 'structuredContent': typed, 'isError': True}, typed
@@ -542,8 +543,10 @@ def serve(data, job_id, provenance=(), native_search=False, profile=BOUNDED_PROF
 
     def current_run():
         # #841: status alone cannot bind a surviving bridge to the resumed run.
+        from .agent_runtime import effect_continuation_scope
         ledger = getattr(capabilities.budget, 'ledger', None)
         return (_work_running(store, job_id)
+                and (relay is not None or not effect_continuation_scope(store, job_id))
                 and (ledger is None or ledger.lapse() not in ('superseded', 'unavailable')))
 
     def bound_epoch():

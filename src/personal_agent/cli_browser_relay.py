@@ -77,12 +77,13 @@ def _error_payload(exc):
     ``api_request`` the API layer settled ``rejected``).
     """
     from .bounded_execution import ExecutionError
+    from .agent_runtime import dispatch_event_field
     if isinstance(exc, ExecutionError):
         return {'kind': 'invalid_arguments', 'message': str(exc), **ran_field(exc)}
     if isinstance(exc, ToolError):
         # #103: an unknown effect (a press that reached the page unconfirmed) is never replayed by the bridge either.
         return {'kind': 'tool', 'message': str(exc), 'code': exc.code, 'requires': exc.requires, **ran_field(exc),
-                **executed_field(exc), **observed_field(exc), **({'effect': 'unknown'} if getattr(exc, 'effect', None) == 'unknown' else {})}
+                **executed_field(exc), **observed_field(exc), **dispatch_event_field(exc), **({'effect': 'unknown'} if getattr(exc, 'effect', None) == 'unknown' else {})}
     if isinstance(exc, (TimeoutError, ConnectionError)) or (isinstance(exc, OSError) and not isinstance(exc, FileNotFoundError)):
         return {'kind': 'transient', 'message': ''}
     if isinstance(exc, ValueError):
@@ -98,6 +99,8 @@ def relay_exception(error):
         exc.observed_step = seen
     if isinstance(error, dict) and error.get('effect') == 'unknown' and isinstance(exc, ToolError):
         exc.effect = 'unknown'
+        if type(error.get('dispatch_event')) is int:
+            exc.dispatch_event = error['dispatch_event']
     # #618: the service's own answer that the request was not executed survives the relay.
     if isinstance(error, dict) and error.get('executed') is False and isinstance(exc, ValueError):
         not_executed(exc)

@@ -76,7 +76,7 @@ import unicodedata
 from pathlib import Path
 from urllib.parse import parse_qsl, urlsplit, urlunsplit, unquote_plus
 
-from .agent_runtime import BROWSER_ACTIONS, ToolError, WorkBudget
+from .agent_runtime import BROWSER_ACTIONS, ToolError, WorkBudget, effect_fence_error
 from .bounded_execution import SECRET_PATTERN
 from .browser_jar import (JAR_NAME, SERVICE as JAR_SERVICE, CookieJar, JarError, latest_token_expiry, platform_key,
                           site_marks, store_account, unexpired)
@@ -866,7 +866,7 @@ class BrowserSession:
     """
 
     def __init__(self, driver_factory, *, work_id, budget=None, approvals=None, judgments=None,
-                 action_seconds=ACTION_TIMEOUT_SECONDS, allowed_origins_for_tests=()):
+                 action_seconds=ACTION_TIMEOUT_SECONDS, allowed_origins_for_tests=(), mutation_refusal=None):
         self._factory = driver_factory
         # Test-only exact ``host:port`` allowance for a local fixture site; only
         # a test constructor sets it (never config or environment).
@@ -878,6 +878,8 @@ class BrowserSession:
         self.work_id = work_id
         self.budget = budget if budget is not None else WorkBudget()
         self.approvals = approvals or NoApprovals()
+        self.mutation_refusal = mutation_refusal
+        self._submit_observation = None
         self.action_seconds = action_seconds
         self.last = None
         self._navigation_error = None
@@ -1011,6 +1013,8 @@ class BrowserSession:
             # A payment-form submit the worker cancelled after a step answered (a
             # timer, an async callback).  Released only when the owner approved
             # exactly it; the page it led to is then read instead.
+            if self._mutation_refusal(cancelled.get('page')):
+                return self.last
             self._cancelled_submit(cancelled, self._last_input or '결제 양식 제출')
             self._last_input = None
             self._settle()
@@ -1027,11 +1031,23 @@ class BrowserSession:
         ready = getattr(self.approvals, 'self_set_submit_ready', None)
         if not callable(ready) or not ready(self._submit_binding(pending[0])):
             return None
+        if self._mutation_refusal(pending[0].get('page')):
+            return None
         self._check()
         self._self_set_submit = None
         answer = self._cancelled_submit(pending[0], pending[1], resuming=True)
         self._settle()
         return self._with_dialogs(observe_step(self._page_state(), answer, True), answer)
+
+    def _mutation_refusal(self, url):
+        return self.mutation_refusal(url) if self.mutation_refusal is not None else None
+
+    def _release_submit(self, release, record, timeout):
+        from .agent_runtime import handed_off
+        handed_off()
+        answer = release(record, timeout)
+        self._submit_observation = {'posted': bool(step_posted(answer).get('posted')), 'approved': True}
+        return answer
 
     def _submit_binding(self, record):
         """What the approval of a cancelled payment-form submit is bound to (#700).
@@ -1054,6 +1070,9 @@ class BrowserSession:
         resumed run matches however the page changed on the way to the submit.
         """
         record = record if isinstance(record, dict) else {}
+        refusal = self._mutation_refusal(record.get('page'))
+        if refusal:
+            raise effect_fence_error(refusal)
         binding = self._submit_binding(record)
         gate=getattr(self.approvals,'self_set_write',None)
         if record.get('payment') is False and callable(gate) and getattr(self.approvals,'self_set_writes_required',lambda:False)():
@@ -1071,7 +1090,7 @@ class BrowserSession:
                 self.approvals.self_set_write_release(ticket)
                 raise ToolError(FAILED_TEXT,'browser_failed')
             try:
-                answer=self._call(lambda timeout:release(record,timeout),write_ticket=ticket)
+                answer=self._call(self._release_submit,release,record,write_ticket=ticket)
             except ToolError:
                 self.approvals.self_set_write_finished(ticket,observed=False)
                 raise
@@ -1089,7 +1108,7 @@ class BrowserSession:
             if not callable(release):
                 raise ToolError(FAILED_TEXT, 'browser_failed')
             try:
-                return self._call(lambda timeout: release(record, timeout), payment=True)
+                return self._call(self._release_submit, release, record, payment=True)
             except ToolError as exc:
                 if exc.code != 'approval_required':
                     raise
@@ -1487,9 +1506,12 @@ class BrowserSession:
 
     # -- the tools --
     def run(self, action, args):
+        self._submit_observation = None
         try:
             result = self._run(action, args)
         except ToolError as exc:
+            if self._submit_observation:
+                exc.observed_step = self._submit_observation
             if getattr(exc, 'work_popup_origin', None):
                 origin = exc.work_popup_origin
                 offered = self._offer_login(page_reference(origin), explicit=True, window_url=login_window_url(origin))
@@ -1499,6 +1521,8 @@ class BrowserSession:
                                                                    'window_url': login_window_url(args.get('url'))}
                 exc.args = (str(exc) + ' ' + self._hand_off(origin),)
             raise
+        if self._submit_observation and isinstance(result, dict):
+            result = {**result, 'observed_step': self._submit_observation}
         if self._pending_provider_sign_in and isinstance(result, dict):
             pending = self._pending_provider_sign_in
             result = {**result, 'provider_sign_in': pending['receipt']}
@@ -1575,6 +1599,12 @@ class BrowserSession:
             from .agent_runtime import not_run
             raise not_run(ToolError(msg('browser.provider_sign_in_off'), 'provider_sign_in_off'))
         self._check()
+        refusal = self._mutation_refusal(url)
+        if refusal:
+            # An interactive load can run page code and submit without an input
+            # step. Neither engine's navigation guard covers all that traffic.
+            from .agent_runtime import not_run
+            raise not_run(effect_fence_error(refusal))
         self._guard(step_binding(self.work_id, 'browser_open', url, url, url), f'{_host(parts)} 페이지 열기',
                     effect == 'payment')
         self._last_input = None   # a submit cancelled on the new page is not that step's (#700)
@@ -1741,6 +1771,13 @@ class BrowserSession:
         snapshot = self._snapshot()
         self._refuse_on_provider(snapshot)   # #636: before the target is even resolved
         element = resolve_target(snapshot, args.get('target'))
+        refusal = self._mutation_refusal(snapshot['_page'])
+        if refusal:
+            # A read label alone cannot make a page press read-only. Keep
+            # plain navigation available without running the element's handlers.
+            if effect in ('read', 'navigate') and link_address(element):
+                return self._follow_link(element, snapshot)
+            raise effect_fence_error(refusal)
         key = target_key(element)
         state, description = self._click_preview(snapshot, element)
         # #758: a control whose name commits a purchase needs approval whatever form it
@@ -1871,6 +1908,9 @@ class BrowserSession:
         self._check()
         snapshot = self._snapshot()
         self._refuse_on_provider(snapshot)   # #636: nothing is typed on the provider's pages
+        refusal = self._mutation_refusal(snapshot['_page'])
+        if refusal:
+            raise effect_fence_error(refusal)
         element = resolve_target(snapshot, args.get('target'))
         binding = step_binding(self.work_id, 'browser_type', snapshot['_page'], target_key(element), text,
                                self._state_of(snapshot, element))
