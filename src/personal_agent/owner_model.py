@@ -88,7 +88,7 @@ import uuid
 from datetime import datetime
 
 from .memory_service import _PROFILE_ROWS_CAP, PROFILE_SECTION_CHARS, MemoryService
-from .owner_forget import OwnerForget
+from .owner_forget import FORGOTTEN, MEMORY_PREFIX, MIGRATE, OwnerForget
 from .prompt_files import prompt
 from .messages import msg
 from . import preparations as prep
@@ -2012,7 +2012,7 @@ class Upkeep:
                     refused = 'one-occasion' if cited else 'sources'
                 elif not rule:
                     refused = 'one-day'
-                elif len(current) > 1 and sum(item['op'] == 'remove' for item in ops) * 2 > len(current):
+                elif len(current) > 1 and sum(item['op'] in ('remove', 'update') for item in ops) * 2 > len(current):
                     refused = 'lessons-rewrite'
                 elif self._notice_taken(job['id'], NOTICE_KIND):
                     refused = 'notice-taken'
@@ -2222,7 +2222,6 @@ class WorkingNotes:
         when there was nothing to move.
         """
         from .agent_runtime import MEMORY_OWNER, memory_value_has_secret
-        from .owner_forget import MEMORY_PREFIX, MIGRATE
         from .procedures import NOTES_SLOT
         if self.store.config(MIGRATION_KEY):
             return None
@@ -2279,19 +2278,16 @@ class WorkingLessons:
         from .agent_runtime import MEMORY_OWNER
         return self.store._memory_binding(MEMORY_OWNER)
 
-    def _rows(self, db, state):
-        return db.execute(
-            'SELECT * FROM memories WHERE owner_key=? AND state=? AND substr(memory_key,1,?)=? '
-            'ORDER BY created,rowid', (self._owner_key(), state, len(LESSONS_PREFIX), LESSONS_PREFIX))
-
     def current(self, db=None):
         """This owner's current lessons, oldest first."""
         if db is None:
             with self.store.db() as db:
                 return self.current(db)
-        from .owner_forget import MEMORY_PREFIX
         lessons = []
-        for row in self._rows(db, 'current'):
+        rows = db.execute(
+            "SELECT * FROM memories WHERE owner_key=? AND state='current' AND substr(memory_key,1,?)=? "
+            'ORDER BY created,rowid', (self._owner_key(), len(LESSONS_PREFIX), LESSONS_PREFIX))
+        for row in rows:
             sources = json.loads(row['source_works'] or '[]')
             lessons.append({'id': row['memory_key'][len(LESSONS_PREFIX):], 'key': row['memory_key'],
                             'memory_id': row['id'], 'ref': MEMORY_PREFIX + row['id'],
@@ -2299,22 +2295,43 @@ class WorkingLessons:
                             'work_id': next(iter(sources or ()), None), 'origin': row['origin']})
         return lessons
 
-    def _new_key(self, db, owner_key):
+    @staticmethod
+    def _new_key(text, occupied_ids):
+        """Use the first wording to reproduce the key even after its row is purged."""
+        norm = candidate = normalized(text)
+        attempt = 0
         while True:
-            key = LESSONS_PREFIX + uuid.uuid4().hex[:8]
-            if not db.execute('SELECT 1 FROM memories WHERE owner_key=? AND memory_key=?',
-                              (owner_key, key)).fetchone():
-                return key
+            ident = hashlib.sha256(candidate.encode()).hexdigest()[:8]
+            if ident not in occupied_ids:
+                return LESSONS_PREFIX + ident
+            attempt += 1
+            candidate = f'{norm}\n{attempt}'
 
     def _save(self, db, key, text, owner_key, work_id, origin, why=None):
         return self.store._save_memory(
             db, key, text, owner_key, self.store._work_binding(work_id) if work_id else None,
             origin=origin, source_works=[work_id] if work_id else None, basis=BASIS_INFERRED, evidence=why)
 
-    def _forgotten(self, db, owner_key, key, text, forgotten_texts):
-        return normalized(text) in forgotten_texts or db.execute(
-            'SELECT 1 FROM forgotten_values WHERE owner_key=? AND digest=?',
-            (owner_key, self.store.memory_digest(key, text))).fetchone() is not None
+    @staticmethod
+    def _forgotten_texts(db, owner_key):
+        rows = db.execute(
+            "SELECT m.content FROM owner_state_receipts AS r, json_each(r.items_json, '$.rows') AS item "
+            "JOIN memories AS m ON m.id=json_extract(item.value, '$.id') "
+            "WHERE r.owner_key=? AND r.kind='memory' AND r.operation IN ('forget','delete') AND r.state=? "
+            "AND json_extract(item.value, '$.table')='memories' AND m.owner_key=r.owner_key AND m.state=? "
+            'AND substr(m.memory_key,1,?)=?',
+            (owner_key, FORGOTTEN, FORGOTTEN, len(LESSONS_PREFIX), LESSONS_PREFIX))
+        return {normalized(row['content']) for row in rows}
+
+    def _forgotten(self, db, owner_key, key, text, forgotten_texts, *, add_key=None):
+        if normalized(text) in forgotten_texts:
+            return True
+        digest = self.store.memory_digest(key, text)
+        add_digest = self.store.memory_digest(add_key, text) if add_key and add_key != key else digest
+        return db.execute(
+            'SELECT 1 FROM forgotten_values AS f JOIN owner_state_receipts AS r ON r.id=f.receipt_id '
+            "WHERE f.owner_key=? AND f.digest IN (?,?) AND r.operation IN ('forget','delete') LIMIT 1",
+            (owner_key, digest, add_digest)).fetchone() is not None
 
     def _notice(self, db, jobs, kind, fingerprint):
         from .conversation_surface import surface_conversation
@@ -2336,49 +2353,57 @@ class WorkingLessons:
         Upkeep supplies the row ids that its judgment saw, so a replaced row
         cannot be updated or removed on the strength of older wording.
         """
-        from .agent_runtime import SECRET_SHAPED_VALUE, memory_value_has_secret
+        from .agent_runtime import MEMORY_OWNER, SECRET_SHAPED_VALUE, memory_value_has_secret
         from .current_context import redact_known_secrets
         if not ops:
             return {'applied': [], 'dropped': []}
-        OwnerForget(self.store, self.clock)
+        forget = OwnerForget(self.store, self.clock)
         owner_key = self._owner_key()
         applied, dropped = {}, {}
         with self.store.db() as db:
             db.execute('BEGIN IMMEDIATE')
             current = {lesson['id']: lesson for lesson in self.current(db)}
-            forgotten = {normalized(row['content']) for row in self._rows(db, 'forgotten')}
+            forgotten = self._forgotten_texts(db, owner_key)
             # Removals make room for additions in the same answer, regardless of its order.
             for index, item in sorted(enumerate(ops), key=lambda pair: pair[1]['op'] != 'remove'):
                 op, ident = item['op'], item['id']
                 text, why, reason = item['text'], item['why'], item['reason']
+                norm = normalized(text)
                 target = current.get(ident)
                 refused = None
                 if op != 'add' and (target is None or (expected_rows is not None
                         and target['memory_id'] != expected_rows.get(ident))):
                     refused = 'lesson-changed'
+                elif op != 'remove' and any(norm == normalized(lesson['text']) for lesson in current.values()):
+                    refused = 'unchanged'
                 elif op == 'add' and len(current) >= LESSONS_MAX:
                     refused = 'lessons-full'
                 else:
-                    key = target['key'] if target else self._new_key(db, owner_key)
+                    add_key = self._new_key(text, current) if op != 'remove' else None
+                    key = target['key'] if target else add_key
                     values = (text, why, reason) if op == 'remove' else (text, why)
                     if any(memory_value_has_secret(self.store, key, value) for value in values):
                         refused = SECRET_SHAPED_VALUE
-                    elif op != 'remove' and self._forgotten(db, owner_key, key, text, forgotten):
+                    elif op != 'remove' and self._forgotten(db, owner_key, key, text, forgotten, add_key=add_key):
                         refused = FORGOTTEN_VALUE
 
                 if refused:
                     dropped[index] = _lesson_drop(op, refused)
                     continue
+                change_record = {'op': op}
+                if target:
+                    receipt = forget.forget_in(db, MEMORY_OWNER, target['ref'], operation=MIGRATE, work_id=work_id)
+                    change_record['receipt'] = receipt['receipt']
                 if op == 'remove':
                     memory_id = target['memory_id']
-                    db.execute("UPDATE memories SET state='superseded',invalidation_reason=?,invalidated_at=? WHERE id=?",
+                    db.execute('UPDATE memories SET invalidation_reason=?,invalidated_at=? WHERE id=?',
                                (reason, self.clock(), memory_id))
                     del current[ident]
                 else:
                     memory_id = self._save(db, key, text, owner_key, work_id, origin, why)['id']
                     ident = key[len(LESSONS_PREFIX):]
-                    current[ident] = {'key': key, 'memory_id': memory_id}
-                applied[index] = {'op': op, 'id': ident, 'memory_id': memory_id}
+                    current[ident] = {'key': key, 'memory_id': memory_id, 'text': text, 'ref': MEMORY_PREFIX + memory_id}
+                applied[index] = {**change_record, 'id': ident, 'memory_id': memory_id}
 
             applied = [applied[index] for index in sorted(applied)]
             if applied and work_id:
@@ -2404,11 +2429,12 @@ class WorkingLessons:
         rendered = []
         used = omitted = 0
         for lesson in ranked.values():
-            size = len(lesson['text'])
+            line = f"- {lesson['text']} ({lesson['ref']})"
+            size = len(line) + 1  # Include the newline separating this line from the preceding one.
             if used + size > LESSONS_BRIEF_CHARS:
                 omitted += 1
                 continue
-            rendered.append(f"- {lesson['text']} ({lesson['ref']})")
+            rendered.append(line)
             used += size
         if omitted:
             rendered.append(f'{omitted} more working lessons omitted by the context limit; search_memory finds them.')
@@ -2430,27 +2456,45 @@ class WorkingLessons:
             versions = db.execute('SELECT source,work_id FROM procedure_versions '
                                   'WHERE slot=? AND state IN (?,?) ORDER BY version',
                                   (NOTES_SLOT, CURRENT, KEPT)).fetchall()
-            points = {}
+            points, version_points = {}, []
             for version in versions:
-                for point in notes_points(version['source']):
-                    points.setdefault(normalized(point), (point, version['work_id']))
+                this_version = {normalized(point): point for point in notes_points(version['source'])}
+                version_points.append(this_version)
+                for norm, point in this_version.items():
+                    points.setdefault(norm, (point, version['work_id']))
             current = self.current(db)
+            occupied = {lesson['id'] for lesson in current}
             existing = {normalized(lesson['text']) for lesson in current}
-            forgotten = {normalized(row['content']) for row in self._rows(db, 'forgotten')}
-            memory_ids, skipped = [], 0
-            for norm, (point, work_id) in points.items():
-                if (len(current) + len(memory_ids) >= LESSONS_MAX or len(point) > POINT_CHARS
-                        or norm in existing or norm in forgotten or memory_value_has_secret(self.store, point)):
-                    skipped += 1
+            forgotten = self._forgotten_texts(db, owner_key)
+            recent = dict.fromkeys(norm for version in reversed(version_points) for norm in version)
+            selected = {}
+            for norm in recent:
+                if len(occupied) >= LESSONS_MAX:
+                    break
+                point, _ = points[norm]
+                if len(point) > POINT_CHARS or norm in existing:
                     continue
-                key = self._new_key(db, owner_key)
-                row = self._save(db, key, point, owner_key, work_id, ORIGIN_LESSONS_MIGRATION)
-                memory_ids.append(row['id'])
-            record = {'at': self.clock(), 'restored': len(memory_ids), 'skipped': skipped,
+                key = self._new_key(point, occupied)
+                if memory_value_has_secret(self.store, key, point) or self._forgotten(db, owner_key, key, point, forgotten):
+                    continue
+                selected[norm] = key
+                occupied.add(key[len(LESSONS_PREFIX):])
+
+            # Keep the first appearance's wording, Work attribution and relative order.
+            memory_ids = []
+            for norm, (point, work_id) in points.items():
+                if norm in selected:
+                    row = self._save(db, selected[norm], point, owner_key, work_id, ORIGIN_LESSONS_MIGRATION)
+                    memory_ids.append(row['id'])
+            record = {'at': self.clock(), 'restored': len(memory_ids), 'skipped': len(points) - len(selected),
                       'versions': len(versions), 'memory_ids': memory_ids}
             self.store.put(LESSONS_MIGRATION_KEY, record, db=db)
             if memory_ids:
-                jobs = db.execute('SELECT id,channel,chat_id,delivery FROM jobs ORDER BY created DESC,rowid DESC')
+                settled = self.store.DELIVERY_SETTLED
+                placeholders = ','.join('?' for _ in settled)
+                jobs = db.execute('SELECT id,channel,chat_id,delivery FROM jobs '
+                                  f'ORDER BY CASE WHEN delivery IN ({placeholders}) THEN 0 ELSE 1 END, '
+                                  'created DESC,rowid DESC', settled)
                 self._notice(db, jobs, RESTORED_NOTICE_KIND, {'count': len(memory_ids), 'memory_ids': memory_ids})
             return record
 

@@ -380,6 +380,13 @@ class TelegramSurface(ConversationSurface):
                                 service.telegram.send_message(notification['chat_id'],msg(f'telegram_surface.{heading}_part', index=index, total=len(parts), part=part))
                                 sent_part=True
                             text=msg(f'telegram_surface.{heading}_final', total=len(parts), part=parts[-1])
+                        elif notification['kind']==om.RESTORED_NOTICE_KIND:
+                            # Twenty full lessons can exceed a Telegram message. Allow room for the localized header.
+                            while len(text)>3800:
+                                cut=text.rfind('\n',1,3800)+1 or 3800
+                                service.telegram.send_message(notification['chat_id'],text[:cut])
+                                sent_part=True
+                                text=text[cut:]
                         result=service.telegram.send_message(notification['chat_id'],text,reply_markup)
                 sent_part=True
                 service._unsent_backoff=0

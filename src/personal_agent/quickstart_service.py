@@ -2271,16 +2271,28 @@ class AgentService:
         if notification.get('kind')==WORKING_LESSONS_RESTORED_KIND:
             ids=bound.get('memory_ids')
             if not isinstance(ids,list):return None
-            count=sum(row['state']=='current' for ident in ids if (row:=lesson_row(ident)))
-            return msg('working_lessons.restored',count=count) if count else None
+            current={lesson['memory_id']:lesson['text'] for lesson in om.WorkingLessons(self.store).current()}
+            restored=[current[ident] for ident in ids if isinstance(ident,str) and ident in current]
+            if not restored:return None
+            lines=self._redact_known_secrets(om.notes_text(restored[:20]))
+            return msg('working_lessons.restored',count=len(restored))+ai_text('\n'+lines)
         items=bound.get('items')
         change=bound.get('change')
         if not isinstance(items,list) or not isinstance(change,str):return None
         for item in items:
             if not isinstance(item,dict) or not (row:=lesson_row(item.get('memory_id'))):continue
-            if ((item.get('op') in ('add','update') and row['state']=='current')
-                    or (item.get('op')=='remove' and row['state'] not in ('current','forgotten'))):
+            if item.get('op') in ('add','update') and row['state']=='current':
                 return msg('working_notes.saved',change=self._redact_known_secrets(change))
+            if item.get('op')=='remove' and row['state']!='current':
+                # Earlier notices described superseded rows. New removals bind to their exact move receipt.
+                receipt=item.get('receipt')
+                if isinstance(receipt,str):
+                    with self.store.db() as db:
+                        active=db.execute("SELECT 1 FROM owner_state_receipts WHERE id=? AND state='forgotten'",
+                                          (receipt,)).fetchone()
+                else:
+                    active=row['state']!='forgotten'
+                if active:return msg('working_notes.saved',change=self._redact_known_secrets(change))
         return None
 
     #: The Work identity a Settings profile write is recorded under (#658).

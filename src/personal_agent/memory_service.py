@@ -71,9 +71,10 @@ PROFILE_SNAPSHOT_CHARS = 12000
 #: The live profile was 5.5 KB (42 facts) in 2026-10.
 PROFILE_SNAPSHOT_BYTES = 12000
 #: #217: what a profile prompt section may carry after the snapshot lines - the
-#: omission line, working lessons (including exact refs) and (#221) the owner's earlier words -
+#: omission line, working lessons (including heading, refs and omission line), the owner's earlier words
+#: (#221) and daily records (#442) -
 #: so a reader's own bound (``PROFILE_SECTION_CHARS``) never cuts what the worker was given.
-PROFILE_SECTION_EXTRA_CHARS = 8500
+PROFILE_SECTION_EXTRA_CHARS = 10500
 #: #205: the existing recall block budget in UTF-8 bytes; each turn's excerpt has its own character cap.
 OWNER_WORDS_BYTES = 3000
 OWNER_WORDS_LINE_CHARS = 180
