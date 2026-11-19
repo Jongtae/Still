@@ -84,7 +84,7 @@ class ProfileJudgmentAndGuidance(unittest.TestCase):
         self.assertIn('When the owner states a durable fact about themselves', save_memory)
         self.assertIn('where they live or work, a preference, an allergy, a routine', save_memory)
         # #918 slice (a): remembered at once; the owner is told afterwards, with undo.
-        self.assertIn('it is remembered at once and the owner is told afterwards with an undo', save_memory)
+        self.assertIn('it is remembered at once, and your reply says in passing what you will keep in mind', save_memory)
         # #918: an inferred durable fact is saved and told with undo too; a credential never.
         self.assertIn('as what you inferred', save_memory)
         self.assertIn('Never save a credential', save_memory)

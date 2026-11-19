@@ -33,7 +33,8 @@ FORGOTTEN_MESSAGE_IDS='SELECT message_id FROM forgotten_messages'
 MEMORY_BASES=('owner_said','inferred','observed')
 MEMORY_EVIDENCE_CHARS=300
 #: #380: the ``forget_record`` actions that change what Still keeps about the owner.
-OWNER_STATE_ACTIONS=('forget','delete','undo')
+#: #955 review: revert (undoing a save by asking) is the owner managing what Still keeps, too.
+OWNER_STATE_ACTIONS=('forget','delete','undo','revert')
 
 
 def fts_prefix_expression(query):

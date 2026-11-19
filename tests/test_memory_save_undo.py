@@ -39,7 +39,19 @@ SECOND_KEY, SECOND_VALUE = 'profile.routine.commute', '지하철'
 
 
 class SaveAndTell(TelegramHarness):
-    """The owner's own worker saves; the owner is told after the reply, with undo."""
+    """The owner's own worker saves; the owner is told after the reply, with undo.
+
+    #955: the notice is off by owner decision; this class keeps the #918 machinery (still used for
+    notices sent before, and the switch back) under test with it turned on.
+    """
+
+    def setUp(self):
+        super().setUp()
+        from unittest import mock
+        from personal_agent import memory_prompts
+        patcher = mock.patch.object(memory_prompts, 'MEMORY_SAVED_NOTICES', True)
+        patcher.start()
+        self.addCleanup(patcher.stop)
 
     def saved_turn(self, message='난 오늘 내 직장인 판교 카카오뱅크로 출근했어.', plan=None, channel=True):
         self.plan = plan if plan is not None else [('save_memory', {'memory_key': KEY, 'content': VALUE})]
@@ -200,7 +212,8 @@ class SaveAndTell(TelegramHarness):
         result = json.loads(tool)
         self.assertEqual((result['remembered'], result['content'], result['memory_key'], result['replaced_previous']),
                          (True, VALUE, KEY, False))
-        self.assertIn('can undo it', result['next'])
+        self.assertIn('undo it', result['next'])
+        self.assertIn('say in passing', result['next'], '#955: the reply tells the save')
         for word in ('Not remembered', 'one tap', 'Still', 'candidate', 'approval', 'refused_because', 'digest', 'stor'):
             self.assertNotIn(word, tool)
 
@@ -648,6 +661,74 @@ class SaveAndTell(TelegramHarness):
         self.assertIn('M1234567', written)
 
 
+class NoticeOffByDefault(TelegramHarness):
+    """#955 (owner 2026-11-17, C5 as amended): no saved notice is sent; a save is undone exactly by asking."""
+
+    def test_a_notice_queued_before_the_switch_is_not_sent(self):
+        job_id = self.enqueue('난 판교에서 일해')
+        memory = self.store.save_memory(KEY, VALUE, MEMORY_OWNER, work_id=job_id)
+        job = self.store.job(job_id)
+        self.service.queue_notification(job, MEMORY_SAVED_KIND, fingerprint=json.dumps(
+            {'items': [[memory['id'], memory['content_digest']]], 'more': 0}))
+        before = len(self.sends())
+        self.service.deliver_notification()
+        self.assertEqual(len(self.sends()), before, 'an older queued saved notice is not sent')
+        self.assertEqual([row['state'] for row in self.notification(job_id, MEMORY_SAVED_KIND)], ['cancelled'])
+
+    def test_asking_undoes_a_save_and_brings_back_the_value_it_replaced(self):
+        from personal_agent.agent_runtime import ToolError
+        job_id = self.enqueue('직장 바뀌었어. 이제 분당이야')
+        caps = Capabilities(self.store, None, {}, '', job_id, lambda *a, **k: None)
+        first = caps.execute('save_memory', {'memory_key': KEY, 'content': VALUE})
+        second = caps.execute('save_memory', {'memory_key': KEY, 'content': VALUE + ' 분당'})
+        self.assertEqual([m['content'] for m in self.store.memories()], [VALUE + ' 분당'])
+        result = caps.execute('forget_record', {'action': 'revert', 'ref': f"memory:{second['id']}"})
+        self.assertEqual(result['restored'], f"memory:{first['id']}")
+        self.assertEqual([m['content'] for m in self.store.memories()], [VALUE])
+        with self.store.db() as db:
+            undo = [json.loads(row['detail']) for row in db.execute(
+                "SELECT detail FROM tool_events WHERE job_id=? AND tool='memory_undo'", (job_id,))]
+        self.assertEqual(len(undo), 1, 'the undo has its Evidence event')
+        for ref, code in ((f"memory:{second['id']}", 'memory_not_current'), ('state:x', 'invalid_arguments'),
+                          (None, 'invalid_arguments')):
+            with self.subTest(ref=ref), self.assertRaises(ToolError) as refused:
+                caps.execute('forget_record', {'action': 'revert', **({'ref': ref} if ref else {})})
+            self.assertEqual(refused.exception.code, code)
+        self.assertEqual([m['content'] for m in self.store.memories()], [VALUE], 'a refused revert changes nothing')
+        # #955 review: a Work that undid a save is the owner managing state; no lesson is drawn from it.
+        from personal_agent.agent_runtime import evidence_summary
+        with self.store.db() as db:
+            db.execute("INSERT INTO tool_events(job_id,tool,status,detail,created) VALUES (?,?,?,?,?)",
+                       (job_id, 'forget_record', 'succeeded',
+                        json.dumps({'evidence': evidence_summary('forget_record', result)}), 1.0))
+        self.assertTrue(self.store.managed_owner_state(job_id))
+
+    def test_a_revert_does_not_claim_an_expired_earlier_value_is_back(self):
+        """#955 review: like the notice undo (#220), a predecessor past its last day is not back in use."""
+        job_id = self.enqueue('출장지는 이제 분당이야')
+        caps = Capabilities(self.store, None, {}, '', job_id, lambda *a, **k: None)
+        self.store.save_memory(KEY, VALUE, MEMORY_OWNER, work_id=job_id, valid_until='2000-01-01')
+        second = caps.execute('save_memory', {'memory_key': KEY, 'content': VALUE + ' 분당'})
+        result = caps.execute('forget_record', {'action': 'revert', 'ref': f"memory:{second['id']}"})
+        self.assertIsNone(result['restored'])
+        [expired] = result['earlier_expired']
+        self.assertTrue(expired.startswith('memory:'))
+        self.assertIn('기한이 지나', result['message'])
+
+    def test_a_revert_reports_facts_under_other_keys_it_brings_back(self):
+        """#955 review (P1): a save that ended facts under other keys (#220) brings them back on revert, and says so."""
+        job_id = self.enqueue('회사 옮겼어. 이제 강남이야')
+        caps = Capabilities(self.store, None, {}, '', job_id, lambda *a, **k: None)
+        old = self.store.save_memory(SECOND_KEY, SECOND_VALUE, MEMORY_OWNER, work_id=job_id)
+        new = self.store.save_memory(KEY, '강남', MEMORY_OWNER, work_id=job_id, invalidates=[(old['id'], 'moved')])
+        self.assertEqual([m['content'] for m in self.store.memories()], ['강남'])
+        result = caps.execute('forget_record', {'action': 'revert', 'ref': f"memory:{new['id']}"})
+        self.assertEqual((result['restored'], result['restored_ended'], result['earlier_expired']),
+                         (None, [f"memory:{old['id']}"], []))
+        self.assertIn('이전 값을 다시', result['message'])
+        self.assertEqual([m['content'] for m in self.store.memories()], [SECOND_VALUE])
+
+
 class SecretsNeverEnterMemory(unittest.TestCase):
     """#918 review P1: a stored secret or a credential-shaped value is refused before any Memory write."""
 
@@ -756,22 +837,22 @@ class ThirdPartyWrites(unittest.TestCase):
         self.assertEqual((shown['remembered'], shown['content'], shown['replaced_previous']), (True, VALUE, False))
         self.assertNotIn('id', shown)
 
-    def test_on_a_telegram_work_the_worker_is_told_agentos_announces_the_save(self):
-        """#1310 (owner 2026-10-10): the reply does not repeat what Still's own notice tells."""
-        from personal_agent.agent_runtime import SAVED_NOTICE_HINT
+    def test_every_work_s_reply_tells_the_save_and_no_notice_is_promised(self):
+        """#955 (owner 2026-11-17, C5 as amended): the reply says what it keeps in mind; nothing else tells it."""
         web = worker_result('save_memory', self.caps().execute('save_memory', {'memory_key': KEY, 'content': VALUE}))
-        self.assertNotIn(SAVED_NOTICE_HINT, web['next'], 'no notice is sent for a web Work')
         telegram = self.store.enqueue('난 판교에서 일해', 'tg-1', 'telegram:g1', 4242)
         caps = Capabilities(self.store, None, {}, '', telegram, lambda *a, **k: None)
-        result = caps.execute('save_memory', {'memory_key': KEY, 'content': VALUE + ' 본사'})
-        shown = worker_result('save_memory', result)
-        self.assertTrue(shown['remembered'])
-        self.assertIn(SAVED_NOTICE_HINT, shown['next'])
+        shown = worker_result('save_memory', caps.execute('save_memory', {'memory_key': KEY, 'content': VALUE + ' 본사'}))
+        for result in (web, shown):
+            self.assertTrue(result['remembered'])
+            self.assertIn('say in passing', result['next'])
+            self.assertNotIn('separate message', result['next'])
+        self.assertIsNone(self.store.notification_of(telegram, MEMORY_SAVED_KIND))
         delegated = Capabilities(self.store, None, {}, '', telegram, lambda *a, **k: None, delegated=True,
                                  allowed_tools=['save_memory'])
         held = delegated.execute('save_memory', {'memory_key': KEY, 'content': VALUE + ' 분당'})
-        self.assertNotIn(SAVED_NOTICE_HINT, json.dumps(worker_result('save_memory', held), ensure_ascii=False),
-                         'a third-party candidate is asked about, not announced')
+        self.assertNotIn('say in passing', json.dumps(worker_result('save_memory', held), ensure_ascii=False),
+                         'a third-party write is still a candidate, not told as saved')
 
     def test_the_request_sentence_is_still_never_a_value(self):
         """#846 stays: the owner's own request sentence is the task, not a fact."""
@@ -783,8 +864,8 @@ class ThirdPartyWrites(unittest.TestCase):
 class Guidance(unittest.TestCase):
     def test_the_worker_is_told_it_is_remembered_at_once(self):
         [save_memory] = [tool['function'] for tool in DEFINITIONS if tool['function']['name'] == 'save_memory']
-        self.assertIn('remembered at once and the owner is told afterwards with an undo', save_memory['description'])
-        self.assertIn('when the result has owner_notice, Still sends that message itself', save_memory['description'])
+        self.assertIn('remembered at once, and your reply says in passing what you will keep in mind', save_memory['description'])
+        self.assertIn('there is no separate notice', save_memory['description'])
         self.assertNotIn('asked with one tap', save_memory['description'])
         self.assertNotIn('candidate', save_memory['description'])
         self.assertIn('may be saved the same way, as what you inferred', save_memory['description'])

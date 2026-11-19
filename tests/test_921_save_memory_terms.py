@@ -87,9 +87,9 @@ def test_terms_are_filtered_saved_atomically_and_searchable(state, fts, monkeypa
     assert hits(store, 'beverage') == [result['id']]
     assert hits(store, 'invented921') == []
     assert store.memory_candidates() == []
-    [notice] = store.held_notifications(store.MEMORY_SAVED_NOTICE_KIND)
-    assert json.loads(notice['fingerprint'])['items'] == [[result['id'], result['content_digest']]]
-    shown = json.dumps([result, caps.evidence, worker_result('save_memory', result), notice])
+    # #955: the save is told in the reply; no separate saved notice is held.
+    assert store.held_notifications(store.MEMORY_SAVED_NOTICE_KIND) == []
+    shown = json.dumps([result, caps.evidence, worker_result('save_memory', result)])
     assert 'beverage' not in shown
     assert 'retrieval_terms' not in shown
 

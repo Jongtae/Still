@@ -152,18 +152,17 @@ class DirectMemoryWriteTests(RefusedWriteTestCase):
         self.assertEqual(job['status'], 'succeeded', job.get('error'))
         self.assertEqual(bubble, self.text, 'the answer as said; the notice below it tells what was remembered')
 
-    def test_the_owner_is_told_in_owner_words_with_undo(self):
-        """Not a machine slug and not an ask: the notice names the value, never the key, and offers 되돌리기."""
+    def test_the_save_is_not_asked_and_has_no_separate_notice(self):
+        """Not an ask (#918), and since #955 (C5 as amended) no notice: the reply tells it, the record keeps it."""
         self.plan = [('save_memory', {'memory_key': self.UNASKED[0],
                                       'content': self.UNASKED[1]})]
         self.text = '알겠어요.'
         self.claim_completion()
         self.ask('오늘 점심 뭐 먹을까?')
-        self.assertTrue(self.service.deliver_notification())
-        notice = self.sent[-1]
-        self.assertEqual(notice, f'기억했어요: {self.UNASKED[1]}')
-        self.assertNotIn(self.UNASKED[0], notice, '#836: never a memory key')
-        self.assertNotIn('기억해 둘까요', notice)
+        self.assertFalse(self.service.deliver_notification())
+        self.assertNotIn('기억해 둘까요', ' '.join(self.sent))
+        self.assertNotIn(self.UNASKED[0], ' '.join(self.sent), '#836: never a memory key')
+        self.assertEqual([row['content'] for row in self.store.memories()], [self.UNASKED[1]])
 
     def test_a_proposal_beside_other_work_does_not_hold_the_work_down(self):
         """A done claim rests on the other work; the proposal is not evidence and not a failure."""

@@ -670,7 +670,7 @@ class GuidanceTests(unittest.TestCase):
         [save_memory] = [tool['function'] for tool in DEFINITIONS if tool['function']['name'] == 'save_memory']
         self.assertNotIn('candidate', model_facing_text(save_memory))
         # #918: the owner's worker saves at once; nothing is asked.
-        self.assertIn('remembered at once and the owner is told afterwards with an undo', model_facing_text(save_memory))
+        self.assertIn('remembered at once, and your reply says in passing what you will keep in mind', model_facing_text(save_memory))
         self.assertNotIn('asked with one tap', model_facing_text(save_memory))
 
 
