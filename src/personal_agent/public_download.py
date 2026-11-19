@@ -1,4 +1,4 @@
-"""One bounded chunk of an anonymous remote representation (RFC 9110)."""
+"""Bounded anonymous retrieval of a remote representation (RFC 9110)."""
 import hashlib
 import http.client
 import re
@@ -33,7 +33,7 @@ class DownloadedRange:
     """Host-internal receipt. Evidence only needs digests, size and progress."""
 
     data: bytes = field(repr=False)
-    etag: str = field(repr=False)
+    etag: str | None = field(repr=False)
     total: int
     source_digest: str
     digest: str
@@ -81,7 +81,8 @@ class PublicDownload:
         self.reader.preserve_query = True
 
     def read_range(self, url, offset, length, *, etag=None, total=None, source_digest=None,
-                   address_check, before_send=None, on_request=None):
+                   address_check, before_send=None, on_request=None, deadline=None,
+                   full_limit=MAX_RANGE_BYTES):
         """Return only a complete, validated chunk, without publishing any files."""
         if not callable(address_check):
             raise TypeError('public download requires a host address check')
@@ -95,6 +96,21 @@ class PublicDownload:
         ):
             raise PublicDownloadError('public_download_invalid_checkpoint', False)
 
+        request_deadline = self.reader.clock() + MAX_PAGE_SECONDS
+        deadline = request_deadline if deadline is None else min(deadline, request_deadline)
+        try:
+            return self._read(url, offset, length, etag, total, source_digest, deadline,
+                              full_limit, address_check, before_send, on_request)
+        except PublicDownloadError as exc:
+            if exc.code != 'public_download_needs_full':
+                raise
+        # Without a strong validator a partial 206 cannot be stitched to
+        # another response. Discard it and request the whole representation.
+        return self._read(url, 0, None, None, None, None, deadline,
+                          full_limit, address_check, before_send, on_request)
+
+    def _read(self, url, offset, length, etag, total, source_digest, deadline,
+              full_limit, address_check, before_send, on_request):
         ran = False
 
         def dispatch():
@@ -105,7 +121,6 @@ class PublicDownload:
                 on_request(current)
             ran = True
 
-        deadline = self.reader.clock() + MAX_PAGE_SECONDS
         try:
             current = self.reader._safe_url(url)
             for redirect in range(MAX_PAGE_REDIRECTS + 1):
@@ -116,7 +131,9 @@ class PublicDownload:
                 identity = _identifier(current)
                 # Only the previously resolved representation receives its validator.
                 # A redirect to a different representation cannot inherit this header.
-                headers = {**_HEADERS, 'Range': f'bytes={offset}-{offset + length - 1}'}
+                headers = dict(_HEADERS)
+                if length is not None:
+                    headers['Range'] = f'bytes={offset}-{offset + length - 1}'
                 if etag is not None and identity == source_digest:
                     headers['If-Range'] = etag
                 response = self.reader._get_response(
@@ -127,9 +144,10 @@ class PublicDownload:
                     if response.status in (301, 302, 303, 307, 308):
                         current = self.reader._redirect_target(current, location, redirect)
                         continue
-                    if resumed and (identity != source_digest or response.status == 200):
+                    if etag is not None and (identity != source_digest or response.status == 200):
                         raise PublicDownloadError('public_download_source_changed', ran)
-                    return self._read_response(response, offset, length, etag, total, identity, deadline)
+                    return self._read_response(response, offset, length, etag, total, identity,
+                                               deadline, full_limit)
                 finally:
                     self.reader._close_response(response)
         except _HostGuardRefusal as exc:
@@ -140,43 +158,55 @@ class PublicDownload:
             raise PublicDownloadError('public_download_interrupted' if ran else 'public_download_refused', ran) from None
         raise PublicDownloadError('public_download_interrupted', ran)
 
-    def _read_response(self, response, offset, length, etag, total, identity, deadline):
-        if response.status != 206:
+    def _read_response(self, response, offset, length, etag, total, identity, deadline, full_limit):
+        if response.status != 200 and (response.status != 206 or length is None):
             raise PublicDownloadError('public_download_range_unavailable', True)
-        content_range = _header(response, 'Content-Range', '')
-        if not isinstance(content_range, str) or len(content_range) > 65:
-            raise PublicDownloadError('public_download_invalid_response', True)
-        match = _CONTENT_RANGE.fullmatch(content_range.strip())
+        content_range = _header(response, 'Content-Range')
         encoding = _header(response, 'Content-Encoding', '').strip().lower()
         received_etag = _header(response, 'ETag')
         media_type = _header(response, 'Content-Type', '').split(';', 1)[0].strip().lower()
-        if (not match or encoding not in ('', 'identity') or not _strong_etag(received_etag)
-                or media_type == 'multipart/byteranges'):
-            raise PublicDownloadError('public_download_invalid_response', True)
-        first, last, size = map(int, match.groups())
-        if total is not None and (size != total or received_etag != etag):
-            raise PublicDownloadError('public_download_source_changed', True)
-        if first != offset or not offset < size <= _MAX_LENGTH or last != min(offset + length, size) - 1:
+        if encoding not in ('', 'identity') or media_type == 'multipart/byteranges':
             raise PublicDownloadError('public_download_invalid_response', True)
 
-        wanted = last - first + 1
-        content_length = _header(response, 'Content-Length')
-        if content_length is not None:
-            if not isinstance(content_length, str) or len(content_length) > 19:
+        declared = _header(response, 'Content-Length')
+        if declared is not None:
+            if not isinstance(declared, str) or not _NUMBER.fullmatch(declared):
                 raise PublicDownloadError('public_download_invalid_response', True)
-            if not _NUMBER.fullmatch(content_length) or int(content_length) != wanted:
+            declared = int(declared)
+        if response.status == 200:
+            if content_range is not None:
                 raise PublicDownloadError('public_download_invalid_response', True)
+            if declared is not None and declared > full_limit:
+                raise PublicDownloadError('public_download_size_limit', True)
+            wanted, limit, size = declared, full_limit if declared is None else declared, None
+        else:
+            match = (_CONTENT_RANGE.fullmatch(content_range.strip())
+                     if isinstance(content_range, str) and len(content_range) <= 65 else None)
+            if not match:
+                raise PublicDownloadError('public_download_invalid_response', True)
+            first, last, size = map(int, match.groups())
+            if total is not None and (size != total or received_etag != etag):
+                raise PublicDownloadError('public_download_source_changed', True)
+            if first != offset or not offset < size <= _MAX_LENGTH or last != min(offset + length, size) - 1:
+                raise PublicDownloadError('public_download_invalid_response', True)
+            wanted = limit = last - first + 1
+            if declared is not None and declared != wanted:
+                raise PublicDownloadError('public_download_invalid_response', True)
+            if not _strong_etag(received_etag) and wanted != size:
+                raise PublicDownloadError('public_download_needs_full', True)
 
         body = bytearray()
         while True:
             self.reader._set_response_deadline(response, deadline)
             with self.reader._deadline_guard(deadline, lambda: self.reader._interrupt_response(response)):
-                chunk = response.read(min(64 * 1024, wanted - len(body) + 1))
+                chunk = response.read(min(64 * 1024, limit - len(body) + 1))
             if not chunk:
                 break
             body.extend(chunk)
-            if len(body) > wanted:
-                raise PublicDownloadError('public_download_invalid_response', True)
-        if len(body) != wanted:
+            if len(body) > limit:
+                raise PublicDownloadError('public_download_size_limit' if wanted is None
+                                          else 'public_download_invalid_response', True)
+        if wanted is not None and len(body) != wanted:
             raise PublicDownloadError('public_download_interrupted', True)
-        return DownloadedRange(bytes(body), received_etag, size, identity, hashlib.sha256(body).hexdigest())
+        return DownloadedRange(bytes(body), received_etag if _strong_etag(received_etag) else None,
+                               len(body) if size is None else size, identity, hashlib.sha256(body).hexdigest())

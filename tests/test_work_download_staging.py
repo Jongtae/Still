@@ -7,8 +7,8 @@ import pytest
 from personal_agent import work_download
 from personal_agent.agent_runtime import Capabilities, ToolError, WorkBudget, WorkLedger
 from personal_agent.bounded_execution import AgentOSMcpTools
-from personal_agent.local_tools import LocalTools
-from personal_agent.public_download import DownloadedRange
+from personal_agent.local_tools import LocalTools, PublicPageReader
+from personal_agent.public_download import DownloadedRange, PublicDownloadError
 from personal_agent.quickstart_store import QuickStore
 
 
@@ -24,25 +24,31 @@ def download(tmp_path, monkeypatch):
         db.execute("UPDATE jobs SET status='running' WHERE id=?", (work_id,))
     ledger = WorkLedger(store, work_id, fresh=True)
     calls = []
+    now = [0]
 
     class FakeDownload:
         def __init__(self, reader):
             assert reader.declared is None
 
+        def pause(self, deadline):
+            now[0] = deadline
+
         def read_range(self, url, offset, length, *, etag, total, source_digest,
-                       address_check, before_send, on_request):
+                       address_check, before_send, on_request, deadline, full_limit):
             address_check(url)
             before_send()
             on_request(url)
             assert url == URL
             calls.append((offset, etag, total))
             part = PAYLOAD[offset:offset + 4]
+            self.pause(deadline)
             return DownloadedRange(part, '"fixture"', len(PAYLOAD), 'a' * 64,
                                    hashlib.sha256(part).hexdigest())
 
     monkeypatch.setattr(work_download, 'PublicDownload', FakeDownload)
     capabilities = Capabilities(store, None, {}, '', work_id, lambda *args: None,
-                                network=LocalTools(), budget=WorkBudget(ledger=ledger))
+                                network=LocalTools(page_reader=PublicPageReader(clock=lambda: now[0])),
+                                budget=WorkBudget(ledger=ledger))
     return store, work_id, ledger, capabilities, calls
 
 
@@ -51,7 +57,7 @@ def test_host_call_uses_verified_offset_and_projects_only_public_fields(download
     fetch = lambda offset: caps.execute('public_download', {'operation': 'fetch', 'url': URL, 'offset': offset})
     first = fetch(0)
     assert first['received'] == 4
-    assert set(first) == {'artifact', 'received', 'total', 'revision', 'destinations'}
+    assert set(first) == {'artifact', 'received', 'total', 'revision', 'destinations', 'stop_code', 'truncated'}
     assert first['destinations'] == ['example.org']
     with pytest.raises(ToolError, match='verified offset'):
         fetch(0)
@@ -131,9 +137,10 @@ def test_preview_masks_multiline_secret_prefix_at_incomplete_checkpoint(download
     settled_end = received - literal_context
     assert 0 < settled_end < len(header)
 
-    def read_range(reader, url, offset, length, **kwargs):
+    def read_range(download, url, offset, length, **kwargs):
         end = received if offset == 0 else len(payload)
         part = payload[offset:end]
+        download.pause(kwargs['deadline'])
         return DownloadedRange(part, '"fixture"', len(payload), 'a' * 64, hashlib.sha256(part).hexdigest())
 
     monkeypatch.setattr(work_download.PublicDownload, 'read_range', read_range)
@@ -153,11 +160,12 @@ def test_preview_masks_multiline_secret_prefix_at_incomplete_checkpoint(download
 def stage_payload(caps, monkeypatch, payload, *, total=None):
     def read_range(reader, url, offset, length, **kwargs):
         part = payload[offset:offset + length]
+        if not part:
+            raise PublicDownloadError('public_download_interrupted', True)
         return DownloadedRange(part, '"fixture"', total or len(payload), 'a' * 64, hashlib.sha256(part).hexdigest())
 
     monkeypatch.setattr(work_download.PublicDownload, 'read_range', read_range)
-    for offset in range(0, len(payload), work_download.RANGE_BYTES):
-        caps.execute('public_download', {'operation': 'fetch', 'url': URL, 'offset': offset})
+    caps.execute('public_download', {'operation': 'fetch', 'url': URL, 'offset': 0})
 
 
 @pytest.mark.parametrize(('secret', 'offset'), [
@@ -316,7 +324,7 @@ def test_restarted_work_consumes_remaining_ranges_once(download):
     assert replacement.ledger.epoch != old_ledger.epoch
     assert f'4 of {len(PAYLOAD)} bytes verified' in service.read_checkpoint_note(claimed)
     new_caps = Capabilities(restarted_store, None, {}, '', work_id, lambda *args: None,
-                            network=LocalTools(), budget=replacement)
+                            network=caps.network, budget=replacement)
     offset = previous['received']
     while offset < len(PAYLOAD):
         current = new_caps.execute('public_download', {

@@ -102,7 +102,7 @@ async function run () {
       denyRead: config.denyRead,
       allowRead: [config.workdir, ...(config.allowRead || [])],
       allowWrite: [config.workdir],
-      denyWrite: []
+      denyWrite: config.denyWrite || []
     },
     credentials: {
       envVars: (config.masked || []).map(item => ({ name: item.name, mode: 'mask', injectHosts: item.injectHosts }))

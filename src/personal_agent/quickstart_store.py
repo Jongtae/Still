@@ -2675,10 +2675,10 @@ class QuickStore:
         artifact = value.get('artifact')
         if not isinstance(artifact, str) or not re.fullmatch(r'[A-Za-z0-9_-]{1,128}', artifact):
             return None
-        if any(type(value.get(key)) is not int or not 0 < value[key] <= 2**63-1
+        if any(type(value.get(key)) is not int or not 0 <= value[key] <= 2**63-1
                for key in ('received', 'total', 'revision')):
             return None
-        if value['received'] > value['total']:
+        if not value['revision'] or value['received'] > value['total'] or (not value['received'] and value['total']):
             return None
         for key in ('etag', 'source_digest', 'digest', 'url_digest'):
             if key in value and (not isinstance(value[key], str) or not 0 < len(value[key]) <= 1024):

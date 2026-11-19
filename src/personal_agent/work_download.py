@@ -11,10 +11,11 @@ from types import SimpleNamespace
 
 from .local_tools import normalize_public_url
 from .messages import msg
-from .public_download import MAX_RANGE_BYTES, PublicDownload
+from .public_download import MAX_RANGE_BYTES, PublicDownload, PublicDownloadError
 
 RANGE_BYTES = MAX_RANGE_BYTES
 WORK_BYTES = 64 * RANGE_BYTES
+TRANSFER_SECONDS = 60
 STAGING_BYTES = 256 * RANGE_BYTES
 PREVIEW_BYTES = 4096
 INPUT_CHANGED = object()
@@ -44,8 +45,8 @@ def checkpoint_note(checkpoint):
     artifact, received, total, revision = (checkpoint.get(key) for key in ('artifact', 'received', 'total', 'revision'))
     if (not isinstance(artifact, str) or not artifact or len(artifact) > 128
             or any(char not in 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_-' for char in artifact)
-            or not all(type(value) is int and 0 < value < 2**63 for value in (received, total, revision))
-            or received > total):
+            or not all(type(value) is int and 0 <= value < 2**63 for value in (received, total, revision))
+            or revision == 0 or received > total):
         return ''
     return (f'Still verified read progress on this same Work. Artifact reference {artifact}, '
             f'checkpoint revision {revision}: {received} of {total} bytes verified; '
@@ -190,6 +191,8 @@ def _verified_digest(source, size, expected=None):
 def staged_checkpoint_available(store, checkpoint):
     if not checkpoint.get('source_url') or not checkpoint.get('digest'):
         return False
+    if checkpoint['received'] < checkpoint['total'] and not checkpoint.get('etag'):
+        return False
     try:
         with _staging_directory(store) as directory:
             fd = _staged_file(directory, checkpoint['artifact'], os.O_RDONLY)
@@ -198,6 +201,49 @@ def staged_checkpoint_available(store, checkpoint):
             return True
     except (OSError, WorkDownloadError):
         return False
+
+def _complete(checkpoint):
+    return (checkpoint and checkpoint.get('digest')
+            and 0 <= checkpoint['received'] == checkpoint['total'] <= WORK_BYTES)
+
+
+def completed_artifact(store, checkpoint):
+    """Project a complete, still retained file; consumers verify its digest."""
+    if not _complete(checkpoint):
+        return None
+    try:
+        with _staging_directory(store) as directory:
+            fd = _staged_file(directory, checkpoint['artifact'], os.O_RDONLY | os.O_NONBLOCK)
+            with os.fdopen(fd, 'rb') as source:
+                if os.fstat(source.fileno()).st_size >= checkpoint['received']:
+                    return checkpoint['artifact']
+    except (OSError, WorkDownloadError):
+        return None
+
+def read_artifact(store, work_id, artifact, *, budget=None):
+    """Resolve a host receipt inside its Work and return only digest-verified bytes."""
+    unavailable = 'The verified download is unavailable in this Work.'
+    with store.db() as db:
+        db.execute('BEGIN')
+        checkpoint = store.read_checkpoint(work_id, db=db)
+        if (not _complete(checkpoint) or artifact != checkpoint['artifact']
+                or not db.execute('SELECT 1 FROM jobs WHERE id=? AND owner_typed=1', (work_id,)).fetchone()):
+            raise WorkDownloadError(unavailable, 'read_checkpoint_missing')
+        if budget is not None:
+            ledger = budget.ledger
+            if (ledger is None or ledger.epoch != checkpoint['epoch'] or checkpoint['resume_pending']
+                    or not store.read_checkpoint_can_settle(work_id, ledger.epoch, db=db)):
+                raise WorkDownloadError(unavailable, 'read_checkpoint_unavailable')
+    try:
+        with _staging_directory(store) as directory:
+            fd = _staged_file(directory, artifact, os.O_RDONLY | os.O_NONBLOCK)
+            with os.fdopen(fd, 'rb') as source:
+                data = _read_staged_bytes(source, checkpoint['received'])
+        if hashlib.sha256(data).hexdigest() != checkpoint['digest']:
+            raise WorkDownloadError(unavailable, 'read_checkpoint_corrupt')
+        return data
+    except OSError:
+        raise WorkDownloadError(unavailable, 'read_checkpoint_missing') from None
 
 def _make_room(db, directory, artifact, size):
     with os.scandir(directory) as entries:
@@ -232,8 +278,9 @@ def _make_room(db, directory, artifact, size):
             return
     raise WorkDownloadError('The install reached its staged read limit.', 'read_checkpoint_limit', ran=True)
 
-def receive(store, job_id, ledger, reader, url, offset, *, address_check, before_send, guard, on_request):
-    """Read one range and publish only bytes whose Work checkpoint commits."""
+def receive(store, job_id, budget, reader, url, offset, *, address_check, before_send, guard, on_request):
+    """Fetch until complete, stalled or bounded, committing each verified range."""
+    ledger = budget.ledger
     if ledger is None or ledger.epoch is None:
         raise WorkDownloadError('The Work has no active read checkpoint scope.', 'read_checkpoint_unavailable')
     previous = store.read_checkpoint(job_id)
@@ -248,25 +295,47 @@ def receive(store, job_id, ledger, reader, url, offset, *, address_check, before
     verified = previous['received'] if previous else 0
     if type(offset) is not int or offset != verified:
         raise WorkDownloadError('Use the verified offset from the current Work checkpoint.', 'read_checkpoint_position')
-    if previous and offset == previous['total']:
-        return public_checkpoint(previous)
-    if offset >= WORK_BYTES:
-        raise WorkDownloadError('The Work reached its staged read limit.', 'read_checkpoint_limit')
-    length = min(RANGE_BYTES, WORK_BYTES - offset)
-    part = PublicDownload(reader).read_range(
-        canonical, offset, length, etag=previous.get('etag') if previous else None,
-        total=previous.get('total') if previous else None,
-        source_digest=previous.get('source_digest') if previous else None,
-        address_check=address_check, before_send=before_send, on_request=on_request,
-    )
-    guard()
+    deadline = reader.clock() + min(TRANSFER_SECONDS, budget.remaining())
+    download = PublicDownload(reader)
+    initial = previous
+    while True:
+        if previous and offset == previous['total']:
+            return public_checkpoint(previous)
+        if offset >= WORK_BYTES:
+            return {**public_checkpoint(previous), 'stop_code': 'read_checkpoint_limit', 'truncated': True}
+        guard()
+        if reader.clock() >= deadline and previous != initial:
+            return {**public_checkpoint(previous), 'stop_code': 'public_download_time_limit', 'truncated': True}
+        try:
+            part = download.read_range(
+                canonical, offset, min(RANGE_BYTES, WORK_BYTES - offset),
+                etag=previous.get('etag') if previous else None,
+                total=previous.get('total') if previous else None,
+                source_digest=previous.get('source_digest') if previous else None,
+                address_check=address_check, before_send=before_send, on_request=on_request,
+                deadline=min(deadline, reader.clock() + budget.remaining()), full_limit=WORK_BYTES - offset,
+            )
+        except PublicDownloadError as exc:
+            if previous is None or exc.code not in ('public_download_interrupted', 'public_download_source_changed',
+                                                    'public_download_range_unavailable'):
+                raise
+            guard()
+            return {**public_checkpoint(previous), 'stop_code': exc.code, 'truncated': True}
+        guard()
+        previous = _commit_range(store, job_id, ledger, previous, part, offset, canonical, identity)
+        offset = previous['received']
+
+
+def _commit_range(store, job_id, ledger, previous, part, offset, canonical, identity):
     checkpoint = {
         'artifact': previous['artifact'] if previous else uuid.uuid4().hex,
         'received': offset + len(part.data), 'total': part.total,
         'revision': previous['revision'] + 1 if previous else 1,
-        'etag': part.etag, 'source_digest': part.source_digest,
+        'source_digest': part.source_digest,
         'digest': part.digest, 'url_digest': identity, 'source_url': canonical,
     }
+    if part.etag is not None:
+        checkpoint['etag'] = part.etag
     with store.db() as db:
         db.execute('BEGIN IMMEDIATE')
         if store.read_checkpoint(job_id, db=db) != previous:
@@ -286,9 +355,9 @@ def receive(store, job_id, ledger, reader, url, offset, *, address_check, before
                 output.flush()
                 os.fsync(output.fileno())
             os.fsync(directory)
-    return public_checkpoint(checkpoint)
+        return store.read_checkpoint(job_id, db=db)
 
-def _read_preview_bytes(source, size):
+def _read_staged_bytes(source, size):
     data = source.read(size)
     if len(data) != size:
         raise WorkDownloadError('Previously verified bytes are unavailable.', 'read_checkpoint_missing')
@@ -303,7 +372,7 @@ def _preview_context_edge(source, position, limit):
                     else max(limit, position - _PREVIEW_SCAN_CHUNK))
         start, end = sorted((position, adjacent))
         source.seek(start)
-        block = _read_preview_bytes(source, end - start)
+        block = _read_staged_bytes(source, end - start)
         remaining -= len(block.translate(None, _CREDENTIAL_RUN_BYTES))
         position = adjacent
     return position
@@ -324,13 +393,10 @@ def _open_pem_start(data):
     return len(data)
 
 
-def _mask_preview(data, offset, size, values, ledger, *, settled_end):
+def _credential_spans(text, values, ledger):
     from .bounded_execution import SECRET_PATTERN
     from .quickstart_store import QuickStore
 
-    # Keep byte positions even for invalid UTF-8, but match against printable text.
-    decoded = data.decode('utf-8', errors='surrogateescape')
-    text = re.sub(r'[\udc80-\udcff]', '\ufffd', decoded)
     spans = QuickStore._retired_spans(text, ledger)
     spans.extend(match.span() for match in SECRET_PATTERN.finditer(text))
     for value in values:
@@ -338,6 +404,40 @@ def _mask_preview(data, offset, size, values, ledger, *, settled_end):
         while start != -1:
             spans.append((start, start + len(value)))
             start = text.find(value, start + 1)
+    return spans
+
+
+def code_artifact_bytes(store, data):
+    """Apply the preview's credential masks before code can split or transform bytes."""
+    from .current_context import redaction_material
+
+    try:
+        values, ledger = redaction_material(store)
+        decoded = data.decode('utf-8', errors='surrogateescape')
+        text = re.sub(r'[\udc80-\udcff]', '\ufffd', decoded)
+        spans = _credential_spans(text, values, ledger)
+        if not spans:
+            return data
+        masked = bytearray(data)
+        char_end = byte_end = 0
+        for start, end in sorted(spans):
+            start = max(start, char_end)
+            if end <= start:
+                continue
+            left = byte_end + len(decoded[char_end:start].encode('utf-8', errors='surrogateescape'))
+            byte_end = left + len(decoded[start:end].encode('utf-8', errors='surrogateescape'))
+            masked[left:byte_end] = b'*' * (byte_end - left)
+            char_end = end
+        return masked
+    except Exception:
+        raise WorkDownloadError(msg('agent_runtime.redaction_unavailable'), 'redaction_unavailable') from None
+
+
+def _mask_preview(data, offset, size, values, ledger, *, settled_end):
+    # Keep byte positions even for invalid UTF-8, but match against printable text.
+    decoded = data.decode('utf-8', errors='surrogateescape')
+    text = re.sub(r'[\udc80-\udcff]', '\ufffd', decoded)
+    spans = _credential_spans(text, values, ledger)
 
     content = bytearray(data[offset:offset + size])
     if spans and content:
@@ -395,7 +495,7 @@ def preview(store, job_id, offset):
             start = max(0, _preview_context_edge(source, offset, 0) - literal_context)
             end = min(received, _preview_context_edge(source, offset + size, received) + literal_context)
             source.seek(start)
-            data = _read_preview_bytes(source, end - start)
+            data = _read_staged_bytes(source, end - start)
             if incomplete:
                 settled_end = max(0, received - literal_context)
                 # If the context stops before the checkpoint, its forward scan
@@ -407,7 +507,7 @@ def preview(store, job_id, offset):
                     # A later break puts the last line beyond this preview.
                     position = end
                     while position < received:
-                        block = _read_preview_bytes(source, min(_PREVIEW_SCAN_CHUNK, received - position))
+                        block = _read_staged_bytes(source, min(_PREVIEW_SCAN_CHUNK, received - position))
                         if _LINE_BREAK.search(block):
                             break
                         position += len(block)

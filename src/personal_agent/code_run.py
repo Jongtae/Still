@@ -36,6 +36,7 @@ import tarfile
 import tempfile
 import threading
 import time
+from contextlib import ExitStack
 
 from . import node_runtime
 from .messages import msg
@@ -462,7 +463,8 @@ class CodeRunner:
     """One Work's sandboxed code runs; every request decision is made here."""
 
     def __init__(self, store, work_id, *, popen=subprocess.Popen, node=None, interrupted=None,
-                 install=ensure_runtime, clock=time.monotonic, approvals=None, provide_node=node_runtime.ensure):
+                 install=ensure_runtime, clock=time.monotonic, approvals=None, provide_node=node_runtime.ensure,
+                 download_budget=None):
         self.store, self.work_id = store, work_id
         self.popen, self.interrupted, self.install, self.clock = popen, interrupted, install, clock
         self._node = node
@@ -471,6 +473,7 @@ class CodeRunner:
         #: #1456: the Work's per-action approval surface (``consume``/``request``), as ``api_request`` uses.
         #: Without one, every state-changing request is refused as before.
         self.approvals = approvals
+        self.download_budget = download_budget
         #: Per run: host -> [(set name, slot), ...] of every named secret set on it (#619: all of them, so a
         #: money set is never hidden behind another set on the same host), approval requests, dispatch claims.
         self._owners, self._asked, self._claims = {}, [], []
@@ -565,6 +568,7 @@ class CodeRunner:
                 raise CodeRunError('이 작업에는 승인을 요청한 코드 실행이 없어요. 코드를 직접 주세요.', 'code_run_argument_invalid')
             args = dict(kept)
         code, packages, hosts, names, timeout = _arguments(args if isinstance(args, dict) else {}, self._intranet_host)
+        download = self._download(args['download_artifact']) if 'download_artifact' in args else None
         proposed = _library_argument(args, names)
         # #1470: the AI's plain words for a state change this run may ask the owner to approve.
         self._note = approval_note_text(args.get('approval_note') if isinstance(args, dict) else None)
@@ -586,7 +590,8 @@ class CodeRunner:
         runtime = self.install(self.store, node)
         python, roots = interpreter()
         requests = []
-        with tempfile.TemporaryDirectory(prefix='agentos-run-') as directory:
+        with ExitStack() as resources:
+            directory = resources.enter_context(tempfile.TemporaryDirectory(prefix='agentos-run-'))
             workdir = os.path.realpath(directory)
             Path(workdir, 'main.py').write_text(code, encoding='utf-8')
             # #1486: each named set's library, importable as ``lib_<set>``.
@@ -607,11 +612,21 @@ class CodeRunner:
             command = prefix + (['-c', LAUNCHER] if libraries else ['main.py'])
             policy = {**{host: set() for host in hosts}, **set_hosts}
             states = self._load_states(names, workdir, plain)
+            download_options = {}
+            if download is not None:
+                self.download_budget.check()
+                input_dir = resources.enter_context(tempfile.TemporaryDirectory(prefix='code-input-', dir=self.store.private))
+                path = Path(input_dir, 'download').resolve()
+                path.write_bytes(download)
+                path.chmod(0o400)
+                download_options['download_file'] = str(path)
             outcome = self._session(node, runtime, workdir, command, policy, roots, timeout, requests, 'run',
-                                    masked=masked, plain=plain)
+                                    masked=masked, plain=plain, **download_options)
             saved = self._save_states(states)
             kept = self._keep_libraries(libraries, workdir, outcome, (node, runtime, prefix, policy, roots, masked, plain))
         result = self._result(code, packages, hosts, outcome, requests, names)
+        if download is not None:
+            result['download_artifact'] = args['download_artifact']
         if saved:
             result['state_saved'] = saved
         if kept:
@@ -630,6 +645,18 @@ class CodeRunner:
             result['library_hint'] = LIBRARY_HINT.format(set=unsaved[0], module=module_name(unsaved[0]))
         self._settle(outcome, result)
         return result
+
+    def _download(self, artifact):
+        from .work_download import WorkDownloadError, code_artifact_bytes, read_artifact
+
+        if self.download_budget is None:
+            raise CodeRunError('This run has no active Work download scope.', 'read_checkpoint_unavailable')
+        self.download_budget.check()
+        try:
+            data = read_artifact(self.store, self.work_id, artifact, budget=self.download_budget)
+            return code_artifact_bytes(self.store, data)
+        except WorkDownloadError as exc:
+            raise CodeRunError(str(exc), exc.code) from None
 
     def _approval_runs(self):
         try:
@@ -1010,7 +1037,8 @@ class CodeRunner:
         self._claims.append((claim, method, host, redact_known_secrets(self.store, path)))
         return True, ''
 
-    def _session(self, node, runtime, workdir, argv, policy, roots, timeout, requests, phase, masked=(), plain=None, recorded=None):
+    def _session(self, node, runtime, workdir, argv, policy, roots, timeout, requests, phase,
+                 masked=(), plain=None, recorded=None, download_file=None):
         # #209: sandbox-runtime refuses loopback, link-local, metadata and this Mac's own addresses for every
         # allowed name; a session that reaches no declared intranet host is refused private-use space too.
         from . import intranet
@@ -1021,6 +1049,13 @@ class CodeRunner:
                   'env': {**(plain or {}), 'PATH': '/usr/bin:/bin', 'HOME': workdir, 'LANG': 'en_US.UTF-8',
                           'PYTHONIOENCODING': 'utf-8', 'PYTHONDONTWRITEBYTECODE': '1'},
                   'masked': list(masked), 'timeoutMs': timeout * 1000, 'outputBytes': OUTPUT_BYTES}
+        private = getattr(self.store, 'private', None)
+        if private is not None:
+            config['denyRead'].append(os.path.realpath(private))
+        if download_file is not None:
+            config['allowRead'] = [*roots, download_file]
+            config['denyWrite'] = [os.path.dirname(download_file)]
+            config['env']['STILL_DOWNLOAD_FILE'] = download_file
         process = self.popen([node, str(Path(runtime) / 'runner.mjs')], cwd=str(runtime), stdin=subprocess.PIPE,
                              stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True, bufsize=1,
                              env={'PATH': f'{Path(node).parent}:/usr/bin:/bin', 'HOME': workdir})
@@ -1117,7 +1152,7 @@ def evidence(result):
     and the ones waiting for the owner (``refused_because``), by method, host and path only.
     """
     kept = {key: result.get(key) for key in ('exit_status', 'timed_out', 'packages', 'hosts', 'secrets', 'sandbox', 'code_digest',
-                                             'failed_phase', 'effects', 'effect') if key in result}
+                                             'failed_phase', 'effects', 'effect', 'download_artifact') if key in result}
     if result.get('approval_requested'):
         kept['refused_because'] = 'owner-approval-requested'
         kept['approval_requested'] = result['approval_requested']

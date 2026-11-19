@@ -104,7 +104,6 @@ class PublicDownloadTests(unittest.TestCase):
             ('Content-Range', 'bytes 1-4/6'), ('Content-Range', 'bytes 0-2/6'),
             ('Content-Range', 'bytes 0-3/*'), ('Content-Range', 'bytes 0-3/4, bytes 2-4/6'),
             ('Content-Range', 'bytes 0-3/9223372036854775808'),
-            ('ETag', 'W/"weak"'), ('ETag', '"tag with spaces"'),
             ('Content-Length', '3'), ('Content-Encoding', 'gzip'),
             ('Content-Type', 'multipart/byteranges; boundary=test'),
         )

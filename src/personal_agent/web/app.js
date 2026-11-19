@@ -525,7 +525,7 @@ function itemLabel(kind){return kind==='note'?t('메모'):kind==='memory'?t('기
 // the backend), never for what the answer text happens to mention.
 function retainedLinks(task){const rows=[];
  for(const item of task?.retained||[]){if(!ITEM_KINDS.includes(item?.kind)||!item.id)continue;rows.push({kind:item.kind,id:item.id,label:item.label||'',available:item.available!==false});}
- for(const artifact of task?.artifacts||[])if(artifact?.id&&!artifact.path)rows.push({kind:'artifact',id:artifact.id,label:'',available:true});
+ for(const artifact of task?.artifacts||[])if(artifact?.id&&!artifact.path&&!artifact.download_url)rows.push({kind:'artifact',id:artifact.id,label:'',available:true});
  return rows;}
 // A MemoryCandidate decision writes canonical Memory, so every request body
 // below is built from `review.inspected` - the candidate row the owner read
@@ -1354,6 +1354,13 @@ function renderTasks(){
   if(unverified?.hidden){const box=element('details',undefined,'turn-unverified'),label=element('summary',t('확인되지 않은 답변 보기'));label.dataset.focusKey='unverified:'+task.id;box.append(label);const paint=()=>{for(const node of [...box.children])if(node!==label)node.remove();if(box.open)box.append(element('p',t('확인된 결과가 아니므로 그대로 신뢰하지 마세요.'),'turn-qualifier'),renderRichText(unverified.hidden));};box.open=openUnverified.has(task.id);paint();box.ontoggle=()=>{if(box.open===openUnverified.has(task.id))return;if(box.open)openUnverified.add(task.id);else openUnverified.delete(task.id);paint();};agent.append(box);}
   // Long answers are summarized in the trace and expanded per turn, in place.
   if(String(outcome.text||'').length>280||String(outcome.text||'').split('\n').length>7){const expanded=expandedAnswers.has(task.id),more=element('button',expanded?t('접기'):t('전체 답변 보기'),'link-button turn-expand');more.type='button';more.dataset.focusKey='expand:'+task.id;more.setAttribute('aria-expanded',String(expanded));body.id='answer-'+index;more.setAttribute('aria-controls',body.id);body.classList.toggle('clamped',!expanded);more.onclick=()=>{const open=!expandedAnswers.has(task.id);if(open)expandedAnswers.add(task.id);else expandedAnswers.delete(task.id);body.classList.toggle('clamped',!open);more.textContent=open?t('접기'):t('전체 답변 보기');more.setAttribute('aria-expanded',String(open));};agent.append(more);}
+  for(const artifact of task.artifacts||[]){
+   if(!artifact.download_url)continue;
+   const row=element('div',undefined,'artifact-row'),link=element('a',t('열기'),'button-link small');
+   link.href=artifact.download_url;
+   row.append(element('strong',t(artifact.kind)),link);
+   agent.append(row);
+  }
   if(task.artifacts?.length){for(const artifact of task.artifacts){if(!artifact.path)continue;const row=element('div',undefined,'artifact-row'),text=element('div'),path=element('span',artifact.path||t('프로젝트에 저장됨'),'muted');path.setAttribute('translate','no');text.append(element('strong',artifact.path?folderName(artifact.path):(artifact.kind?t(artifact.kind):t('결과물'))),element('br'),path);row.append(text);if(artifact.path&&navigator.clipboard){const copy=element('button',t('파일 위치 복사'),'small');copy.type='button';copy.onclick=()=>navigator.clipboard.writeText(artifact.path).then(()=>{copy.textContent=t('복사됨');},()=>{copy.textContent=t('복사하지 못함');}).then(()=>setTimeout(()=>{copy.textContent=t('파일 위치 복사');},2000));row.append(copy);}agent.append(row);}}
    // #562: the exact items this Work recorded, each opening only itself.
    // A candidate is named as not yet remembered; a removed item is said so.
