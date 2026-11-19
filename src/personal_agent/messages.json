@@ -252,10 +252,10 @@
   "zh": "已保存这次成功的方法（{count}项）。下次通过同一连接提出请求时会更快处理。如果不需要，请告诉我。"
  },
  "working_notes.saved": {
-  "ko": "일하는 방식 메모를 고쳤어요: {change}\n원하지 않으시면 말해 주세요. 그 변경을 되돌릴게요.",
-  "en": "I updated my notes on how to work for you: {change}\nTell me if you don't want that, and I'll undo that change.",
-  "ja": "仕事の進め方のメモを更新しました: {change}\n不要ならお知らせください。その変更を取り消します。",
-  "zh": "我更新了关于如何为您做事的笔记：{change}\n如果不需要，请告诉我，我会撤销这项更改。"
+  "ko": "일하는 방식 메모를 고쳤어요: {change}\n맞지 않는 게 있으면 말해 주세요. 고칠게요.",
+  "en": "I updated my notes on how to work for you: {change}\nTell me if any of it doesn't fit, and I'll change it.",
+  "ja": "仕事の進め方のメモを更新しました: {change}\n合わないところがあればお知らせください。直します。",
+  "zh": "我更新了关于如何为您做事的笔记：{change}\n如果有不合适的地方，请告诉我，我会修改。"
  },
  "working_lessons.restored": {
   "ko": "예전 메모에서 빠졌던 일하는 방식 교훈 {count}가지를 되살렸어요. 원하지 않는 것이 있으면 말해 주세요. 그것만 잊을게요.",

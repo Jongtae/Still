@@ -25,7 +25,7 @@ from personal_agent import owner_model as om
 from personal_agent.agent_runtime import MEMORY_OWNER, SECRET_SHAPED_VALUE
 from personal_agent.decision import OUTCOME_DECIDED, FixtureDecisionEngine, StructuredDecision, fixture_confidence
 from personal_agent.messages import msg
-from personal_agent.owner_forget import OwnerForget
+from personal_agent.owner_forget import MIGRATE, OwnerForget
 from personal_agent.procedures import NOTES_SLOT, REF_PREFIX, ProcedureLibrary
 from personal_agent.quickstart_store import QuickStore
 
@@ -131,7 +131,11 @@ class Operations(Store):
                 self.assertEqual(reasons(dropped), [expected])
                 self.assertEqual(self.texts(), ['링크는 맨 끝에', '요약은 세 줄로'])
 
-    def test_an_explicit_remove_ends_only_the_named_lesson_and_keeps_its_record(self):
+    def receipt(self, result, op):
+        [item] = [item for item in result['applied'] if item['op'] == op]
+        return item['receipt']
+
+    def test_an_explicit_remove_ends_only_the_named_lesson_under_an_exact_undo(self):
         before = self.seed('요약은 세 줄로', '링크는 맨 끝에')
         gone = before['요약은 세 줄로']
         result, dropped = self.apply(remove(gone['id'], 'the owner now wants full summaries'))
@@ -140,12 +144,27 @@ class Operations(Store):
         with self.store.db() as db:
             row = dict(db.execute('SELECT state,invalidation_reason,invalidated_at FROM memories WHERE id=?',
                                   (gone['memory_id'],)).fetchone())
+            receipt = dict(db.execute('SELECT operation,kind,items_json FROM owner_state_receipts WHERE id=?',
+                                      (self.receipt(result, 'remove'),)).fetchone())
         self.assertNotEqual(row['state'], 'current')
-        self.assertNotEqual(row['state'], 'forgotten', 'an AI removal is not the owner forgetting it')
         self.assertEqual(row['invalidation_reason'], 'the owner now wants full summaries', 'append + invalidate')
         self.assertIsNotNone(row['invalidated_at'])
+        self.assertEqual((receipt['operation'], receipt['kind']), (MIGRATE, 'memory'),
+                         'the existing undoable move receipt, not an owner forget')
+        self.assertNotIn('요약', receipt['items_json'], 'receipts keep no content')
+        self.assertIn(self.receipt(result, 'remove'), [entry['receipt'] for entry in self.forget.undoable(MEMORY_OWNER)])
+        self.forget.undo(MEMORY_OWNER, self.receipt(result, 'remove'))
+        self.assertEqual({lesson['memory_id'] for lesson in self.lessons.current()},
+                         {gone['memory_id'], before['링크는 맨 끝에']['memory_id']}, 'undo puts the same row back')
 
-    def test_update_keeps_the_lesson_id_supersedes_its_row_and_touches_no_other(self):
+    def test_an_ai_removed_lesson_may_be_learned_again_later(self):
+        before = self.seed('요약은 세 줄로', '링크는 맨 끝에')
+        self.apply(remove(before['요약은 세 줄로']['id'], 'no longer holds'))
+        result, dropped = self.apply(add('요약은 세 줄로'))
+        self.assertEqual((len(result['applied']), reasons(dropped)), (1, []),
+                         'only the owner forgetting it keeps a lesson from coming back')
+
+    def test_update_keeps_the_lesson_id_touches_no_other_and_the_earlier_wording_comes_back_exactly(self):
         before = self.seed('요약은 세 줄로', '링크는 맨 끝에')
         target, other = before['요약은 세 줄로'], before['링크는 맨 끝에']
         result, dropped = self.apply(update(target['id'], '요약은 세 줄로, 숫자는 그대로'))
@@ -157,7 +176,23 @@ class Operations(Store):
         self.assertEqual(now[other['id']]['memory_id'], other['memory_id'])
         with self.store.db() as db:
             old = db.execute('SELECT state FROM memories WHERE id=?', (target['memory_id'],)).fetchone()['state']
-        self.assertEqual(old, 'superseded', 'the earlier wording stays as history')
+        self.assertNotEqual(old, 'current', 'the earlier wording stays as history, out of use')
+        # Undo, with the existing tools: forget the new wording, then undo the receipt of the earlier one.
+        self.forget.forget(MEMORY_OWNER, now[target['id']]['ref'])
+        self.forget.undo(MEMORY_OWNER, self.receipt(result, 'update'))
+        back = {lesson['id']: lesson for lesson in self.lessons.current()}
+        self.assertEqual((back[target['id']]['memory_id'], back[target['id']]['text']),
+                         (target['memory_id'], '요약은 세 줄로'))
+        self.assertEqual(back[other['id']]['memory_id'], other['memory_id'])
+
+    def test_a_concurrent_add_of_a_text_already_current_is_refused_at_write_time(self):
+        self.seed('요약은 세 줄로')
+        # Two judgments that read the same lessons both propose the same add; the second write must not duplicate it.
+        kept, change, _b, _d = om.validate_lessons(answer(add('링크는 맨 끝에')), {})
+        first = self.lessons.apply(kept, change, 'w-a', origin=om.ORIGIN_SELF_REVIEW)
+        second = self.lessons.apply(kept, change, 'w-b', origin=om.ORIGIN_DREAM)
+        self.assertEqual((len(first['applied']), second['applied'], reasons(second['dropped'])), (1, [], ['unchanged']))
+        self.assertEqual(self.texts(), ['링크는 맨 끝에', '요약은 세 줄로'])
 
     def test_unknown_ids_unchanged_texts_and_duplicate_targets_are_refused(self):
         cases = [(lambda lid: (update('ffffffff', 'x'),), ['unknown-id']),
@@ -268,6 +303,13 @@ class Attribution(Store):
         self.assertEqual((result['applied'], reasons(dropped)), ([], [om.FORGOTTEN_VALUE]))
         self.assertEqual(self.texts(), ['요약은 세 줄로'])
 
+    def test_a_lesson_the_owner_deleted_completely_is_not_learned_again(self):
+        before = self.seed('요약은 세 줄로', '링크는 맨 끝에')
+        self.forget.forget(MEMORY_OWNER, before['링크는 맨 끝에']['ref'], delete=True)
+        result, dropped = self.apply(add('링크는 맨 끝에'))
+        self.assertEqual((result['applied'], reasons(dropped)), ([], [om.FORGOTTEN_VALUE]))
+        self.assertEqual(self.texts(), ['요약은 세 줄로'])
+
     def test_lesson_rows_are_not_profile_facts(self):
         from personal_agent.memory_service import MemoryService
         self.store.save_memory('profile.place.home', '분당', MEMORY_OWNER)
@@ -317,7 +359,8 @@ class Brief(Store):
         shown = [lesson for lesson in current if lesson['ref'] in block]
         omitted = len(current) - len(shown)
         self.assertGreater(omitted, 0)
-        self.assertLessEqual(sum(len(lesson['text']) for lesson in shown), om.LESSONS_BRIEF_CHARS)
+        lines = [line for line in block.splitlines() if line.startswith('- ')]
+        self.assertLessEqual(sum(len(line) for line in lines), om.LESSONS_BRIEF_CHARS, 'the budget counts whole lines, refs too')
         self.assertRegex(block, rf'(?<!\d){omitted}(?!\d)[^\n]*omitted')
         self.assertTrue(all(lesson['text'] in block for lesson in shown))
 
@@ -363,6 +406,15 @@ class Migration(Store):
         self.forget.forget(MEMORY_OWNER, target['ref'])
         self.assertIsNone(self.lessons.migrate())
         self.assertEqual(sorted(self.texts()), ['a 요약은 세 줄로', 'b 링크는 맨 끝에'])
+
+    def test_over_the_cap_the_newest_versions_points_are_kept(self):
+        for start in range(0, om.LESSONS_MAX + 6, 3):
+            self.commit(*(f'old point {index:03d}' for index in range(start, start + 3)))
+        self.commit('the current point')
+        record = self.lessons.migrate()
+        self.assertEqual(record['restored'], om.LESSONS_MAX)
+        self.assertIn('the current point', self.texts(), 'the lessons in use most recently are kept first')
+        self.assertNotIn('old point 000', self.texts())
 
     def test_over_long_and_secret_shaped_points_are_skipped_and_counted(self):
         self.store.secret('telegram_token', SECRET)
@@ -494,6 +546,13 @@ class DreamPath(Dream):
         self.assertEqual(sorted(lesson['text'] for lesson in om.WorkingLessons(self.store).current()), ['가', '나', '다'])
         self.assertIn('lessons-rewrite', reasons(detail['dropped']))
 
+    def test_rewording_more_than_half_of_the_lessons_at_once_is_refused_too(self):
+        before = self.seed('가', '나', '다')
+        detail = self.look_back(self.dream(update(before['가']['id'], '전혀 다른 말'), remove(before['나']['id'])),
+                                self.two_days())
+        self.assertEqual(sorted(lesson['text'] for lesson in om.WorkingLessons(self.store).current()), ['가', '나', '다'])
+        self.assertIn('lessons-rewrite', reasons(detail['dropped']))
+
     def test_the_dream_schema_carries_operations_not_a_document(self):
         props = om.DREAM_SCHEMA['properties']
         self.assertIn('lessons', props)
@@ -559,9 +618,24 @@ class Told(TelegramHarness):
         rows = self.notification(latest, om.RESTORED_NOTICE_KIND)
         self.assertEqual(len(rows), 1, 'told on the latest conversation Work')
         self.assertTrue(self.service.deliver_notification())
-        self.assertEqual(self.sends()[-1]['text'], msg('working_lessons.restored', count=3))
+        sent = self.sends()[-1]['text']
+        self.assertTrue(sent.startswith(msg('working_lessons.restored', count=3)), sent)
+        for text in ('요약은 세 줄로', '링크는 맨 끝에', '비교는 표로'):
+            self.assertIn(text, sent, 'the owner is told what came back, not only how many')
         self.assertIsNone(om.WorkingLessons(self.store).migrate())
         self.assertEqual(len(self.notification(latest, om.RESTORED_NOTICE_KIND)), 1, 'once')
+
+    def test_the_restore_is_told_on_a_conversation_whose_reply_settled(self):
+        ProcedureLibrary(self.store).commit(NOTES_SLOT, om.notes_text(['요약은 세 줄로']), stats={'change': 'c'})
+        settled = self.telegram_work('어제 일정', status='succeeded')
+        newest = self.telegram_work('오늘 일정', status='succeeded')
+        with self.store.db() as db:
+            db.execute("UPDATE jobs SET delivery='pending' WHERE id=?", (newest,))
+            db.execute('DELETE FROM config WHERE key=?', (om.LESSONS_MIGRATION_KEY,))
+        om.WorkingLessons(self.store).migrate()
+        self.assertEqual(self.notification(newest, om.RESTORED_NOTICE_KIND), [])
+        self.assertEqual([row['state'] for row in self.notification(settled, om.RESTORED_NOTICE_KIND)], ['queued'],
+                         'a reply that may never settle does not hold the notice back')
 
     def test_the_information_use_audit_names_the_lessons_sent_never_their_text(self):
         self.reviewed(answer(add('요약은: 세 줄로'), add('링크는 맨 끝에'), change='요약 길이'))
