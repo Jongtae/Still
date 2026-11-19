@@ -1524,7 +1524,7 @@ class SilentDeliveryTests(_WatchCase):
         self.service.use_decision_engine(self.judge)
 
     def notifications(self):
-        return [text for text in self.texts() if text.startswith('지켜보던 일에서 알려 드려요')]
+        return [text for text in self.texts() if '\n\n지켜보던 일: ' in text]
 
     def test_quiet_runs_send_nothing_and_notify_sends_once_per_new_decision(self):
         self.use([False, True, True])
@@ -2149,8 +2149,9 @@ class OwnerOfferTests(_WatchCase):
         self.assertNotIn('마다 최대', run_prompt, 'no schedule line re-rendered from the advanced due time')
         [asked] = [item[1] for item in self.judge.asked if item[0] == 'judge' and item[1].purpose == 'watch-notification']
         self.assertIn('1,000원 이하', asked.facts['accepted_offer'])
-        [told] = [text for text in self.texts() if text.startswith('지켜보던 일에서 알려 드려요')]
-        self.assertTrue(told.startswith(f'지켜보던 일에서 알려 드려요 ({self.TITLE}).'), told)
+        [told] = [text for text in self.texts() if '\n\n지켜보던 일: ' in text]
+        self.assertTrue(told.endswith(f'\n\n지켜보던 일: {self.TITLE}\n' + msg('quickstart_service.stop_watching_hint')), told)
+        self.assertFalse(told.startswith('지켜보던 일'), 'the result leads, not the footer (#1034)')
         listed = self.service.preparations_status()['preparations'][0]
         self.assertEqual((listed['title'], listed['offer']), (self.TITLE, self.OFFER))
 

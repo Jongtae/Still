@@ -1,0 +1,94 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Still lesson evaluation reports",
+  "oneOf": [
+    {"$ref": "#/$defs/retention"},
+    {"$ref": "#/$defs/application"}
+  ],
+  "$defs": {
+    "count": {"type": "integer", "minimum": 0},
+    "positiveInteger": {"type": "integer", "minimum": 1},
+    "rate": {"type": ["number", "null"], "minimum": 0, "maximum": 1},
+    "retention": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "learned", "carried", "retained", "lost", "retention", "threshold",
+        "versions", "points_per_version", "drop_events"
+      ],
+      "properties": {
+        "learned": {"$ref": "#/$defs/count"},
+        "carried": {"$ref": "#/$defs/count"},
+        "retained": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["exact", "reworded", "total"],
+          "properties": {
+            "exact": {"$ref": "#/$defs/count"},
+            "reworded": {"$ref": "#/$defs/count"},
+            "total": {"$ref": "#/$defs/count"}
+          }
+        },
+        "lost": {"$ref": "#/$defs/count"},
+        "retention": {"$ref": "#/$defs/rate"},
+        "threshold": {"type": "number"},
+        "versions": {"$ref": "#/$defs/count"},
+        "points_per_version": {
+          "type": "array",
+          "items": {"$ref": "#/$defs/count"}
+        },
+        "drop_events": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["from_version", "to_version", "lost"],
+            "properties": {
+              "from_version": {"$ref": "#/$defs/positiveInteger"},
+              "to_version": {"$ref": "#/$defs/positiveInteger"},
+              "lost": {"$ref": "#/$defs/positiveInteger"}
+            }
+          }
+        },
+        "lessons": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["digest", "first_version", "last_version", "carried"],
+            "properties": {
+              "digest": {"type": "string", "pattern": "^[0-9a-f]{16}$"},
+              "first_version": {"$ref": "#/$defs/positiveInteger"},
+              "last_version": {"$ref": "#/$defs/positiveInteger"},
+              "carried": {"type": "boolean"}
+            }
+          }
+        }
+      }
+    },
+    "application": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "pairs", "lessons", "lessons_with_pairs", "followed", "not_followed",
+        "not_applicable", "unclear", "judge_error", "budget_refused", "follow_rate",
+        "judge", "judge_route", "judge_usd"
+      ],
+      "properties": {
+        "pairs": {"$ref": "#/$defs/count"},
+        "lessons": {"$ref": "#/$defs/count"},
+        "lessons_with_pairs": {"$ref": "#/$defs/count"},
+        "followed": {"$ref": "#/$defs/count"},
+        "not_followed": {"$ref": "#/$defs/count"},
+        "not_applicable": {"$ref": "#/$defs/count"},
+        "unclear": {"$ref": "#/$defs/count"},
+        "judge_error": {"$ref": "#/$defs/count"},
+        "budget_refused": {"$ref": "#/$defs/count"},
+        "follow_rate": {"$ref": "#/$defs/rate"},
+        "judge": {"const": "explicit"},
+        "judge_route": {"type": ["string", "null"]},
+        "judge_usd": {"type": "number", "minimum": 0}
+      }
+    }
+  }
+}

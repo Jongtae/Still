@@ -113,6 +113,18 @@
   "ja": "確認できた作業を{count}段階終えました。",
   "zh": "已完成 {count} 个已观察步骤。"
  },
+ "budget_continue.done_steps": {
+  "ko": "확인한 단계 {count}개까지 진행했어요.",
+  "en": "{count} checked steps done.",
+  "ja": "確認できたステップを{count}個まで進めました。",
+  "zh": "已完成 {count} 个已确认的步骤。"
+ },
+ "budget_continue.tokens": {
+  "ko": "토큰 {count}개",
+  "en": "{count} tokens",
+  "ja": "トークン{count}個",
+  "zh": "{count} 个令牌"
+ },
  "budget_continue.remaining": {
   "ko": "원래 요청에서 아직 완료가 확인되지 않은 부분",
   "en": "The parts of the original request not yet confirmed complete",
@@ -126,10 +138,10 @@
   "zh": "{usage} · {count} 次工具调用"
  },
  "budget_continue.prompt": {
-  "ko": "이번 실행 한도에 도달했어요.\n완료: {done}\n남은 일: {left}\n사용량: {used}\n이어서 할까요?",
-  "en": "This run reached its budget.\nDone: {done}\nLeft: {left}\nUsed: {used}\nContinue?",
-  "ja": "今回の実行上限に達しました。\n完了: {done}\n残り: {left}\n使用量: {used}\n続けますか？",
-  "zh": "本次运行已达到预算。\n完成：{done}\n剩余：{left}\n用量：{used}\n继续吗？"
+  "ko": "이번 실행 한도에 다다라 여기서 멈췄어요.\n지금까지: {done}\n남은 일: {left}\n사용량: {used}\n이어서 할까요?",
+  "en": "This run reached its budget and stopped here.\nSo far: {done}\nLeft: {left}\nUsed: {used}\nContinue?",
+  "ja": "今回の実行上限に達したので、ここで止めました。\nここまで: {done}\n残り: {left}\n使用量: {used}\n続けますか？",
+  "zh": "本次运行已达到预算，在这里停下了。\n目前：{done}\n剩余：{left}\n用量：{used}\n继续吗？"
  },
  "budget_continue.stale": {
   "ko": "지금은 이 요청을 이어서 실행할 수 없어요.",
@@ -7541,10 +7553,10 @@
   "zh": "请确认请求。"
  },
  "quickstart_service.watch_notification": {
-  "ko": "지켜보던 일에서 알려 드려요 ({title}).",
-  "en": "An update on what I was watching ({title}).",
-  "ja": "見守っていたことのお知らせです（{title}）。",
-  "zh": "关注事项有更新（{title}）。"
+  "ko": "지켜보던 일: {title}",
+  "en": "Watching: {title}",
+  "ja": "見守っている件: {title}",
+  "zh": "关注事项：{title}"
  },
  "quickstart_service.stop_watching_hint": {
   "ko": "더 알릴 필요가 없으면 아래 버튼으로 지켜보기를 멈출 수 있어요.",
@@ -11565,6 +11577,12 @@
   "en": "When this work does not finish in one go, do one step in this run and end by saying where it stands; when more is needed later, do not wait inside the run but schedule the next piece with schedule_preparation (kind prepare, line {line}, at least {minutes} minutes ahead, its goal saying what was done, the state found and what the next piece should check).",
   "ja": "この仕事が一度で終わらないときは、今回は一段階だけ行って今の状況を伝えて終え、後でさらに必要なら実行の中で待たずに schedule_preparation で次の回を予約してください（kind prepare、line {line}、{minutes}分以降、goal にはしたこと・見つけた状態・次の回が確かめること）。",
   "zh": "如果此事无法一次完成，本次运行只做一步并在结束时说明进展；之后还需继续时，不要在运行中等待，而是用 schedule_preparation 安排下一步（kind prepare，line {line}，至少{minutes}分钟之后，goal 写明已做的事、发现的状态和下一步要确认的内容）。"
+ },
+ "lines.no_following_run": {
+  "ko": "이 맡은 일에는 이번 실행 뒤에 예약된 실행이 없어요. 일이 계속되면 적용되는 한도 안에서 다음 실행을 예약하세요(다른 날이어도 돼요). 일이 끝났거나 더 진행할 수 없다면 그 사실과 이유를 기록하고 소유자에게 알리세요. 계속하는 데 필요한 것이 있다면 무엇인지 소유자에게 알리세요. 이미 종료와 이유가 기록돼 있다면 그 판단을 따르세요.",
+  "en": "No further run is scheduled for this line after this one. If the mission continues, schedule the next run within the applicable limits, including on a later day if needed. If the mission has ended or cannot be completed, record why and tell the owner. If continuing needs something, tell the owner what it needs. Honor any recorded decision that the mission has ended.",
+  "ja": "この仕事には今回の後に予約された実行がありません。仕事が続くなら、適用される上限の範囲で次回を予約してください。必要なら別の日でもかまいません。仕事が終わったか完了できない場合は、その理由を記録し、オーナーに伝えてください。続行に必要なものがあれば、それをオーナーに伝えてください。終了の判断がすでに記録されている場合は、その判断に従ってください。",
+  "zh": "此受托事项在本次运行之后没有安排其他运行。如果事项仍需继续，请在适用的限制内安排下一次运行，必要时可以安排在之后的日期。如果事项已经结束或无法完成，请记录原因并告知主人。如果继续需要什么，请告诉主人。若已记录事项结束的判断，请遵循该判断。"
  },
  "lines.say_in_reply": {
   "ko": "이 대화에는 Still이 따로 보낼 수 없으니, 답에서 이 문장을 그대로 전하세요: {text}",

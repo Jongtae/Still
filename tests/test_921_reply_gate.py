@@ -415,3 +415,23 @@ class Inventory(Harness):
         self.assertEqual([i['id'] for i in kept], [row['id']])
         self.assertEqual(kept[0]['line'], text.splitlines()[0])
         self.assertEqual(cut_profile_fact('no newline too long', limit_chars=2), ('', ()))
+
+
+def test_cut_profile_fact_positions_follow_the_redacted_text():
+    lines = ['alpha fact', 'token sk-SECRET here', 'omega fact']
+    text = '\n'.join(lines)
+    items, at = [], 0
+    for index, line in enumerate(lines):
+        items.append({'id': f'm{index}', 'kind': 'fact', 'line': line, 'start': at})
+        at += len(line) + 1
+    # No change: every row keeps its position and survives.
+    cut, kept = cut_profile_fact(text, items, redact=lambda value: value, limit_chars=len(text))
+    assert cut == text
+    assert [(i['id'], i['start']) for i in kept] == [(i['id'], i['start']) for i in items]
+    # A redaction that shortens an earlier row moves the rows after it.
+    shorten = lambda value: value.replace('sk-SECRET', '[r]')
+    cut, kept = cut_profile_fact(text, items, redact=shorten, limit_chars=len(text))
+    assert cut == shorten(text)
+    assert [i['id'] for i in kept] == ['m0', 'm1', 'm2']
+    assert all(cut[i['start']:i['start'] + len(i['line'])] == i['line'] for i in kept)
+    assert kept[2]['start'] == items[2]['start'] - len('sk-SECRET') + len('[r]')

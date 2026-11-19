@@ -458,12 +458,13 @@ SCHEDULE_PREPARATION_ARGUMENTS={
 }
 #: #798: one continuing responsibility the owner entrusted, with an identity of its own.
 ENTRUSTED_LINE_DESCRIPTION=(
- 'Keep a continuing responsibility the owner entrusted to you as one line that outlives any single schedule (#798). '
- 'open it when the owner hands you ongoing work (task: one sentence in their words; report_promise: what you will report '
- 'and when; rules: their standing rules, one a line), then schedule its work with schedule_preparation line. When the '
- 'owner starts the same work again, continue the existing line. When the owner corrects it, judge whether they mean today '
- 'only or from now on: only a standing correction is a revise with rule (or drop_rule); if unclear, apply it today only '
- 'and say so. list answers what you are handling for the owner; read gives one line\'s brief and latest outcomes when it '
+ 'Keep entrusted work in one line across schedules (#798). Open it with the task in the owner\'s words, report promise '
+ 'and standing rules (one per line), then schedule with schedule_preparation line. Reuse the line for the same work. '
+ 'For owner corrections, revise with rule (or drop_rule) only for a standing change. If unclear, apply it today only '
+ 'and say so. Daily limits and today-only corrections govern that day\'s work. The mission continues until its end '
+ 'condition is met, the owner ends it, or you judge it complete or impossible and report why. Record the end and reason '
+ 'in open_matters when available. Honor a recorded end. '
+ 'list answers what you are handling for the owner; read gives one line\'s brief and latest outcomes when it '
  'bears on a question; stop ends it and everything under it. A line grants nothing: approvals and payment stay as they are. '
  'Still tells the owner itself when a line opens, takes a standing rule or stops; do not repeat that message.')
 ENTRUSTED_LINE_ARGUMENTS={

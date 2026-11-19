@@ -511,6 +511,10 @@ and stay comparable, so measured regressions still count against a candidate.
 Historical reports without these fields remain unknown and are not counted as
 affected.
 
+## Lesson retention (#1031)
+
+`lessons/` measures whether a lesson Still learned for an owner is still carried by later Works (model-free) and followed by them (opt-in judge). It reads a read-only copy of one owner's store and reports counts only; real data stays outside the repository. See [lessons/README.md](lessons/README.md). The judge runs only with an explicitly named route (#885).
+
 ## Task coverage map
 
 `task-coverage/` pins public taxonomies and records each row's evidence class,
