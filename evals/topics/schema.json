@@ -1,0 +1,281 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Still topic-page experiment artifacts",
+  "oneOf": [
+    { "$ref": "#/$defs/page" },
+    { "$ref": "#/$defs/report" }
+  ],
+  "$defs": {
+    "count": { "type": "integer", "minimum": 0 },
+    "share": { "type": "number", "minimum": 0, "maximum": 1 },
+    "day": { "type": "string", "format": "date" },
+    "itemId": { "type": "string", "pattern": "^i[0-9a-f]{8}$" },
+    "history": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["op", "day", "source"],
+      "properties": {
+        "op": { "enum": ["add", "update"] },
+        "day": { "$ref": "#/$defs/day" },
+        "source": { "type": "string", "minLength": 1 }
+      }
+    },
+    "item": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "section", "text", "quote", "source", "day", "history"],
+      "properties": {
+        "id": { "$ref": "#/$defs/itemId" },
+        "section": { "enum": ["standard", "decision", "state"] },
+        "text": { "type": "string", "minLength": 1 },
+        "quote": { "type": ["string", "null"], "minLength": 1 },
+        "source": { "type": "string", "minLength": 1 },
+        "day": { "$ref": "#/$defs/day" },
+        "history": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "$ref": "#/$defs/history" }
+        }
+      },
+      "if": { "properties": { "section": { "const": "standard" } } },
+      "then": { "properties": { "quote": { "type": "string" } } }
+    },
+    "removed": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "day", "source", "reason"],
+      "properties": {
+        "id": { "$ref": "#/$defs/itemId" },
+        "day": { "$ref": "#/$defs/day" },
+        "source": { "type": "string", "minLength": 1 },
+        "reason": { "type": "string", "minLength": 1 }
+      }
+    },
+    "page": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["topic_id", "name", "summary", "items"],
+      "properties": {
+        "topic_id": { "type": "string", "minLength": 1 },
+        "name": { "type": "string" },
+        "summary": { "type": "string" },
+        "items": { "type": "array", "items": { "$ref": "#/$defs/item" } },
+        "removed": { "type": "array", "items": { "$ref": "#/$defs/removed" } }
+      }
+    },
+    "metrics": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "needed", "needed_weak", "essential", "misleading", "misleading_scored", "misleading_control",
+        "misleading_weak", "lesson_present", "exploratory_follow", "characters", "downgraded"
+      ],
+      "properties": {
+        "needed": { "$ref": "#/$defs/share" },
+        "needed_weak": { "$ref": "#/$defs/share" },
+        "essential": { "$ref": "#/$defs/share" },
+        "misleading": { "type": "number", "minimum": 0 },
+        "misleading_scored": { "type": "number", "minimum": 0 },
+        "misleading_control": { "type": "number", "minimum": 0 },
+        "misleading_weak": { "type": "number", "minimum": 0 },
+        "lesson_present": { "$ref": "#/$defs/share" },
+        "exploratory_follow": { "anyOf": [{ "$ref": "#/$defs/share" }, { "type": "null" }] },
+        "characters": { "type": "number", "minimum": 0 },
+        "downgraded": { "$ref": "#/$defs/count" }
+      }
+    },
+    "run": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["run", "judged", "judge_skipped", "drafts_skipped", "scored", "groups", "complete", "A", "B", "C"],
+      "properties": {
+        "run": { "enum": [1, 2, 3] },
+        "judged": { "$ref": "#/$defs/count" },
+        "judge_skipped": { "$ref": "#/$defs/count" },
+        "drafts_skipped": { "$ref": "#/$defs/count" },
+        "scored": { "$ref": "#/$defs/count" },
+        "groups": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["scored", "control", "weak"],
+          "properties": {
+            "scored": { "$ref": "#/$defs/count" },
+            "control": { "$ref": "#/$defs/count" },
+            "weak": { "$ref": "#/$defs/count" }
+          }
+        },
+        "complete": { "type": "boolean" },
+        "A": { "$ref": "#/$defs/metrics" },
+        "B": { "$ref": "#/$defs/metrics" },
+        "C": { "$ref": "#/$defs/metrics" }
+      }
+    },
+    "build": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["run", "applied", "refused", "calls"],
+      "properties": {
+        "run": { "enum": [1, 2, 3] },
+        "applied": { "$ref": "#/$defs/count" },
+        "calls": { "$ref": "#/$defs/count" },
+        "refused": {
+          "type": "object",
+          "propertyNames": {
+            "enum": ["bad_op", "missing_source", "unknown_source", "unknown_item",
+                     "quote_not_verbatim", "rewrite", "judge_error", "retry_capped"]
+          },
+          "additionalProperties": { "$ref": "#/$defs/count" }
+        }
+      }
+    },
+    "spread": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["mean", "range"],
+      "properties": {
+        "mean": { "type": "number", "minimum": 0 },
+        "range": { "type": "number", "minimum": 0 }
+      }
+    },
+    "aggregateMetrics": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "needed", "needed_weak", "essential", "misleading", "misleading_scored", "misleading_control",
+        "misleading_weak", "lesson_present", "exploratory_follow", "characters", "downgraded",
+        "downgraded_total"
+      ],
+      "properties": {
+        "needed": { "$ref": "#/$defs/spread" },
+        "needed_weak": { "$ref": "#/$defs/spread" },
+        "essential": { "$ref": "#/$defs/spread" },
+        "misleading": { "$ref": "#/$defs/spread" },
+        "misleading_scored": { "$ref": "#/$defs/spread" },
+        "misleading_control": { "$ref": "#/$defs/spread" },
+        "misleading_weak": { "$ref": "#/$defs/spread" },
+        "lesson_present": { "$ref": "#/$defs/spread" },
+        "exploratory_follow": { "anyOf": [{ "$ref": "#/$defs/spread" }, { "type": "null" }] },
+        "characters": { "$ref": "#/$defs/spread" },
+        "downgraded": { "$ref": "#/$defs/spread" },
+        "downgraded_total": { "$ref": "#/$defs/count" }
+      }
+    },
+    "interval": {
+      "type": "array", "minItems": 2, "maxItems": 2,
+      "items": { "type": "number", "minimum": -1, "maximum": 1 }
+    },
+    "delta": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["mean", "ci95", "pairs"],
+      "properties": {
+        "mean": { "type": "number", "minimum": -1, "maximum": 1 },
+        "ci95": { "$ref": "#/$defs/interval" },
+        "pairs": { "$ref": "#/$defs/count" }
+      }
+    },
+    "callPlan": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["find", "gold", "build", "build_retries", "drafts", "judge", "total"],
+      "properties": {
+        "find": { "$ref": "#/$defs/count" },
+        "gold": { "$ref": "#/$defs/count" },
+        "build": { "$ref": "#/$defs/count" },
+        "build_retries": { "$ref": "#/$defs/count" },
+        "drafts": { "$ref": "#/$defs/count" },
+        "judge": { "$ref": "#/$defs/count" },
+        "total": { "$ref": "#/$defs/count" }
+      }
+    },
+    "report": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "runs", "builds", "gold_skipped", "aggregate", "paired_deltas", "decision", "complete", "early_stop",
+        "early_stop_ci_b_minus_a", "plan", "budget"
+      ],
+      "properties": {
+        "runs": { "type": "array", "maxItems": 3, "items": { "$ref": "#/$defs/run" } },
+        "builds": { "type": "array", "maxItems": 3, "items": { "$ref": "#/$defs/build" } },
+        "gold_skipped": { "$ref": "#/$defs/count" },
+        "aggregate": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["A", "B", "C"],
+          "properties": {
+            "A": { "$ref": "#/$defs/aggregateMetrics" },
+            "B": { "$ref": "#/$defs/aggregateMetrics" },
+            "C": { "$ref": "#/$defs/aggregateMetrics" }
+          }
+        },
+        "paired_deltas": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["B_minus_A", "C_minus_A", "B_minus_C"],
+          "properties": {
+            "B_minus_A": { "$ref": "#/$defs/delta" },
+            "C_minus_A": { "$ref": "#/$defs/delta" },
+            "B_minus_C": { "$ref": "#/$defs/delta" }
+          }
+        },
+        "decision": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["integrate", "reasons"],
+          "properties": {
+            "integrate": { "type": "boolean" },
+            "reasons": {
+              "type": "array",
+              "uniqueItems": true,
+              "items": {
+                "enum": ["not_every_run", "within_noise", "ci_includes_zero", "more_misleading", "search_not_worse"]
+              }
+            }
+          }
+        },
+        "complete": { "type": "boolean" },
+        "early_stop": { "type": "boolean" },
+        "early_stop_ci_b_minus_a": { "anyOf": [{ "$ref": "#/$defs/interval" }, { "type": "null" }] },
+        "plan": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "works_before", "works_on_or_after", "replay_days", "heldout_candidates", "heldout_limit",
+            "largest_judge_prompt_chars_approx", "projected_calls", "default_calls"
+          ],
+          "properties": {
+            "works_before": { "$ref": "#/$defs/count" },
+            "works_on_or_after": { "$ref": "#/$defs/count" },
+            "replay_days": { "$ref": "#/$defs/count" },
+            "heldout_candidates": { "anyOf": [{ "$ref": "#/$defs/count" }, { "type": "null" }] },
+            "heldout_limit": { "$ref": "#/$defs/count" },
+            "largest_judge_prompt_chars_approx": { "$ref": "#/$defs/count" },
+            "projected_calls": { "$ref": "#/$defs/callPlan" },
+            "default_calls": { "$ref": "#/$defs/callPlan" }
+          }
+        },
+        "budget": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["calls_by_route", "calls", "max_calls", "seconds", "claude_cost_usd"],
+          "properties": {
+            "calls_by_route": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["codex", "claude"],
+              "properties": {
+                "codex": { "$ref": "#/$defs/count" },
+                "claude": { "$ref": "#/$defs/count" }
+              }
+            },
+            "calls": { "$ref": "#/$defs/count" },
+            "max_calls": { "$ref": "#/$defs/count" },
+            "seconds": { "type": "number", "minimum": 0 },
+            "claude_cost_usd": { "type": "number", "minimum": 0 }
+          }
+        }
+      }
+    }
+  }
+}
