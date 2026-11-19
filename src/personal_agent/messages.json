@@ -1750,7 +1750,13 @@
   "en": "The last reply above is the report this preparation's previous run sent the owner at {at}.",
   "ja": "上の会話の最後の回答は、この準備の前回の実行が{at}にオーナーへ送った報告です。",
   "zh": "上方对话中的最后一条回答，是此准备事项上一次运行于{at}发给主人的报告。"
+ }, "preparations.series_update": {
+  "ko": "이번 실행의 답은 그 보고 다음에 가는 업데이트예요. 소유자가 원하는 것을 기준으로 한 결론과 그 보고 이후 바뀐 것을 먼저 쓰고, 그 보고에서 이미 전한 것은 빼요. 출처는 바뀌었거나 실패했을 때만, 확인하지 못한 점은 소유자의 판단이나 행동을 바꿀 때만 말하고, 나머지는 소유자가 열어 볼 수 있는 이 작업의 기록에 둬요. 지켜야 할 규칙이나 주의사항은 이번 결과를 정했거나 그 보고에서 말하지 않았을 때만 언급해요.",
+  "en": "This run's reply is the next update after that report. Lead with the conclusion for what the owner wants and what changed since that report, and leave out what it already told them. Name a source only when it changed or failed, and an unchecked point only when it changes what the owner would decide or do; the rest stays in this Work's record, which the owner can open. Mention a standing rule or caveat only when it decided this result or that report did not say it.",
+  "ja": "今回の実行の回答は、その報告に続く更新です。オーナーが望むことを基準にした結論と、その報告以降に変わったことを先に書き、その報告ですでに伝えたことは省きます。出典は変わったか失敗したときだけ、確認できなかった点はオーナーの判断や行動を変えるときだけ伝え、残りはオーナーが開いて見られるこの作業の記録に残します。守るべきルールや注意事項は、今回の結果を決めたか、その報告で伝えていなかったときだけ触れます。",
+  "zh": "本次运行的回答是那份报告之后的下一次更新。先写以主人想要的结果为准的结论，以及那份报告之后的变化，省略那份报告已经说过的内容。来源只在发生变化或失败时说明，未能确认的点只在会改变主人的判断或行动时说明，其余留在主人可以打开查看的本次工作的记录中。需要遵守的规则或注意事项，只在决定了本次结果或那份报告没有提到时才提及。"
  },
+
  "preparations.run_fact": {
   "ko": "이 Work는 소유자가 수락한 준비를 Still이 일정대로 실행한 것이에요. 일정을 이어 가고 결과를 소유자에게 전하는 일은 Still이 하므로, 이 Work의 답은 이번 실행의 결과예요.",
   "en": "This Work is a run of a preparation the owner accepted, which Still runs on its schedule. Still keeps the schedule and brings the result to the owner, so this Work's reply is this run's result.",

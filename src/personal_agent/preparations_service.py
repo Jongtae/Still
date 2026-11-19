@@ -1100,6 +1100,8 @@ class PreparationsService:
             # #692: the worker's envelope shows earlier turns without their time; say which report it is.
             row_zone=(row or {}).get('timezone')
             content+='\n\n'+msg('preparations.previous_report',at=prep.local_text(previous['created'],row_zone))
+            # #1035: a run after a delivered report writes the next update of a series, not a fresh answer.
+            content+='\n'+msg('preparations.series_update')
         if row and prep.offered(row):
             # #393: the run works within what the owner read and accepted, not only its brief.
             content+='\n\n'+msg('preparations.accepted_offer_label')+'\n'+prep.accepted_offer(row)
