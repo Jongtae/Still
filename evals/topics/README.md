@@ -215,6 +215,62 @@ run-to-run noise. Its misleading cost is the cost of adding old topic material a
 state section. A blind review agreed with the reading, and suggested comparing criterion 3 against C in a future
 pre-registered rule rather than rescuing this one.
 
+## Revision (#1046): pre-registered before any scoring
+
+[#1046](https://github.com/Jongtae/Still/issues/1046) fixes what made the rule above say "do not integrate", then
+re-runs. This section was committed before any revised page was built or judged.
+
+### What changes
+
+- **Order.** Standards, then decisions, then state, and the budget is filled in that order: a state item never
+  pushes a standard or a decision out.
+- **State items carry dates.** Each state item shows `as of <its source day>`. The builder may give it a `thread`
+  (a short label for what it tracks) and an `expires` date (the last day it holds; empty when open-ended). At render
+  time, for the request's day:
+  - a state item whose `expires` is before that day is not shown;
+  - of the state items sharing a thread (compared case- and space-insensitively), only the newest is shown;
+  - the hidden count is stated in one line. Items stay on the page with their history; only the rendering hides
+    them, so nothing is rewritten.
+- **No page for a weak match.** A page is attached only when the request matches at least two of the topic's terms
+  (`topic_pages.attach_page`). Without a page, B and C both equal A for that request (C is length-matched to the
+  page, so zero).
+
+### Requests: an uninspected time split
+
+#1043's requests (2026-11-10 onward) were inspected while finding these fixes, so they are not scored again.
+Requests after 2026-11-20 are still accumulating. This run scores **2026-11-01 to 2026-11-09**
+(`--heldout-from 2026-11-01 --heldout-to 2026-11-10`): requests nobody read while tuning. Topics are found again
+from requests **before 2026-11-01**, so the finder never sees them. Pages replay through 2026-11-09. The result is
+labelled **provisional** until it is confirmed on requests after 2026-11-20.
+
+### Decision rule (revised)
+
+Integrate only if all hold, on needed facts over scored requests and misleading items over scored and control
+requests:
+
+1. B−A is positive in every run, its mean exceeds the larger of A's and B's run-to-run range, and its
+   topic-clustered 95% interval excludes 0;
+2. B−C is positive in every run, its mean exceeds the larger of B's and C's run-to-run range, and its interval
+   excludes 0;
+3. traps presented as current, per request, are not higher in B than in A (mean over runs);
+4. other misleading statements, per request, are not higher in B than in A (mean over runs).
+
+Each condition is reported on its own. Early stop: after two runs, run 3 is skipped and the result is "do not
+integrate" when the #1043 early-stop holds or B−C is ≤ 0 in both runs.
+
+### Budget
+
+Same subscription routes and the same 400-call cap, in a fresh output folder with its own ledger
+(`topics-2026-11-20-r2`). No drafts this time: lesson follow sat at its ceiling in #1043 and decides nothing.
+
+| Step | Calls |
+| --- | --- |
+| find (Codex) | ≤ 3 |
+| gold (Claude) | ≤ 50 |
+| build (Codex) | ≤ 44 replay days × 3, plus at most 10 retries per run |
+| judge (Claude) | ≤ 50 × 3 |
+| **total** | about 365 at most, hard cap 400 |
+
 ## Limits
 
 - A local observation of **one owner's** copy, judged by a model, not human labels; the labels come from the owner's
