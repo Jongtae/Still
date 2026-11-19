@@ -956,10 +956,11 @@ class CodeRunner:
         # #619: ``slots`` already reads a legacy set with no money mark as money; only a host whose every
         # loaded set is marked ``money: false`` has changes that are not labelled a payment.
         effect = 'payment' if money else 'mutate'
-        api = ApiRequests(self.store, self.work_id, approvals=self.approvals)
+        api = ApiRequests(self.store, self.work_id, approvals=self.approvals,
+                          ledger=getattr(self.download_budget,'ledger',None))
         try:
-            identity = api._effect_identity(slot, method, url, body)
-            api._effect_guard(slot, identity)
+            identity, prior = api._effect_identities(slot, method, url, body)
+            api._effect_guard(slot, identity, prior=prior)
         except ApiError as exc:
             return False, str(exc)
         binding = step_binding(self.work_id, 'code_run', url, f'{name}|{method}|{url}', argument=body,
@@ -984,7 +985,7 @@ class CodeRunner:
             ticket = mode(binding, label) if callable(mode) else None
             api._payment_ticket = (binding, label, ticket) if ticket else None
             if ticket or self.approvals.consume(binding):
-                return self._claim_state_change(api, slot, identity, method, effect, host, path)
+                return self._claim_state_change(api, slot, identity, method, effect, host, path, prior=prior)
             unattended = getattr(self.approvals, 'unattended', None)
             if not note and not (callable(unattended) and unattended()):
                 # #953: a run that cannot ask the owner keeps its own refusal (#619) from request().
@@ -1006,7 +1007,7 @@ class CodeRunner:
                     self._asked.append({'method':method,'host':host,'path':redact_known_secrets(self.store,path)})
                 return False,str(exc)
         try:
-            result=self._claim_state_change(api, slot, identity, method, effect, host, path, write_ticket=ticket)
+            result=self._claim_state_change(api, slot, identity, method, effect, host, path, prior=prior, write_ticket=ticket)
         except Exception:
             if ticket:self.approvals.self_set_write_release(ticket)
             raise
@@ -1014,11 +1015,11 @@ class CodeRunner:
         elif ticket:self.approvals.self_set_write_release(ticket)
         return result
 
-    def _claim_state_change(self, api, slot, identity, method, effect, host, path, *, write_ticket=None):
+    def _claim_state_change(self, api, slot, identity, method, effect, host, path, *, prior, write_ticket=None):
         from .api_requests import ApiError
         from .current_context import redact_known_secrets
         try:
-            claim = api._effect_guard(slot, identity, method=method, effect=effect, destination=host)
+            claim = api._effect_guard(slot, identity, prior=prior, method=method, effect=effect, destination=host)
             if getattr(api, '_payment_ticket', None):
                 binding, label, ticket = api._payment_ticket
                 self.approvals.payment_autonomy_notice(ticket)

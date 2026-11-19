@@ -179,7 +179,7 @@ class WorkExecutor:
         budget = None
         # An owner continuation did not get an active epoch from restart
         # recovery. Reopen its ledger before fencing any of the run's writes.
-        if 'read_checkpoint_resume' not in job and service.store.read_checkpoint(job['id']):
+        if 'read_checkpoint_resume' not in job and service.store.work_has_recovery_fence(job['id']):
             try:
                 budget = service.work_budget(job['id'])
                 service.store.rebind_read_checkpoint(job['id'], epoch=budget.ledger.epoch)
@@ -376,7 +376,12 @@ class WorkExecutor:
                 if not runnable:
                     if owner:waiting.add(conversation)
                     continue
-                if service.store.read_checkpoint_pending(db, job['id']):
+                if service.store.pending_effect_recovery(db, job['id']):
+                    epoch = service.store.claim_effect_recovery(
+                        db, job['id'], service.can_resume_effect, delivery=service.reply_delivery(job))
+                    if epoch is None:return True
+                    job['read_checkpoint_resume'] = epoch
+                elif service.store.read_checkpoint_pending(db, job['id']):
                     epoch = service.store.claim_read_checkpoint(
                         db, job['id'], getattr(service, 'can_resume_read_checkpoint', None),
                         delivery=service.reply_delivery(job),
@@ -1004,7 +1009,8 @@ class WorkExecutor:
             run.brief=run.attempt.brief(adjusted=run.attempt.number>1 and not run.attempt.steer) if run.attempt is not None else None
             # Every replacement worker sees the latest committed coverage as
             # host context. The original owner request stays in the conversation.
-            if progress := service.read_checkpoint_note(job, include_fresh=True):
+            if progress := '\n\n'.join(filter(None,(service.read_checkpoint_note(job, include_fresh=True),
+                                                       service.effect_progress_note(job)))):
                 run.brief='\n\n'.join(part for part in (progress,run.brief) if part)
             run.attempt_start=service.last_event_id(job['id'])
             # #308 S1: a steer claimed from now on reaches the attempt whose reply is delivered.  A
@@ -1763,9 +1769,9 @@ class WorkExecutor:
             # #833: the outcome judgment reads the same profile / current-context sections.
             run_options={'owner_context':api_context,'judgment_history':judgment_history,
                          'reply_delivery':service.work_reply_delivery(job)}
-            if job.get('owner_typed')==1:
+            if job.get('owner_typed')==1 or prep.preparation_of(job.get('request_key')):
                 run_options.update(read_progress=lambda:service.read_checkpoint_note(job, include_fresh=True),
-                                   original_goal=run.prompt)
+                                   original_goal=service.effect_mandate(job,run.prompt))
             if run.image_inputs:run_options['images']=run.image_inputs
             # Adopt the adapter's existing tool_turn boundary: the loop may refuse its
             # budget before dispatch, which must leave every annotation open.
@@ -1844,6 +1850,8 @@ class WorkExecutor:
         service=self.service
         job=run.job
         goal=service.run_goal_outcome(run)
+        if goal==ws.GOAL_NONE and service.effect_progress_note(job):
+            goal=ws.GOAL_NOT_JUDGED
         effect=service.work_effect_state(job['id'],run.claimed_at)
         steps=run.outcome
         shortfall,shortfall_report='partial',None
@@ -1858,6 +1866,10 @@ class WorkExecutor:
         run.goal_outcome,run.effect_state=goal,effect
         run.outcome=ws.derive_status(goal,effect,steps,shortfall=shortfall,
                                      owner_gate=run.context_approval_needed[0],login_pending=login_pending)
+        if run.outcome in ('partial','failed') and service.effect_progress_note(job):
+            pending = service.effect_pending_notice(job)
+            if pending:
+                run.response = (run.response or '').rstrip() + '\n\n' + pending
         # #752: the reached goal recovers the steps, on either route; Evidence keeps the calls.
         if run.outcome=='succeeded' and steps!='succeeded':
             run.refusals.clear();run.owner_steps.clear();run.resolved_blocker=True
@@ -2083,7 +2095,7 @@ class WorkExecutor:
             self._record_after_work(run,db)
 
     def _settle_work_judgments(self, run):
-        """Settle speculative judgments; a process exit preserves a running read for recovery."""
+        """Settle judgments and preserve the live allowance of checkpointed work on exit."""
         service=self.service
         # An unused speculative plan must finish before execution time
         # pauses; a late plan cannot spend in a subsequent host run.
@@ -2093,7 +2105,9 @@ class WorkExecutor:
         if getattr(run,'exiting',False):
             with service.store.db() as db:
                 job=db.execute('SELECT status FROM jobs WHERE id=?',(run.job['id'],)).fetchone()
-                if job and job['status']=='running' and service.store.read_checkpoint(run.job['id'],db=db):return
+                if (job and job['status']=='running' and
+                        (service.store.read_checkpoint(run.job['id'],db=db)
+                         or service.effect_progress_note(run.job))):return
         if run.work_budget is not None and run.work_budget.ledger is not None:
             with service.store.read_checkpoint_writer(run.job['id'],run.work_budget.ledger.epoch,terminal=True):
                 run.work_budget.ledger.pause()

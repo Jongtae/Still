@@ -1011,6 +1011,16 @@ class ConversationJudgments:
         decision = self.engine.choose(context, candidates, CLOSING_REACTION_QUESTION)
         return self.policy.selection(decision)
 
+    def effect_reconciled(self, work_id, request_ref, service_response, *, source, operation):
+        """Interpret a host-matched authoritative status read. The broker owns the fence."""
+        context = self._context('effect-reconciled', {'request_reference': request_ref,
+                                'read_source': source, 'dispatch_operation': operation,
+                                'authoritative_service_response': service_response}, work_id=work_id,
+                                uncut='authoritative_service_response')
+        outcomes = ('applied', 'not-applied', 'unknown')
+        decision = self.engine.choose(context, outcomes, prompt('effect_reconciled'))
+        return self.policy.selection(decision)
+
     def goal_reached(self, request, observations, failed_steps='', work_id=None, answer='', conversation='',
                      owner_context='', continues='', attachments='', awaiting_owner='', conversation_messages=None,
                      recorded_effects=(), may_rejudge=None, reply_source='worker', reply_delivery='to_owner',

@@ -332,13 +332,17 @@ class SettingsContinuation:
         """
         service=self.service
         from .agent_runtime import (EFFECT_CHANGED, EFFECT_FREE_READS, EFFECT_LEDGER_TOOLS, EFFECT_UNKNOWN, INTERNAL_STATE_ACTIONS,
-                                    MAX_CONTINUATIONS, call_effects, continuation_count, keyed_change)
+                                    MAX_CONTINUATIONS, call_effects, continuation_count, dispatch_call_accounted, dispatch_call_keys, effect_free_call,
+                                    external_effect_events, keyed_change,
+                                    unknown_effect_targets)
         if purpose not in service.CONTINUE_PURPOSES:raise ValueError(purpose)
         reasons=[]
         def add(reason):
             if reason not in reasons:reasons.append(reason)
-        carry=purpose=='resume'
-        observed,claims=service.connector_effect_progress(work_id)
+        carry=purpose in ('resume','effect-resume')
+        dispatches, pending = external_effect_events(service.store,work_id)
+        observed = [row for _,row in dispatches]
+        claims = [row for _,row in pending]
         observed_api=set()
         with service.store.db() as db:
             rows=db.execute('SELECT id,tool,status,detail FROM tool_events WHERE job_id=? ORDER BY id',(work_id,)).fetchall()
@@ -354,7 +358,10 @@ class SettingsContinuation:
                     except (TypeError,ValueError,AttributeError):evidence=None
                     if not isinstance(evidence,dict):add('unknown');continue
                     if evidence.get('work_id')==work_id:observed_api.add(row['id'])
-        if claims:add('unknown')
+        recoverable_claims = purpose=='effect-resume' and all(
+            row.get('kind')=='api-slot' and row.get('request_ref') for row in claims)
+        if unknown_effect_targets(service.store,work_id,include_claims=not recoverable_claims):add('unknown')
+        accounted=dispatch_call_keys(dispatches,pending)
         calls,scoped,engine_running=[],[],False
         for row in rows:
             try:detail=json.loads(row['detail'] or '{}')
@@ -387,17 +394,18 @@ class SettingsContinuation:
             # A call (paired by its id) with no terminal record got no definite answer, unless it only
             # reads or stays with the owner; a navigation or input step may have acted on the page.
             return (status=='running' and bool(detail.get('call_id'))
+                    and not effect_free_call(action,detail,status)
                     and action not in (EFFECT_FREE_READS-{'browser_open'})|OWNER_LOCAL_ACTIONS|INTERNAL_STATE_ACTIONS)
         for action,effect,status,detail in call_effects(calls,with_detail=True):
             # E1: unknown is that call's own.
-            if effect==EFFECT_UNKNOWN or cut_off(action,status,detail):add('unknown')
+            if not dispatch_call_accounted(detail,accounted) and (effect==EFFECT_UNKNOWN or cut_off(action,status,detail)):add('unknown')
         # #170: a recorded draft or proposal; #366: a connection only the owner can make.
         if (owner_waits or (purpose in ('redelegate','steer') and awaiting_owner_rows(scoped))
                 or (purpose=='redelegate' and service.missing_connection_rows(scoped))):
             add('owner')
-        if observed and not carry:add('effect')
+        if not carry and any(row.get('resolution')!='not-applied' for row in observed):add('effect')
         for action,effect,status,detail in call_effects(scoped,with_detail=True):
-            if (effect==EFFECT_CHANGED and not cut_off(action,status,detail)
+            if (effect==EFFECT_CHANGED and not dispatch_call_accounted(detail,accounted) and not cut_off(action,status,detail)
                     and not (carry and keyed_change(action,detail,status,observed_api))):add('effect')
         return tuple(sorted(reasons,key=CONTINUE_REASONS.index))
 

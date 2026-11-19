@@ -942,7 +942,7 @@ class ApiRequests:
     """One Work's authenticated API calls.  ``approvals`` has ``consume(binding)``/``request(binding, text)``."""
 
     def __init__(self, store, work_id, *, approvals=None, transport=None, clock=time.time, sleep=time.sleep,
-                 connections=None, resolver=None):
+                 connections=None, resolver=None, ledger=None, reconcile=None):
         self.store, self.work_id, self.approvals = store, work_id, approvals
         from .local_tools import _bounded_system_resolver
         #: #209: resolves a declared intranet host before its request (a test seam).
@@ -953,6 +953,7 @@ class ApiRequests:
         self.clock, self.sleep = clock, sleep
         #: CONN-API: ``() -> {name: slot}`` of Still-held connections (``connection_slots.build``).
         self.connections = connections
+        self.ledger, self.reconcile = ledger, reconcile
 
     @property
     def _pins(self):
@@ -1032,42 +1033,48 @@ class ApiRequests:
             approvals.request(binding, label)
         raise ApiError(APPROVAL_TEXT, 'approval_required', requires='api-step-approval')
 
-    def _effect_identity(self, slot, method, url, body):
+    def _effect_identities(self, slot, method, url, body):
+        """Use the request root for new claims; recognize older roots along a piece handoff."""
         from .browser_session import keyed_step_binding, step_binding
-        # Deliberately independent of authority revision/effect declaration.
-        # Reconnecting or relabelling the same external input is not a new action.
-        from .agent_runtime import WorkLedger
+        from .agent_runtime import WorkLedger, effect_work_chain
         with self.store.db() as db:
             try:
                 root = WorkLedger.request_chain(db, self.work_id)[-1]['id']
+                ancestors = {work['id'] for work in effect_work_chain(db, self.work_id)}
             except ValueError:
                 raise ApiError('현재 작업을 확인할 수 없어 실행하지 않았습니다.', 'api_work_inactive') from None
-        binding = step_binding(root, 'api_dispatch', '',
-                               json.dumps([slot['name'], method, url]), argument=body or '')
-        return keyed_step_binding(self.store, binding)['digest']
+        def digest(work_id):
+            binding = step_binding(work_id, 'api_dispatch', '', json.dumps([slot['name'], method, url]), argument=body or '')
+            return keyed_step_binding(self.store, binding)['digest']
+        return digest(root), {digest(work_id) for work_id in ancestors - {root}}
 
-    def _effect_guard(self, slot, identity, *, method=None, effect=None, destination=None):
+    def _current_effect_run(self, db):
+        from .agent_runtime import WorkLedger, effect_work_chain, work_stop_requested
+        chain = WorkLedger.request_chain(db, self.work_id)
+        current = getattr(self.approvals, 'api_effect_current', None)
+        if (not ws.is_active(chain[0]['status']) or any(ws.is_active(work['status']) for work in chain[1:])
+                or any(work_stop_requested(self.store, work['id']) for work in effect_work_chain(db, self.work_id))
+                or self.ledger is not None and (chain[0]['status'] != 'running' or self.ledger.lapse(db=db))
+                or callable(current) and not current()):
+            raise ApiError('중단되었거나 실행 중이 아닌 작업이라 요청을 보내지 않았습니다.', 'api_work_inactive')
+        return chain
+
+    def _effect_guard(self, slot, identity, *, prior=(), method=None, effect=None, destination=None, request_ref=None):
         """Recheck current authority and atomically reserve an exact dispatch.
 
         The preflight (no method) also refuses replay before requesting payment
         approval. Reservation is after credentials/currentness and immediately
         before transport. A crash after reservation is conservatively unknown.
         """
-        from .agent_runtime import (TARGET_API, WorkLedger, effect_target, external_effect_progress, unknown_effect_holds, unknown_effect_targets,
-                                    work_stop_requested)
+        from .agent_runtime import (TARGET_API, current_effect_call_ref, effect_continuation_scope, effect_target, external_effect_progress,
+                                    unknown_effect_holds, unknown_effect_targets)
         from .api_credentials import fingerprint
         with self.store.db() as db:
             db.execute('BEGIN IMMEDIATE')
             try:
-                chain = WorkLedger.request_chain(db, self.work_id)
+                chain = self._current_effect_run(db)
             except ValueError:
                 raise ApiError('현재 작업을 확인할 수 없어 실행하지 않았습니다.', 'api_work_inactive') from None
-            if (not ws.is_active(chain[0]['status'])
-                    or any(ws.is_active(work['status']) for work in chain[1:])
-                    or any(work_stop_requested(self.store, work['id']) for work in chain)
-                    or callable(getattr(self.approvals, 'api_effect_current', None))
-                       and not self.approvals.api_effect_current()):
-                raise ApiError('중단되었거나 실행 중이 아닌 작업이라 요청을 보내지 않았습니다.', 'api_work_inactive')
             current = self.slots().get(slot['name'])
             if current is None or fingerprint(slot['name'], current) != fingerprint(slot['name'], slot):
                 raise ApiError('API 연결이 바뀌어 요청을 보내지 않았습니다.', 'needs_setup',
@@ -1077,9 +1084,10 @@ class ApiRequests:
             # another slot is independent of it.  An unknown on another route (a page, a connection) or
             # an unscoped one still holds it: no blind cross-route replay.
             target = effect_target(TARGET_API, slot['name'], slot.get('hosts') or ())
-            if unknown_effect_holds(unknown_effect_targets(self.store, self.work_id), target):
+            targets = unknown_effect_targets(self.store, self.work_id)
+            if (targets and (observed or effect_continuation_scope(self.store, self.work_id))) or unknown_effect_holds(targets, target):
                 raise ApiError(UNKNOWN_EFFECT_TEXT, 'effect_unknown', effect='unknown')
-            if any(row.get('kind') == 'api-slot' and row.get('input_digest') == identity for row in observed):
+            if any(row.get('kind') == 'api-slot' and row.get('input_digest') in {identity, *prior} for row in observed):
                 raise ApiError('이미 보낸 API 동작이라 반복 실행하지 않았습니다. 기존 결과와 남은 일을 확인하세요.',
                                'api_effect_replayed')
             if method is None:
@@ -1096,9 +1104,10 @@ class ApiRequests:
                     raise ApiError(str(exc), 'payment_autonomy_changed') from None
             detail = {'scope': 'api', 'evidence': {'engine': 'agentos', 'kind': 'api-slot',
                       'identity': slot['name'], 'operation': method, 'effect': effect, 'host': destination,
-                      'input_digest': identity, 'revision': slot['revision'], 'work_id': self.work_id}}
+                      'input_digest': identity, 'revision': slot['revision'], 'work_id': self.work_id,
+                      'call_ref': current_effect_call_ref(), 'request_ref': request_ref}}
             return db.execute('INSERT INTO tool_events(job_id,tool,status,detail,created) VALUES (?,?,?,?,?)',
-                              (chain[-1]['id'], 'api_dispatch', 'dispatching', json.dumps(detail), time.time())).lastrowid
+                              (chain[-1]['id'], 'api_dispatch', 'dispatching', json.dumps(detail), self.clock())).lastrowid
 
     def _release_effect(self, claim):
         """Remove a reservation whose request was never handed to the transport (#208 review).
@@ -1124,12 +1133,61 @@ class ApiRequests:
         except Exception:
             raise ApiError(UNKNOWN_EFFECT_TEXT, 'effect_unknown', effect='unknown') from None
 
+    def _reconcile_dispatch(self, slot, receipt, ref_field, data, record):
+        """Settle only the claim the authoritative response identifies, under the current epoch."""
+        from .agent_runtime import external_effect_events
+        from .api_credentials import fingerprint
+        if (self.ledger is None or not callable(self.reconcile) or record['status'] != 200
+                or record['freshness'] != 'fresh' or record['completeness'] != 'complete'
+                or record['age_seconds'] is None):
+            return False
+        _, pending = external_effect_events(self.store, self.work_id)
+        claim = dict(pending).get(receipt)
+        values = list(select(data, ref_field))
+        if (not claim or not claim.get('request_ref') or values != [claim['request_ref']]
+                or claim.get('kind') != 'api-slot' or claim.get('identity') != slot['name']
+                or claim.get('host') != record['source']['host'] or claim.get('revision') != slot['revision']):
+            return False
+        # Outside-content provenance applies before this read (or judgment) can carry authority.
+        self.store.mark_outside_content(self.work_id, {'operation': 'api_request', 'category': 'owner-api'})
+        proof = json.dumps(data, ensure_ascii=False)
+        if len(proof) > 12000:
+            return False
+        resolution = self.reconcile(self.work_id, claim['request_ref'], proof,
+                                    source=record['source'], operation=claim['operation'])
+        if resolution not in ('applied', 'not-applied'):
+            return False
+        with self.store.db() as db:
+            db.execute('BEGIN IMMEDIATE')
+            self._current_effect_run(db)
+            current = self.slots().get(slot['name'])
+            if current is None or fingerprint(slot['name'], current) != fingerprint(slot['name'], slot):
+                return False
+            row = db.execute("SELECT detail,created FROM tool_events WHERE id=? AND tool='api_dispatch' AND status='dispatching'",
+                             (receipt,)).fetchone()
+            as_of = time_of(record['as_of'])
+            if (row is None or as_of is None or as_of.timestamp() < row['created']
+                    or json.loads(row['detail']).get('evidence') != claim):
+                return False
+            detail = json.loads(row['detail'])
+            detail['evidence'].update(resolution=resolution, read_digest=record['content_digest'])
+            db.execute("UPDATE tool_events SET status='observed',detail=? WHERE id=?", (json.dumps(detail), receipt))
+        return True
+
     def call(self, args):
         slot = self.slots().get(args.get('slot'))
         if slot is None:
             names = ', '.join(sorted(self.slots())) or '없음'
             raise ApiError(f'등록된 API 슬롯이 아닙니다. 쓸 수 있는 슬롯: {names}.', 'api_slot_unknown')
-        return self._call_slot(args, slot)
+        self._local.dispatch_event = None
+        try:
+            return self._call_slot(args, slot)
+        except ApiError as exc:
+            if exc.effect == 'unknown':
+                exc.dispatch_event = self._local.dispatch_event
+            raise
+        finally:
+            self._local.dispatch_event = None
 
     def check_connection(self, candidate, args, *, current=lambda: None):
         """Host-only readiness of an unpublished encrypted input candidate.
@@ -1249,9 +1307,15 @@ class ApiRequests:
                 raise ApiError('max_age_seconds는 1~2678400 사이 정수입니다.', 'api_argument_invalid')
             # The AI may only tighten the slot's freshness bound, never widen it (review P1).
             max_age = min(int(text), max_age)
-        identity = self._effect_identity(slot, method, url, body) if effect in STATE_CHANGING_EFFECTS else None
+        receipt, ref_field = args.get('reconcile_receipt'), args.get('receipt_ref_field')
+        if receipt is not None or ref_field is not None:
+            if (method != 'GET' or effect != 'read' or not isinstance(receipt, str) or not receipt.isascii()
+                    or not receipt.isdecimal() or len(receipt) > 18 or not ref_field):
+                raise ApiError('Use a status GET with a receipt number and a response reference field.', 'api_argument_invalid')
+            parse_path(ref_field)
+        identity, prior = self._effect_identities(slot, method, url, body) if effect in STATE_CHANGING_EFFECTS else (None, ())
         if identity:
-            self._effect_guard(slot, identity)
+            self._effect_guard(slot, identity, prior=prior)
         from .code_run import approval_note_text
         note = approval_note_text(args.get('approval_note'))
         idempotency = self._approve(slot, method, url, body, effect, named, path, note) if effect == 'payment' else identity[:32] if identity else None
@@ -1323,7 +1387,9 @@ class ApiRequests:
                     raise error from None
             if identity:
                 try:
-                    claim = self._effect_guard(slot, identity, method=method, effect=effect, destination=named)
+                    claim = self._effect_guard(slot, identity, prior=prior, method=method, effect=effect,
+                                               destination=named, request_ref=idempotency)
+                    self._local.dispatch_event = claim
                 except Exception:
                     if write_ticket:self.approvals.self_set_write_release(write_ticket)
                     raise
@@ -1349,6 +1415,14 @@ class ApiRequests:
                 if write_ticket:
                     try:self.approvals.self_set_write_check(write_ticket)
                     except ValueError as exc:raise ApiError(str(exc), 'allowance_changed') from None
+                if identity:
+                    from .api_credentials import fingerprint
+                    with self.store.db() as db:
+                        self._current_effect_run(db)
+                    current = self.slots().get(slot['name'])
+                    if current is None or fingerprint(slot['name'], current) != fingerprint(slot['name'], slot):
+                        raise ApiError('API 연결이 바뀌어 요청을 보내지 않았습니다.', 'needs_setup',
+                                       requires=f"api-slot:{slot['name']}")
             except Exception as exc:
                 if write_ticket:self.approvals.self_set_write_release(write_ticket)
                 if identity and (write_ticket or isinstance(exc, ApiError)):
@@ -1501,6 +1575,8 @@ class ApiRequests:
             record.update(state='outcome-unknown', completeness='partial')
         else:
             self._settle_effect(claim, 'observed', status)
+        if receipt is not None and self._reconcile_dispatch(slot, int(receipt), ref_field, data, record):
+            record['reconciled_receipt'] = int(receipt)
         return {'data': data, 'provenance': record, 'sources': [f'{parts.scheme}://{named}{path}'],
                 # Typed Evidence qualifiers (``agent_runtime.EVIDENCE_QUALIFIER_FLAGS``).
                 'stale': record['freshness'] == 'stale', 'as_of_unknown': record['freshness'] == 'unknown',
@@ -1516,7 +1592,7 @@ def evidence(result):
     """The durable record of one call: provenance only, never the payload or the key."""
     record = result.get('provenance') if isinstance(result.get('provenance'), dict) else {}
     keep = ('source', 'status', 'effect', 'attempts', 'retrieved_at', 'as_of', 'as_of_source', 'age_seconds',
-            'max_age_seconds', 'freshness', 'completeness', 'missing_fields', 'content_digest', 'subject_verified', 'dispatch_event', 'state')
+            'max_age_seconds', 'freshness', 'completeness', 'missing_fields', 'content_digest', 'subject_verified', 'dispatch_event', 'state', 'reconciled_receipt')
     out = {key: record[key] for key in keep if key in record}
     out['derived'] = [{key: row[key] for key in ('expression', 'compared_to', 'matches', 'reason') if key in row}
                       for row in record.get('derived') or ()]

@@ -125,7 +125,7 @@ W4 residuals (Mattermost, Slack): a judgment/settlement worker exception clears 
 |---|---|---|---|---|---|---|---|
 | U1 | P1 | `jobs.status='unknown'` (written by `_finish_work`/`_fail_work`/`derive_status`, never by `recover`) | unknown | Not in any resumable set, and `safe_retry` refuses it, so nothing re-queues it. `continuation_reasons` itself returns no reason for a Work with no effect events: the hold is the status, not the continuation rule. | `state.unknown`. | supported | none |
 | U2 | P2 | An unknown write followed by a successful read in the same Work | unknown | A later read never upgrades a write: `recovered()` accepts only effect-free reads as recovered; the write stays unknown. | The Work states the unknown effect. | supported | none |
-| U3 | P3 | `api_dispatch dispatching` with no settlement; settings `unknown` | unknown | No sweeper settles an old `dispatching` claim from a trustworthy receipt; it stays `unknown` and holds the slot and host. Only API input (`api_receipt` + `ready()`) and MCP setup (observe-only) reconcile an unknown from a receipt. | `effect_unknown` refusals; `settings_orchestrator.in_doubt`. | conservative | follow-up (F-U3) |
+| U3 | P3 | `api_dispatch dispatching` with no settlement; settings `unknown` | unknown | A matching status read can settle a dispatch with a recorded request reference (#1000). Other dispatches stay `unknown` and hold writes. API input and MCP setup retain their own receipt checks. | `effect_unknown` refusals; `settings_orchestrator.in_doubt`. | conservative | follow-up (F-U3) |
 | U4 | P4 | `delivery='unknown'`, notification `unknown` | delivery | Never resent; retry refused (`retry_delivery_unknown`). Since #842, `settle_unknown_deliveries` queues one `delivery_unknown` notice per Work (`UNIQUE(job_id, kind)`) for a reply or notice whose delivery is unknown, or for a prompt already offered once more. It quotes the request's first 60 characters and covers Works from the last 24 hours; the same recency window bounds prompt re-offers (R4); older ones stay web counts. The rows keep `unknown`. | The notice in the Work's conversation. `recovery_summary` excludes told Works from `uncertain_deliveries` and `uncertain_notifications`, not `interrupted_jobs`; home stays in attention while an interrupted Work remains. Onboarding's recovery step clears when the latest restart's counts have settled. A re-offered prompt cancelled because pairing changed or work mode was on also stops contributing to `uncertain_notifications`, without a conversation notice; its wait stays answerable on the web. | conservative | none (#842) |
 
 ### Delivery-pending
@@ -154,6 +154,12 @@ W4 residuals (Mattermost, Slack): a judgment/settlement worker exception clears 
 | X11 | Finished before pause | `_finish_work` commits; `pause()` runs later in `_settle_work_judgments` | A stop between them leaves a terminal Work whose ledger is still `active`: a later prerequisite continuation is not renewed and no budget-continue can be offered (the offer needs an inactive ledger). `recover` touches only `running` Works, so the fence does not cover it. | A later continuation may stop at its old deadline. | conservative | follow-up (F-X11) |
 | X12 | Other Work kinds | Judgment AI qualification jobs, owner-model upkeep rows, A2A peer turns | Qualification: a running job is requeued once, then fails `interrupted`. Upkeep: a `claimed` row from a crash expires as `interrupted` after 3600 s and is never re-run; `pending` rows are claimed later. Peers: open turns fail `peer_interrupted`, never replayed, and a cut-off exchange reads `peer_exchange_failed`, losing its unknown wording. | As each kind reports. | supported | none |
 
+## Remaining work after a dispatch receipt (#1000)
+
+Recovery fences the old epoch and queues the same eligible Work with its existing time and attempt limits. Its original mandate, corrections and dispatch receipts reach the worker and the goal judgment. A verified dispatch can survive the cut between the broker receipt and the worker's terminal tool record. The exact dispatch remains fenced during recovery and across an authorized line-piece handoff. The AI chooses the remaining steps and verifies the final state when the mandate requires it. An eligible line can schedule its next piece before the allowance runs out. When no handoff is recorded, the unfinished Work stays visible.
+
+For an unknown API dispatch, a current read must identify that exact request on the same connection and establish a definite outcome before a held mutation proceeds. Pending, mismatched, stale and unsupported outcomes remain held. Other unknown or unaccounted effects retain their existing recovery fences. Stop, expiry and changed authority are checked again at claim and dispatch. This adapts the existing SQLite claims and WorkLedger. See [#1000](https://github.com/Jongtae/Still/issues/1000) for the reuse review.
+
 ## Unsupported paths
 
 | Id | Rows | Path |
@@ -164,7 +170,7 @@ W4 residuals (Mattermost, Slack): a judgment/settlement worker exception clears 
 | F-D3 | I4, D3 | On Telegram, `sent` without `record_reply` loses the reply anchor; `_after_work` prompts have no sweeper. **Done by #842 (D2); I4's told-once notice by D1.** |
 | F-R3 | R3 | The worker's reply is not durable before `_finish_work`. |
 | F-W3 | W3 | A generic setter cut off after its commit is reported in doubt without reading the current value back. |
-| F-U3 | U3 | An `api_dispatch dispatching` claim is never reconciled from a later trustworthy receipt. |
+| F-U3 | U3 | Partially addressed by #1000. A claim without a verifiable matching service reference still needs reconciliation and remains held. |
 | F-X7 | X7 | Terminal `jobs` writes carry no status compare. |
 | F-X10 | X10 | A withdrawn wait's receipt is a separate commit. |
 | F-X11 | X11 | A finished Work's ledger pause is a separate commit. |

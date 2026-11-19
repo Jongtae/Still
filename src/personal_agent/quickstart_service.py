@@ -1200,7 +1200,7 @@ class AgentService:
     #: ``retry``: the original request again as a new Work (``safe_retry``).  ``resume``: this same
     #: Work goes on after an owner prerequisite - a parked connection or folder, a settings draft,
     #: an approval or a sign-in, a budget-continue - carrying what it already did.
-    CONTINUE_PURPOSES=frozenset({'redelegate','steer','retry','resume'})
+    CONTINUE_PURPOSES=frozenset({'redelegate','steer','retry','resume','effect-resume'})
     #: Records of Still's own continuation bookkeeping, not tool calls.
     CONTINUATION_EVENTS=frozenset({'settings_continuation','action_continuation'})
 
@@ -3086,8 +3086,10 @@ class AgentService:
 
     def _unknown_effect_holds(self, work_id, target):
         """Whether an unknown effect holds a change to this connection (#618 E1: scoped to its target)."""
-        from .agent_runtime import TARGET_CONNECTION, effect_target, unknown_effect_holds, unknown_effect_targets
-        return unknown_effect_holds(unknown_effect_targets(self.store,work_id),
+        from .agent_runtime import TARGET_CONNECTION, effect_continuation_scope, effect_target, unknown_effect_holds, unknown_effect_targets
+        observed, _ = self.connector_effect_progress(work_id)
+        targets = unknown_effect_targets(self.store,work_id)
+        return bool(targets and (observed or effect_continuation_scope(self.store,work_id))) or unknown_effect_holds(targets,
                                     effect_target(TARGET_CONNECTION,target['kind']+':'+target['identity']))
 
     def _already_retried(self, work_id, current_work_id=None):
@@ -5320,10 +5322,10 @@ class AgentService:
         ``since`` (an event id, #632) limits the recorded calls and sign-in requests to one run;
         the pending approval and sign-in rows are read as they are now.
         """
-        from .agent_runtime import state_change_short
+        from .agent_runtime import reconciled_effect_keys, state_change_short
         if (self._browser_request(job_id) or {}).get('state')=='requested' or self.sign_in_requested(job_id,since=since):
             return False
-        return not state_change_short(self.work_steps(job_id,since=since))
+        return not state_change_short(self.work_steps(job_id,since=since), reconciled=reconciled_effect_keys(self.store,job_id))
 
     def sign_in_requested(self, job_id, since=0):
         """Whether this Work's worker itself asked for the owner's sign-in (#981).
@@ -5520,7 +5522,7 @@ class AgentService:
         state=(lambda:self.store.config(self.ORCHESTRATION_STATE,{}),lambda value:self.store.put(self.ORCHESTRATION_STATE,value))
         # #671: a preparation's run is judged as this run, not as the schedule Still itself keeps.
         if prep.preparation_of(job.get('request_key')) and job.get('model')!='preparation':
-            request=str(request or '')+'\n\n'+self.preparation_run_fact(job)
+            request=str(self.effect_mandate(job,request) or '')+'\n\n'+self.preparation_run_fact(job)
         read_snapshot = self.read_checkpoint_snapshot(job['id'])
         orchestration = Orchestration(self.decision_judge,catalogue,request=request,conversation=conversation,
                              continues='\n'.join(part for part in (self.continued_exchange(job),
@@ -5852,8 +5854,8 @@ class AgentService:
         # #618 E2: the one continuation rule.  #795: a trusted-local CLI attempt whose own report shows
         # host actions ran something Still could not observe (``unaccounted``).  #170/#366: an attempt
         # that left a draft, a proposal or a missing connection waiting for the owner stops for the owner.
-        reasons=self.continuation_reasons(job_id,'redelegate',since=since,
-                                          unaccounted=bool(unmediated and self.cli_host_actions(engine_meta)!=()))
+        unaccounted=bool(unmediated and self.cli_host_actions(engine_meta)!=())
+        reasons=self.continuation_reasons(job_id,'redelegate',since=since,unaccounted=unaccounted)
         unknown=ws.is_effect_unknown(outcome) or bool({'unknown','unaccounted'}&set(reasons))
         if 'owner' in reasons:owner_needed=True
         from .memory_service import recalled_tool_exchanges
@@ -5865,6 +5867,17 @@ class AgentService:
             orchestration.read_progress = read_checkpoint
             observations=read_checkpoint+'\n'+observations[:max(0,16000-len(read_checkpoint)-1)]
         if recalled:observations=recalled+'\n'+observations[:max(0,16000-len(recalled)-1)]
+        receipt_note = self.effect_progress_note({'id': job_id})
+        if receipt_note:
+            observations = receipt_note+'\n'+observations[:max(0,16000-len(receipt_note)-1)]
+            ledger = getattr(self.current_decision_budget(),'ledger',None)
+            if (effect == 'changed' and not owner_needed and not unaccounted and ledger is not None
+                    and not ledger.lapse() and self.may_continue(job_id,'effect-resume')[0]):
+                # The replacement gets the receipts and remaining mandate. The broker still
+                # fences the exact dispatch independently of the plan and the selected worker.
+                effect = False
+                orchestration.continues = receipt_note
+
         if failed is not None:
             evaluation=WORKER_FAILED
             failed_steps='; '.join(part for part in (failed_steps,self._redact_reason(failed) or '') if part)
@@ -8183,7 +8196,10 @@ class AgentService:
         with self.store.db() as db:
             continued=db.execute("SELECT 1 FROM tool_events WHERE job_id=? AND tool IN ('action_continuation','settings_continuation') AND status='queued'",(job['id'],)).fetchone()
             progress=db.execute("SELECT detail FROM tool_events WHERE job_id=? AND tool='action_continuation' AND status='queued' ORDER BY id DESC LIMIT 1",(job['id'],)).fetchone()
-        if not continued:return read_checkpoint or None
+        effect_note = self.effect_progress_note(job)
+        if effect_note and (mandate := self.effect_mandate(job,job.get('message'))) != job.get('message'):
+            effect_note += '\n\n' + self._redact_known_secrets(mandate)
+        if not continued:return '\n\n'.join(filter(None,(effect_note,read_checkpoint))) or None
         completed,unknown=self.connector_effect_progress(job['id'])
         lines=['Still observed continuation of this same Work, not a new owner request. Preserve its original goal and complete only remaining obligations. Do not repeat completed actions or switch workers to repeat an effect.']
         if progress:
@@ -8213,6 +8229,7 @@ class AgentService:
             lines.append('The approved request came from a code run: call code_run with only rerun="approved" to run that '
                          'same run again unchanged. Do not write new code for it.')
         lines.append('Read current authoritative state when details are needed, then deliver the substantive original result. A setup or approval receipt is not that result.')
+        if effect_note:lines.append(effect_note)
         if read_checkpoint:lines.append(read_checkpoint)
         return self._redact_known_secrets('\n'.join(lines))
 
@@ -8289,11 +8306,15 @@ class AgentService:
         A crash after reservation has an unknown outcome, never a licence to
         repeat. Existing Work events supply the durable claim; no new queue.
         """
+        from .agent_runtime import effect_work_chain
+        ledger = getattr(self.current_decision_budget(),'ledger',None)
         with self.store.db() as db:
             db.execute('BEGIN IMMEDIATE')
+            if ledger is not None and ledger.lapse(db=db):return None
             if self._unknown_effect_holds(job['id'],target):return None
             if not self._connector_authority_current(job,target,binding,detail['evidence']['effect'],detail['evidence']['operation']):return None
-            if self._connector_effect_seen(db,job['id'],input_digest):return None
+            if any(work_stop_requested(self.store,work['id']) or self._connector_effect_seen(db,work['id'],input_digest)
+                   for work in effect_work_chain(db,job['id'])):return None
             return db.execute('INSERT INTO tool_events(job_id,tool,status,detail,created) VALUES (?,?,?,?,?)',
                               (job['id'],'connector_permission','claiming',json.dumps(detail,ensure_ascii=False),time.time())).lastrowid
 
@@ -9883,6 +9904,54 @@ class AgentService:
     def mark_telegram_connected(self):
         return self.telegram_delivery.mark_telegram_connected()
 
+    def effect_mandate(self, job, default):
+        """The parent slot's original request remains the mandate of its effect handoff."""
+        from .agent_runtime import effect_work_chain, external_effect_events
+        if not any(external_effect_events(self.store,job['id'])):
+            return default
+        with self.store.db() as db:
+            chain = effect_work_chain(db,job['id'])
+        root = chain[-1]
+        if self.store.work_request_forgotten(root['id']):
+            raise ValueError('The original Work request is no longer available.')
+        return '\n\n'.join((root['message'], *self.store.work_steer_texts(root['id']))) if root['id'] != job['id'] else default
+
+    def effect_progress_note(self, job):
+        from .agent_runtime import effect_receipt_note
+        return self._redact_known_secrets(effect_receipt_note(self.store,job['id']))
+
+    def effect_pending_notice(self, job):
+        with self.store.db() as db:
+            piece = db.execute("SELECT 1 FROM preparations WHERE created_from=? AND origin=? AND state=?",
+                               (job['id'], prep.ORIGIN_LINE_PIECE, prep.STATE_SCHEDULED)).fetchone()
+        return '' if piece else 'Remaining work is pending. The recorded dispatch receipts are retained.'
+
+    def can_resume_effect(self, work_id, _checkpoint):
+        """Only replay-fenced dispatches can carry an interrupted Work forward."""
+        from .agent_runtime import effect_work_chain, external_effect_events
+        job = self.store.job(work_id)
+        if not job or job.get('response') or job.get('delivery')!='none':
+            return False
+        if not (job.get('owner_typed')==1 or self.preparations_service.piece_parent(job)):
+            return False
+        if not self.may_continue(work_id,'effect-resume',owner_waits=bool(self.work_waits_for_owner(job)))[0]:
+            return False
+        with self.store.db() as db:
+            chain = effect_work_chain(db,work_id)
+        if (self.work_stopped(work_id) or any(work_stop_requested(self.store,work['id'])
+                or self.store.work_request_forgotten(work['id']) for work in chain)):
+            return False
+        observed,pending = external_effect_events(self.store,work_id)
+        slots = None
+        from .api_requests import slots as registered_slots
+        for _event, receipt in (*observed,*pending):
+            if receipt.get('kind')=='api-slot':
+                if slots is None:slots = {**self.connection_slots(job), **registered_slots(self.store)}
+                current = slots.get(receipt['identity'])
+                if not current or current['revision']!=receipt.get('revision'):
+                    return False
+        return bool(observed or pending)
+
     def can_judge_read_checkpoint(self, work_id, _checkpoint):
         """Use the foreground Work's existing Stop, owner-wait and effect rules."""
         job = self.store.job(work_id)
@@ -9901,7 +9970,7 @@ class AgentService:
         # #841 (matrix X9): one transaction, so a stop inside recovery cannot strand the reply.
         return self.store.recover(
             (surface.channel_prefix for surface in self.surfaces if surface.channel_prefix),
-            can_resume_checkpoint=self.can_resume_read_checkpoint,
+            can_resume_checkpoint=self.can_resume_read_checkpoint, can_resume_effect=self.can_resume_effect,
         )
 
     def purge_forgotten(self):

@@ -412,12 +412,22 @@ class PreparationsService:
         accepted_by=prep.piece_standing(parent['accepted_by'])
         if accepted_by is None:raise refused('line_piece_invalid')
         try:
-            row=service.preparations.create(kind=prep.KIND_PREPARE,goal=fields['goal'],due_at=fields['due_at'],
-                                            timezone=fields['timezone'],recurrence=None,channel=parent['channel'],
-                                            created_from=job['id'],state=prep.STATE_SCHEDULED,accepted_by=accepted_by,
-                                            delivery_mode=parent.get('delivery_mode'),title=fields['title'],offer=fields['offer'],
-                                            origin=prep.ORIGIN_LINE_PIECE,line_id=parent['line_id'],
-                                            piece_of=prep.slot_key(job['request_key']))
+            ledger = getattr(service.current_decision_budget(),'ledger',None)
+            with service.store.db() as db:
+                db.execute('BEGIN IMMEDIATE')
+                current = db.execute('SELECT status FROM jobs WHERE id=?',(job['id'],)).fetchone()
+                refusal = service.preparations.run_refusal(db,job['id'],now)
+                if refusal in (prep.LINE_STOPPED,prep.LINE_UNREADABLE):
+                    raise refused('line_stopped')
+                if (not current or current['status'] not in ('queued','running') or refusal
+                        or (ledger is not None and (current['status']!='running' or ledger.lapse(db=db))) or service.work_stopped(job['id'])):
+                    raise refused('line_piece_invalid')
+                row=service.preparations.create(kind=prep.KIND_PREPARE,goal=fields['goal'],due_at=fields['due_at'],
+                                                timezone=fields['timezone'],recurrence=None,channel=parent['channel'],
+                                                created_from=job['id'],state=prep.STATE_SCHEDULED,accepted_by=accepted_by,
+                                                delivery_mode=parent.get('delivery_mode'),title=fields['title'],offer=fields['offer'],
+                                                origin=prep.ORIGIN_LINE_PIECE,line_id=parent['line_id'],
+                                                piece_of=prep.slot_key(job['request_key']),db=db)
         except prep.PreparationRefusal as exc:
             raise ToolError(str(exc),exc.code,**ran_field(exc)) from None
         replaced=bool(row.get('piece_replaced'))

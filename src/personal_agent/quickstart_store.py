@@ -2815,12 +2815,41 @@ class QuickStore:
                    ('실행 중 재시작되었습니다. 자동으로 재호출하지 않습니다.', delivery, work_id))
         return None
 
+    @staticmethod
+    def pending_effect_recovery(db, work_id):
+        from .agent_runtime import EFFECT_CONTINUATION
+        return db.execute("SELECT id,detail FROM tool_events WHERE job_id=? AND tool=? AND status='queued'",
+                          (work_id, EFFECT_CONTINUATION)).fetchone()
+
+    def claim_effect_recovery(self, db, work_id, predicate, *, delivery):
+        pending = self.pending_effect_recovery(db, work_id)
+        epoch = json.loads(pending['detail'])['epoch']
+        admitted = self._read_checkpoint_ready(db, work_id, None, predicate, expected_epoch=epoch)
+        db.execute('UPDATE tool_events SET status=? WHERE id=?',
+                   ('claimed' if admitted else 'held', pending['id']))
+        if admitted:
+            db.execute('UPDATE work_read_checkpoints SET epoch=? WHERE job_id=? AND resume_pending=0 AND epoch<?',
+                       (epoch, work_id, epoch))
+            return epoch
+        db.execute("UPDATE jobs SET status='interrupted',error=?,delivery=? WHERE id=? AND status='queued'",
+                   ('Remaining work is pending. The previous dispatch receipts are retained.', delivery, work_id))
+        return None
+
+    def work_has_recovery_fence(self, work_id, *, db=None):
+        from .agent_runtime import EFFECT_CONTINUATION
+        if db is None:
+            with self.db() as db:
+                return self.work_has_recovery_fence(work_id, db=db)
+        return bool(db.execute('SELECT 1 FROM work_read_checkpoints WHERE job_id=?', (work_id,)).fetchone()
+                    or db.execute('SELECT 1 FROM tool_events WHERE job_id=? AND tool=?',
+                                  (work_id, EFFECT_CONTINUATION)).fetchone())
+
     def read_checkpoint_can_settle(self, work_id, epoch, *, db=None, terminal=False):
         """A superseded checkpoint run cannot publish a terminal result."""
         if db is None:
             with self.db() as db:
                 return self.read_checkpoint_can_settle(work_id, epoch, db=db, terminal=terminal)
-        if db.execute('SELECT 1 FROM work_read_checkpoints WHERE job_id=?', (work_id,)).fetchone() is None:
+        if not self.work_has_recovery_fence(work_id, db=db):
             return True
         ledger = self._read_checkpoint_ledger(db, work_id)
         row = db.execute('SELECT status FROM jobs WHERE id=?', (work_id,)).fetchone()
@@ -2836,16 +2865,17 @@ class QuickStore:
                 return False
         return bool(row and row['status'] == 'running' and ledger and ledger['epoch'] == epoch)
 
-    def recover(self, reply_prefixes=(), *, can_resume_checkpoint=None):
+    def recover(self, reply_prefixes=(), *, can_resume_checkpoint=None, can_resume_effect=None):
         """Settle what a restart cut off, in one transaction (#841, matrix X4/X9).
 
         Running Works become ``interrupted`` and their ledgers are fenced (a bridge from
         before the restart can no longer spend or take steers); running Works on a surface
         in ``reply_prefixes`` with no task card get their one interrupted reply queued in
         the same commit, so a stop inside recovery leaves both or neither.  Returns those
-        Work ids.  Nothing is re-run.
+        Work ids. Eligible checkpoints and dispatch receipts can queue remaining work.
         """
-        from .agent_runtime import MAX_CONTINUATIONS, WorkLedger, continuation_count
+        from .agent_runtime import (EFFECT_CONTINUATION, MAX_CONTINUATIONS, WorkLedger,
+                                    continuation_count, external_effect_events, unknown_effect_targets)
         with self.db() as db:
             db.execute('BEGIN IMMEDIATE')
             running=[row['id'] for row in db.execute("SELECT id FROM jobs WHERE status='running'")]
@@ -2862,11 +2892,39 @@ class QuickStore:
                     if self._read_checkpoint_ready(
                             db, work_id, checkpoint, can_resume_checkpoint, expected_epoch=checkpoint['epoch']):
                         resumes.append(work_id)
+            effect_resumes = {}
+            effect_states = {}
+            if can_resume_effect is not None:
+                for work_id in running:
+                    try:
+                        observed, pending = external_effect_events(self, work_id)
+                    except ValueError:
+                        continue
+                    if not (observed or pending):
+                        continue
+                    applied = any(row.get('resolution')!='not-applied' for _, row in observed)
+                    unknown = bool(pending or unknown_effect_targets(self,work_id))
+                    effect_states[work_id] = ws.effect_state_of(unknown=unknown,withheld=False,applied=applied)
+                    ledger = self._read_checkpoint_ledger(db, work_id)
+                    used = db.execute('SELECT count(*) FROM tool_events WHERE job_id=? AND tool=?',
+                                      (work_id, EFFECT_CONTINUATION)).fetchone()[0]
+                    if (work_id not in resumes and ledger and used + continuation_count(db, work_id) < MAX_CONTINUATIONS
+                            and self._read_checkpoint_ready(db, work_id, None, can_resume_effect,
+                                                             expected_epoch=ledger['epoch'])):
+                        effect_resumes[work_id] = ledger['epoch'] + 1
             interrupted=db.execute("UPDATE jobs SET status='interrupted',error='실행 중 재시작되었습니다. 자동으로 재호출하지 않습니다.' WHERE status='running'").rowcount
             WorkLedger.fence_restart(db,running)
             for work_id in resumes:
                 db.execute("UPDATE jobs SET status='queued',error=NULL WHERE id=?", (work_id,))
                 db.execute('UPDATE work_read_checkpoints SET resume_pending=1 WHERE job_id=?', (work_id,))
+            for work_id, state in effect_states.items():
+                db.execute('UPDATE jobs SET effect_state=? WHERE id=? AND status=?',
+                           (state, work_id, 'interrupted'))
+            for work_id, epoch in effect_resumes.items():
+                db.execute("UPDATE jobs SET status='queued',error=NULL WHERE id=?", (work_id,))
+                db.execute('INSERT INTO tool_events(job_id,tool,status,detail,created) VALUES (?,?,?,?,?)',
+                           (work_id, EFFECT_CONTINUATION, 'queued', json.dumps({'epoch': epoch}), time.time()))
+            resumes.extend(effect_resumes)
             if resumes:
                 replies=[work_id for work_id in replies if work_id not in resumes]
                 interrupted-=len(resumes)
