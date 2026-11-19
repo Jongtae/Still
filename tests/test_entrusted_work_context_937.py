@@ -53,13 +53,14 @@ class HeldTextTests(unittest.TestCase):
 
 
     def test_twelve_long_entries_all_fit_whole(self):
-        briefs = [{'line_id': f'{n:016x}', 'task': f'task {n} ' + 'w' * 300, 'state': el.STATE_ACTIVE}
+        briefs = [{'line_id': f'{n:064x}', 'task': f'task {n} ' + 'w' * 300,
+                   'state': el.STATE_ACTIVE, 'nothing_scheduled': True}
                   for n in range(el.INDEX_ITEMS)]
         text = el.held_text(briefs)
         for n in range(el.INDEX_ITEMS):
-            self.assertIn(f'{n + 1}) [line:{n:016x}] task {n} ', text)
-        self.assertEqual(text, el.held_text(briefs)[:el.HELD_CHARS])
-        self.assertLess(len(text), el.HELD_CHARS)
+            task = el.excerpt(briefs[n]['task'], el.INDEX_TASK_CHARS)
+            self.assertIn(f'{n + 1}) {el.NOTHING_SCHEDULED_MARKER}[line:{n:064x}] {task}', text)
+        self.assertLessEqual(len(text), el.HELD_CHARS)
         from personal_agent.agent_runtime import split_entrusted
         self.assertEqual(split_entrusted('now\n' + text)[1], text)
 
@@ -93,7 +94,7 @@ class AuditTests(unittest.TestCase):
     def test_the_lines_a_turn_carried_are_recorded_for_the_information_use_audit(self):
         from personal_agent.information_use import context_claims, section_references
         held = el.held_text([{'line_id': 'abc123', 'task': 'Run the small stock budget', 'state': el.STATE_ACTIVE,
-                              'open_matters': '1 share held'},
+                              'open_matters': '1 share held', 'nothing_scheduled': True},
                              {'line_id': 'def456', 'task': 'Track deliveries', 'state': el.STATE_ACTIVE}])
         self.assertIn('[line:abc123] Run the small stock budget;', held)
         self.assertNotIn('1 share held', held)
