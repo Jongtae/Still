@@ -140,6 +140,7 @@ DREAM_TURNS = 40
 DREAM_OWNER_CHARS = 600
 DREAM_ANSWER_CHARS = 300
 DREAM_TURNS_CHARS = 12000
+DREAM_WAY_NOTES_CHARS = 3000
 #: #496, #1031: earlier Works are lesson evidence only, never another fact-gathering window.
 MISS_OUTCOMES = ('failed', 'corrected', 'retried')
 TURN_OUTCOMES = ('done', 'partial', 'failed', 'corrected', 'retried')
@@ -709,7 +710,6 @@ def dream_turn_input(turns, notes=None):
         outcome = when[1] if len(when) > 1 and when[1] in TURN_OUTCOMES else 'unknown'
         line = (f"[{ref}]{stamp} ({outcome}) owner: {' '.join(str(owner or '').split())[:DREAM_OWNER_CHARS] or '(withheld)'}"
                 f" | assistant: {' '.join(str(answer or '').split())[:DREAM_ANSWER_CHARS] or 'none'}")
-        line += _dream_way_note_suffix((notes or {}).get(ref, ()))
         lines.append(line)
         used += len(line) + 1
     while lines and used > DREAM_TURNS_CHARS:
@@ -717,6 +717,15 @@ def dream_turn_input(turns, notes=None):
         used -= len(lines.pop(0)) + 1
     shown = {line[1:line.index(']')] for line in lines}
     refs = {ref: owner for ref, owner in refs.items() if ref in shown}
+    if notes:
+        remaining = DREAM_WAY_NOTES_CHARS
+        for index in range(len(lines) - 1, -1, -1):
+            line = lines[index]
+            ref = line[1:line.index(']')]
+            suffix = _dream_way_note_suffix(notes.get(ref, ()))
+            if len(suffix) <= remaining:
+                lines[index] += suffix
+                remaining -= len(suffix)
     return lines, refs, turn_days
 
 
@@ -1373,7 +1382,7 @@ class Upkeep:
         from .conversation_handoff import FOLLOWUP_CANCEL, FOLLOWUP_CORRECTION, FOLLOWUP_RETRY
         with self.store.db() as db:
             rows = db.execute(
-                f"SELECT j.id,j.request_key,j.provider,j.created,j.status,"
+                f"SELECT j.id,j.request_key,j.provider,j.created,j.status,j.relation_kind,"
                 f"CASE WHEN {forgotten_turn('user', 'j.id')} THEN '' ELSE j.message END AS message,"
                 f"CASE WHEN {forgotten_turn('assistant', 'j.id')} THEN '' ELSE j.response END AS response "
                 f"FROM jobs j WHERE j.created>? AND j.created<=? AND j.status IN {ws.sql_in(ws.AVAILABLE_RESULT)} "
@@ -1939,7 +1948,7 @@ class Upkeep:
             used = sum(len(line) + 1 for _ref, _day, line in block)
             while block and used > cap:
                 used -= len(block.pop(0)[2]) + 1
-        lesson_days = {**turn_days, **{ref: day for ref, day, _line in misses + successes}}
+        earlier_days = {ref: day for ref, day, _line in misses + successes}
         miss_refs = {turn[0] for turn in turns if turn[0] in refs and len(turn) > 4 and turn[4] in MISS_OUTCOMES}
         earlier_miss_refs = {ref for ref, _day, _line in misses}
         earlier_success_refs = {ref for ref, _day, _line in successes}
@@ -2033,18 +2042,35 @@ class Upkeep:
             dropped.extend(self._lesson_evidence_drops(refused))
             if ops:
                 cited = dream_refs(data.get('lesson_sources'), lesson_refs)
-                tonight_cited = set(cited or ()) & set(refs)
-                days = {lesson_days.get(ref) for ref in cited or ()} - {None}
-                legacy_turns = len(tonight_cited) >= 2 and any(ref not in turn_days for ref in tonight_cited)
+                cited = cited or []
+                tonight_cited = set(cited) & refs.keys()
+                earlier_cited = {ref: (earlier_works or {}).get(ref, ()) for ref in cited if ref in earlier_refs}
+                cited_works = {ref: pair[0] for ref, pair in earlier_cited.items() if pair and pair[0]}
+                cited_works.update({ref: source_works[ref] for ref in tonight_cited
+                                    if source_works and source_works.get(ref)})
+                corrections = {pair[1]: cited_works.get(ref, ref) for ref, pair in earlier_cited.items()
+                               if ref in earlier_miss_refs and len(pair) > 1 and pair[1]}
+                # Seed the earlier days first so a cited correction keeps the miss's day.
+                occasion_days = {cited_works.get(ref, ref): earlier_days[ref] for ref in earlier_cited}
+                tonight_occasions = {}
+                for ref in tonight_cited:
+                    work = cited_works.get(ref, ref)
+                    occasion = corrections.get(work, work)
+                    tonight_occasions[ref] = occasion
+                    occasion_days.setdefault(occasion, turn_days.get(ref))
+                days = set(occasion_days.values()) - {None}
+                legacy_turns = len(set(tonight_occasions.values())) >= 2 and any(
+                    ref not in turn_days and occasion_days[occasion] is None
+                    for ref, occasion in tonight_occasions.items())
                 detail['lessons_evidence'] = {'tonight': len(tonight_cited),
                                               'tonight_misses': len(tonight_cited & miss_refs),
-                                              'earlier_misses': len(earlier_miss_refs.intersection(cited or ())),
-                                              'earlier_successes': len(earlier_success_refs.intersection(cited or ())),
+                                              'earlier_misses': len(earlier_miss_refs.intersection(cited)),
+                                              'earlier_successes': len(earlier_success_refs.intersection(cited)),
                                               'rule': None}
                 refused = None
                 if not cited:
                     refused = 'sources'
-                elif len(cited) < 2:
+                elif len(occasion_days) < 2:
                     refused = 'one-occasion'
                 elif not tonight_cited or (len(days) < 2 and not legacy_turns):
                     refused = 'one-day'
@@ -2056,8 +2082,11 @@ class Upkeep:
                     dropped.extend(_lesson_drop(item['op'], refused) for item in ops)
                 else:
                     checked = []
+                    checks_exhausted = False
+                    lesson_works = list(dict.fromkeys(cited_works[ref] for ref in cited if ref in cited_works))
                     for index, item in enumerate(ops):
-                        if self.allowance(self.clock())[1] == STOPPED_PAUSED:
+                        left, stop_reason = self.allowance(self.clock())
+                        if stop_reason == STOPPED_PAUSED:
                             stopped = STOPPED_PAUSED
                         elif cancelled and cancelled():
                             stopped = STOPPED_DEADLINE
@@ -2068,8 +2097,13 @@ class Upkeep:
                         if item['op'] == 'remove':
                             checked.append(item)
                             continue
-                        verdict, check = judgments.lesson_owner_specific(item['text'], item['why'], work_id=job['id'],
-                                                                         cancelled=cancelled)
+                        if checks_exhausted or left <= 0:
+                            checks_exhausted = True
+                            dropped.append(_lesson_drop(item['op'], REFUSED_BUDGET))
+                            continue
+                        with scope(lesson_works):
+                            verdict, check = judgments.lesson_owner_specific(item['text'], item['why'], work_id=job['id'],
+                                                                             cancelled=cancelled)
                         if call_sent(check):
                             calls += 1
                             self.count(job['id'], calls, KIND_DREAM)
@@ -2084,11 +2118,8 @@ class Upkeep:
                         dropped.extend(_lesson_drop(item['op'], stopped) for item in checked)
                         checked = []
                     if checked:
-                        cited_works = {**{ref: pair[0] for ref, pair in (earlier_works or {}).items() if pair},
-                                       **(source_works or {})}
                         self._save_lessons(lessons, current, checked, change, job['id'], judgments, dropped, detail,
-                                           origin=ORIGIN_DREAM, sources=[cited_works[ref] for ref in cited
-                                                                         if cited_works.get(ref)])
+                                           origin=ORIGIN_DREAM, sources=lesson_works)
                         if detail.get('lessons'):
                             detail['lessons_evidence']['rule'] = 'occasions'
             stopped = detail.get('stopped') or stopped

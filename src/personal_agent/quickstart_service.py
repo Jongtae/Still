@@ -1656,7 +1656,8 @@ class AgentService:
             outcome=om.turn_outcome(work['status'],work['linked_kinds'])
             if not current and outcome not in om.MISS_OUTCOMES:
                 if (outcome!='done' or work['status']!='succeeded' or FOLLOWUP_CANCEL in work['linked_kinds']
-                        or work['reviewed'] or not work['way_notes']):
+                        or work['reviewed']
+                        or work['relation_kind'] in (FOLLOWUP_CORRECTION,FOLLOWUP_RETRY,FOLLOWUP_CANCEL)):
                     continue
             key=work.get('request_key')
             if (work.get('provider') in (None,'builtin') or prep.preparation_of(key) is not None
@@ -1679,6 +1680,9 @@ class AgentService:
                                (ident,correction['id'] if correction else None),notes))
             else:
                 successes.append(((owner,answer,when,outcome,''),(ident,None),notes))
+        # Prefer noted successes, then restore chronological order for the refs.
+        ranked=sorted(range(len(successes)),key=lambda index:(bool(successes[index][2]),index),reverse=True)
+        successes=[successes[index] for index in sorted(ranked[:om.DREAM_EARLIER_SUCCESSES])]
         earlier=[]
         earlier_works={}
         for prefix, block, cap in (('m',misses,om.DREAM_EARLIER_MISSES),('s',successes,om.DREAM_EARLIER_SUCCESSES)):
