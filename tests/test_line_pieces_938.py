@@ -392,6 +392,20 @@ class StopAndForget(_PieceCase):
         self.refused(run, 'line_stopped')
         self.assertEqual(self.pieces(other), [])
 
+    def test_current_work_stop_prevents_a_piece_from_being_created_after_the_stop(self):
+        root = self.line_row()
+        job = self.running(root)
+        fields = self.service.preparation_fields
+
+        def stop_between(args, now):
+            result = fields(args, now)
+            self.service.preparations_service.stop_line(self.line_id, end_line=False)
+            return result
+        with mock.patch.object(self.service, 'preparation_fields', side_effect=stop_between):
+            self.refused(job, 'unattended_run')
+        self.assertEqual(self.pieces(), [])
+        self.assertEqual(self.service.lines.current(self.line_id)['state'], el.STATE_ACTIVE)
+
     def test_forget_cancels_pending_pieces_and_undo_restores_only_the_brief(self):
         root = self.line_row()
         piece = self.schedule(self.running(root))

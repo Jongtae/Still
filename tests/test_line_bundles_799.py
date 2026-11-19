@@ -836,6 +836,14 @@ class Bundles(_LinesCase):
         self.helper.line_handler(self.store.job(self.b))({'action':'restart','line':brief['line_id']})
         self.assertIsNone(self.flush())
 
+    def test_current_work_stop_discards_a_held_reply_before_it_can_be_bundled(self):
+        self.at(10);brief,row=self.line();self.now+=86400;self.at(8);work=self.report(row)
+        self.assertEqual(self.store.job(work)['delivery'],'none')
+        self.helper.stop_line(brief['line_id'],self.b,end_line=False)
+        self.assertEqual(self.service.lines.current(brief['line_id']),brief)
+        self.assertEqual(self.store.job(work)['delivery'],'cancelled')
+        self.at(9);self.assertIsNone(self.flush());self.assertEqual(self.receipts(),[])
+
     def pending_bundle(self, *, mixed=False):
         self.at(10);brief,row=self.line('Responsibility A')
         other=other_row=None
@@ -924,13 +932,13 @@ class Bundles(_LinesCase):
         self.assertEqual(self.receipts(),consumed)
         self.assertEqual(self.suppressions(bundle),suppressed)
 
-    def assert_pending_line_removed(self, *, forget=False, mixed=False):
+    def assert_pending_line_removed(self, *, forget=False, mixed=False, end_line=True):
         brief,other,bundle=self.pending_bundle(mixed=mixed)
         before,messages,events=self.bundle_record(bundle)
         # A committed pending bundle must still honour a stop after recovery.
         self.service=self.make_service();self.helper=self.service.preparations_service
         if forget:OwnerForget(self.store).forget(MEMORY_OWNER,'line:'+brief['line_id'])
-        else:self.helper.stop_line(brief['line_id'],self.b)
+        else:self.helper.stop_line(brief['line_id'],self.b,end_line=end_line)
         after,updated,receipts=self.bundle_record(bundle)
         self.assertEqual(after['id'],before['id'])
         self.assertEqual(after['request_key'],before['request_key'])
@@ -959,7 +967,7 @@ class Bundles(_LinesCase):
         self.assertEqual(len(self.sends()),1 if mixed else 0)
         if mixed:self.assertEqual(self.sends()[0]['text'],after['response'])
         # Consumption receipts stay even when the owner restarts the stopped line.
-        if not forget:self.helper.line_handler(self.store.job(self.b))({'action':'restart','line':brief['line_id']})
+        if not forget and end_line:self.helper.line_handler(self.store.job(self.b))({'action':'restart','line':brief['line_id']})
         self.now+=86400
         self.assertIsNone(self.helper.flush_line_bundles(self.now))
         self.assertEqual(self.bundle_record(bundle)[2],events)
@@ -969,6 +977,9 @@ class Bundles(_LinesCase):
 
     def test_stop_rewrites_committed_mixed_line_bundle(self):
         self.assert_pending_line_removed(mixed=True)
+
+    def test_stopping_current_work_rewrites_a_pending_bundle_while_keeping_the_line_active(self):
+        self.assert_pending_line_removed(mixed=True,end_line=False)
 
     def test_forget_cancels_committed_single_line_bundle(self):
         self.assert_pending_line_removed(forget=True)
