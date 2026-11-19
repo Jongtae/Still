@@ -282,6 +282,8 @@ class PreparationEarlierReportTests(_Case):
         row = self.scheduled()
         first = self.run_job(row, 1, response='First report')
         self.assertEqual([r['role'] for r in self.service.preparation_history(first)], ['user'])
+        # #1035: the series note goes only with an earlier delivered report.
+        self.assertNotIn(msg('preparations.series_update'), self.service.preparation_history(first)[-1]['content'])
         second = self.run_job(row, 2, status='queued')
         self.assertEqual(self.service.preparation_history(second)[0]['content'], 'First report')
         latest = self.run_job(row, 3, response='Latest report', status='partial', delivery='sent', chat_id=CHAT,
@@ -303,6 +305,8 @@ class PreparationEarlierReportTests(_Case):
         history = self.service.preparation_history(current)
         self.assertEqual([r['role'] for r in history], ['assistant', 'user'])
         self.assertIn(msg('preparations.previous_report', at=prep.local_text(self.now + 3, 'Asia/Seoul')), history[-1]['content'])
+        self.assertIn(msg('preparations.previous_report', at=prep.local_text(self.now + 3, 'Asia/Seoul')) + '\n'
+                      + msg('preparations.series_update'), history[-1]['content'])
         self.assertEqual(history[0], {'role': 'assistant', 'content': 'Latest report', 'job_id': latest['id'],
                                      'channel': 'telegram', 'qualifier': None,
                                      'request_key': self.store.job(latest['id'])['request_key'], 'created': self.now + 3})
