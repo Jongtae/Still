@@ -3888,6 +3888,8 @@ class AgentService:
         return attempts
 
     def task_progress(self, job_id=None):
+        from .work_download import completed_artifact
+
         jobs=self.store.jobs()
         configured=self.store.config('model',{})
         selected_subscription=self.subscription_engine_status().get('selected')
@@ -3911,6 +3913,9 @@ class AgentService:
                 if notification['kind'] in self.APPROVAL_NOTIFICATIONS and notification['state'] in ('queued','sent'):
                     waits.append(msg('label.waiting_for_approval'))
             artifacts=[{'id':item['id'],'kind':msg('handoff.saved_result') if 'path' not in item else msg('quickstart_service.file_result'),'path':item.get('path'),'workspace_id':item.get('workspace_id'),'created':item.get('created'),'state':item.get('state','current')} for item in self.store.task_artifacts(job['id'])]
+            if artifact := completed_artifact(self.store, self.store.read_checkpoint(job['id'])):
+                artifacts.append({'id':artifact, 'kind':msg('step.public_download'),
+                                  'download_url':f"/api/tasks/{job['id']}/downloads/{artifact}"})
             retained_rows.append((job['id'],events))
             task={'id':job['id'],'title':self._progress_title(job.get('message'),job['id']),'status':job.get('status'),'status_kind':kind,'status_label':label,'started_at':job.get('created'),'observed_at':last,'result_available':bool(job.get('response')) and ws.has_available_result(job.get('status')),'workspace_id':job.get('workspace_id'),'events_count':len(events),'waits':waits,'configured':{'provider':configured.get('provider'),'model':configured.get('model'),'runtime':selected_subscription or (configured.get('provider') if configured else None)},'observed':{'provider':job.get('provider'),'model':job.get('model'),'runtime':job.get('provider') or None},'route':self._observed_route(job,events,model_events),'artifacts':artifacts}
             task['channel']=job.get('channel')
@@ -9889,8 +9894,7 @@ class AgentService:
 
     def can_resume_read_checkpoint(self, work_id, checkpoint):
         from .work_download import staged_checkpoint_available
-        return (not work_mode.active(self.store) and staged_checkpoint_available(self.store, checkpoint)
-                and self.can_judge_read_checkpoint(work_id, checkpoint))
+        return staged_checkpoint_available(self.store, checkpoint) and self.can_judge_read_checkpoint(work_id, checkpoint)
 
     def recover_interrupted_work(self):
         """Recover verified read checkpoints and settle other interrupted Works."""

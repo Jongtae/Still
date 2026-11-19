@@ -16,19 +16,22 @@ DATA = b'abc-def'
 class TestReadWorkRestart(handoff.HandoffTestCase):
     def test_new_worker_finishes_same_work_from_verified_range(self):
         calls = []
+        stop_at_boundary = True
 
         class FixtureDownload:
             def __init__(self, reader):
                 pass
 
             def read_range(self, url, offset, length, *, etag, total,
-                           source_digest, address_check, before_send, on_request):
+                           source_digest, address_check, before_send, on_request, deadline, full_limit):
+                if stop_at_boundary and offset == 4:
+                    raise SystemExit('fixture stopped after the first committed range')
                 address_check(url)
                 before_send()
                 on_request(url)
                 assert url == URL
                 calls.append(offset)
-                chunk = DATA[offset:offset + 4]
+                chunk = DATA[offset:offset + length]
                 return DownloadedRange(chunk, '"ref"', len(DATA), 'b' * 64,
                                        hashlib.sha256(chunk).hexdigest())
 
@@ -39,23 +42,17 @@ class TestReadWorkRestart(handoff.HandoffTestCase):
         job = self.store.enqueue(request, 'read-restart-e2e', owner_typed=True)
         self.plan = [fetch(0)]
         self.claim_completion()
-        transport = self.service.adapter.transport
 
-        def interrupted(*args, **kwargs):
-            messages = args[1].get('messages', [])
-            if any(row.get('role') == 'tool' and '"received": 4' in row.get('content', '')
-                   for row in messages):
-                raise SystemExit('fixture stopped after the first host result')
-            return transport(*args, **kwargs)
-
-        with patch.object(work_download, 'PublicDownload', FixtureDownload):
-            with (patch.object(self.service.adapter, 'transport', interrupted),
-                  patch.object(self.service, '_settle_work_judgments')):
-                with pytest.raises(SystemExit, match='first host result'):
-                    self.service.run_one()
+        with (patch.object(work_download, 'PublicDownload', FixtureDownload),
+              patch.object(work_download, 'RANGE_BYTES', 4)):
+            with pytest.raises(SystemExit, match='first committed range'):
+                self.service.run_one()
             assert self.store.job(job)['status'] == 'running'
-            assert self.store.read_checkpoint(job)['received'] == 4
+            first = self.store.read_checkpoint(job)
+            assert first['received'] == 4
+            assert first['digest'] == hashlib.sha256(DATA[:4]).hexdigest()
             assert calls == [0]
+            stop_at_boundary = False
             self.store = QuickStore(self.store.root)
             self.service = self.make_service()
             self.service.recover_interrupted_work()
@@ -66,7 +63,10 @@ class TestReadWorkRestart(handoff.HandoffTestCase):
             self.assertTrue(self.service.run_one())
         assert calls == [0, 4]
         assert self.store.job(job)['status'] == 'succeeded'
-        assert self.store.read_checkpoint(job)['received'] == len(DATA)
+        completed = self.store.read_checkpoint(job)
+        assert completed['received'] == len(DATA)
+        assert completed['artifact'] == first['artifact']
+        assert completed['digest'] == hashlib.sha256(DATA).hexdigest()
         with self.store.db() as db:
             rows = db.execute('SELECT role,content FROM messages WHERE job_id=?', (job,)).fetchall()
         assert sum(row['role'] == 'user' and row['content'] == request for row in rows) == 1

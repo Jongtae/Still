@@ -352,7 +352,6 @@ def block(case, barrier, monkeypatch):
         row = case.store.config(case.budget.ledger.key)
         case.store.put(case.budget.ledger.key, {**row, barrier: WORK_MODEL_TURNS if barrier == 'turns' else WORK_TOOL_ATTEMPTS})
     elif barrier == 'expired': case.now[0] += 10000
-    elif barrier == 'mode': case.store.put('work_mode', {'enabled': True})
     elif barrier == 'missing_staging': monkeypatch.setattr(reads, 'staged_checkpoint_available', lambda *_: False)
     elif barrier == 'owner_wait': monkeypatch.setattr(case.service, 'work_waits_for_owner', lambda _: ['fixture'])
     elif barrier == 'revoked':
@@ -370,8 +369,8 @@ def block(case, barrier, monkeypatch):
     pytest.param(boundary, barrier, id=f'{boundary}-{barrier}')
     for boundary in ('judgment', 'recover', 'claim')
     for barrier in ('stop', 'paused', 'expired', 'revoked', 'unknown', 'owner_wait', 'turns', 'attempts',
-                    'mode', 'missing_staging')
-    if boundary != 'judgment' or barrier not in ('attempts', 'mode', 'missing_staging')
+                    'missing_staging')
+    if boundary != 'judgment' or barrier not in ('attempts', 'missing_staging')
 ])
 def test_existing_boundaries_block_reuse_and_auto_resume(case, barrier, boundary, monkeypatch):
     assert case.judge(lambda: {'winner': 'prior'}) == {'winner': 'prior'}

@@ -188,6 +188,10 @@ class BrowserRelay:
         """What the bridge is told: the relay's private directory."""
         return str(self.directory)
 
+    @property
+    def closed(self):
+        return self._closed
+
     def _reply(self, line):
         if self._scope is None:
             return self._answer(line)

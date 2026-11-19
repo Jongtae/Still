@@ -216,7 +216,7 @@ class WorkExecutor:
                         service.current_work_id=job['id']
                         service.record_stage(job['id'],'queue_wait',job.get('created') or run.claimed_at)
                         service.update_task_card(job,'running')
-                        run.retry_note=service.action_continuation_note(job)
+                        run.retry_note=service.action_continuation_note(job, include_read=False)
                         # #308 S4: a message meant for an earlier Work says first why it is answered on its own.
                         notice=service.steer_disposition_notice(job)
                         if notice:run.reply_notice=notice+'\n\n'
@@ -971,6 +971,7 @@ class WorkExecutor:
         if (attempt is not None and attempt.planned and attempt.reply and attempt.number==1
                 and not attempt.steer and not run.steer_note and not run.continued
                 and not job.get('response') and job.get('goal_outcome') is None and not run.retry_note
+                and not service.read_checkpoint_note(job, include_fresh=True)
                 and not service.store.work_steer_texts(job['id'])
                 and not run.photo_file_ids and not run.image_inputs
                 and not service.store.context_attachment(job['id']) and not run.turn_provenance
@@ -1001,6 +1002,10 @@ class WorkExecutor:
             refresh=None
             run.config,run.key,run.subscription,run.attempt_test=service.attempt_route(run.orchestration,run.attempt,run.base_config,run.base_key,run.route_snapshot)
             run.brief=run.attempt.brief(adjusted=run.attempt.number>1 and not run.attempt.steer) if run.attempt is not None else None
+            # Every replacement worker sees the latest committed coverage as
+            # host context. The original owner request stays in the conversation.
+            if progress := service.read_checkpoint_note(job, include_fresh=True):
+                run.brief='\n\n'.join(part for part in (progress,run.brief) if part)
             run.attempt_start=service.last_event_id(job['id'])
             # #308 S1: a steer claimed from now on reaches the attempt whose reply is delivered.  A
             # continuation keeps its predecessor's start: it carries the steers that attempt had too.
@@ -1493,6 +1498,7 @@ class WorkExecutor:
                         relay=BrowserRelay(served,scope=lambda work_id=job['id'],budget=run.work_budget:
                                            service.work_decision_scope(work_id,budget))
                         served.browser_relay=relay.address
+                        run.capabilities.download_worker_closed=lambda:relay.closed
                         # #774: the relay serves the owner-state tools too; browser tools
                         # are listed only while the browser profile is available.
                         served.relay_browser=run.capabilities.browser is not None

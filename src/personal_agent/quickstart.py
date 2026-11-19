@@ -588,7 +588,7 @@ def make_handler(service, public_hosts=(), public_access_token=''):
 
         def log_message(self,*args):pass
 
-        def reply(self,status,body,content_type='application/json; charset=utf-8',cookie=None,csp=None):
+        def reply(self,status,body,content_type='application/json; charset=utf-8',cookie=None,csp=None,attachment=None):
             if status>=400 and isinstance(body,dict) and isinstance(body.get('error'),str):
                 # #10: an error line Still itself wrote is shown in the language
                 # the browser screen uses, from the same catalog as Telegram and
@@ -620,6 +620,7 @@ def make_handler(service, public_hosts=(), public_access_token=''):
                 self.send_header('Referrer-Policy','no-referrer')
                 self.send_header('Content-Security-Policy',csp or "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'")
                 if cookie:self.send_header('Set-Cookie',cookie)
+                if attachment:self.send_header('Content-Disposition',f'attachment; filename="{attachment}"')
                 self.end_headers()
                 self.wfile.write(data)
             except (BrokenPipeError,ConnectionResetError):
@@ -979,6 +980,14 @@ def make_handler(service, public_hosts=(), public_access_token=''):
                 # #826: which owner information one Work used and where it went.
                 audit=service.work_information_use(path[len('/api/tasks/'):-len('/information-use')])
                 return self.reply(200,audit) if audit else self.reply(404,{'error':msg('quickstart_service.work_missing')})
+            if path.startswith('/api/tasks/') and '/downloads/' in path:
+                from .work_download import WorkDownloadError, read_artifact
+                work_id, artifact = path.removeprefix('/api/tasks/').split('/downloads/', 1)
+                try:
+                    data = read_artifact(store, work_id, artifact)
+                except WorkDownloadError:
+                    return self.reply(404, {'error':msg('quickstart_service.work_missing')})
+                return self.reply(200, data, 'application/octet-stream', attachment='public-download.bin')
             if path.startswith('/api/tasks/'):
                 return self.reply(200,service.task_progress(path.rsplit('/',1)[-1]))
             if path=='/api/connections/google/revocations':

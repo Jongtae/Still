@@ -17,7 +17,7 @@ import test_contextual_capability_handoff as handoff
 from test_agency_loop import goal_engine
 from test_public_download_1009 import Opener, Response
 
-from personal_agent import work_download, work_mode
+from personal_agent import work_download
 from personal_agent.agent_runtime import LedgerSuperseded, WORK_LEDGER_KEY, WORK_STOP_KEY
 from personal_agent.local_tools import PublicPageReader
 from personal_agent.public_download import PublicDownload
@@ -95,6 +95,8 @@ class RangeTransport:
                 # As in test_work_download_staging: no intranet-capable reader.
                 assert reader.declared is None
                 self.reader = reader
+                self.now = self.reader.clock()
+                self.reader.clock = lambda: self.now
 
             def read_range(self, url, offset, length, **guards):
                 chunk = DATA[offset:offset + 4]
@@ -104,13 +106,15 @@ class RangeTransport:
                 ])
                 opener = Opener([response])
                 reader = PublicPageReader(opener=opener, resolver=lambda *a, **k: [
-                    (None, None, None, None, ('93.184.216.34', 443))], guard=self.reader.guard)
+                    (None, None, None, None, ('93.184.216.34', 443))], guard=self.reader.guard,
+                                          clock=self.reader.clock)
                 try:
                     # A four-byte requested interval lets the production validator
                     # reject truncated/overlong responses, rather than trusting a
                     # fabricated DownloadedRange. The final interval is clipped.
                     return PublicDownload(reader).read_range(url, offset, 4, **guards)
                 finally:
+                    self.now = guards['deadline']  # Exercise a pause after each committed range.
                     for address, method, headers in opener.calls:
                         transport.calls.append((address, method, int(headers['Range'].split('=')[1].split('-')[0])))
 
@@ -696,8 +700,8 @@ class TestReadWorkEntryIntegration1007(handoff.HandoffTestCase):
         self.assertEqual(self.wire.offsets, [0, 4, 8])
         self.release_frozen_worker(frozen)
 
-    def test_auto_resume_is_blocked_by_stop_expiry_revocation_or_unknown_effect(self):
-        for barrier in ('stop', 'expired', 'revoked_grant', 'unknown_effect'):
+    def test_auto_resume_is_blocked_by_stop_expiry_or_unknown_effect(self):
+        for barrier in ('stop', 'expired', 'unknown_effect'):
             with self.subTest(barrier=barrier):
                 self.store = QuickStore(self.root / barrier)
                 self.service = self.make_service()
@@ -708,13 +712,6 @@ class TestReadWorkEntryIntegration1007(handoff.HandoffTestCase):
                     self.store.put(WORK_STOP_KEY, [job])
                 elif barrier == 'expired':
                     self.store.put(budget.ledger.key, {**budget.ledger.counts(), 'deadline': 0})
-                elif barrier == 'revoked_grant':
-                    # Anonymous public reads have no folder/URL grant. Revoke
-                    # public-read authority through the real owner Settings API
-                    # that can_resume_read_checkpoint and Capabilities enforce.
-                    self.service.set_work_mode({'enabled': True})
-                    self.assertIsNotNone(work_mode.tool_refusal(
-                        self.store, 'public_download', {'operation': 'fetch', 'url': URL, 'offset': 4}))
                 else:
                     # Same pre-existing ambiguous action as #1008, on top of a
                     # real validated/staged checkpoint rather than a fake row.
