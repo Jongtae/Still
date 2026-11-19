@@ -454,8 +454,8 @@ class ConnectorPayments(Mode, unittest.TestCase):
         trust_record.set_money(self.store, self.target, True)
         self.assertEqual(self.call({'password': 'not-a-real-secret'})['behavior'], 'deny')
         claim = self.service._connector_effect_claim
-        def revoke(*args):
-            result = claim(*args)
+        def revoke(*args, **kwargs):
+            result = claim(*args, **kwargs)
             self.switch(False)
             return result
         with mock.patch.object(self.service, '_connector_effect_claim', side_effect=revoke):
