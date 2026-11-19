@@ -1056,14 +1056,14 @@ class VerifierRegressions(_Runs):
         self.assertEqual([r['status'] for r in self.events()],['not_run'])
 
     def held_submit_continuation(self,kind,changed=False):
-        from types import SimpleNamespace
         from personal_agent.agent_runtime import Capabilities,WorkBudget
         from test_browser_session import FakeDriver,ORIGIN
         _,job=self.started_self()
         driver=FakeDriver()
         def runtime():
-            return SimpleNamespace(_browser_session=None,browser=lambda:driver,job_id=job['id'],budget=WorkBudget(),
-                                   browser_approvals=self.service.browser_approvals_for(job),judgments=None)
+            return Capabilities(self.store,None,{},'',job['id'],lambda *args:None,
+                                browser=lambda:driver,budget=WorkBudget(),
+                                browser_approvals=self.service.browser_approvals_for(job))
         runtime1=runtime()
         browser=Capabilities.browser_session(runtime1)
         browser.open({'url':ORIGIN+'/one-press','effect':'navigate'})

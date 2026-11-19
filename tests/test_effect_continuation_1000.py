@@ -6,8 +6,12 @@ from unittest import mock
 import pytest
 
 from personal_agent import owner_mcp, preparations as prep, trust_record
-from personal_agent.agent_runtime import WORK_STOP_KEY, effect_call_ref, external_effect_events, unknown_effect_targets
+from personal_agent.agent_runtime import (EFFECT_ROUTE_TEXT, WORK_STOP_KEY, Capabilities, ToolError, effect_call_ref,
+                                          external_effect_events, unknown_effect_targets)
 from personal_agent.api_requests import ApiError, ApiRequests, remove_slot, save_slot
+from personal_agent.browser_jar import MemoryKey
+from personal_agent.browser_session import step_binding
+from personal_agent.code_run import CodeRunner
 from personal_agent.conversation_handoff import ConversationJudgments
 from personal_agent.decision import BinaryDecision, FixtureDecisionEngine, OUTCOME_DECIDED, SelectionDecision, fixture_confidence
 from personal_agent.providers import ModelAdapter
@@ -16,6 +20,8 @@ from personal_agent.quickstart_store import QuickStore
 from personal_agent.self_set_writes import set_allowance
 
 from test_agency_loop import Script, call, finish
+from test_browser_session import FakeDriver
+from test_code_run import FakeProcess
 from test_line_pieces_938 import _PieceCase
 from test_orchestrator import decided, plan
 
@@ -302,6 +308,47 @@ def test_only_applied_reconciliation_allows_success(setup, resolution):
     assert (store.job(work_id)['status'] == 'succeeded') is (resolution == 'applied')
 
 
+def test_later_dispatch_and_verifying_read_clear_not_applied_shortfall(setup):
+    store, service, wire, script = setup
+    wire.lost = True
+    wire.status = 'not-applied'
+    work_id = store.enqueue('Apply the change and verify its outcome.', 'fixture-work', owner_typed=True)
+
+    def reconcile(_body):
+        _, [(receipt, _)] = external_effect_events(store, work_id)
+        with store.db() as db:
+            dispatched = db.execute('SELECT created FROM tool_events WHERE id=?', (receipt,)).fetchone()['created']
+        wire.status_as_of = int(dispatched)
+        return {'tool_calls': [call('proof', 'api_request', **READ, reconcile_receipt=str(receipt),
+                                    receipt_ref_field='$.request_ref')]}
+
+    def retry(_body):
+        wire.lost = False
+        wire.status = 'applied'
+        return {'tool_calls': [call('replacement', 'api_request', **OPEN, body='{"new_request":true}')]}
+
+    def choose(context, candidates, _question):
+        if context.purpose == 'effect-reconciled':
+            return SelectionDecision(OUTCOME_DECIDED, 'not-applied', candidates, fixture_confidence())
+        return None
+
+    def judge(context, _question):
+        if context.purpose == 'goal-reached':
+            return BinaryDecision(OUTCOME_DECIDED, wire.state == 'opened' and wire.sent[-1] == 'state',
+                                  fixture_confidence())
+        return None
+
+    service.use_decision_engine(FixtureDecisionEngine(judge=judge, choose=choose))
+    script.messages.extend([{'tool_calls': [call('open', 'api_request', **OPEN)]}, reconcile, retry,
+                            {'tool_calls': [call('verify', 'api_request', **READ)]},
+                            finish('done', 'replacement', 'verify', summary='The service confirms the change.')])
+    assert service.run_one()
+    observed, pending = external_effect_events(store, work_id)
+    assert [row.get('resolution') for _, row in observed] == ['not-applied', None], service.work_steps(work_id)
+    assert not pending and wire.sent == ['open', 'state', 'open', 'state']
+    assert store.job(work_id)['status'] == 'succeeded'
+
+
 @pytest.mark.parametrize('resolved', [True, False])
 def test_unknown_dispatch_requires_matching_authoritative_read(setup, resolved):
     store, service, wire, _ = setup
@@ -355,6 +402,26 @@ def test_unknown_dispatch_requires_matching_authoritative_read(setup, resolved):
             api.call(CLOSE)
         assert error.value.code == 'effect_unknown'
         assert wire.sent == ['open','state','state','state']
+
+
+def test_not_applied_reconciliation_releases_cross_route_hold(setup):
+    store, service, wire, _ = setup
+    job, _, api = claim(setup, 'Apply the remaining change.')
+    wire.lost = True
+    wire.status = 'not-applied'
+    with pytest.raises(ApiError, match='.'):
+        interrupted_dispatch(store, job, api)
+    _, [(receipt, _)] = external_effect_events(store, job['id'])
+    service.recover_interrupted_work()
+    assert service._claim_queued_work()['id'] == job['id']
+    api = ApiRequests(store, job['id'], ledger=service.work_budget(job['id']).ledger, transport=wire,
+                      reconcile=lambda *args, **kwargs: 'not-applied')
+    permission = connector_calls(store, service, job)
+    set_allowance(service, 'connector:codex|owner-mcp|synthetic', True, 0, 'owner')
+    assert permission('apply_change') == 'deny'
+    proof = api.call({**READ, 'reconcile_receipt': str(receipt), 'receipt_ref_field': '$.request_ref'})
+    assert proof['provenance']['reconciled_receipt'] == receipt
+    assert permission('apply_change') == 'allow'
 
 
 @pytest.mark.parametrize('service_time, reconciled', [
@@ -591,24 +658,205 @@ def test_plain_reply_shortfall_fences_browser_mutation_in_same_worker(setup, mon
     assert wire.sent == ['open', 'close', 'state']
 
 
-def test_recovered_api_effect_holds_connector_mutation_but_allows_reviewed_read(setup):
-    store, service, wire, _ = setup
-    job, _, api = claim(setup, 'Apply both changes and verify the state')
-    interrupted_dispatch(store, job, api)
-    service.recover_interrupted_work()
-    recovered = service._claim_queued_work()
-    assert recovered['id'] == job['id']
-
+def connector_calls(store, service, job):
     service.set_ai_connections({'enabled': True})
     owner_mcp.set_confirmed(store, 'codex', ['synthetic'])
     target = trust_record.connection('codex', 'owner-mcp', 'synthetic')
     trust_record.set_operation(store, target, 'apply_change', 'mutate')
     trust_record.set_operation(store, target, 'read_state', 'read')
-    arguments = {'engine': 'codex', 'input': {'item': 'fixture'}}
-    assert service.connector_permission(recovered, {**arguments, 'tool_name': 'mcp__synthetic__apply_change'})['behavior'] == 'deny'
-    assert service.connector_permission(recovered, {**arguments, 'tool_name': 'mcp__synthetic__read_state'})['behavior'] == 'allow'
-    assert external_effect_events(store, job['id'])[1] == []
+    def permission(operation, item='fixture'):
+        return service.connector_permission(job, {'engine': 'codex', 'input': {'item': item},
+                                                   'tool_name': f'mcp__synthetic__{operation}'})['behavior']
+    return permission
+
+
+def code_run_requests(store, service, job):
+    store.api_slot_key = MemoryKey()
+    save_slot(store, 'fixture-code', [HOST], {'KEY': 'fixture-code-key'}, money=False, encrypted=True,
+              code={'fields': ['KEY']})
+    set_allowance(service, 'slot:fixture-code', True, 0, 'owner')
+    process = FakeProcess(requests=[
+        {'method': 'POST', 'host': HOST, 'path': '/open', 'bodyText': '{}'},
+        {'method': 'GET', 'host': HOST, 'path': '/state'},
+    ])
+    runner = CodeRunner(store, job['id'], popen=lambda *args, **kwargs: process, node='/usr/bin/node',
+                        install=lambda store, node: store.root, approvals=service.browser_approvals_for(job))
+    result = runner.run({'code': 'print(1)', 'secrets': 'fixture-code', 'approval_note': 'Apply the change.'})
+    return process.decisions, result
+
+
+@pytest.mark.parametrize('first', ['api_request', 'code_run'])
+def test_recovered_http_dispatch_replays_across_slot_types(setup, first):
+    store, service, wire, _ = setup
+    job, _, api = claim(setup, 'Apply the change once.')
+    request = {**OPEN, 'body': '{}'}
+    if first == 'api_request':
+        api.call(request)
+    else:
+        decisions, result = code_run_requests(store, service, job)
+        assert [item['allow'] for item in decisions] == [True, True]
+        assert len(result['effects']) == 1
+    before, pending = external_effect_events(store, job['id'])
+    assert len(before) == 1 and not pending
+    service.recover_interrupted_work()
+    assert service._claim_queued_work()['id'] == job['id']
+    if first == 'api_request':
+        decisions, result = code_run_requests(store, service, store.job(job['id']))
+        assert [item['allow'] for item in decisions] == [False, True]
+        assert not result.get('effects')
+    else:
+        api = ApiRequests(store, job['id'], ledger=service.work_budget(job['id']).ledger, transport=wire)
+        with pytest.raises(ApiError) as error:
+            api.call(request)
+        assert error.value.code == 'api_effect_replayed'
+    assert external_effect_events(store, job['id']) == (before, [])
+    assert wire.sent == (['open'] if first == 'api_request' else [])
+
+
+@pytest.mark.parametrize('effect', ['read', 'navigate'])
+def test_fenced_browser_open_does_not_run_page_load_handlers(setup, effect):
+    store, _, _, _ = setup
+    job, budget, api = claim(setup, 'Apply a change and check the current state.')
+    interrupted_dispatch(store, job, api)
+
+    class PostingPage(FakeDriver):
+        def goto(self, url, timeout):
+            super().goto(url, timeout)
+            self.posts.append('/open')  # A page-initiated POST on load, without input.
+
+    browser = PostingPage({'/state': '<p>Current state</p>'}, origin=f'https://{HOST}')
+    caps = Capabilities(store, None, {}, '', job['id'], lambda *args: None,
+                        browser=lambda: browser, budget=budget)
+    with pytest.raises(ToolError) as error:
+        caps.execute('browser_open', {'url': READ['url'], 'effect': effect})
+    assert error.value.code == 'effect_route_unavailable'
+    assert not browser.posts and not browser.log
+    assert api.call(READ)['data']['state'] == 'opened'
+
+
+def test_exact_approval_allows_distinct_api_step_after_connector_effect(setup):
+    store, service, wire, _ = setup
+    job, budget, _ = claim(setup, 'Apply both changes.')
+    assert connector_calls(store, service, job)('apply_change') == 'allow'
+    action = 'mcp__synthetic__apply_change'
+    service.record_connector_calls(job['id'], [{'tool': action, 'status': 'succeeded',
+        'input_digest': service.connector_input_digest(action, {'item': 'fixture'})}], engine='codex')
+    slot = ApiRequests(store, job['id']).slots()['fixture']
+    binding = step_binding(job['id'], 'api_request', OPEN['url'], f"fixture|POST|{OPEN['url']}",
+                           state=f"api-payment-v2|fixture@{slot['revision']}|payment")
+    service._request_browser_step(job, binding, 'Authorize the distinct API change.')
+    offer = service._browser_request(job['id'])
+    assert service._decide_browser_step(job['id'], True, offer['offer_digest'])['approved']
+    approvals = service.browser_approvals_for(job)
+    api = ApiRequests(store, job['id'], approvals=approvals, ledger=budget.ledger, transport=wire)
+    with pytest.raises(ApiError) as error:
+        api.call({**OPEN, 'effect': 'payment', 'body': '{"different":true}'})
+    assert error.value.code == 'effect_route_unavailable'
+    assert service._browser_request(job['id'])['state'] == 'issued'
+    api.call({**OPEN, 'effect': 'payment'})
+    assert service._browser_request(job['id']) is None
     assert wire.sent == ['open']
+
+
+@pytest.mark.parametrize('next_route', ['api_request', 'code_run', 'browser'])
+def test_recovered_connector_effect_holds_other_mutations_but_allows_reads(setup, next_route):
+    store, service, wire, _ = setup
+    job, _, _ = claim(setup, 'Apply distinct changes and verify their results.')
+    assert connector_calls(store, service, job)('apply_change') == 'allow'
+    action = 'mcp__synthetic__apply_change'
+    service.record_connector_calls(job['id'], [{'tool': action, 'status': 'succeeded',
+        'input_digest': service.connector_input_digest(action, {'item': 'fixture'})}], engine='codex')
+    before, pending = external_effect_events(store, job['id'])
+    assert len(before) == 1 and not pending and before[0][1]['kind'] == 'owner-mcp'
+    service.recover_interrupted_work()
+    assert service._claim_queued_work()['id'] == job['id']
+    budget = service.work_budget(job['id'])
+    if next_route == 'api_request':
+        api = ApiRequests(store, job['id'], ledger=budget.ledger, transport=wire)
+        with pytest.raises(ApiError) as error:
+            api.call(OPEN)
+        assert error.value.code == 'effect_route_unavailable'
+        api.call(READ)
+        assert wire.sent == ['state']
+    elif next_route == 'code_run':
+        decisions, result = code_run_requests(store, service, store.job(job['id']))
+        assert [item['allow'] for item in decisions] == [False, True]
+        assert decisions[0]['reason'] == EFFECT_ROUTE_TEXT and not result.get('effects')
+    else:
+        site = f'https://{HOST}'
+        browser = FakeDriver({'/state': '''<form action="/open" method="post">
+                              <button type="submit">Apply</button></form>
+                              <a href="/details">Details</a>''',
+                              '/details': '<p>Current state</p>'}, origin=site)
+        caps = Capabilities(store, None, {}, '', job['id'], lambda *args: None,
+                            browser=lambda: browser, budget=budget)
+        with pytest.raises(ToolError) as error:
+            caps.execute('browser_open', {'url': OPEN['url'], 'effect': 'mutate'})
+        assert error.value.code == 'effect_route_unavailable'
+        assert browser.log == []
+        with pytest.raises(ToolError) as error:
+            caps.execute('browser_open', {'url': READ['url'], 'effect': 'navigate'})
+        assert error.value.code == 'effect_route_unavailable'
+        assert not browser.posts and not browser.log
+    assert external_effect_events(store, job['id']) == (before, [])
+
+    permission = connector_calls(store, service, store.job(job['id']))
+    set_allowance(service, 'connector:codex|owner-mcp|synthetic', True, 0, 'owner')
+    assert permission('apply_change') == 'deny'
+    assert permission('apply_change', item='separate-input') == 'allow'
+
+
+@pytest.mark.parametrize('route', ['api_request', 'code_run'])
+def test_recovered_http_effect_holds_connector_mutation_but_allows_reviewed_read(setup, route):
+    store, service, wire, _ = setup
+    job, _, api = claim(setup, 'Apply both changes and verify the state.')
+    if route == 'api_request':
+        interrupted_dispatch(store, job, api)
+    else:
+        decisions, result = code_run_requests(store, service, job)
+        assert [item['allow'] for item in decisions] == [True, True]
+        assert len(result['effects']) == 1
+    service.recover_interrupted_work()
+    recovered = service._claim_queued_work()
+    assert recovered['id'] == job['id']
+
+    permission = connector_calls(store, service, recovered)
+    set_allowance(service, 'connector:codex|owner-mcp|synthetic', True, 0, 'owner')
+    assert permission('apply_change') == 'deny'
+    assert permission('read_state') == 'allow'
+    observed, pending = external_effect_events(store, job['id'])
+    assert len(observed) == 1 and not pending
+    assert wire.sent == (['open'] if route == 'api_request' else [])
+
+
+@pytest.mark.parametrize('effect, expected', [('mutate', 'deny'), ('navigate', 'allow')])
+def test_browser_outcome_controls_connector_mutation_but_allows_reviewed_read(setup, monkeypatch, effect, expected):
+    store, service, wire, script = setup
+    work_id = store.enqueue('Apply both changes and verify the state.', 'fixture-work', owner_typed=True)
+    monkeypatch.setattr(service.browser_profile, 'driver_factory', lambda *args, **kwargs: lambda: None)
+    browser = mock.Mock(return_value={'text': 'Change observed.'})
+    monkeypatch.setattr('personal_agent.browser_session.BrowserSession.run', browser)
+
+    observed_steps, decisions = [], []
+
+    def connector_after_browser(_body):
+        observed_steps.extend(service.work_steps(work_id))
+        permission = connector_calls(store, service, store.job(work_id))
+        set_allowance(service, 'connector:codex|owner-mcp|synthetic', True, 0, 'owner')
+        decisions.extend([permission('apply_change'), permission('read_state')])
+        return finish('partial', 'browser', status='partial', summary='The first change was observed.')
+
+    script.messages.extend([
+        {'tool_calls': [call('browser', 'browser_open', url=OPEN['url'], effect=effect)]},
+        connector_after_browser,
+    ])
+    assert service.run_one()
+    browser.assert_called_once()
+    assert any(step[1:3] == ('browser_open', 'succeeded') for step in observed_steps)
+    assert decisions == [expected, 'allow']
+    observed, pending = external_effect_events(store, work_id)
+    assert not observed and bool(pending) is (expected == 'allow')
+    assert not wire.sent
 
 
 def test_redelegated_work_refuses_browser_mutation_after_observed_api_dispatch(setup, monkeypatch):

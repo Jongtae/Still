@@ -9,7 +9,7 @@ import math
 import os
 import re
 import secrets
-from contextlib import contextmanager
+from contextlib import contextmanager, nullcontext
 import threading
 import time
 from concurrent.futures import ThreadPoolExecutor
@@ -2571,17 +2571,17 @@ def effect_work_chain(db, work_id):
  return chain
 
 
-def effect_continuation_scope(store, work_id):
+def effect_continuation_scope(store, work_id, *, db=None, dispatches=None):
  """Whether writes must use a replay-fenced route for this Work's carried effects."""
  from .preparations import ORIGIN_LINE_PIECE
- with store.db() as db:
+ with (store.db() if db is None else nullcontext(db)) as db:
   if db.execute('SELECT 1 FROM tool_events WHERE job_id=? AND tool=?', (work_id, EFFECT_CONTINUATION)).fetchone():
    return True
   row = db.execute('SELECT request_key FROM jobs WHERE id=?', (work_id,)).fetchone()
   preparation = preparation_of(row['request_key']) if row else None
   piece = preparation and db.execute('SELECT 1 FROM preparations WHERE id=? AND origin=?',
                                      (preparation, ORIGIN_LINE_PIECE)).fetchone()
- return bool(piece and any(external_effect_events(store, work_id)))
+  return bool(piece and any(external_effect_events(store, work_id, db=db) if dispatches is None else dispatches))
 
 
 def effect_receipt_note(store, work_id):
@@ -2609,7 +2609,7 @@ def external_effect_progress(store, work_id, *, attributed_to=None):
  return [evidence for _id,evidence in observed],[evidence for _id,evidence in claims]
 
 
-def external_effect_events(store, work_id, *, attributed_to=None):
+def external_effect_events(store, work_id, *, attributed_to=None, db=None):
  """``external_effect_progress`` as ``(tool_events id, evidence)`` pairs.
 
  An observed connector effect carries the id of the read that observed it.
@@ -2623,7 +2623,7 @@ def external_effect_events(store, work_id, *, attributed_to=None):
  No raw arguments or new durable store. Missing historical Work IDs have no
  claims; mutation admission separately requires a current Work.
  """
- with store.db() as db:
+ with (store.db() if db is None else nullcontext(db)) as db:
   exists=db.execute('SELECT 1 FROM jobs WHERE id=?',(work_id,)).fetchone()
   chain=effect_work_chain(db,work_id) if exists else [{'id':work_id}]
   ids=[work['id'] for work in chain]
@@ -2690,14 +2690,18 @@ def _call_target(action,detail):
  return None
 
 def work_state_change_short(store, work_id, steps):
- """An applied reconciliation can account for a failed call. A not-applied receipt
- still holds completion, even when the original call was cut off by a restart.
+ """Account for reconciled calls before the ordinary completion judgment.
+
+ A not-applied receipt leaves work outstanding until a later dispatch is
+ observed. The goal judgment still checks what that later dispatch achieved.
  """
  observed, _ = external_effect_events(store, work_id)
- if any(row.get('resolution') == 'not-applied' for _,row in observed):
+ not_applied = [(event,row) for event,row in observed if row.get('resolution') == 'not-applied']
+ latest_change = max((event for event,row in observed if row.get('resolution') != 'not-applied'), default=0)
+ if any(event > latest_change for event,_ in not_applied):
   return True
  applied = [(event,row) for event,row in observed if row.get('resolution') == 'applied']
- return state_change_short(steps, reconciled=dispatch_call_keys(applied, ()))
+ return state_change_short(steps, reconciled=dispatch_call_keys(applied + not_applied, ()))
 
 
 def dispatch_call_keys(observed, pending):
@@ -2726,24 +2730,36 @@ def unknown_effect_targets(store, work_id, *, include_claims=True):
  ``record_effect`` classifies ``unknown`` with its target (``_call_target``).  ``None`` stands for
  an unknown Still cannot scope (an unnamed target, or one of Still's own records carrying it).
  """
- observed,claims=external_effect_events(store,work_id)
- targets=[_claim_target(evidence) for _,evidence in claims] if include_claims else []
- accounted=dispatch_call_keys(observed,claims)
  with store.db() as db:
-  exists=db.execute('SELECT 1 FROM jobs WHERE id=?',(work_id,)).fetchone()
-  chain=effect_work_chain(db,work_id) if exists else [{'id':work_id}]
-  ids=[work['id'] for work in chain]
-  rows=db.execute("SELECT job_id,tool,status,detail FROM tool_events WHERE job_id IN ("+','.join('?' for _ in ids)+") ORDER BY id",ids).fetchall()
- calls,arguments={},{}
+  observed,claims=external_effect_events(store,work_id,db=db)
+  calls,unscoped=_effect_call_history(db,work_id)
+ return _unknown_effect_targets(observed,claims,calls,unscoped,include_claims=include_claims)
+
+def _unknown_effect_targets(observed,claims,calls,unscoped,*,include_claims=True):
+ targets=[_claim_target(evidence) for _,evidence in claims] if include_claims else []
+ targets.extend(unscoped)
+ accounted=dispatch_call_keys(observed,claims)
+ for _,action,effect,_status,detail in calls:
+  if effect==EFFECT_UNKNOWN and not dispatch_call_accounted(detail,accounted):
+   targets.append(_call_target(action,detail))
+ return targets
+
+def _effect_call_history(db,work_id):
+ """Classify recorded calls once per Work, preserving running-event target fields."""
+ exists=db.execute('SELECT 1 FROM jobs WHERE id=?',(work_id,)).fetchone()
+ chain=effect_work_chain(db,work_id) if exists else [{'id':work_id}]
+ ids=[work['id'] for work in chain]
+ rows=db.execute("SELECT job_id,tool,status,detail FROM tool_events WHERE job_id IN ("+','.join('?' for _ in ids)+") ORDER BY id",ids)
+ calls,arguments,unscoped={},{},[]
  for row in rows:
   try:detail=json.loads(row['detail'] or '{}')
   except (TypeError,ValueError):detail=None
   if not isinstance(detail,dict):
-   targets.append(None);continue
+   unscoped.append(None);continue
   if row['tool'] in EFFECT_LEDGER_TOOLS:continue
   if not (detail.get('call_id') or detail.get('host_action')):
    # Still's own records (a CLI turn, bookkeeping): an unknown they carry cannot be scoped.
-   if unknown_effect(detail):targets.append(None)
+   if unknown_effect(detail):unscoped.append(None)
    continue
   key=(row['job_id'],detail.get('scope'),detail.get('call_id'))
   if row['status']=='running':
@@ -2752,11 +2768,7 @@ def unknown_effect_targets(store, work_id, *, include_claims=True):
   else:
    detail={**{field:arguments[(key,field)] for field in ('arguments','target') if (key,field) in arguments},**detail}
   calls.setdefault(row['job_id'],[]).append((row['tool'],row['status'],detail))
- for work_calls in calls.values():
-  for action,effect,_status,detail in call_effects(work_calls,with_detail=True):
-   if effect==EFFECT_UNKNOWN and not dispatch_call_accounted(detail,accounted):
-    targets.append(_call_target(action,detail))
- return targets
+ return [(job_id,*call) for job_id,rows in calls.items() for call in call_effects(rows,with_detail=True)],unscoped
 
 def unknown_effect_holds(targets,target):
  """Whether an unknown effect (``unknown_effect_targets``) holds a write to ``target`` (#618 E1).
@@ -2767,6 +2779,49 @@ def unknown_effect_holds(targets,target):
  """
  kind,name,hosts=target
  return any(other is None or other[0]!=kind or other[1]==name or bool(other[2]&hosts) for other in targets)
+
+EFFECT_ROUTE_TEXT = 'This Work already recorded a change that cannot be safely distinguished on this route. Check the result and continue only separately authorized work.'
+
+def effect_fence_error(refusal):
+ return ToolError('Resolve the recorded unknown dispatch before making another change.'
+                  if refusal=='effect_unknown' else EFFECT_ROUTE_TEXT,refusal)
+
+def effect_mutation_refusal(db,store,work_id,target=None,*,replay_keys=(),dispatches=None,approved_next=False):
+ """Fence mutations using the Work's receipts and recorded browser outcomes.
+
+ API and code-run share the API broker's replay keys. Connectors have their own
+ keys. A different key in the same namespace can proceed through its normal
+ authority checks. A different namespace requires an exact owner approval
+ after all unknown outcomes have been resolved.
+ Browser steps have no durable replay key, so their existing step guards are
+ usable only within the current browser attempt. Keyed callers check inside
+ the transaction reserving their dispatch.
+ """
+ observed,pending=external_effect_events(store,work_id,db=db) if dispatches is None else dispatches
+ carried=effect_continuation_scope(store,work_id,db=db,dispatches=(observed,pending))
+ if target is None:
+  # Existing restrictions on settings drafts and other unkeyed capabilities.
+  return 'effect_unknown' if pending else 'effect_route_unavailable' if carried else None
+ changes=[receipt for _,receipt in observed if receipt.get('resolution')!='not-applied']
+ route=target[0]
+ calls,unscoped=_effect_call_history(db,work_id)
+ browser_changes=[(job_id,status) for job_id,action,effect,status,_ in calls
+                  if action in BROWSER_ACTIONS and effect==EFFECT_CHANGED]
+ targets=_unknown_effect_targets(observed,pending,calls,unscoped)
+ if (targets and (changes or carried or browser_changes or route==TARGET_PAGE)
+     or unknown_effect_holds(targets,target)
+     or route!=TARGET_PAGE and any(status=='running' for _,status in browser_changes)):
+  return 'effect_unknown'
+ if any(receipt.get('input_digest') in replay_keys and (old_target:=_claim_target(receipt)) and old_target[0]==route
+        for _,receipt in (*observed,*pending)):
+  return 'effect_replayed'
+ if not approved_next and any((old_target:=_claim_target(receipt)) is None or old_target[0]!=route for receipt in changes):
+  return 'effect_route_unavailable'
+ # A not-applied receipt clears only its own hold, even in a browser continuation.
+ if (any(route!=TARGET_PAGE or job_id!=work_id for job_id,_ in browser_changes)
+     or route==TARGET_PAGE and carried and (changes or browser_changes or not observed)):
+  return 'effect_route_unavailable'
+ return None
 
 
 #: Durable Stop requests of running Works, so a separate process serving the
@@ -3065,6 +3120,10 @@ def effect_free_call(action,detail,status):
  detail=detail if isinstance(detail,dict) else {}
  if action in OBSERVED_INPUT_ACTIONS and status=='failed' and observed_page_load(detail):return True
  if unknown_effect(detail):return False
+ if action in BROWSER_ACTIONS:
+  evidence=detail.get('evidence') if isinstance(detail.get('evidence'),dict) else {}
+  seen=detail.get('observed_step') if status=='failed' else evidence.get('observed_step')
+  if isinstance(seen,dict) and (seen.get('posted') is True or seen.get('approved') is True):return False
  # A browser_open is a read only by its declaration (#787): page_load_only decides it below.
  # #1456: a code run that sent an owner-approved state-changing request changed something.
  if action in CODE_ACTIONS and isinstance(detail.get('evidence'),dict) and detail['evidence'].get('effects'):return False
@@ -3813,12 +3872,18 @@ class Capabilities:
    saved=take() if callable(take) else None
    if saved is not None:
     saved.budget=self.budget;saved.approvals=self.browser_approvals;saved.judgments=self.judgments
+    saved.mutation_refusal=self._browser_mutation_refusal
     self._browser_session=saved
     return saved
    # #174: the Work's judgments, asked only whether a mutate press the payment floor missed could charge.
    self._browser_session=BrowserSession(self.browser,work_id=self.job_id,budget=self.budget,
-                                        approvals=self.browser_approvals,judgments=self.judgments)
+                                        approvals=self.browser_approvals,judgments=self.judgments,
+                                        mutation_refusal=self._browser_mutation_refusal)
   return self._browser_session
+ def _browser_mutation_refusal(self,url):
+  host=_url_host({'url':url})
+  with self.store.db() as db:
+   return effect_mutation_refusal(db,self.store,self.job_id,effect_target(TARGET_PAGE,host,(host,)))
  def _keep_browser_page(self,result):
   """Remember a browser result's mediated page text for this attempt's goal judgment (#1282); memory only."""
   if not isinstance(result,dict) or not isinstance(result.get('text'),str) or not result['text'].strip():return
@@ -4439,14 +4504,15 @@ class Capabilities:
    settings_draft_only = False
    if (action not in API_ACTIONS|CODE_ACTIONS|OWNER_LOCAL_ACTIONS|INTERNAL_STATE_ACTIONS|{'schedule_preparation'}
        and not effect_free_call(action,declared_effect(action,args),'running')):
-    pending = external_effect_events(self.store,self.job_id)[1]
-    fenced = effect_continuation_scope(self.store,self.job_id)
+    if action in BROWSER_ACTIONS:
+     refusal = self._browser_mutation_refusal(args.get('url'))
+    else:
+     with self.store.db() as db:
+      refusal = effect_mutation_refusal(db,self.store,self.job_id)
     if action=='settings_change':
-     settings_draft_only = bool(pending or fenced)
-    elif pending:
-     raise ToolError('Resolve the recorded unknown dispatch before making another change.', 'effect_unknown')
-    elif fenced:
-     raise ToolError('This continuation needs a replay-fenced connection for external changes.', 'effect_route_unavailable')
+     settings_draft_only = bool(refusal)
+    elif refusal:
+     raise effect_fence_error(refusal)
    # #606 T1: every route's attempt, Stop and deadline check happens here.  #620: a browser step
    # spends its attempt in the session, once it reaches the browser (one counter, no refused step spent).
    if tool['host_action'] in BROWSER_ACTIONS:self.budget.check()
@@ -5427,8 +5493,8 @@ def evidence_summary(name,result):
  # call the bridge ran can park its Work as the direct route does (``recorded_local_authority_need``).
  if isinstance(summary,dict) and result.get('needs_setup') is True and isinstance(result.get('requires'),str):
   summary={**summary,'requires':result['requires'][:80]}
- # #899: what Still observed of a click or typing step (no payload).
- seen=result.get('observed_step') if name in OBSERVED_INPUT_ACTIONS else None
+ # #899: what Still observed of a browser input or released submit (no payload).
+ seen=result.get('observed_step') if name in BROWSER_ACTIONS else None
  if isinstance(seen,dict):summary={**summary,'observed_step':{'posted':seen.get('posted') is True,'approved':seen.get('approved') is True}}
  qualifiers=evidence_qualifiers(result)
  if qualifiers:summary['qualifiers']=qualifiers

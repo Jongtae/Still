@@ -70,7 +70,7 @@ MAX_READ_REQUESTS = 8
 #: response-time codes are not here because they can follow a dispatch.
 PRE_DISPATCH_CODES = frozenset({'api_slot_code_only', 'api_slot_unknown', 'api_slot_invalid', 'api_argument_invalid',
                                 'api_path_invalid', 'api_path_refused', 'api_body_refused', 'api_read_only', 'api_approval_unrepresentable', 'approval_required', 'approval_note_required',
-                                'api_effect_replayed', 'api_work_inactive'})
+                                'api_effect_replayed', 'api_work_inactive', 'effect_route_unavailable'})
 #: #1445: the pre-dispatch refusals of a call that could not be made as written (the wrong tool for a
 #: set, an unknown slot, a malformed argument or path).  Like a click on a target that was not on the
 #: page (#1276) no effect asked of the service was refused; an authority refusal is not here.
@@ -1035,15 +1035,12 @@ class ApiRequests:
                            'api_host_not_allowed')
         return parts, named
 
-    def _approve(self, slot, method, url, body, effect, named, path, note=''):
+    def _approve(self, slot, method, url, body, effect, named, path, binding, note=''):
         """Consume the owner's approval of exactly this call, or request it and refuse."""
-        from .browser_session import binding_digest, step_binding, action_input_safe
+        from .browser_session import binding_digest, action_input_safe
         if not action_input_safe(self.store, {'connection': slot['name'], 'url': url, 'body': body or ''}):
             raise ApiError('실행 내용을 비밀값 없이 온전히 확인할 수 없어 승인을 요청하지 않았습니다.',
                            'api_approval_unrepresentable')
-        # The full URL (query included) is the target: an approval never covers another query.
-        binding = step_binding(self.work_id, 'api_request', url, f"{slot['name']}|{method}|{url}", argument=body or '',
-                               state=f"api-payment-v2|{slot['name']}@{slot['revision']}|{effect}")
         approvals = self.approvals
         query = urlsplit(url).query
         sent = ' '.join(part for part in (f'?{query}' if query else '', str(body or '')) if part)
@@ -1059,8 +1056,9 @@ class ApiRequests:
         mode = getattr(approvals, 'payment_autonomy', None)
         ticket = mode(binding, label) if callable(mode) else None
         self._payment_ticket = (binding, label, ticket) if ticket else None
-        if ticket or approvals is not None and approvals.consume(binding):
-            return binding_digest(binding)[:32]
+        exact = not ticket and approvals is not None and approvals.consume(binding)
+        if ticket or exact:
+            return binding_digest(binding)[:32], bool(exact)
         unattended = getattr(approvals, 'unattended', None)
         if not note and not (callable(unattended) and unattended()):
             # #953: a run that cannot ask the owner keeps its own refusal (#619) from request().
@@ -1080,10 +1078,23 @@ class ApiRequests:
                 ancestors = {work['id'] for work in effect_work_chain(db, self.work_id)}
             except ValueError:
                 raise ApiError('현재 작업을 확인할 수 없어 실행하지 않았습니다.', 'api_work_inactive') from None
-        def digest(work_id):
-            binding = step_binding(work_id, 'api_dispatch', '', json.dumps([slot['name'], method, url]), argument=body or '')
+        def digest(work_id, slot_name):
+            binding = step_binding(work_id, 'api_dispatch', '', json.dumps([slot_name, method, url]), argument=body or '')
             return keyed_step_binding(self.store, binding)['digest']
-        return digest(root), {digest(work_id) for work_id in ancestors - {root}}
+
+        def replay_keys(receipts):
+            # Use the historical slot names as well, even if a slot was removed.
+            # They label the credential registration, not the HTTP request.
+            names = {row['identity'] for _, row in receipts
+                     if row.get('kind') == 'api-slot' and isinstance(row.get('identity'), str)}
+            return {digest(work_id, name) for work_id in ancestors for name in names}
+
+        return digest(root, slot['name']), replay_keys
+
+    def _exact_step_ready(self, binding, effect):
+        from .self_set_writes import scoped_binding
+        ready = getattr(self.approvals, 'exact_step_ready', None)
+        return callable(ready) and ready(binding if effect == 'payment' else scoped_binding(binding))
 
     def _current_effect_run(self, db):
         from .agent_runtime import WorkLedger, effect_work_chain, work_stop_requested
@@ -1096,15 +1107,16 @@ class ApiRequests:
             raise ApiError('중단되었거나 실행 중이 아닌 작업이라 요청을 보내지 않았습니다.', 'api_work_inactive')
         return chain
 
-    def _effect_guard(self, slot, identity, *, prior=(), method=None, effect=None, destination=None, request_ref=None):
+    def _effect_guard(self, slot, identity, replay_keys, *, method=None, effect=None, destination=None,
+                      request_ref=None, approved_next=False):
         """Recheck current authority and atomically reserve an exact dispatch.
 
         The preflight (no method) also refuses replay before requesting payment
         approval. Reservation is after credentials/currentness and immediately
         before transport. A crash after reservation is conservatively unknown.
         """
-        from .agent_runtime import (TARGET_API, current_effect_call_ref, effect_continuation_scope, effect_target, external_effect_progress,
-                                    unknown_effect_holds, unknown_effect_targets)
+        from .agent_runtime import (EFFECT_ROUTE_TEXT, TARGET_API, current_effect_call_ref,
+                                    effect_mutation_refusal, effect_target, external_effect_events)
         from .api_credentials import fingerprint
         with self.store.db() as db:
             db.execute('BEGIN IMMEDIATE')
@@ -1116,17 +1128,18 @@ class ApiRequests:
             if current is None or fingerprint(slot['name'], current) != fingerprint(slot['name'], slot):
                 raise ApiError('API 연결이 바뀌어 요청을 보내지 않았습니다.', 'needs_setup',
                                requires=f"api-slot:{slot['name']}")
-            observed, _unknown = external_effect_progress(self.store, self.work_id)
-            # #618 E1: an unknown effect holds this slot, or a slot sharing one of its hosts; a write to
-            # another slot is independent of it.  An unknown on another route (a page, a connection) or
-            # an unscoped one still holds it: no blind cross-route replay.
             target = effect_target(TARGET_API, slot['name'], slot.get('hosts') or ())
-            targets = unknown_effect_targets(self.store, self.work_id)
-            if (targets and (observed or effect_continuation_scope(self.store, self.work_id))) or unknown_effect_holds(targets, target):
+            dispatches = external_effect_events(self.store, self.work_id, db=db)
+            refusal = effect_mutation_refusal(db, self.store, self.work_id, target,
+                                             replay_keys=replay_keys([*dispatches[0], *dispatches[1]]),
+                                             dispatches=dispatches, approved_next=approved_next)
+            if refusal == 'effect_unknown':
                 raise ApiError(UNKNOWN_EFFECT_TEXT, 'effect_unknown', effect='unknown')
-            if any(row.get('kind') == 'api-slot' and row.get('input_digest') in {identity, *prior} for row in observed):
+            if refusal == 'effect_replayed':
                 raise ApiError('이미 보낸 API 동작이라 반복 실행하지 않았습니다. 기존 결과와 남은 일을 확인하세요.',
                                'api_effect_replayed')
+            if refusal:
+                raise ApiError(EFFECT_ROUTE_TEXT, refusal)
             if method is None:
                 return None
             # #208 review: asked in the reservation's own transaction, so work mode switched on
@@ -1361,12 +1374,22 @@ class ApiRequests:
                     or not receipt.isdecimal() or len(receipt) > 18 or not ref_field):
                 raise ApiError('Use a status GET with a receipt number and a response reference field.', 'api_argument_invalid')
             parse_path(ref_field)
-        identity, prior = self._effect_identities(slot, method, url, body) if effect in STATE_CHANGING_EFFECTS else (None, ())
-        if identity:
-            self._effect_guard(slot, identity, prior=prior)
+        identity = binding = None
+        exact_payment = False
+        if effect in STATE_CHANGING_EFFECTS:
+            from .browser_session import step_binding
+            state = (f"api-payment-v2|{slot['name']}@{slot['revision']}|{effect}"
+                     if effect == 'payment' else str(slot.get('revision', '')))
+            binding = step_binding(self.work_id, 'api_request', url, f"{slot['name']}|{method}|{url}",
+                                   argument=body or '', state=state)
+            identity, replay_keys = self._effect_identities(slot, method, url, body)
+            self._effect_guard(slot, identity, replay_keys, approved_next=self._exact_step_ready(binding, effect))
         from .code_run import approval_note_text
         note = approval_note_text(args.get('approval_note'))
-        idempotency = self._approve(slot, method, url, body, effect, named, path, note) if effect == 'payment' else identity[:32] if identity else None
+        if effect == 'payment':
+            idempotency, exact_payment = self._approve(slot, method, url, body, effect, named, path, binding, note)
+        else:
+            idempotency = identity[:32] if identity else None
         write_ticket=None
         claim = None
         finish = None
@@ -1419,9 +1442,6 @@ class ApiRequests:
             # final authority reservation: a connection can change while the AI judges.
             gate=getattr(self.approvals,'self_set_write',None)
             if effect=='mutate' and callable(gate):
-                from .browser_session import step_binding
-                binding=step_binding(self.work_id,'api_request',url,f"{slot['name']}|{method}|{url}",
-                                     argument=body or '',state=str(slot.get('revision','')))
                 try:
                     from .current_context import redact_known_secrets
                     write_ticket=gate(binding,'slot:'+slot['name'],method,url,('body',) if body else (),description=body,
@@ -1435,8 +1455,9 @@ class ApiRequests:
                     raise error from None
             if identity:
                 try:
-                    claim = self._effect_guard(slot, identity, prior=prior, method=method, effect=effect,
-                                               destination=named, request_ref=idempotency)
+                    claim = self._effect_guard(slot, identity, replay_keys, method=method, effect=effect,
+                                               destination=named, request_ref=idempotency, approved_next=(
+                                                   exact_payment or bool(write_ticket and write_ticket.get('authorized_by') == 'owner-step')))
                     self._local.dispatch_event = claim
                 except Exception:
                     if write_ticket:self.approvals.self_set_write_release(write_ticket)

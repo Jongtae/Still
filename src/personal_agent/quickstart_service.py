@@ -3093,14 +3093,6 @@ class AgentService:
         """
         return 'unknown' in self.continuation_reasons(work_id,'retry')
 
-    def _unknown_effect_holds(self, work_id, target):
-        """Whether an unknown effect holds a change to this connection (#618 E1: scoped to its target)."""
-        from .agent_runtime import TARGET_CONNECTION, effect_continuation_scope, effect_target, unknown_effect_holds, unknown_effect_targets
-        observed, _ = self.connector_effect_progress(work_id)
-        targets = unknown_effect_targets(self.store,work_id)
-        return bool(targets and (observed or effect_continuation_scope(self.store,work_id))) or unknown_effect_holds(targets,
-                                    effect_target(TARGET_CONNECTION,target['kind']+':'+target['identity']))
-
     def _already_retried(self, work_id, current_work_id=None):
         """True when another Work already replayed this failed Work.
 
@@ -7533,6 +7525,7 @@ class AgentService:
         """The runtime's per-step approval surface for one Work: consume or request."""
         service=self
         class Approvals:
+            def exact_step_ready(self,binding):return service._exact_effect_step_ready(job,binding)
             def self_set_writes_required(self):return service.self_set_run(job)
             def self_set_write(self,binding,connection,operation,target,names=(),**kwargs):
                 return service.self_set_write(job,binding,connection,operation,target,names,**kwargs)
@@ -7563,6 +7556,10 @@ class AgentService:
             def provider_hosts(self):return service.browser_provider_hosts()
         return Approvals()
 
+    def _exact_effect_step_ready(self, job, binding):
+        """A preflight hint only. Dispatch still needs the one-use approval."""
+        row = self._browser_request(job['id']) or {}
+        return row.get('state') == 'issued' and row.get('digest') == self._browser_step_keys(binding)['digest']
 
     def _browser_step_keys(self, binding):
         return self.browser_signin._browser_step_keys(binding)
@@ -8319,37 +8316,21 @@ class AgentService:
                 and (target['kind']!='owner-mcp' or target['identity'] in owner_mcp.confirmed(self.store,target['engine']))
                 and binding['state_digest']==state['state_digest'])
 
-    def _connector_effect_seen(self, db, work_id, input_digest):
-        from .agent_runtime import effect_continuation_scope, effect_work_chain
-        if effect_continuation_scope(self.store, work_id):
-            observed, _ = self.connector_effect_progress(work_id)
-            # There is no common replay key between an API call and a CLI tool.
-            if any(receipt.get('kind') == 'api-slot' for receipt in observed):
-                return True
-        works = [work['id'] for work in effect_work_chain(db, work_id)]
-        placeholders = ','.join('?' for _ in works)
-        for row in db.execute(f"SELECT status,detail FROM tool_events WHERE job_id IN ({placeholders}) AND tool='connector_permission'",
-                              works):
-            old=json.loads(row['detail']).get('evidence',{})
-            if row['status'] in ('claiming','allowed') and old.get('input_digest')==input_digest and old.get('effect') in ('mutate','payment'):
-                return True
-        return False
-
-    def _connector_effect_claim(self, job, detail, input_digest, binding, target):
+    def _connector_effect_claim(self, job, detail, input_digest, binding, target, *, approved_next=False):
         """Reserve one exact effect before returning permission to the worker.
 
         A crash after reservation has an unknown outcome, never a licence to
         repeat. Existing Work events supply the durable claim; no new queue.
         """
-        from .agent_runtime import effect_work_chain
+        from .agent_runtime import _claim_target, effect_mutation_refusal, effect_work_chain
         ledger = getattr(self.current_decision_budget(),'ledger',None)
         with self.store.db() as db:
             db.execute('BEGIN IMMEDIATE')
             if ledger is not None and ledger.lapse(db=db):return None
-            if self._unknown_effect_holds(job['id'],target):return None
+            if effect_mutation_refusal(db,self.store,job['id'],_claim_target(target),replay_keys={input_digest},
+                                       approved_next=approved_next):return None
             if not self._connector_authority_current(job,target,binding,detail['evidence']['effect'],detail['evidence']['operation']):return None
-            if (self._connector_effect_seen(db,job['id'],input_digest) or
-                    any(work_stop_requested(self.store,work['id']) for work in effect_work_chain(db,job['id']))):
+            if any(work_stop_requested(self.store,work['id']) for work in effect_work_chain(db,job['id'])):
                 return None
             return db.execute('INSERT INTO tool_events(job_id,tool,status,detail,created) VALUES (?,?,?,?,?)',
                               (job['id'],'connector_permission','claiming',json.dumps(detail,ensure_ascii=False),time.time())).lastrowid
@@ -8409,10 +8390,8 @@ class AgentService:
         binding=None
         input_digest=None
         autonomy=None
+        exact_step_ready=False
         if effect in ('mutate','payment') and record['state']=='active':
-            # #618 E1: only an unknown effect on this same connection holds this change.
-            if self._unknown_effect_holds(job['id'],target):
-                return {'behavior':'deny','message':'이 요청의 앞선 동작이 실제로 반영됐는지 아직 확인되지 않았습니다. 결과를 확인하기 전에는 다른 변경이나 반복 실행을 하지 않습니다.'}
             if not isinstance(values,dict):
                 return {'behavior':'deny','message':'실행할 정확한 입력을 확인할 수 없어 실행하지 않았습니다.'}
             try:
@@ -8420,11 +8399,18 @@ class AgentService:
                 binding=self._connector_action_binding(job,tool,values,target,effect)
             except (TypeError,ValueError):
                 return {'behavior':'deny','message':'실행할 정확한 입력을 확인할 수 없어 실행하지 않았습니다.'}
-            # Refuse a possibly dispatched effect before asking for any new approval.
+            from .agent_runtime import _claim_target, effect_mutation_refusal
+            from .self_set_writes import scoped_binding
+            exact_step_ready=self._exact_effect_step_ready(job,binding if effect=='payment' else scoped_binding(binding))
+            # Refuse replay before asking for any new approval.
             # The same predicate is rechecked atomically when reserving dispatch.
             with self.store.db() as db:
-                if self._connector_effect_seen(db,job['id'],input_digest):
-                    return {'behavior':'deny','message':'현재 권한이나 기존 실행 기록이 달라져 실행하지 않았습니다. 권한과 기존 결과를 확인하고 남은 일만 진행하세요.'}
+                refusal=effect_mutation_refusal(db,self.store,job['id'],_claim_target(target),replay_keys={input_digest},
+                                                approved_next=exact_step_ready)
+            if refusal=='effect_unknown':
+                return {'behavior':'deny','message':'이 요청의 앞선 동작이 실제로 반영됐는지 아직 확인되지 않았습니다. 결과를 확인하기 전에는 다른 변경이나 반복 실행을 하지 않습니다.'}
+            if refusal:
+                return {'behavior':'deny','message':'현재 권한이나 기존 실행 기록이 달라져 실행하지 않았습니다. 권한과 기존 결과를 확인하고 남은 일만 진행하세요.'}
             allow=effect=='mutate'
             if allow:
                 if native_intake_wait is not None:native_intake_wait()
@@ -8452,7 +8438,12 @@ class AgentService:
         if write_ticket:detail['write_ticket']=write_ticket
         if input_digest:detail['evidence']['input_digest']=input_digest
         if allow and effect in ('mutate','payment'):
-            event_id=self._connector_effect_claim(job,detail,input_digest,binding,target)
+            # A payment can reserve a claim with a matching issued step, but
+            # cannot leave the host until the token is consumed below.
+            exact_payment=effect=='payment' and not autonomy and exact_step_ready
+            exact_write=bool(write_ticket and write_ticket.get('authorized_by')=='owner-step')
+            event_id=self._connector_effect_claim(job,detail,input_digest,binding,target,
+                                                  approved_next=exact_payment or exact_write)
             if event_id is None:
                 self.self_set_write_release(job,write_ticket)
                 return {'behavior':'deny','message':'현재 권한이나 기존 실행 기록이 달라져 실행하지 않았습니다. 권한과 기존 결과를 확인하고 남은 일만 진행하세요.'}
