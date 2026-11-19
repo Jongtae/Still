@@ -59,10 +59,10 @@
 
 **macOS, Linux 또는 [WSL2](../../docs/QUICKSTART.md#windows-wsl2)를 사용하는 Windows**와 AI 연결 하나가 필요합니다. Codex, Claude Code, API 또는 이미 실행 중인 Ollama를 사용할 수 있습니다. 구독 방식은 해당 CLI를 이용할 수 있는 플랜과 로그인이 필요하며, AI 구독·API 사용·모델 다운로드는 Still과 별도입니다. [AI 연결 안내](../../docs/QUICKSTART.md#connect-an-ai)를 참고하세요.
 
-먼저 [고정된 버전의 설치 스크립트](https://github.com/Jongtae/Still/blob/33e12cea89fccad49118600ff47106e1c6f16350/scripts/install.sh)를 확인한 뒤, macOS·Linux 터미널 또는 WSL2의 Ubuntu에서 실행하세요.
+먼저 [고정된 버전의 설치 스크립트](https://github.com/Jongtae/Still/blob/871647f2fd1854653b24c42023d984068a35f169/scripts/install.sh)를 확인한 뒤, macOS·Linux 터미널 또는 WSL2의 Ubuntu에서 실행하세요.
 
 ```sh
-curl -LsSf https://raw.githubusercontent.com/Jongtae/Still/33e12cea89fccad49118600ff47106e1c6f16350/scripts/install.sh | sh
+curl -LsSf https://raw.githubusercontent.com/Jongtae/Still/871647f2fd1854653b24c42023d984068a35f169/scripts/install.sh | sh
 ```
 
 Python, Homebrew, Docker를 미리 설치할 필요는 없습니다. 설치 스크립트가 Python 환경을 준비하고, 배포 아카이브의 SHA-256을 기록된 값과 대조합니다.
@@ -90,7 +90,7 @@ Intel Mac에서는 위의 한 줄 설치 명령을 쓰세요. 호환성을 위�
 
 </details>
 
-**배포 상태:** 두 설치 방법 모두 태그가 붙은 main 커밋으로 빌드한 **v0.7.0**(2026-11-13)을 설치합니다. 데모와 일상 사용 화면은 실제 사용 세션에서 가져온 것으로, 이 배포본을 처음부터 끝까지 검증한 결과는 아닙니다. 구조 그림은 제품 방향을 보여 주는 예시입니다. 정확한 배포 범위와 검증의 한계는 [release manifest](../../docs/release-manifest.json)를 참고하세요.
+**배포 상태:** 두 설치 방법 모두 태그가 붙은 main 커밋으로 빌드한 **v0.8.0**(2026-11-19)을 설치합니다. 데모와 일상 사용 화면은 실제 사용 세션에서 가져온 것으로, 이 배포본을 처음부터 끝까지 검증한 결과는 아닙니다. 구조 그림은 제품 방향을 보여 주는 예시입니다. 정확한 배포 범위와 검증의 한계는 [release manifest](../../docs/release-manifest.json)를 참고하세요.
 
 설정, Windows 제약, 업데이트와 제거 방법: [QUICKSTART](../../docs/QUICKSTART.md).
 

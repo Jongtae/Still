@@ -1559,7 +1559,9 @@ function renderScheduledBudget(){
  const notice=$('scheduled-budget-notice');notice.textContent=scheduledBudget.notice?.[currentLanguage==='zh-CN'?'zh':currentLanguage]||scheduledBudget.notice?.ko||'';notice.hidden=!notice.textContent;
  input.max=String(scheduledBudget.max);$('scheduled-budget-label').textContent=preparationLabel('budget_label');$('scheduled-budget-help').textContent=preparationLabel('budget_help');$('scheduled-budget-save').textContent=preparationLabel('save');
 }
-function preparationDescription(row){const active=PREPARATION_ACTIVE.includes(row.state),parts=[row.kind==='reminder'?t('알림'):t('미리 준비'),row.recurrence==='window'?preparationWindowLabel(row):row.recurrence_labels?.[currentLanguage]||preparationRepeatLabel(row.recurrence),active?t('{time} 예정',{time:row.due_local}):row.due_local,preparationDeliveryLabel(row.delivery)];
+function preparationDescription(row){
+ if(row.check)return row.recurrence_labels?.[currentLanguage==='zh-CN'?'zh':currentLanguage]||row.recurrence_labels?.ko||'';
+ const active=PREPARATION_ACTIVE.includes(row.state),parts=[row.kind==='reminder'?t('알림'):t('미리 준비'),row.recurrence==='window'?preparationWindowLabel(row):row.recurrence_labels?.[currentLanguage]||preparationRepeatLabel(row.recurrence),active?t('{time} 예정',{time:row.due_local}):row.due_local,preparationDeliveryLabel(row.delivery)];
  if(row.last_decision)parts.push(preparationDecisionLabel(row));
  if(row.last_result)parts.push(t('마지막 결과: {text}',{text:row.last_result}));return parts.join(' · ');}
 function renderPreparations(){renderScheduledBudget();const list=$('preparations-list');if(!list||!preparationRows)return;const fingerprint=JSON.stringify([preparationRows,preparationGroups,preparationDeletePending,preparationEditPending,preparationLabels,currentLanguage]);if(list.dataset.state===fingerprint)return;list.dataset.state=fingerprint;const focusKey=rememberFocus(list);list.replaceChildren();
@@ -1569,13 +1571,18 @@ function renderPreparations(){renderScheduledBudget();const list=$('preparations
   // #575: each button is the owner's Settings action, as for cancel.
   if(!pending){
    for(const operation of row.state==='scheduled'?['pause','run_now']:row.state==='paused'?['resume','run_now']:[]){const action=settingsAction(preparationLabel(operation),event=>busy(event.currentTarget,()=>preparationAction(operation,row.id,preparationLabel('saved'))));action.dataset.focusKey='preparation-'+operation+':'+row.id;actions.push(action);}
-   if(['proposed','scheduled','paused'].includes(row.state)){const edit=settingsAction(preparationLabel('edit'),()=>{preparationEditPending=preparationEditPending===row.id?null:row.id;renderPreparations();});edit.dataset.focusKey='preparation-edit:'+row.id;actions.push(edit);}
+   if(!row.check&&['proposed','scheduled','paused'].includes(row.state)){const edit=settingsAction(preparationLabel('edit'),()=>{preparationEditPending=preparationEditPending===row.id?null:row.id;renderPreparations();});edit.dataset.focusKey='preparation-edit:'+row.id;actions.push(edit);}
   }
   if(row.state!=='running'){
    if(pending){actions.push(element('span',t('이 준비를 지웁니다. 지난 실행 기록은 남습니다.'),'confirm-text'));const keep=settingsAction(t('취소'),()=>{preparationDeletePending=null;renderPreparations();$('preparations-list').querySelector('[data-focus-key="preparation-delete:'+row.id+'"]')?.focus();});keep.dataset.focusKey='preparation-keep:'+row.id;actions.push(keep);}
    const remove=settingsAction(pending?t('삭제 확인'):t('삭제'),event=>{if(!pending){preparationDeletePending=row.id;setFeedback('preparations-feedback','');renderPreparations();$('preparations-list').querySelector('[data-focus-key="preparation-delete:'+row.id+'"]')?.focus();return;}
     preparationDeletePending=null;return busy(event.currentTarget,()=>preparationAction('delete',row.id,t('지웠습니다.')));},'destructive'+(pending?' confirm':''));remove.dataset.focusKey='preparation-delete:'+row.id;actions.push(remove);}
   list.append(settingsRow(row.title||row.goal,(row.offer?row.offer.split('\n').join(' · ')+' · ':'')+preparationDescription(row),preparationStateLabel(row.state),preparationStateKind(row.state),actions));
+  if(row.check){
+   const code=element('details',null,'settings-details');
+   code.append(element('summary',preparationLabel('check_code')),element('pre',row.check.code));
+   list.append(code);
+  }
   if(preparationEditPending===row.id&&!pending)list.append(preparationEditForm(row));
   // #1005: a line's finished pieces follow that line's last listed row as one entry.
   if(row.line_id&&preparationRows.findLastIndex(item=>item.line_id===row.line_id)===preparationRows.indexOf(row)){const group=preparationGroups.find(item=>item.line_id===row.line_id);if(group)list.append(preparationGroupRow(group));}}

@@ -47,6 +47,16 @@ def plain_state_values(text):
     except ValueError:
         return []
     return _strings(state.get(STATE_PLAIN_KEY), 1) if isinstance(state, dict) else []
+
+
+def secret_state_values(text):
+    """The same secret strings from either scratch state or decrypted saved state."""
+    state = json.loads(text or '{}')
+    if isinstance(state, dict):
+        state = {key: value for key, value in state.items() if key != STATE_PLAIN_KEY}
+    return _strings(state, STATE_REDACT_CHARS)
+
+
 REFERENCE = re.compile(r'api_credential:[a-f0-9]{48}\Z')
 KEY_SERVICE = 'personal-agentos.api-slots'
 
@@ -224,10 +234,7 @@ class ApiCredentials:
         elsewhere in the state is still redacted.
         """
         cipher = cipher if cipher is not None else self._cipher()
-        state = json.loads(json.loads(cipher.decrypt(token.encode())).get('state') or '{}')
-        if isinstance(state, dict):
-            state = {key: value for key, value in state.items() if key != STATE_PLAIN_KEY}
-        return _strings(state, STATE_REDACT_CHARS)
+        return secret_state_values(json.loads(cipher.decrypt(token.encode())).get('state'))
 
     def discard_state(self, name):
         """Remove the set's run state after retiring its values, in one locked step (#258).

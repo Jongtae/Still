@@ -315,6 +315,8 @@ class OwnerForget:
         db.execute(f"UPDATE preparations SET state=?,updated_at=? WHERE line_id=? AND origin=? "
                    f"AND state IN ({','.join('?' * len(prep.PIECE_PENDING_STATES))})",
                    (prep.STATE_CANCELLED, now, line_id, prep.ORIGIN_LINE_PIECE, *prep.PIECE_PENDING_STATES))
+        db.execute('UPDATE preparations SET state=?,updated_at=? WHERE line_id=? AND check_spec IS NOT NULL '
+                   'AND state IN (?,?,?,?)', (prep.STATE_CANCELLED, now, line_id, *prep.ACTIVE_STATES))
         prep.Preparations._clear_closed_budget_skips(db)
         return {'rows': [{'table': 'procedure_versions', 'id': row['id'], 'prior': row['state']} for row in rows],
                 'line': line_id}

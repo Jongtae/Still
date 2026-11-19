@@ -503,8 +503,9 @@ def test_start_continues_when_startup_sweep_fails(case):
          mock.patch('personal_agent.quickstart_service.bridge_sdk_problem', return_value=None):
         c.service.start()
         sweep.assert_called_once_with()
-        assert thread.call_count == 4
-        assert thread.return_value.start.call_count == 4
+        thread.assert_any_call(target=c.service.condition_checks.loop, daemon=True, name='agentos-condition-checks')
+        assert thread.call_count == 5
+        assert thread.return_value.start.call_count == 5
 
 
 def test_anchor_fallback_failure_keeps_loop_alive_and_recovery_never_resends(case):

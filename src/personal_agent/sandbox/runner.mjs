@@ -16,7 +16,7 @@
 //     headers (#1489): [[name, value]] with the same {{NAME}} replacement, bounded; the host reads them
 //     only in a function library's parameter-flow check, where an argument may travel in a header.
 //   host -> runner: {id, allow, reason}
-//   runner -> host, last line: {type: "result", exit, signal, timedOut, stdout, stderr}
+//   runner -> host, last line: {type: "result", exit, signal, timedOut, stdout, stderr, truncated}
 //                              or {type: "error", message}
 import { SandboxManager } from '@anthropic-ai/sandbox-runtime'
 import { spawn } from 'node:child_process'
@@ -118,8 +118,10 @@ async function run () {
   child = spawn(wrapped, { shell: '/bin/sh', env, detached: true, stdio: ['ignore', 'pipe', 'pipe'] })
   const limit = config.outputBytes
   const out = { stdout: Buffer.alloc(0), stderr: Buffer.alloc(0) }
+  const truncated = new Set()
   for (const stream of ['stdout', 'stderr']) {
     child[stream].on('data', chunk => {
+      if (out[stream].length + chunk.length > limit) truncated.add(stream)
       if (out[stream].length < limit) out[stream] = Buffer.concat([out[stream], chunk]).subarray(0, limit)
     })
   }
@@ -131,7 +133,7 @@ async function run () {
   const [exit, signal] = await new Promise(resolve => child.on('close', (code, sig) => resolve([code, sig])))
   clearTimeout(timer)
   const stderr = SandboxManager.annotateStderrWithSandboxFailures(command, out.stderr.toString('utf8'))
-  send({ type: 'result', exit, signal, timedOut, stdout: out.stdout.toString('utf8'), stderr })
+  send({ type: 'result', exit, signal, timedOut, stdout: out.stdout.toString('utf8'), stderr, truncated: [...truncated] })
   await SandboxManager.reset()
 }
 

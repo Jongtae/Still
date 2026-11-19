@@ -718,6 +718,8 @@ class AgentService:
             store,notice_destination=lambda channel:self.preparations_service.notice_destination(channel),
             budget_notice_destinations=lambda:self.preparations_service.budget_notice_destinations(),
             bundle_report_times=lambda row,db:self.preparations_service.bundle_report_times(row,db))
+        from .condition_checks import ConditionChecks
+        self.condition_checks=ConditionChecks(self)
         # #798: entrusted lines (one continuing responsibility each) on the preparations' clock.
         from .entrusted_lines import EntrustedLines
         self.lines=EntrustedLines(store,clock=lambda:self.preparations.clock())
@@ -9420,6 +9422,12 @@ class AgentService:
             return False
         self.store.transfer_telegram_photo(work['id'],task_id,db=db)
         self.store.link_work_relation(task_id,work['id'],'reference',db=db)
+        # The continuation can replay the wake's output, so carry its standing in the same transaction.
+        slot=prep.slot_key(work['request_key'])
+        if slot.startswith(prep.REQUEST_KEY_PREFIX) and '~wake-' in slot:
+            for source in db.execute('SELECT detail FROM work_intake_sources WHERE job_id=? ORDER BY id',
+                                     (work['id'],)).fetchall():
+                self.store._insert_intake_source(db,task_id,source['detail'],self.preparations.clock())
         prep.Preparations.continue_run(db,work['id'],task_id,self.preparations.clock())
         self.context_observations.rebind_task_observation(db,answer['observation_id'],task_id)
         # The owner's location message is this Work's source and reply anchor.
@@ -10118,7 +10126,8 @@ class AgentService:
                 self.stop.wait(interval)
         self.threads=[threading.Thread(target=work,daemon=True),threading.Thread(target=poll,daemon=True),
                       threading.Thread(target=acknowledge,daemon=True),
-                      threading.Thread(target=poll_surfaces,daemon=True,name='agentos-surface-poll')]
+                      threading.Thread(target=poll_surfaces,daemon=True,name='agentos-surface-poll'),
+                      threading.Thread(target=self.condition_checks.loop,daemon=True,name='agentos-condition-checks')]
         for thread in self.threads:thread.start()
 
     def healthy(self):

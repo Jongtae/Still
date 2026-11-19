@@ -59,10 +59,10 @@
 
 **macOS、Linux、または [WSL2](../../docs/QUICKSTART.md#windows-wsl2) を使う Windows** と、設定済みの AI 接続が一つ必要です。Codex、Claude Code、API、または起動済みの Ollama を使えます。サブスクリプション経由では、対応する CLI を利用できるプランとサインインが必要です。AI の契約、API 利用、モデルのダウンロードは Still とは別です。[AI 接続の案内](../../docs/QUICKSTART.md#connect-an-ai)を参照してください。
 
-[固定リビジョンのインストーラー](https://github.com/Jongtae/Still/blob/33e12cea89fccad49118600ff47106e1c6f16350/scripts/install.sh)を確認し、macOS・Linux のターミナル、または WSL2 の Ubuntu 内で実行します。
+[固定リビジョンのインストーラー](https://github.com/Jongtae/Still/blob/871647f2fd1854653b24c42023d984068a35f169/scripts/install.sh)を確認し、macOS・Linux のターミナル、または WSL2 の Ubuntu 内で実行します。
 
 ```sh
-curl -LsSf https://raw.githubusercontent.com/Jongtae/Still/33e12cea89fccad49118600ff47106e1c6f16350/scripts/install.sh | sh
+curl -LsSf https://raw.githubusercontent.com/Jongtae/Still/871647f2fd1854653b24c42023d984068a35f169/scripts/install.sh | sh
 ```
 
 Python、Homebrew、Docker を事前に入れる必要はありません。インストーラーが Python 環境を用意し、リリースアーカイブの SHA-256 を記録された値と照合します。
@@ -90,7 +90,7 @@ Intel Mac では上の 1 行インストーラーを使ってください。互�
 
 </details>
 
-**リリース状況：** どちらのインストール方法でも、タグを付けた main コミットの **v0.7.0**（2026-11-13）が入ります。デモと日常利用の画面は実際の利用セッションにもとづくもので、この版の一連の動作を検証したものではありません。構成図は製品の方向性を示す例です。正確なリリース範囲と検証の限界は [release manifest](../../docs/release-manifest.json) を参照してください。
+**リリース状況：** どちらのインストール方法でも、タグを付けた main コミットの **v0.8.0**（2026-11-19）が入ります。デモと日常利用の画面は実際の利用セッションにもとづくもので、この版の一連の動作を検証したものではありません。構成図は製品の方向性を示す例です。正確なリリース範囲と検証の限界は [release manifest](../../docs/release-manifest.json) を参照してください。
 
 設定、Windows の制限、更新と削除：[QUICKSTART](../../docs/QUICKSTART.md)。
 

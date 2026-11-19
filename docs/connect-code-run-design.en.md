@@ -177,11 +177,17 @@ Each code-run secret set can keep a function library: verified procedural memory
 - **Generality:** owner-chosen, undisclosed holdout services.
 - Merges, tests or a connection receipt alone never close #1380.
 
+## Preparation condition checks (#972)
+
+Still can replay the normalized `code`, `hosts`, `secrets` and `timeout_seconds` of a successful call proven in the same Work. A proof requires exit 0, no state change and no approval request. The row binds the full spec, including each loaded library version and its source digest. Use a secret set to supply credentials. Setup rejects source that the credential redactor would change, so the accepted code can run as proven.
+
+The check uses `CodeRunner.run`, current secret-set permissions and pinned libraries. It has no approval surface, package installation, library saves or persistent check state. A set’s existing run state is available as input. Writes to that state inside a check stay in the sandbox. The runner reads on its own thread outside the Work lanes. Exit 0 with stdout wakes the AI. Exit 0 with empty stdout is quiet. Timeouts and non-zero exits count as failures. The wake receives redacted output as data and starts with the same outside-content standing as the corresponding ordinary tool result or dispatched error. A sandbox allow decision records an allowed host. A record of contact requires a transport observation.
+
 ## Non-goals
 
 - No shell tool for the worker.
 - No access to owner files from runs.
-- No background or scheduled runs.
+- Scheduled code runs use the preparation condition-check path.
 - No vendor SDK bundled by Still.
 - No service-specific code, prompt or skill.
 - Windows support is not part of this pilot.
