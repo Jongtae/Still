@@ -4,7 +4,7 @@ A third kind of row on the #805 owner-model upkeep queue: the same tick, single 
 switch and rolling cap.  It is enqueued only when due (interval, enough requests, idle, night or
 late), the Judgment AI reads the scrubbed turns since the last one, and Still keeps what passes its
 deterministic checks: cited facts (two occasions for an inferred one), no mass ending, working
-notes resting on two separate turns, and a bounded daily record outside ``profile.``.
+lessons resting on two separate turns, and a bounded daily record outside ``profile.``.
 
 Evidence class: model-free unit and service tests.  A scripted ``FixtureDecisionEngine`` plays the
 Judgment AI; the real ``AgentService`` tick, ``QuickStore`` Memory paths and the Work loop of
@@ -36,8 +36,12 @@ def fact(key, content, *sources, kind='stated', category='plan', invalidates=(),
             'supersedes_key': '', 'invalidates': ends, 'valid_until': valid_until, 'sources': list(sources), 'terms': ''}
 
 
-def dream(proposals=(), notes='', change='', notes_sources=(), diary=''):
-    return {'proposals': list(proposals), 'notes': notes, 'change': change, 'notes_sources': list(notes_sources),
+def add_lesson(text):
+    return {'op': 'add', 'id': '', 'text': text, 'why': 'the owner repeated this on separate days', 'reason': ''}
+
+
+def dream(proposals=(), lessons=(), change='', lesson_sources=(), diary=''):
+    return {'proposals': list(proposals), 'lessons': list(lessons), 'change': change, 'lesson_sources': list(lesson_sources),
             'diary': diary}
 
 
@@ -244,15 +248,15 @@ class Run(Dream):
             dream_rows = [row for row in rows if row['id'] != ordinary['id']]
             self.assertEqual([row['origin'] for row in dream_rows], [om.ORIGIN_DREAM])
 
-    def test_one_dream_saves_cited_facts_notes_and_the_day_record_on_the_newest_request(self):
+    def test_one_dream_saves_cited_facts_lessons_and_the_day_record_on_the_newest_request(self):
         first, second, newest = self.day('내년 3월까지 자동차 할부를 매달 45만 원씩 갚고 있어', '답은 표로 정리해줘',
                                          '이번에도 표로 보여줘')
         self.a_day_earlier(first)
         self.a_day_earlier(second)
         self.dreams = [dream([fact('profile.plan.car_installment', '2027년 3월까지 자동차 할부 매달 45만 원', 't1',
                                    valid_until='2027-03-31', evidence='“내년 3월까지 자동차 할부를 매달 45만 원씩 갚고 있어”')],
-                             notes='- 비교나 정리는 표로 보여 준다', change='표로 정리하는 습관을 적음',
-                             notes_sources=['t2', 't3'],
+                             lessons=[add_lesson('비교나 정리는 표로 보여 준다')], change='표로 정리하는 습관을 적음',
+                             lesson_sources=['t2', 't3'],
                              diary='2026-10-29: 자동차 할부 계획을 말했고 정리를 두 번 표로 받았다.')]
         self.assertTrue(self.tick())
         [(context, question, schema)] = self.asked
@@ -270,13 +274,13 @@ class Run(Dream):
             work_key = db.execute('SELECT work_key FROM memories WHERE id=?', (plan['id'],)).fetchone()[0]
         self.assertEqual(work_key, self.store._work_binding(newest), 'kept facts are attributed to the newest request it covers')
         self.assertEqual(plan['origin'], om.ORIGIN_DREAM, '#425: written by the look back, outside the request\'s notice')
-        self.assertEqual(om.WorkingNotes(self.store).current()['points'], ['비교나 정리는 표로 보여 준다'])
+        self.assertEqual([lesson['text'] for lesson in om.WorkingLessons(self.store).current()], ['비교나 정리는 표로 보여 준다'])
         [diary] = self.store.memories(MEMORY_OWNER, key_prefix=om.DIARY_PREFIX)
         self.assertTrue(diary['memory_key'].startswith(om.DIARY_PREFIX))
         [(status, detail)] = self.evidence(newest)
         self.assertEqual(status, om.EVENT_RECORDED)
-        self.assertEqual((len(detail['applied']), detail['notes']['outcome'], detail['diary']['outcome']),
-                         (1, om.APPLIED_NOTES, om.APPLIED_MEMORY))
+        self.assertEqual((len(detail['applied']), detail['lessons']['outcome'], detail['diary']['outcome']),
+                         (1, om.APPLIED_LESSONS, om.APPLIED_MEMORY))
         self.assertEqual(detail['period'], {'works': 3, 'turns': 3})
         self.assertNotIn('할부', json.dumps(detail, ensure_ascii=False), 'Evidence keeps no text')
         self.assertEqual(self.dream_rows()[0]['state'], om.STATE_DONE)
@@ -478,49 +482,49 @@ class Misses(Dream):
                 self.assertEqual(om.turn_outcome(status, kinds), expected)
                 self.assertIn(expected, om.TURN_OUTCOMES)
 
-    def test_a_tonight_miss_and_an_earlier_miss_keep_narrow_notes(self):
-        detail = self.look_back(dream(notes='- 비교에는 기준을 먼저 확인', change='비교 기준', notes_sources=['t1', 'm1']),
+    def test_a_tonight_miss_and_an_earlier_miss_keep_a_narrow_lesson(self):
+        detail = self.look_back(dream(lessons=[add_lesson('비교에는 기준을 먼저 확인')], change='비교 기준', lesson_sources=['t1', 'm1']),
                                 [('t1', 'tonight words', 'answer', '2026-11-04 10:00', 'corrected')],
                                 [('m1', 'earlier words', 'earlier answer', '2026-11-03 10:00', 'retried', 'correction words')])
-        self.assertIsNotNone(om.WorkingNotes(self.store).current())
+        self.assertTrue(om.WorkingLessons(self.store).current())
         context = self.asked[0][0]
         self.assertIn('[t1] 2026-11-04 10:00 (corrected) owner:', context.facts['turns'])
         self.assertIn('[m1] 2026-11-03 10:00 (retried) owner:', context.facts['earlier_misses'])
         self.assertIn('correction: correction words', context.facts['earlier_misses'])
         self.assertNotIn('earlier_misses', self.gathered[0][0].facts)
-        self.assertEqual(detail['notes_evidence'], {'tonight_misses': 1, 'earlier_misses': 1, 'rule': 'misses'})
+        self.assertEqual(detail['lessons_evidence'], {'tonight_misses': 1, 'earlier_misses': 1, 'rule': 'misses'})
         self.assertEqual(detail['inputs']['earlier_misses'], 1)
         for text in ('earlier words', 'earlier answer', 'correction words'):
             self.assertNotIn(text, json.dumps(detail))
 
     def test_two_earlier_misses_alone_are_not_a_new_lesson(self):
-        detail = self.look_back(dream(notes='- 비교에는 기준을 먼저 확인', change='비교 기준', notes_sources=['m1', 'm2']),
+        detail = self.look_back(dream(lessons=[add_lesson('비교에는 기준을 먼저 확인')], change='비교 기준', lesson_sources=['m1', 'm2']),
                                 [('t1', 'today', 'answer', '2026-11-04 10:00', 'failed')],
                                 [('m1', 'old', 'answer', '2026-11-02 10:00', 'failed', ''),
                                  ('m2', 'old too', 'answer', '2026-11-03 10:00', 'corrected', '')])
-        self.assertIsNone(om.WorkingNotes(self.store).current())
-        self.assertIsNone(detail['notes_evidence']['rule'])
+        self.assertEqual(om.WorkingLessons(self.store).current(), [])
+        self.assertIsNone(detail['lessons_evidence']['rule'])
 
     def test_misses_on_one_owner_day_are_one_occasion(self):
-        detail = self.look_back(dream(notes='- 비교에는 기준을 먼저 확인', change='비교 기준', notes_sources=['t1', 'm1']),
+        detail = self.look_back(dream(lessons=[add_lesson('비교에는 기준을 먼저 확인')], change='비교 기준', lesson_sources=['t1', 'm1']),
                                 [('t1', 'today', 'answer', '2026-11-04 20:00', 'failed')],
                                 [('m1', 'old', 'answer', '2026-11-04 10:00', 'failed', '')])
-        self.assertIsNone(om.WorkingNotes(self.store).current())
-        self.assertIn({'note': 'notes', 'reason': 'one-day'}, detail['dropped'])
+        self.assertEqual(om.WorkingLessons(self.store).current(), [])
+        self.assertIn({'note': 'lesson', 'op': 'add', 'reason': 'one-day'}, detail['dropped'])
 
     def test_a_done_turn_does_not_make_two_misses(self):
-        self.look_back(dream(notes='- 비교에는 기준을 먼저 확인', change='비교 기준', notes_sources=['t1', 'm1']),
+        self.look_back(dream(lessons=[add_lesson('비교에는 기준을 먼저 확인')], change='비교 기준', lesson_sources=['t1', 'm1']),
                        [('t1', 'today', 'answer', '2026-11-04 10:00', 'done')],
                        [('m1', 'old', 'answer', '2026-11-03 10:00', 'failed', '')])
-        self.assertIsNone(om.WorkingNotes(self.store).current())
+        self.assertEqual(om.WorkingLessons(self.store).current(), [])
 
     def test_the_existing_two_tonight_days_rule_still_holds_with_earlier_refs(self):
-        detail = self.look_back(dream(notes='- 비교에는 기준을 먼저 확인', change='비교 기준', notes_sources=['t1', 't2', 'm1']),
+        detail = self.look_back(dream(lessons=[add_lesson('비교에는 기준을 먼저 확인')], change='비교 기준', lesson_sources=['t1', 't2', 'm1']),
                                 [('t1', 'yesterday', 'answer', '2026-11-03 10:00', 'done'),
                                  ('t2', 'today', 'answer', '2026-11-04 10:00', 'done')],
                                 [('m1', 'old', 'answer', '2026-11-02 10:00', 'failed', '')])
-        self.assertIsNotNone(om.WorkingNotes(self.store).current())
-        self.assertEqual(detail['notes_evidence']['rule'], 'occasions')
+        self.assertTrue(om.WorkingLessons(self.store).current())
+        self.assertEqual(detail['lessons_evidence']['rule'], 'occasions')
 
     def test_earlier_refs_cannot_ground_facts_endings_or_suggestions(self):
         old = self.profile('profile.place.old_office', 'old office')
@@ -544,14 +548,14 @@ class Misses(Dream):
     def test_earlier_block_keeps_whole_newest_misses_under_its_own_cap(self):
         earlier = [(f'm{i}', 'a' * 600, 'b' * 300, f'2026-11-03 10:{i:02}', 'failed', 'c' * 300)
                    for i in range(1, 13)]
-        detail = self.look_back(dream(notes='- 비교에는 기준을 먼저 확인', change='비교 기준', notes_sources=['t1', 'm1']),
+        detail = self.look_back(dream(lessons=[add_lesson('비교에는 기준을 먼저 확인')], change='비교 기준', lesson_sources=['t1', 'm1']),
                                 [('t1', 'today', 'answer', '2026-11-04 10:00', 'failed')], earlier)
         block = self.asked[0][0].facts['earlier_misses']
         self.assertLessEqual(len(block), om.DREAM_EARLIER_CHARS)
         self.assertNotIn('[m1]', block)
         self.assertIn('[m12]', block)
-        self.assertIsNone(om.WorkingNotes(self.store).current(), 'unshown refs cannot support notes')
-        self.assertIn({'note': 'notes', 'reason': 'sources'}, detail['dropped'])
+        self.assertEqual(om.WorkingLessons(self.store).current(), [], 'unshown refs cannot support lessons')
+        self.assertIn({'note': 'lesson', 'op': 'add', 'reason': 'sources'}, detail['dropped'])
 
     def test_service_filters_batches_and_scrubs_earlier_misses_per_work(self):
         from personal_agent import preparations as prep
@@ -637,19 +641,19 @@ class NotesDays(Dream):
     def test_a_lesson_from_two_requests_of_one_day_is_one_occasion(self):
         """#452: the turns of the fixture are all today, so two of them are one occasion."""
         self.day('a', 'b', 'c')
-        self.dreams = [dream(notes='- 답은 표로', change='표', notes_sources=['t1', 't2'])]
+        self.dreams = [dream(lessons=[add_lesson('답은 표로')], change='표', lesson_sources=['t1', 't2'])]
         self.tick()
-        self.assertIsNone(om.WorkingNotes(self.store).current())
+        self.assertEqual(om.WorkingLessons(self.store).current(), [])
         [(_status, detail)] = self.evidence(self.dream_rows()[0]['job_id'])
-        self.assertIn({'note': 'notes', 'reason': 'one-day'}, detail['dropped'])
+        self.assertIn({'note': 'lesson', 'op': 'add', 'reason': 'one-day'}, detail['dropped'])
 
     def test_a_lesson_from_two_days_is_kept(self):
         first, second, _third = self.day('a', 'b', 'c')
         with self.store.db() as db:
             db.execute('UPDATE jobs SET created=created-86400 WHERE id=?', (first,))
-        self.dreams = [dream(notes='- 답은 표로', change='표', notes_sources=['t1', 't2'])]
+        self.dreams = [dream(lessons=[add_lesson('답은 표로')], change='표', lesson_sources=['t1', 't2'])]
         self.tick()
-        self.assertEqual(om.WorkingNotes(self.store).current()['points'], ['답은 표로'])
+        self.assertEqual([lesson['text'] for lesson in om.WorkingLessons(self.store).current()], ['답은 표로'])
 
 
 class Gates(unittest.TestCase):
@@ -757,26 +761,29 @@ class Gates(unittest.TestCase):
 
 
 class Notes(Dream):
-    def test_a_lesson_from_one_occasion_or_a_large_rewrite_is_refused(self):
+    def test_a_lesson_from_one_occasion_is_refused(self):
         self.day('a', 'b', 'c')
-        self.dreams = [dream(notes='- 답은 짧게', change='짧게', notes_sources=['t1'])]
+        self.dreams = [dream(lessons=[add_lesson('답은 짧게')], change='짧게', lesson_sources=['t1'])]
         self.tick()
-        self.assertIsNone(om.WorkingNotes(self.store).current())
+        self.assertEqual(om.WorkingLessons(self.store).current(), [])
         [(_status, detail)] = self.evidence(self.dream_rows()[0]['job_id'])
-        self.assertIn({'note': 'notes', 'reason': 'one-occasion'}, detail['dropped'])
+        self.assertIn({'note': 'lesson', 'op': 'add', 'reason': 'one-occasion'}, detail['dropped'])
 
-    def test_dropping_more_than_half_of_the_notes_at_once_is_refused(self):
-        notes = om.WorkingNotes(self.store)
-        self.assertTrue(notes.migrated())
-        first = notes.save({'points': ['가', '나', '다'], 'text': om.notes_text(['가', '나', '다']), 'change': 'start'},
-                           None)
+    def test_removing_more_than_half_of_the_lessons_at_once_is_refused(self):
+        lessons = om.WorkingLessons(self.store)
+        self.assertTrue(lessons.migrated())
+        lessons.apply([add_lesson(text) for text in ('가', '나', '다')], 'start', None,
+                      origin=om.ORIGIN_SELF_REVIEW)
+        before = lessons.current()
         oldest, _second, _third = self.day('a', 'b', 'c')
         self.a_day_earlier(oldest)
-        self.dreams = [dream(notes='- 라', change='바꿈', notes_sources=['t1', 't2'])]
+        removes = [{'op': 'remove', 'id': item['id'], 'text': '', 'why': '', 'reason': 'the owner asked otherwise'}
+                   for item in before[:2]]
+        self.dreams = [dream(lessons=removes, change='바꿈', lesson_sources=['t1', 't2'])]
         self.tick()
-        self.assertEqual(notes.current()['id'], first['id'])
+        self.assertEqual(lessons.current(), before)
         [(_status, detail)] = self.evidence(self.dream_rows()[0]['job_id'])
-        self.assertIn({'note': 'notes', 'reason': 'notes-rewrite'}, detail['dropped'])
+        self.assertIn({'note': 'lesson', 'op': 'remove', 'reason': 'lessons-rewrite'}, detail['dropped'])
 
 
 class Told(Dream):
@@ -860,17 +867,17 @@ class Told(Dream):
         self.assertNotIn('may no longer hold', self.service.owner_profile_snapshot('사무실', notes=False, ids=True))
         self.assertIn(old['id'], om.MemoryRaise(self.store).open(), 'reading it there consumes nothing')
 
-    def test_a_notes_revision_whose_notice_is_taken_is_not_saved(self):
+    def test_a_lesson_operation_whose_notice_is_taken_is_not_saved(self):
         self.store.put('telegram', {'enabled': True, 'user_id': CHAT, 'generation': GENERATION})
         first, _second = self.day('a', 'b')
         self.a_day_earlier(first)
         newest = self.settled('c', telegram=True)
         self.notice(newest, om.NOTICE_KIND, fingerprint={'ref': 'procedure:x', 'version': 1})
-        self.dreams = [dream(notes='- 답은 짧게', change='짧게', notes_sources=['t1', 't2'])]
+        self.dreams = [dream(lessons=[add_lesson('답은 짧게')], change='짧게', lesson_sources=['t1', 't2'])]
         self.tick()
-        self.assertIsNone(om.WorkingNotes(self.store).current())
+        self.assertEqual(om.WorkingLessons(self.store).current(), [])
         [(_status, detail)] = self.evidence(newest)
-        self.assertIn({'note': 'notes', 'reason': 'notice-taken'}, detail['dropped'])
+        self.assertIn({'note': 'lesson', 'op': 'add', 'reason': 'notice-taken'}, detail['dropped'])
 
 
 class Diary(Dream):

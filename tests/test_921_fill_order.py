@@ -123,7 +123,7 @@ def test_saturated_worker_prompt_cuts_older_fill_after_matches(profile):
     snapshot = memory.profile_snapshot('local-owner', query='needle')
     assert snapshot['truncated']
     # The complete profile section includes all the kinds of material supplied to a worker.
-    notes = 'working_notes v1\n- ' + 'note ' * 150
+    notes = 'working_lessons (fixture):\n- ' + 'lesson ' * 100 + '(memory:01234567-0000-0000-0000-0123456789ab)'
     exchanges = conversation_block([{'work_id': 'old-work', 'matched_id': 1,
                                       'turns': [{'id': 1, 'role': 'user', 'content': 'needle from earlier'}]}])
     save('diary.2000-01-01', 'needle record ' * 100)

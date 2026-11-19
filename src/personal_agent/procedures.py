@@ -19,10 +19,9 @@ and ``forgotten`` (removed by the owner through ``forget_record``; ``owner_forge
 owns the undo window and the purge).
 
 STEADY-NOTES-01 (#19): one reserved owner-level slot, ``NOTES_SLOT``, keeps the
-versions of the owner's working-notes document (``owner_model.WorkingNotes``) in
-the same store.  It has no candidate stage: a revision the host accepted is
-saved at once (``commit``), the previous version stays ``kept``, and forgetting
-the current version through ``owner_forget`` puts the previous one back.  No
+legacy versions of the owner's working-notes document. The #19 profile move
+can still create its first version. Forgetting the current legacy version
+through ``owner_forget`` puts the previous one back. No
 secret set can name it (set names never hold ``:``), so no ``code_run`` imports it.
 
 #798: the reserved prefix ``LINE_PREFIX`` holds the brief versions of entrusted lines

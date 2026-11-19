@@ -111,9 +111,20 @@ def test_point_repeated_in_other_spacing_or_case_is_one_lesson(store):
 def test_carried_is_what_the_brief_block_carries(store):
     collapse_store(store)
     assert le.carried_lessons(store) == [LESSON_A]
-    # The adapter reads the same text the brief carries, not a parallel copy of it.
-    block = WorkingNotes(store).block()
-    assert LESSON_A in block and LESSON_B not in block
+    # Before the #1031 lessons migration the brief carried the current version.
+    assert WorkingNotes(store).current()['points'] == [LESSON_A]
+
+
+def test_after_the_lessons_migration_carried_is_the_working_lessons_block(store):
+    """#1031 step 1: the migration restores every retained lesson; the brief carries the lesson items."""
+    from personal_agent.owner_model import WorkingLessons
+    collapse_store(store)
+    assert WorkingLessons(store).migrated()
+    assert sorted(le.carried_lessons(store)) == sorted([LESSON_A, LESSON_B, LESSON_C])
+    block = WorkingLessons(store).block('')
+    assert all(lesson in block for lesson in (LESSON_A, LESSON_B, LESSON_C))
+    report = le.retention_report(store)
+    assert (report['learned'], report['carried']) == (3, 3)
 
 
 def test_carried_is_empty_without_notes(store):

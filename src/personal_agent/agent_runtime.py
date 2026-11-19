@@ -155,9 +155,9 @@ FORGET_RECORD_ARGUMENTS={
   'delete erases it now with no undo (use it only when the owner asks to erase it completely; a message is blanked); '
   'undo restores one earlier forget by its receipt; list shows the forgets the owner can still undo, with what each covered; '
   'find with a query lists conversation messages, newest first, including recent ones.'),
- 'ref':('The exact item: memory:<id> (an id from list_memory or search_memory), state:<id> or obs:<id> (from the current context), '
-  'or procedure:<id> (a saved function library listed with its secret set in the current context, or the working_notes ref in '
-  'the owner profile; forgetting it stops its use and puts the previous saved version, if any, back in use), '
+ 'ref':('The exact item: memory:<id> (a working lesson ref in the owner profile or an id from list_memory or search_memory), state:<id> or obs:<id> (from the current context), '
+  'or procedure:<id> (a saved function library listed with its secret set in the current context; '
+  'forgetting it stops its use and puts the previous saved version, if any, back in use), '
   'or message:<id>[,<id>...] (up to 20 conversation messages; action find lists them), '
   'or line:<id> (an entrusted line from entrusted_line read: every version of its brief; its runs stop). '
   'Trust records also accept trust:<engine>|<kind>|<identity> from settings_read ai_connections. Their authority is disabled immediately and a revocation marker remains. Restoring trust requires settings_change ai_connections restore and owner confirmation, never this tool undo.'),

@@ -1636,9 +1636,10 @@ class QuickStore:
 
         ``terms`` are already normalized literal tokens, never raw FTS syntax.
         The returned rows are always joined back to the authoritative Memory
-        table and owner/state filtered there.
+        table and owner/state filtered there. Internal callers may rank a whole
+        bounded namespace; MemoryService still bounds the public search page.
         """
-        if isinstance(limit,bool) or not isinstance(limit,int) or not 1<=limit<=21:
+        if isinstance(limit,bool) or not isinstance(limit,int) or not 1<=limit<=101:
             raise ValueError('기억 검색 범위를 확인하세요.')
         if not isinstance(terms,(list,tuple)) or not terms or any(not isinstance(t,str) or not t for t in terms):
             return {'memories': [], 'search_mode': 'fts5' if self.memory_search_available else 'bounded-like'} if include_mode else []

@@ -57,7 +57,7 @@ from .quickstart_service import (APPROVE_BUTTON, BROWSER_LOGIN_PHONE_ALERT, BROW
                                  DENY_BUTTON, LOG, MAX_OWNER_MESSAGE_CHARS,
                                  MEMORY_CANDIDATES_EXPIRED_TEXT, MEMORY_CANDIDATES_OUTDATED_TEXT, MEMORY_PROMPT_KINDS, MEMORY_SAVED_KINDS,
                                  MEMORY_SAVED_OUTDATED_TEXT, MEMORY_SAVED_TTL_SECONDS, REACTION_EVENT, TELEGRAM_PHOTO_ALBUM_SETTLE_SECONDS,
-                                 TELEGRAM_RECEIVE_GRACE_SECONDS, WORKING_NOTES_KIND, PREPARED_IDS_PREFIX, prepared_ids, truncated_owner_message)
+                                 TELEGRAM_RECEIVE_GRACE_SECONDS, PREPARED_IDS_PREFIX, prepared_ids, truncated_owner_message)
 
 #: Buttons that only show a Work's details; a tap on them is not an owner act (#762).
 VIEW_CONTROLS = ('p7v:', 'p7d:')
@@ -380,6 +380,13 @@ class TelegramSurface(ConversationSurface):
                                 service.telegram.send_message(notification['chat_id'],msg(f'telegram_surface.{heading}_part', index=index, total=len(parts), part=part))
                                 sent_part=True
                             text=msg(f'telegram_surface.{heading}_final', total=len(parts), part=parts[-1])
+                        elif notification['kind']==om.RESTORED_NOTICE_KIND:
+                            # Twenty full lessons can exceed a Telegram message. Allow room for the localized header.
+                            while len(text)>3800:
+                                cut=text.rfind('\n',1,3800)+1 or 3800
+                                service.telegram.send_message(notification['chat_id'],text[:cut])
+                                sent_part=True
+                                text=text[cut:]
                         result=service.telegram.send_message(notification['chat_id'],text,reply_markup)
                 sent_part=True
                 service._unsent_backoff=0
@@ -1489,10 +1496,10 @@ class TelegramSurface(ConversationSurface):
                 if memory_saved:service.release_memory_saved(job)
             except Exception as exc:
                 LOG.warning('memory saved notice failed work=%s kind=%s',job['id'],type(exc).__name__)
-            # #233: a working-notes notice a self-review saved before this reply settled follows it now.
+            # Lesson notices held behind this reply can now be queued.
             try:service.release_working_notes(job['id'])
             except Exception as exc:
-                LOG.warning('working notes notice release failed work=%s kind=%s',job['id'],type(exc).__name__)
+                LOG.warning('working lesson notice release failed work=%s kind=%s',job['id'],type(exc).__name__)
         # #835/#858: delivery is durable before the truth-gated outcome
         # presentation. This optional remote Judgment call runs outside the
         # service lock, so it cannot stall polling, Stop updates or work.

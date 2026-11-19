@@ -217,8 +217,6 @@ CLASSIFIED_TABLES = {
         'own-text', 'the "not reported" sentinel Still writes when a model does not report its identity'),
     ('information_use.py', 'BROWSER_SIGNINS_PREFIX'): (
         'own-text', "the browser sign-ins line Still's current context renders (quickstart BROWSER_SIGNINS_LINE)"),
-    ('information_use.py', '_WORKING_NOTES'): (
-        'own-text', 'the header line owner_model.WorkingNotes.block writes'),
     # --- open findings, each removed by the named issue ----------------------
     # OWNER-ACT-01 (#172) removed the calendar approve/cancel word tables listed here.
     # RULES-OUT-01 (#173, slice A) removed the knowledge, settings, workspace, mail and note

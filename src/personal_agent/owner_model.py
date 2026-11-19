@@ -47,26 +47,16 @@ the owner's request, the answer excerpt, the orchestrator's evaluation
 verdicts and the owner's follow-up (or the observation), every fact redacted
 first, and returns at most one **blocker** (a cause only Still code can fix;
 kept as Evidence on the reviewed Work, redacted, and never filed anywhere)
-and, when it learned how to serve this owner better, the **working notes**
-revised as a whole.  No text rule reads the owner's wording; nothing names a
+and, when it learned how to serve this owner better, explicit operations
+on working lessons. No text rule reads the owner's wording; nothing names a
 site, task or category.
 
-**Working notes (STEADY-NOTES-01, #19).**  How to work for this owner lives
-in one bounded document, not in ``profile.`` fact rows: ``WorkingNotes``
-keeps its versions in the reserved slot of the procedural version store
-(``procedures.NOTES_SLOT``).  The judgment reads the current document and
-returns either no change or the full revision with a one-line change.  Still
-enforces the bounds (``NOTES_CHARS``, ``NOTES_POINTS``, ``POINT_CHARS``) and
-refuses a stored secret or credential shape, a revision given with a blocker
-(a software cause is not a preference), one that only rewords the marker,
-spacing, case or order of the current points, one that adds a semantic owner
-fact already in Memory, and one equal to a version the owner forgot.  A kept
-revision is the next version, attributed to the reviewed Work; the owner is
-told once, and forgetting it (``forget_record`` ``procedure:<id>``) puts the
-previous document back, undoable at any time (#367: a forget is never purged).  Earlier
-``profile.working.`` Memory rows are moved into the first version once
-(``WorkingNotes.migrate``), each under an undoable ``migrate`` receipt.
-Semantic owner facts stay in Memory.
+**Working lessons (#1031).** Each lesson is a canonical Memory row at
+``lesson.<id>``. Self-review and dream may add a lesson, update its wording,
+or end an explicitly named lesson with a reason. Other lessons stay current.
+The owner can forget and undo a forget of each lesson by its own Memory ref.
+The one-time migration restores points from retained versions of the old
+working-notes slot after the #19 move of earlier ``profile.working.`` rows.
 
 **Retrieval terms (#921).** Trigger: settle and idle ticks arm an unanchored
 ``terms`` run for eligible Memory. Tick: other kinds go first; terms get
@@ -94,10 +84,11 @@ import hashlib
 import json
 import re
 import time
-from datetime import datetime, timezone
+import uuid
+from datetime import datetime
 
 from .memory_service import _PROFILE_ROWS_CAP, PROFILE_SECTION_CHARS, MemoryService
-from .owner_forget import OwnerForget
+from .owner_forget import FORGOTTEN, MEMORY_PREFIX, MIGRATE, OwnerForget
 from .prompt_files import prompt
 from .messages import msg
 from . import preparations as prep
@@ -184,8 +175,7 @@ REVIEW_REASONS = (REVIEW_FAILED, REVIEW_CORRECTION, REVIEW_RETRY, REVIEW_REACTIO
 #: The Memory namespace lessons used before #19: its rows move into the working notes once (``WorkingNotes.migrate``),
 #: and upkeep proposes no fact under it (working methods are not semantic facts).
 LESSON_PREFIX = 'profile.working.'
-#: #19, the inherited design: the working notes are about 1,500 characters, at most 12 short points, in the
-#: owner's language.  A revision over a bound is refused whole, never cut.
+#: Bounds retained by the legacy #19 migration.
 NOTES_CHARS = 1500
 NOTES_POINTS = 12
 POINT_CHARS = 200
@@ -196,10 +186,18 @@ MIGRATION_KEY = 'working_notes_migration'
 MIGRATION_ATTEMPTS = 3
 #: The change line of the version the move creates (the brief reads it; the owner is not sent a notice for it).
 MIGRATION_CHANGE = 'collected the earlier saved working lessons into these notes'
-#: Outcome of a kept revision in the ``self_review`` Evidence.
-APPLIED_NOTES = 'working-notes'
-#: The Telegram notice of one revision, queued with the version (``fingerprint``: its ref and number).
+LESSONS_PREFIX = 'lesson.'
+LESSONS_MAX = 40
+MAX_LESSON_OPS = 5
+LESSONS_BRIEF_CHARS = 3000
+LESSONS_MIGRATION_KEY = 'working_lessons_migration'
+ORIGIN_SELF_REVIEW = 'self-review'
+ORIGIN_LESSONS_MIGRATION = 'lessons-migration'
+APPLIED_LESSONS = 'working-lessons'
 NOTICE_KIND = 'working_notes_saved'
+RESTORED_NOTICE_KIND = 'working_lessons_restored'
+_LESSON_OPS = ('add', 'update', 'remove')
+_LESSON_FIELDS = ('op', 'id', 'text', 'why', 'reason')
 #: Bounds of the self-review facts and of a stored observation.
 EVALUATION_CHARS = 1500
 FOLLOWUP_CHARS = 1500
@@ -383,20 +381,26 @@ DROP TABLE owner_model_upkeep_v1;
     return True
 
 
-REVIEW_QUESTION = prompt('owner_model_review').format(notes_chars=NOTES_CHARS, notes_points=NOTES_POINTS,
-                                                       point_chars=POINT_CHARS)
+REVIEW_QUESTION = prompt('owner_model_review').format(max_ops=MAX_LESSON_OPS, point_chars=POINT_CHARS)
 REVIEW_QUESTION += ('\n\nThe shared Voice instructions below apply to change, which is shown to the owner. '
-                    'The internal notes and blocker keep their formats above.\n\n' + prompt('voice'))
+                    'The internal lessons and blocker keep their formats above.\n\n' + prompt('voice'))
+
+LESSON_OP = {'type': 'object', 'additionalProperties': False,
+             'properties': {**{name: {'type': 'string'} for name in _LESSON_FIELDS},
+                            'op': {'type': 'string', 'enum': list(_LESSON_OPS)}},
+             'required': list(_LESSON_FIELDS)}
+_LESSONS_SCHEMA = {'type': 'array', 'items': LESSON_OP}
 
 REVIEW_SCHEMA = {'type': 'object', 'additionalProperties': False,
-                 'properties': {'notes': {'type': 'string'}, 'change': {'type': 'string'},
+                 'properties': {'lessons': _LESSONS_SCHEMA, 'change': {'type': 'string'},
                                 'blocker': {'type': 'string'}},
-                 'required': ['notes', 'change', 'blocker']}
+                 'required': ['lessons', 'change', 'blocker']}
 
 
 def review_shape(data):
-    """Types only; each note's meaning is ``validate_review``'s."""
-    return all(isinstance(data.get(name), str) for name in ('notes', 'change', 'blocker'))
+    """Types only; each operation's meaning is checked by ``validate_lessons``."""
+    return (isinstance(data.get('lessons'), list)
+            and all(isinstance(data.get(name), str) for name in ('change', 'blocker')))
 
 
 def lesson_key(key):
@@ -428,59 +432,90 @@ def notes_text(points):
     return '\n'.join('- ' + point for point in points)
 
 
-def validate_review(data, current=(), known=frozenset(), request=''):
-    """``(revision, blocker, dropped)``: what Still may keep of one self-review answer (deterministic).
+def _one_line(value):
+    return ' '.join(value.split()) if isinstance(value, str) else ''
 
-    ``revision`` is ``{'points', 'text', 'change'}`` or None; ``blocker`` a
-    short text or None.  ``current`` holds the points of the current working
-    notes.  A revision is refused whole - never cut - when it breaks a bound
-    (more than ``NOTES_POINTS`` points, a point over ``POINT_CHARS``, a
-    document over ``NOTES_CHARS``); when it holds the same points as
-    ``current`` (another marker, spacing, case or order is no change); when
-    it comes with a blocker (a software cause is not a preference about the
-    owner); without a one-line change; or when a point it adds is the request
-    sentence or a current ``profile.`` value in ``known`` (semantic facts stay
-    in Memory).  ``dropped`` lists each refused note with its reason, never
-    its text.
-    """
+
+def _lesson_drop(op, reason):
+    return {'note': 'lesson', 'op': op, 'reason': reason}
+
+
+def _lesson_op_refusal(item, current, texts, seen_ids, seen_adds, known, request):
+    op, ident = item['op'], item['id']
+    if op not in _LESSON_OPS:
+        return 'op'
+    if op == 'add' and ident:
+        return 'add-id'
+    if op == 'remove' and not ident:
+        return 'remove-id'
+    if op != 'add' and ident not in current:
+        return 'unknown-id'
+    text = normalized(item['text'])
+    if ident in seen_ids or (op == 'add' and text in seen_adds):
+        return 'duplicate'
+    if op == 'add':
+        seen_adds.add(text)
+    else:
+        seen_ids.add(ident)
+    if op == 'remove':
+        return None if 0 < len(item['reason']) <= CHANGE_CHARS else 'remove-reason'
+    if not text:
+        return 'empty'
+    if len(item['text']) > POINT_CHARS:
+        return 'point-length'
+    if not 0 < len(item['why']) <= CHANGE_CHARS:
+        return 'why'
+    if text in texts:
+        return 'unchanged'
+    if text == request:
+        return 'request'
+    return 'profile-fact' if text in known else None
+
+
+def validate_lessons(data, current, known=frozenset(), request=''):
+    """Validate explicit operations against the lessons the judgment read."""
     data = data if isinstance(data, dict) else {}
-    dropped, revision, blocker = [], None, None
-    note = data.get('blocker')
-    note = ' '.join(note.split()) if isinstance(note, str) else ''
-    if note:
-        if len(note) > MAX_TEXT_CHARS:
-            dropped.append({'note': 'blocker', 'reason': 'content'})
-        else:
-            blocker = note
-    text, change = data.get('notes'), data.get('change')
-    points = notes_points(text if isinstance(text, str) else '')
-    change = ' '.join(change.split()) if isinstance(change, str) else ''
-    if points:
-        before = {normalized(point) for point in current}
-        added = [normalized(point) for point in points if normalized(point) not in before]
-        reason = None
-        if len(points) > NOTES_POINTS:
-            reason = 'points'
-        elif any(len(point) > POINT_CHARS for point in points):
-            reason = 'point-length'
-        elif len(notes_text(points)) > NOTES_CHARS:
-            reason = 'length'
-        elif not added and len(points) == len(before):
-            reason = 'unchanged'
-        elif note:
-            # Review P2: any blocker the judgment gave, even one too long to keep as Evidence.
-            reason = 'blocker'
-        elif not change or len(change) > CHANGE_CHARS:
-            reason = 'change'
-        elif normalized(request) and normalized(request) in added:
-            reason = 'request'
-        elif any(point in known for point in added):
-            reason = 'profile-fact'
-        if reason is None:
-            revision = {'points': points, 'text': notes_text(points), 'change': change}
-        else:
-            dropped.append({'note': 'notes', 'reason': reason})
-    return revision, blocker, dropped
+    note = _one_line(data.get('blocker'))
+    change = _one_line(data.get('change'))
+    blocker = note if 0 < len(note) <= MAX_TEXT_CHARS else None
+    dropped = [{'note': 'blocker', 'reason': 'content'}] if note and blocker is None else []
+    proposed = data.get('lessons')
+    if not isinstance(proposed, list):
+        return [], change, blocker, dropped
+    if len(proposed) > MAX_LESSON_OPS:
+        return [], change, blocker, [*dropped, {'note': 'lesson', 'reason': 'ops'}]
+
+    kept, seen_ids, seen_adds = [], set(), set()
+    texts = {normalized(text) for text in current.values()}
+    request = normalized(request)
+    for raw in proposed:
+        raw = raw if isinstance(raw, dict) else {}
+        item = {name: raw[name] if isinstance(raw.get(name), str) else '' for name in _LESSON_FIELDS}
+        item['text'] = _one_line(item['text'])
+        item['why'] = _one_line(item['why'])
+        item['reason'] = item['reason'].strip()
+        reason = _lesson_op_refusal(item, current, texts, seen_ids, seen_adds, known, request)
+        if reason:
+            dropped.append(_lesson_drop(item['op'], reason))
+            continue
+        item['reason'] = _one_line(item['reason'])
+        kept.append(item)
+
+    room = LESSONS_MAX - len(current) + sum(item['op'] == 'remove' for item in kept)
+    allowed = []
+    for item in kept:
+        if item['op'] == 'add':
+            room -= 1
+            if room < 0:
+                dropped.append(_lesson_drop('add', 'lessons-full'))
+                continue
+        allowed.append(item)
+    veto = 'blocker' if note else 'change' if not 0 < len(change) <= CHANGE_CHARS else None
+    if veto:
+        dropped.extend(_lesson_drop(item['op'], veto) for item in allowed)
+        allowed = []
+    return allowed, change, blocker, dropped
+
 
 QUESTION = prompt('owner_model_facts').format(categories=', '.join(CATEGORIES))
 
@@ -512,8 +547,7 @@ def shape(data):
 
 
 DREAM_QUESTION = (prompt('owner_model_dream') + '\n\n' + prompt('owner_model_dream_lines')).format(
-    categories=', '.join(CATEGORIES), notes_points=NOTES_POINTS,
-    point_chars=POINT_CHARS, notes_chars=NOTES_CHARS,
+    categories=', '.join(CATEGORIES), max_ops=MAX_LESSON_OPS, point_chars=POINT_CHARS,
     diary_chars=DIARY_CHARS, suggestions=DREAM_SUGGESTIONS, title_chars=prep.TITLE_MAX_CHARS)
 DREAM_QUESTION += ('\n\nThe shared Voice instructions below apply to diary and change, which the owner may read. '
                    'They never relax the rules above.\n\n' + prompt('voice'))
@@ -569,12 +603,12 @@ _DREAM_LINE['required'] = list(_DREAM_LINE['properties'])
 
 DREAM_SCHEMA = {'type': 'object', 'additionalProperties': False,
                 'properties': {'proposals': {'type': 'array', 'items': _DREAM_ITEM},
-                               'notes': {'type': 'string'}, 'change': {'type': 'string'},
-                               'notes_sources': {'type': 'array', 'items': {'type': 'string'}},
+                               'lessons': _LESSONS_SCHEMA, 'change': {'type': 'string'},
+                               'lesson_sources': {'type': 'array', 'items': {'type': 'string'}},
                                'diary': {'type': 'string'},
                                'suggestions': {'type': 'array', 'items': _DREAM_SUGGESTION},
                                'lines': {'type': 'array', 'items': _DREAM_LINE}},
-                'required': ['proposals', 'notes', 'change', 'notes_sources', 'diary', 'suggestions', 'lines']}
+                'required': ['proposals', 'lessons', 'change', 'lesson_sources', 'diary', 'suggestions', 'lines']}
 
 
 DREAM_GATHER_SCHEMA = {'type': 'object', 'additionalProperties': False,
@@ -588,9 +622,10 @@ def gather_shape(data):
 
 def dream_shape(data):
     """Types only; what may be kept is ``validate_dream``'s and the run's (no ``suggestions`` is none)."""
-    return (isinstance(data.get('proposals'), list) and isinstance(data.get('notes_sources'), list)
+    return (isinstance(data.get('proposals'), list) and isinstance(data.get('lesson_sources'), list)
+            and isinstance(data.get('lessons'), list)
             and isinstance(data.get('suggestions', []), list) and isinstance(data.get('lines', []), list)
-            and all(isinstance(data.get(name), str) for name in ('notes', 'change', 'diary')))
+            and all(isinstance(data.get(name), str) for name in ('change', 'diary')))
 
 
 def validate_suggestions(suggestions, refs, turn_days, limit=DREAM_SUGGESTIONS):
@@ -858,7 +893,7 @@ def _refusal(item):
     if item['kind'] not in KINDS:
         return 'kind'
     if not profile_key(item['memory_key']) or item['memory_key'].startswith(LESSON_PREFIX):
-        # #19: how to work for the owner lives in the working notes, not in a ``profile.`` fact.
+        # Working methods use their own lesson keys. The older profile namespace is reserved for migration.
         return 'key'
     if not item['content'].strip() or len(item['content'].strip()) > MAX_TEXT_CHARS:
         return 'content'
@@ -1738,32 +1773,15 @@ class Upkeep:
 
     # -- one self-review (#998) ---------------------------------------------
     def run_review(self, job, row, judgments, *, answer, profile, clock, cancelled=None):
-        """Review one settled Work from its own records; returns ``(state, calls, event_status, detail)``.
-
-        One ``structured`` judgment (``ConversationJudgments.self_review``)
-        over the owner's request, the answer excerpt, the Work's outcome, the
-        orchestrator's verdicts, the owner's follow-up (or the row's
-        observation) and the current working notes, all redacted by
-        ``judgments``.  A kept revision of the notes is saved at once as their
-        next version attributed to the reviewed Work (#19; the owner's own AI
-        writes and the owner is told with an exact undo, as #918 slice a); the
-        blocker is kept in the event detail, redacted, and nowhere else.  The
-        pause switch is read again before the write; a write is not a call.
-        ``profile`` is the profile snapshot without the notes block.  While the
-        one-time move of the earlier lessons is not done (``WorkingNotes.migrated``)
-        nothing is asked and the run is ``unavailable`` (#233).
-        """
+        """Review one Work and save validated operations on its working lessons."""
         from .agent_runtime import MEMORY_OWNER
-        notes = WorkingNotes(self.store, self.clock)
+        lessons = WorkingLessons(self.store, self.clock)
         reason = row.get('reason') or ''
-        if not notes.migrated():
-            # #233 (Codex review): a version saved before the one-time move would make the move's retry
-            # leave every earlier lesson in Memory, so no revision is asked for until the move is done.
-            # Nothing was sent and nothing is written; the move is retried here and at the next start.
+        if not lessons.migrated():
             return STATE_UNAVAILABLE, 0, EVENT_UNAVAILABLE, {'reason': reason, 'sent': False,
                                                              'stopped': STOPPED_MIGRATION}
-        current = notes.current()
-        current_text = current['text'] if current else ''
+        current = {lesson['id']: lesson for lesson in lessons.current()}
+        current_text = self._lesson_input(current)
         request = str(job.get('message') or '')
         followups = self.followups(job['id'])
         followup = '\n'.join(followups) if followups else (row.get('observation') or '')
@@ -1771,7 +1789,7 @@ class Upkeep:
         awaiting = self.awaiting(job['id'])
         data, decision = judgments.self_review(request, answer, str(job.get('status') or ''), evaluation, followup,
                                                profile, reason, work_id=job['id'], cancelled=cancelled,
-                                               working_notes=current_text, awaiting_owner=awaiting)
+                                               working_lessons=current_text, awaiting_owner=awaiting)
         confidence = decision.confidence
         calls = 1 if call_sent(decision) else 0
         self.count(job['id'], calls, KIND_SELF_REVIEW)
@@ -1783,51 +1801,52 @@ class Upkeep:
                              'evaluations': len(self.evaluations(job['id'])), 'followups': len(followups),
                              'observation': bool(row.get('observation')), 'profile_chars': len(profile or ''),
                              'awaiting_owner': bool(awaiting),
-                             'working_notes_version': current['version'] if current else None,
-                             'working_notes_chars': len(current_text), 'clock': bool(clock)}}
+                             'working_lessons': len(current), 'working_lessons_chars': len(current_text), 'clock': bool(clock)}}
         if data is None:
             return STATE_UNAVAILABLE, calls, EVENT_UNAVAILABLE, detail
         known, _pending = self.known_values(MEMORY_OWNER, job['id'])
-        revision, blocker, dropped = validate_review(data, current['points'] if current else (), known, request=request)
-        detail.update(notes=None, blocker=None, dropped=dropped, stopped=None)
+        ops, change, blocker, dropped = validate_lessons(
+            data, {ident: item['text'] for ident, item in current.items()}, known, request=request)
+        detail.update(lessons=None, blocker=None, dropped=self._lesson_evidence_drops(dropped), stopped=None)
         if blocker:
             # Evidence on the reviewed Work only: redacted like every fact, never filed anywhere.
             detail['blocker'] = judgments.redact(blocker)[:MAX_TEXT_CHARS]
-        if revision:
-            self._save_notes(notes, current, revision, job['id'], judgments, dropped, detail)
+        if ops:
+            self._save_lessons(lessons, current, ops, change, job['id'], judgments, detail['dropped'], detail,
+                               origin=ORIGIN_SELF_REVIEW)
         return STATE_DONE, calls, EVENT_RECORDED, detail
 
-    def _save_notes(self, notes, current, revision, work_id, judgments, dropped, detail):
-        """Save one validated working-notes revision attributed to ``work_id``, or record why not (#19; #402 shares it).
+    @staticmethod
+    def _lesson_input(current):
+        return '\n'.join(f"[{ident}] {item['text']}" for ident, item in current.items())
 
-        Sets ``detail['notes']`` when kept and ``detail['stopped']`` when the owner paused; extends ``dropped``.
-        """
-        from .agent_runtime import SECRET_SHAPED_VALUE, memory_value_has_secret
-        current_text = current['text'] if current else ''
-        _left, why = self.allowance(self.clock())
-        refused = None
-        if why == STOPPED_PAUSED:
-            detail['stopped'] = refused = STOPPED_PAUSED
-        elif judgments.redact(current_text) != current_text:
-            # The judgment read part of the document withheld: a whole revision would drop it.
-            refused = 'notes-withheld'
-        elif memory_value_has_secret(self.store, revision['text'], revision['change']):
-            refused = SECRET_SHAPED_VALUE
-        elif notes.forgotten(revision['text']):
-            refused = FORGOTTEN_VALUE
-        else:
-            saved = notes.save(revision, work_id, expected=current['id'] if current else None)
-            if saved is None:
-                # The owner forgot or another revision replaced the document during the call.
-                refused = 'notes-changed'
+    @staticmethod
+    def _lesson_evidence_drops(dropped):
+        # Invalid operation names are arbitrary model text, so never retain them as Evidence.
+        return [{**item, 'op': ''} if item.get('op') not in (*_LESSON_OPS, None) else item for item in dropped]
+
+    def _save_lessons(self, lessons, current, ops, change, work_id, judgments, dropped, detail, *, origin):
+        """Save operations that still have their authority, recording only ids and counts."""
+        if self.allowance(self.clock())[1] == STOPPED_PAUSED:
+            detail['stopped'] = STOPPED_PAUSED
+            dropped.extend(_lesson_drop(item['op'], STOPPED_PAUSED) for item in ops)
+            return
+        visible = []
+        for item in ops:
+            target = current.get(item['id'])
+            if target and judgments.redact(target['text']) != target['text']:
+                dropped.append(_lesson_drop(item['op'], 'lesson-withheld'))
             else:
-                detail['notes'] = {'outcome': APPLIED_NOTES, 'version': saved['version'], 'ref': saved['ref'],
-                                   'previous_version': current['version'] if current else None,
-                                   'points': len(revision['points']), 'chars': len(revision['text']),
-                                   'auto_saved': True}
-        if refused:
-            dropped.append({'note': 'notes', 'reason': refused})
-
+                visible.append(item)
+        result = lessons.apply(visible, change, work_id, origin=origin,
+                               expected_rows={ident: item['memory_id'] for ident, item in current.items()})
+        dropped.extend(result['dropped'])
+        if applied := result['applied']:
+            detail['lessons'] = {'outcome': APPLIED_LESSONS, 'applied': applied,
+                                 'added': sum(item['op'] == 'add' for item in applied),
+                                 'updated': sum(item['op'] == 'update' for item in applied),
+                                 'removed': sum(item['op'] == 'remove' for item in applied),
+                                 'auto_saved': True}
 
     # -- one dream (#402) ---------------------------------------------------
     def run_dream(self, job, row, judgments, *, turns, profile, clock, diary_date, ends_after, cancelled=None, source_works=None,
@@ -1838,21 +1857,21 @@ class Upkeep:
         ``job`` is the anchor Work (the newest request the dream covers): what is kept is attributed to
         it and its notice tells the owner, with an undo, as upkeep's saves do (#918 slice a).  ``turns``
         are ``(ref, owner words, answer[, local time[, outcome]])`` tuples the caller scrubbed, oldest first; ``profile`` the
-        snapshot with short ids and no notes. ``source_works`` optionally maps turn refs to
+        snapshot with short ids and no lessons. ``source_works`` optionally maps turn refs to
         their Work ids (#443); omitted by legacy callers. One ``structured`` judgment
         (``ConversationJudgments.owner_model_dream``), then Still's deterministic checks:
-        ``validate_dream`` for facts, ``validate_review`` and two separate cited turns for the working
-        notes, the size bound, a secret shape and the pause for the daily record (``diary_date``).
+        ``validate_dream`` for facts, ``validate_lessons`` and two separate cited turns for working
+        lessons, the size bound, a secret shape and the pause for the daily record (``diary_date``).
         #496: ``earlier`` holds scrubbed ``(m ref, owner words, answer, local time, outcome, correction words)``
-        misses for lessons only; two misses on different dates, including one tonight, also ground notes.
+        misses for lessons only; two misses on different dates, including one tonight, also ground lessons.
         Facts may end any profile row that existed at ``ends_after`` (the claim).  #583: the same
         judgment may suggest standing preparations; ``preparations`` names the active ones (so they are
         not suggested again) and ``suggest(kept, judgments)`` -> ``(outcomes, calls)`` stores those that
         pass ``validate_suggestions`` as proposals, never while paused.
         """
         from .agent_runtime import MEMORY_OWNER, SECRET_SHAPED_VALUE, memory_value_has_secret
-        notes = WorkingNotes(self.store, self.clock)
-        if not notes.migrated():
+        lessons = WorkingLessons(self.store, self.clock)
+        if not lessons.migrated():
             return STATE_UNAVAILABLE, 0, EVENT_UNAVAILABLE, {'sent': False, 'stopped': STOPPED_MIGRATION}
         # #744: the look back learns only from owner words for marked source
         # Works. Filter before gather and synthesis, not from the model's later
@@ -1922,12 +1941,12 @@ class Upkeep:
                                                   ends_after=ends_after, origin=ORIGIN_DREAM, source_works=source_works,
                                                   terms_confidence=gather.confidence)
             first.update(proposed=len(found.get('proposals') or []), applied=gathered, dropped=refused)
-        current = notes.current()
-        current_text = current['text'] if current else ''
+        current = {lesson['id']: lesson for lesson in lessons.current()}
+        current_text = self._lesson_input(current)
         previous = self.diary_previous(MEMORY_OWNER)
         if stopped == STOPPED_PAUSED or (cancelled and cancelled()):
             return STATE_DONE, calls, EVENT_RECORDED, {'gather': first, 'sent': bool(calls), 'applied': gathered,
-                                                       'dropped': [], 'notes': None, 'diary': None,
+                                                       'dropped': [], 'lessons': None, 'diary': None,
                                                        'stopped': stopped or STOPPED_DEADLINE,
                                                        'inputs': {'turns': len(lines)}}
         with scope([*shown_works, *missed_works, *(line_refs or {}).values()]):
@@ -1945,7 +1964,7 @@ class Upkeep:
                   'gather': first,
                   'inputs': {'turns': len(lines), 'turns_chars': sum(len(line) for line in lines), 'clock': bool(clock),
                              'earlier_misses': len(misses),
-                             'working_notes_version': current['version'] if current else None,
+                             'working_lessons': len(current), 'working_lessons_chars': len(current_text),
                              'previous_diary': bool(previous)}}
         if data is None:
             detail.update(applied=gathered)
@@ -1968,14 +1987,13 @@ class Upkeep:
             MemoryRaise(self.store, self.clock).add(changed + unsure)
         detail['raise'] = {'changed': len(changed), 'held': len(unsure)}
         detail.update(proposed=len(data.get('proposals') or []), applied=applied, dropped=dropped, stopped=stopped,
-                      notes=None, diary=None)
+                      lessons=None, diary=None)
         if stopped != STOPPED_PAUSED:
-            revision, _blocker, refused = validate_review({'notes': data.get('notes'), 'change': data.get('change'),
-                                                          'blocker': ''},
-                                                         current['points'] if current else (), known)
-            dropped.extend(refused)
-            if revision:
-                cited = dream_refs(data.get('notes_sources'), lesson_refs)
+            ops, change, _blocker, refused = validate_lessons(
+                data, {ident: item['text'] for ident, item in current.items()}, known)
+            dropped.extend(self._lesson_evidence_drops(refused))
+            if ops:
+                cited = dream_refs(data.get('lesson_sources'), lesson_refs)
                 # #452: separate occasions are separate days when the turns are dated; two requests of one
                 # conversation are one occasion (the audit found one task's settings made standing this way).
                 tonight_cited = set(cited or ()) & set(refs)
@@ -1986,25 +2004,25 @@ class Upkeep:
                 repeated_misses = (len(cited_misses) >= 2 and None not in miss_days and len(miss_days) >= 2
                                    and bool(cited_misses & miss_refs))
                 rule = ('occasions' if occasions else 'misses') if cited and (occasions or repeated_misses) else None
-                detail['notes_evidence'] = {'tonight_misses': len(cited_misses & miss_refs),
-                                            'earlier_misses': len(cited_misses & earlier_refs), 'rule': None}
+                detail['lessons_evidence'] = {'tonight_misses': len(cited_misses & miss_refs),
+                                              'earlier_misses': len(cited_misses & earlier_refs), 'rule': None}
+                refused = None
                 if not rule and (not cited or len(cited) < 2):
                     # A lesson about how to serve the owner needs two separate occasions (#402).
-                    dropped.append({'note': 'notes', 'reason': 'one-occasion' if cited else 'sources'})
+                    refused = 'one-occasion' if cited else 'sources'
                 elif not rule:
-                    dropped.append({'note': 'notes', 'reason': 'one-day'})
-                elif current and len(current['points']) > 1 and len(
-                        {normalized(point) for point in current['points']}
-                        - {normalized(point) for point in revision['points']}) * 2 > len(current['points']):
-                    # A look back that drops more than half of the notes is not trusted to do it at once.
-                    dropped.append({'note': 'notes', 'reason': 'notes-rewrite'})
+                    refused = 'one-day'
+                elif len(current) > 1 and sum(item['op'] in ('remove', 'update') for item in ops) * 2 > len(current):
+                    refused = 'lessons-rewrite'
                 elif self._notice_taken(job['id'], NOTICE_KIND):
-                    # The anchor's one working-notes notice was used already: a revision now would go untold.
-                    dropped.append({'note': 'notes', 'reason': 'notice-taken'})
+                    refused = 'notice-taken'
+                if refused:
+                    dropped.extend(_lesson_drop(item['op'], refused) for item in ops)
                 else:
-                    self._save_notes(notes, current, revision, job['id'], judgments, dropped, detail)
-                    if detail.get('notes'):
-                        detail['notes_evidence']['rule'] = rule
+                    self._save_lessons(lessons, current, ops, change, job['id'], judgments, dropped, detail,
+                                       origin=ORIGIN_DREAM)
+                    if detail.get('lessons'):
+                        detail['lessons_evidence']['rule'] = rule
             stopped = detail.get('stopped') or stopped
         if stopped != STOPPED_PAUSED:
             calls, stopped = self._lines(job, data.get('lines'), refs, line_refs or {}, source_works or {},
@@ -2156,12 +2174,7 @@ class MemoryRaise:
 
 
 class WorkingNotes:
-    """#19: the owner's one working-notes document, its versions in the reserved procedure slot.
-
-    Read by every brief (``block``) and revised only by the self-review
-    (``Upkeep.run_review``) after Still's deterministic checks.  Forgetting a
-    version and its undo are ``owner_forget``'s (``procedure:<id>``).
-    """
+    """Legacy reader and #19 mover for the reserved procedure slot."""
 
     def __init__(self, store, clock=time.time):
         from .procedures import ProcedureLibrary
@@ -2179,67 +2192,6 @@ class WorkingNotes:
         return {'id': row['id'], 'ref': REF_PREFIX + row['id'], 'version': row['version'], 'text': row['source'],
                 'points': notes_points(row['source']), 'change': str(row['stats'].get('change') or ''),
                 'saved': row['saved'], 'work_id': row['work_id']}
-
-    def block(self):
-        """The document as one brief block ('' when there is none): a header with its version, ref and last change."""
-        current = self.current()
-        if current is None or not current['points']:
-            return ''
-        try:
-            day = datetime.fromtimestamp(float(current['saved']), timezone.utc).date().isoformat()
-        except (TypeError, ValueError, OverflowError, OSError):
-            day = 'unknown-date'
-        return (f"working_notes v{current['version']} (the assistant's own notes on how to work for this owner; "
-                f"ref {current['ref']}, last change {day}: {current['change'] or 'none'}; when the owner does not "
-                f"want the last change, forget_record forget {current['ref']} puts the previous notes back):\n"
-                + notes_text(current['points']))
-
-    def save(self, revision, work_id, *, expected=None):
-        """Save a validated revision as the next version unless the current one is no longer ``expected``.
-
-        When ``work_id`` is a Telegram Work, its one ``NOTICE_KIND`` notice is inserted in the same
-        transaction (review P1, as a direct Memory save holds its notice), so a saved revision is
-        never left untold by a crash.  #233 (Codex review): it is ``queued`` only once the Work's
-        reply is settled (``DELIVERY_SETTLED``); before that it is held, and the reply's delivery
-        (or the release sweep) queues it, so the notice never overtakes the answer it is about.
-        Returns ``{'id', 'ref', 'version', 'digest'}`` or None when the document changed meanwhile.
-        """
-        import uuid
-        from .procedures import NOTES_SLOT, REF_PREFIX
-        with self.store.db() as db:
-            db.execute('BEGIN IMMEDIATE')
-            current = self.library.current(NOTES_SLOT, db)
-            if (current['id'] if current else None) != expected:
-                return None
-            row = self.library.commit(NOTES_SLOT, revision['text'], work_id=work_id,
-                                      stats={'change': revision['change']}, db=db)
-            saved = {'id': row['id'], 'ref': REF_PREFIX + row['id'], 'version': row['version'], 'digest': row['digest']}
-            job = (db.execute('SELECT channel,chat_id,delivery FROM jobs WHERE id=?', (work_id,)).fetchone()
-                   if work_id else None)
-            from .conversation_surface import surface_conversation
-            # #306 review: the notice of a Work from any conversation surface, on that surface's queue.
-            conversation = surface_conversation(job['channel'], job['chat_id']) if job else None
-            if conversation:
-                state = 'queued' if job['delivery'] in self.store.DELIVERY_SETTLED else self.store.NOTICE_HELD
-                db.execute('INSERT OR IGNORE INTO telegram_notifications(id,job_id,chat_id,generation,kind,fingerprint,state,message_id,created,surface) VALUES (?,?,?,?,?,?,?,?,?,?)',
-                           (str(uuid.uuid4()), work_id, job['chat_id'], conversation[1], NOTICE_KIND,
-                            json.dumps({'ref': saved['ref'], 'version': saved['version']}), state, None, self.clock(),
-                            conversation[0]))
-        return saved
-
-    def forgotten(self, text):
-        """Whether the owner forgot a version with exactly this text: the host does not save it again.
-
-        The forget leaves a content-free digest tombstone (``owner_forget``, review P2) that outlives
-        the seven-day purge of the version itself; undoing the forget removes it.
-        """
-        from .agent_runtime import MEMORY_OWNER
-        from .procedures import NOTES_SLOT, digest
-        value = digest(text)
-        with self.store.db() as db:
-            tombstone = db.execute('SELECT 1 FROM forgotten_values WHERE owner_key=? AND digest=?',
-                                   (self.store._memory_binding(MEMORY_OWNER), value)).fetchone()
-        return tombstone is not None or self.library.forgotten_digest(NOTES_SLOT, value)
 
     def migrated(self):
         """Whether the one-time move is done, trying it now (at most ``MIGRATION_ATTEMPTS`` plans) when it is not.
@@ -2270,7 +2222,6 @@ class WorkingNotes:
         when there was nothing to move.
         """
         from .agent_runtime import MEMORY_OWNER, memory_value_has_secret
-        from .owner_forget import MEMORY_PREFIX, MIGRATE
         from .procedures import NOTES_SLOT
         if self.store.config(MIGRATION_KEY):
             return None
@@ -2315,6 +2266,254 @@ class WorkingNotes:
             db.execute('INSERT INTO config(key,value) VALUES (?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value',
                        (MIGRATION_KEY, json.dumps(record)))
         return record
+
+
+class WorkingLessons:
+    """Canonical lesson rows and their migration from retained working notes."""
+
+    def __init__(self, store, clock=time.time):
+        self.store, self.clock = store, clock
+        # As ``WorkingNotes`` did: the receipt and tombstone tables these lessons rely on exist from start-up
+        # (other readers, such as entrusted lines, query them).
+        OwnerForget(store, clock)
+
+    def _owner_key(self):
+        from .agent_runtime import MEMORY_OWNER
+        return self.store._memory_binding(MEMORY_OWNER)
+
+    def current(self, db=None):
+        """This owner's current lessons, oldest first."""
+        if db is None:
+            with self.store.db() as db:
+                return self.current(db)
+        lessons = []
+        rows = db.execute(
+            "SELECT * FROM memories WHERE owner_key=? AND state='current' AND substr(memory_key,1,?)=? "
+            'ORDER BY created,rowid', (self._owner_key(), len(LESSONS_PREFIX), LESSONS_PREFIX))
+        for row in rows:
+            sources = json.loads(row['source_works'] or '[]')
+            lessons.append({'id': row['memory_key'][len(LESSONS_PREFIX):], 'key': row['memory_key'],
+                            'memory_id': row['id'], 'ref': MEMORY_PREFIX + row['id'],
+                            'text': row['content'], 'why': row['evidence'] or '', 'saved': row['created'],
+                            'work_id': next(iter(sources or ()), None), 'origin': row['origin']})
+        return lessons
+
+    @staticmethod
+    def _new_key(text, occupied_ids):
+        """Use the first wording to reproduce the key even after its row is purged."""
+        norm = candidate = normalized(text)
+        attempt = 0
+        while True:
+            ident = hashlib.sha256(candidate.encode()).hexdigest()[:8]
+            if ident not in occupied_ids:
+                return LESSONS_PREFIX + ident
+            attempt += 1
+            candidate = f'{norm}\n{attempt}'
+
+    def _save(self, db, key, text, owner_key, work_id, origin, why=None):
+        return self.store._save_memory(
+            db, key, text, owner_key, self.store._work_binding(work_id) if work_id else None,
+            origin=origin, source_works=[work_id] if work_id else None, basis=BASIS_INFERRED, evidence=why)
+
+    @staticmethod
+    def _forgotten_texts(db, owner_key):
+        rows = db.execute(
+            "SELECT m.content FROM owner_state_receipts AS r, json_each(r.items_json, '$.rows') AS item "
+            "JOIN memories AS m ON m.id=json_extract(item.value, '$.id') "
+            "WHERE r.owner_key=? AND r.kind='memory' AND r.operation IN ('forget','delete') AND r.state=? "
+            "AND json_extract(item.value, '$.table')='memories' AND m.owner_key=r.owner_key AND m.state=? "
+            'AND substr(m.memory_key,1,?)=?',
+            (owner_key, FORGOTTEN, FORGOTTEN, len(LESSONS_PREFIX), LESSONS_PREFIX))
+        return {normalized(row['content']) for row in rows}
+
+    def _forgotten(self, db, owner_key, key, text, forgotten_texts, *, add_key=None):
+        if normalized(text) in forgotten_texts:
+            return True
+        digest = self.store.memory_digest(key, text)
+        add_digest = self.store.memory_digest(add_key, text) if add_key and add_key != key else digest
+        return db.execute(
+            'SELECT 1 FROM forgotten_values AS f JOIN owner_state_receipts AS r ON r.id=f.receipt_id '
+            "WHERE f.owner_key=? AND f.digest IN (?,?) AND r.operation IN ('forget','delete') LIMIT 1",
+            (owner_key, digest, add_digest)).fetchone() is not None
+
+    def _notice(self, db, jobs, kind, fingerprint):
+        from .conversation_surface import surface_conversation
+        for job in jobs:
+            conversation = surface_conversation(job['channel'], job['chat_id'])
+            if not conversation:
+                continue
+            state = 'queued' if job['delivery'] in self.store.DELIVERY_SETTLED else self.store.NOTICE_HELD
+            db.execute('INSERT OR IGNORE INTO telegram_notifications'
+                       '(id,job_id,chat_id,generation,kind,fingerprint,state,message_id,created,surface) '
+                       'VALUES (?,?,?,?,?,?,?,?,?,?)',
+                       (str(uuid.uuid4()), job['id'], job['chat_id'], conversation[1], kind,
+                        json.dumps(fingerprint), state, None, self.clock(), conversation[0]))
+            break
+
+    def apply(self, ops, change, work_id, *, origin, expected_rows=None):
+        """Apply validated operations in one transaction, rechecking current state.
+
+        Upkeep supplies the row ids that its judgment saw, so a replaced row
+        cannot be updated or removed on the strength of older wording.
+        """
+        from .agent_runtime import MEMORY_OWNER, SECRET_SHAPED_VALUE, memory_value_has_secret
+        from .current_context import redact_known_secrets
+        if not ops:
+            return {'applied': [], 'dropped': []}
+        forget = OwnerForget(self.store, self.clock)
+        owner_key = self._owner_key()
+        applied, dropped = {}, {}
+        with self.store.db() as db:
+            db.execute('BEGIN IMMEDIATE')
+            current = {lesson['id']: lesson for lesson in self.current(db)}
+            forgotten = self._forgotten_texts(db, owner_key)
+            # Removals make room for additions in the same answer, regardless of its order.
+            for index, item in sorted(enumerate(ops), key=lambda pair: pair[1]['op'] != 'remove'):
+                op, ident = item['op'], item['id']
+                text, why, reason = item['text'], item['why'], item['reason']
+                norm = normalized(text)
+                target = current.get(ident)
+                refused = None
+                if op != 'add' and (target is None or (expected_rows is not None
+                        and target['memory_id'] != expected_rows.get(ident))):
+                    refused = 'lesson-changed'
+                elif op != 'remove' and any(norm == normalized(lesson['text']) for lesson in current.values()):
+                    refused = 'unchanged'
+                elif op == 'add' and len(current) >= LESSONS_MAX:
+                    refused = 'lessons-full'
+                else:
+                    add_key = self._new_key(text, current) if op != 'remove' else None
+                    key = target['key'] if target else add_key
+                    values = (text, why, reason) if op == 'remove' else (text, why)
+                    if any(memory_value_has_secret(self.store, key, value) for value in values):
+                        refused = SECRET_SHAPED_VALUE
+                    elif op != 'remove' and self._forgotten(db, owner_key, key, text, forgotten, add_key=add_key):
+                        refused = FORGOTTEN_VALUE
+
+                if refused:
+                    dropped[index] = _lesson_drop(op, refused)
+                    continue
+                change_record = {'op': op}
+                if target:
+                    receipt = forget.forget_in(db, MEMORY_OWNER, target['ref'], operation=MIGRATE, work_id=work_id)
+                    change_record['receipt'] = receipt['receipt']
+                if op == 'remove':
+                    memory_id = target['memory_id']
+                    db.execute('UPDATE memories SET invalidation_reason=?,invalidated_at=? WHERE id=?',
+                               (reason, self.clock(), memory_id))
+                    del current[ident]
+                else:
+                    memory_id = self._save(db, key, text, owner_key, work_id, origin, why)['id']
+                    ident = key[len(LESSONS_PREFIX):]
+                    current[ident] = {'key': key, 'memory_id': memory_id, 'text': text, 'ref': MEMORY_PREFIX + memory_id}
+                applied[index] = {**change_record, 'id': ident, 'memory_id': memory_id}
+
+            applied = [applied[index] for index in sorted(applied)]
+            if applied and work_id:
+                jobs = db.execute('SELECT id,channel,chat_id,delivery FROM jobs WHERE id=?', (work_id,))
+                self._notice(db, jobs, NOTICE_KIND,
+                             {'change': redact_known_secrets(self.store, change), 'items': applied})
+        return {'applied': applied, 'dropped': [dropped[index] for index in sorted(dropped)]}
+
+    def block(self, query=''):
+        """Render relevant lessons first, with exact refs and a bounded text budget."""
+        from .agent_runtime import MEMORY_OWNER
+        current = self.current()
+        if not current:
+            return ''
+        by_id = {lesson['memory_id']: lesson for lesson in current}
+        terms = MemoryService.search_terms((query or '')[:500])
+        matches = self.store.search_memories(MEMORY_OWNER, terms, limit=LESSONS_MAX, key_prefix=LESSONS_PREFIX)
+        ranked = {row['id']: by_id[row['id']] for row in matches if row['id'] in by_id}
+        ranked.update((lesson['memory_id'], lesson) for lesson in reversed(current)
+                      if lesson['memory_id'] not in ranked)
+        heading = ("working_lessons (the assistant's own lessons on how to work for this owner, each saved on its own; "
+                   "to drop one the owner does not want, forget_record forget its ref):")
+        rendered = []
+        used = omitted = 0
+        for lesson in ranked.values():
+            line = f"- {lesson['text']} ({lesson['ref']})"
+            size = len(line) + 1  # Include the newline separating this line from the preceding one.
+            if used + size > LESSONS_BRIEF_CHARS:
+                omitted += 1
+                continue
+            rendered.append(line)
+            used += size
+        if omitted:
+            rendered.append(f'{omitted} more working lessons omitted by the context limit; search_memory finds them.')
+        return heading + '\n' + '\n'.join(rendered)
+
+    def migrate(self):
+        """Restore unique points from retained versions, once, under the same transaction as the notice."""
+        from .agent_runtime import memory_value_has_secret
+        from .procedures import CURRENT, KEPT, NOTES_SLOT, ProcedureLibrary
+        if self.store.config(LESSONS_MIGRATION_KEY) is not None:
+            return None
+        ProcedureLibrary(self.store, self.clock)
+        OwnerForget(self.store, self.clock)
+        owner_key = self._owner_key()
+        with self.store.db() as db:
+            db.execute('BEGIN IMMEDIATE')
+            if self.store.config(LESSONS_MIGRATION_KEY, db=db) is not None:
+                return None
+            versions = db.execute('SELECT source,work_id FROM procedure_versions '
+                                  'WHERE slot=? AND state IN (?,?) ORDER BY version',
+                                  (NOTES_SLOT, CURRENT, KEPT)).fetchall()
+            points, version_points = {}, []
+            for version in versions:
+                this_version = {normalized(point): point for point in notes_points(version['source'])}
+                version_points.append(this_version)
+                for norm, point in this_version.items():
+                    points.setdefault(norm, (point, version['work_id']))
+            current = self.current(db)
+            occupied = {lesson['id'] for lesson in current}
+            existing = {normalized(lesson['text']) for lesson in current}
+            forgotten = self._forgotten_texts(db, owner_key)
+            recent = dict.fromkeys(norm for version in reversed(version_points) for norm in version)
+            selected = {}
+            for norm in recent:
+                if len(occupied) >= LESSONS_MAX:
+                    break
+                point, _ = points[norm]
+                if len(point) > POINT_CHARS or norm in existing:
+                    continue
+                key = self._new_key(point, occupied)
+                if memory_value_has_secret(self.store, key, point) or self._forgotten(db, owner_key, key, point, forgotten):
+                    continue
+                selected[norm] = key
+                occupied.add(key[len(LESSONS_PREFIX):])
+
+            # Keep the first appearance's wording, Work attribution and relative order.
+            memory_ids = []
+            for norm, (point, work_id) in points.items():
+                if norm in selected:
+                    row = self._save(db, selected[norm], point, owner_key, work_id, ORIGIN_LESSONS_MIGRATION)
+                    memory_ids.append(row['id'])
+            record = {'at': self.clock(), 'restored': len(memory_ids), 'skipped': len(points) - len(selected),
+                      'versions': len(versions), 'memory_ids': memory_ids}
+            self.store.put(LESSONS_MIGRATION_KEY, record, db=db)
+            if memory_ids:
+                settled = self.store.DELIVERY_SETTLED
+                placeholders = ','.join('?' for _ in settled)
+                jobs = db.execute('SELECT id,channel,chat_id,delivery FROM jobs '
+                                  f'ORDER BY CASE WHEN delivery IN ({placeholders}) THEN 0 ELSE 1 END, '
+                                  'created DESC,rowid DESC', settled)
+                self._notice(db, jobs, RESTORED_NOTICE_KIND, {'count': len(memory_ids), 'memory_ids': memory_ids})
+            return record
+
+    def migrated(self):
+        """Run the #19 move first, then restore the retained versions."""
+        if not self.store.config(MIGRATION_KEY) and not WorkingNotes(self.store, self.clock).migrated():
+            return False
+        for _attempt in range(MIGRATION_ATTEMPTS):
+            if self.store.config(LESSONS_MIGRATION_KEY) is not None:
+                return True
+            try:
+                self.migrate()
+            except Exception:  # noqa: BLE001 - retried by the next review and at the next start
+                break
+        return self.store.config(LESSONS_MIGRATION_KEY) is not None
+
 
 
 def enqueue_self_review(store, work_id, reason, observation=None, *, db=None, now=None, clock=time.time):

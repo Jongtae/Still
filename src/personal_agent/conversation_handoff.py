@@ -1175,15 +1175,14 @@ class ConversationJudgments:
         return self.policy.structured(decision), decision
 
     def self_review(self, request, answer, outcome, evaluation, followup, profile, reason, work_id=None, cancelled=None,
-                    working_notes='', awaiting_owner=''):
+                    working_lessons='', awaiting_owner=''):
         """``(data, decision)``: one self-review of a Work that fell short (#998).
 
         One ``structured`` call over the owner's request and follow-up (owner
         words, never cut), the final answer excerpt (model-stated), the
         Work's outcome, the orchestrator's verdict texts, the profile
-        snapshot, the typed review reason and the current working notes
-        (#19; bounded by the host, never cut here, so a revision can keep
-        every point), each redacted first.  ``data`` is the answer only when
+        snapshot, the typed review reason and the current working lessons
+        with their ids, each redacted first.  ``data`` is the answer only when
         decided with enough confidence; what may be kept is the caller's
         deterministic validation.  Judgment only: it writes nothing.
         """
@@ -1197,11 +1196,11 @@ class ConversationJudgments:
                  'evaluation': self.redact(evaluation)[:EVALUATION_CHARS] or 'none',
                  'owner_followup': self.redact(str(followup or ''))[:FOLLOWUP_CHARS] or 'none',
                  'owner_profile': self.redact(profile)[:PROFILE_CHARS] or 'none',
-                 'working_notes': str(working_notes or '') or 'none',
+                 'working_lessons': str(working_lessons or '') or 'none',
                  # #170: what the Work left waiting for the owner's own decision, and what became of it.
                  'awaiting_owner': str(awaiting_owner or '') or 'none'}
         context = self._context(REVIEW_PURPOSE, facts, work_id=work_id,
-                                uncut=('owner_request', 'owner_followup', 'working_notes', 'owner_profile'),
+                                uncut=('owner_request', 'owner_followup', 'working_lessons', 'owner_profile'),
                                 cancelled=cancelled)
         method = getattr(self.engine, 'structured', None)
         decision = (method(context, REVIEW_QUESTION, REVIEW_SCHEMA, review_shape) if method is not None
@@ -1227,13 +1226,13 @@ class ConversationJudgments:
                     else StructuredDecision(OUTCOME_UNAVAILABLE))
         return self.policy.structured(decision), decision
 
-    def owner_model_dream(self, turns, profile, working_notes, previous_diary, clock, work_id=None, cancelled=None,
+    def owner_model_dream(self, turns, profile, working_lessons, previous_diary, clock, work_id=None, cancelled=None,
                           preparations='', earlier='', lines=''):
         """``(data, decision)``: one look back over the requests since the last one (#402, the "dream").
 
         One ``structured`` call over the turns (each scrubbed by its own Work's values by the
         caller and bounded by the host, so never cut here), the profile snapshot with short ids,
-        the working notes, the previous daily record, the names of the owner's active preparations
+        the working lessons with their ids, the previous daily record, the names of the owner's active preparations
         (#583: so a suggestion does not repeat one) and the clock, each redacted first.  ``data``
         is the answer only when decided with enough confidence; what may be kept is the caller's
         deterministic validation.  Judgment only: it writes nothing.
@@ -1243,7 +1242,7 @@ class ConversationJudgments:
                                   DREAM_SCHEMA, DREAM_TIMEOUT_SECONDS, PROFILE_CHARS, dream_shape)
         facts = {'turns': str(turns or '') or 'none',
                  'owner_profile': self.redact(profile)[:PROFILE_CHARS] or 'none',
-                 'working_notes': str(working_notes or '') or 'none',
+                 'working_lessons': str(working_lessons or '') or 'none',
                  'previous_diary': self.redact(previous_diary)[:DIARY_CHARS] or 'none',
                  'preparations': self.redact(preparations)[:DREAM_PREPARATIONS_CHARS] or 'none',
                  'clock': self.redact(clock)[:CLOCK_CHARS] or 'unknown'}
@@ -1253,7 +1252,7 @@ class ConversationJudgments:
         facts['lines'] = self.redact(lines) or 'none'
         # Once a day and off the conversation: the engine's strongest model, with the longer bound it may need.
         context = self._context(DREAM_PURPOSE, facts, work_id=work_id,
-                                uncut=('turns', 'owner_profile', 'working_notes', 'preparations', 'lines') +
+                                uncut=('turns', 'owner_profile', 'working_lessons', 'preparations', 'lines') +
                                       (('earlier_misses',) if earlier else ()),
                                 cancelled=cancelled, strongest=True, timeout=DREAM_TIMEOUT_SECONDS)
         method = getattr(self.engine, 'structured', None)

@@ -520,7 +520,7 @@ def test_writer_insert_terms_and_identity(env, monkeypatch, kind, terms):
     if kind == 'upkeep':
         service.owner_model.run(job, judgments, answer='', profile='', clock='')
     else:
-        om.WorkingNotes(store).migrate()
+        om.WorkingLessons(store).migrated()
         service.owner_model.run_dream(job, {}, judgments, turns=[('t1', job['message'], '')], profile='',
             clock='', diary_date='2026-11-17', ends_after=clock[0], source_works={'t1': work})
     assert len(inserted) == 1
@@ -559,7 +559,7 @@ def test_writer_terms_secrets_never_reach_durable_records(env, kind, secret):
             store.save_memory(key, content, work_id=work)
     else:
         if run_kind == om.KIND_DREAM:
-            om.WorkingNotes(store).migrate()
+            om.WorkingLessons(store).migrated()
         assert service.owner_model.enqueue(None, work, kind=run_kind)
 
     purpose = {'upkeep': om.PURPOSE, 'gather': om.DREAM_GATHER_PURPOSE,

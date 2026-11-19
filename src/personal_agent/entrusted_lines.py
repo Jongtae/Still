@@ -8,8 +8,8 @@ Its **brief** is free text the owner's AI writes in the owner's words: the task 
 the standing rules (each with the owner turn it came from), the report promise, open
 matters, the state and how often the line gives an account of itself.  It is stored as
 versions in the existing ``procedure_versions`` store under the reserved slot prefix
-``line:`` (``ProcedureLibrary.commit``), with the expected-version check
-``WorkingNotes.save(expected=)`` uses.  Code knows the format only; it never reads what a
+``line:`` (``ProcedureLibrary.commit``), with an expected-version check.
+Code knows the format only; it never reads what a
 line is about.
 
 A brief grants nothing.  It has no authority, rung, amount or subject field (an unknown
