@@ -1237,7 +1237,7 @@ class ConversationJudgments:
         return self.policy.structured(decision), decision
 
     def owner_model_dream(self, turns, profile, working_lessons, previous_diary, clock, work_id=None, cancelled=None,
-                          preparations='', earlier='', lines=''):
+                          preparations='', earlier='', earlier_successes='', lines=''):
         """``(data, decision)``: one look back over the requests since the last one (#402, the "dream").
 
         One ``structured`` call over the turns (each scrubbed by its own Work's values by the
@@ -1250,25 +1250,34 @@ class ConversationJudgments:
         from .decision import OUTCOME_UNAVAILABLE, StructuredDecision
         from .owner_model import (CLOCK_CHARS, DIARY_CHARS, DREAM_PREPARATIONS_CHARS, DREAM_PURPOSE, DREAM_QUESTION,
                                   DREAM_SCHEMA, DREAM_TIMEOUT_SECONDS, PROFILE_CHARS, dream_shape)
-        facts = {'turns': str(turns or '') or 'none',
+        # The earlier Work blocks are caller-bounded and redacted by _context, like turns.
+        history = {label: block for label, block in (('earlier_misses', earlier),
+                                                   ('earlier_successes', earlier_successes)) if block}
+        facts = {'turns': str(turns or '') or 'none', **history,
                  'owner_profile': self.redact(profile)[:PROFILE_CHARS] or 'none',
                  'working_lessons': str(working_lessons or '') or 'none',
                  'previous_diary': self.redact(previous_diary)[:DIARY_CHARS] or 'none',
                  'preparations': self.redact(preparations)[:DREAM_PREPARATIONS_CHARS] or 'none',
-                 'clock': self.redact(clock)[:CLOCK_CHARS] or 'unknown'}
-        # #496: caller-bounded and scrubbed per Work, then redacted like turns; absent when there are no earlier misses.
-        if earlier:
-            facts = {'turns': facts.pop('turns'), 'earlier_misses': self.redact(earlier), **facts}
-        facts['lines'] = self.redact(lines) or 'none'
+                 'clock': self.redact(clock)[:CLOCK_CHARS] or 'unknown',
+                 'lines': self.redact(lines) or 'none'}
         # Once a day and off the conversation: the engine's strongest model, with the longer bound it may need.
         context = self._context(DREAM_PURPOSE, facts, work_id=work_id,
-                                uncut=('turns', 'owner_profile', 'working_lessons', 'preparations', 'lines') +
-                                      (('earlier_misses',) if earlier else ()),
+                                uncut=('turns', *history, 'owner_profile', 'working_lessons', 'preparations', 'lines'),
                                 cancelled=cancelled, strongest=True, timeout=DREAM_TIMEOUT_SECONDS)
         method = getattr(self.engine, 'structured', None)
         decision = (method(context, DREAM_QUESTION, DREAM_SCHEMA, dream_shape) if method is not None
                     else StructuredDecision(OUTCOME_UNAVAILABLE))
         return self.policy.structured(decision), decision
+
+    def lesson_owner_specific(self, lesson, why, work_id=None, cancelled=None):
+        """Judge one proposed lesson using only its wording and reason."""
+        from .owner_model import LESSON_CHECK_PURPOSE, LESSON_CHECK_QUESTION
+        context = self._context(LESSON_CHECK_PURPOSE, {'lesson': lesson, 'why': why},
+                                work_id=work_id, cancelled=cancelled)
+        decision = self.engine.judge(context, LESSON_CHECK_QUESTION)
+        verdict = self.policy.binary(decision)
+        return Judgment(JUDGMENT_UNAVAILABLE if verdict == 'unknown' else verdict,
+                        source=decision.confidence.provider or decision.outcome), decision
 
     def explicit_memory_fact(self, utterance, memory_key, content, work_id=None, cancelled=None):
         """``(judgment, decision)``: does ``utterance`` itself ask to keep, or assert, this one

@@ -1652,34 +1652,52 @@ class AgentService:
         works=[work for work in candidates if work['created']>since][-om.DREAM_TURNS:]
         tonight={work['id'] for work in works}
         turns=[]
-        earlier=[]
-        earlier_ids=[]
+        misses=[]
+        successes=[]
         source_works={}
+        way_notes={}
         for work in candidates:
-            current=work['id'] in tonight
+            ident=work['id']
+            current=ident in tonight
             if work['created']>since and not current:continue
             outcome=om.turn_outcome(work['status'],work['linked_kinds'])
-            if not current and outcome not in om.MISS_OUTCOMES:continue
+            if not current and outcome not in om.MISS_OUTCOMES:
+                if (outcome!='done' or work['status']!='succeeded' or FOLLOWUP_CANCEL in work['linked_kinds']
+                        or work['reviewed']
+                        or work['relation_kind'] in (FOLLOWUP_CORRECTION,FOLLOWUP_RETRY,FOLLOWUP_CANCEL)):
+                    continue
             key=work.get('request_key')
             if (work.get('provider') in (None,'builtin') or prep.preparation_of(key) is not None
-                    or continuation_request(key) is not None or self.store.managed_owner_state(work['id'])):
+                    or continuation_request(key) is not None or self.store.managed_owner_state(ident)):
                 continue
-            owner=self.scrub_work_text(work['id'],work.get('message') or '')
+            owner=self.scrub_work_text(ident,work.get('message') or '')
             if not owner.strip():continue
-            answer=self.scrub_work_text(work['id'],work.get('response') or '')
+            answer=self.scrub_work_text(ident,work.get('response') or '')
             when=self._owner_local_time(work.get('created'))
-            if not current:
+            notes=[self.scrub_work_text(ident,note) for note in work['way_notes']]
+            if current:
+                ref=f"t{len(turns)+1}"
+                source_works[ref]=ident
+                turns.append((ref,owner,answer,when,outcome))
+                if notes:way_notes[ref]=notes
+            elif outcome in om.MISS_OUTCOMES:
                 correction=work['correction']
                 words=(self.scrub_work_text(correction['id'],correction['message'] or '') if correction else '')
-                earlier.append((owner,answer,when,outcome,words[:om.DREAM_CORRECTION_CHARS]))
-                earlier_ids.append((work['id'],correction['id'] if correction else None))
-                continue
-            ref=f"t{len(turns)+1}"
-            source_works[ref]=work['id']
-            turns.append((ref,owner,answer,when,outcome))
-        # #496: only the newest eligible misses, oldest first; never earlier daily summaries or successful turns.
-        earlier=[(f'm{index}',*miss) for index,miss in enumerate(earlier[-om.DREAM_EARLIER_MISSES:],1)]
-        earlier_works={f'm{index}':pair for index,pair in enumerate(earlier_ids[-om.DREAM_EARLIER_MISSES:],1)}
+                misses.append(((owner,answer,when,outcome,words[:om.DREAM_CORRECTION_CHARS]),
+                               (ident,correction['id'] if correction else None),notes))
+            else:
+                successes.append(((owner,answer,when,outcome,''),(ident,None),notes))
+        # Prefer noted successes, then restore chronological order for the refs.
+        ranked=sorted(range(len(successes)),key=lambda index:(bool(successes[index][2]),index),reverse=True)
+        successes=[successes[index] for index in sorted(ranked[:om.DREAM_EARLIER_SUCCESSES])]
+        earlier=[]
+        earlier_works={}
+        for prefix, block, cap in (('m',misses,om.DREAM_EARLIER_MISSES),('s',successes,om.DREAM_EARLIER_SUCCESSES)):
+            for index,(turn,pair,notes) in enumerate(block[-cap:],1):
+                ref=f'{prefix}{index}'
+                earlier.append((ref,*turn))
+                earlier_works[ref]=pair
+                if notes:way_notes[ref]=notes
         period={'works':len(works),'turns':len(turns)}
         if not turns:
             upkeep.finish(work_id,om.STATE_GONE,0,om.EVENT_UNAVAILABLE,{'reason':'nothing-to-review','period':period},now,kind=kind)
@@ -1694,7 +1712,7 @@ class AgentService:
         deadline=upkeep.clock()+om.DREAM_RUN_SECONDS
         state,calls,status,detail=upkeep.run_dream(
             job,row,self._owner_model_judgments(work_id),turns=turns,earlier=earlier,source_works=source_works,
-            earlier_works=earlier_works,read_scope=self.judgments_read,
+            earlier_works=earlier_works,way_notes=way_notes,read_scope=self.judgments_read,
             profile=lambda:self.owner_profile_snapshot(None,notes=False,ids=True),clock=self._owner_model_clock(),
             diary_date=owner_today(self.store,works[-1]['created']),ends_after=now,
             cancelled=lambda:self.stop.is_set() or upkeep.clock()>deadline,

@@ -3378,10 +3378,10 @@
   "zh": "每个任务最多读取 {count} 个技能头部。"
  },
  "skills.missing_method": {
-  "ko": "어떤 방법이 없었는지 한 줄로 적어 주세요.",
-  "en": "Describe the missing method in one line.",
-  "ja": "不足していた方法を 1 行で記載してください。",
-  "zh": "请用一行描述缺少的方法。"
+  "ko": "짐작해야 했던 주인의 방식을 한 줄로 적어 주세요.",
+  "en": "Write in one line the way of working for the owner that you had to infer.",
+  "ja": "推測する必要があったオーナーの作業の進め方を1行で書いてください。",
+  "zh": "请用一行写出你不得不推断的主人偏好的工作方式。"
  },
  "skills.gap_limit": {
   "ko": "한 작업에서 방법 공백은 {count}개까지 남겨요.",
