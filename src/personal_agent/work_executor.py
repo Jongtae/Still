@@ -17,7 +17,7 @@ from .messages import msg
 from .telegram_locale import owner_language
 from .work_execution import PROCEED, REDELEGATED, WorkRun
 from .agent_runtime import Capabilities, ToolError, cut_to_fit, loop_definitions, run_agent, STEER_EVENT, steer_note, evidence_summary, turn_context, render_turn_prompt, attachment_facts, context_sections, ENGINE_UNMEDIATED, base_label, WorkLedger, NOTES_SUMMARY_COMMANDS
-from .agent_runtime import recorded_effects_response, MEMORY_OWNER, SAVED_RESULTS_ROOT
+from .agent_runtime import effect_continuation_scope, recorded_effects_response, MEMORY_OWNER, SAVED_RESULTS_ROOT
 from .providers import NOT_REPORTED, ProviderError
 from .cloud_engines import BUDGET_EXCEEDED as CLOUD_BUDGET_EXCEEDED, NOT_CONFIGURED as CLOUD_NOT_CONFIGURED, CloudLaunchError
 from .conversation_projection import BLOCKER_CLOUD_PROFILE, BLOCKER_MODEL_UNVERIFIED, BLOCKER_NO_AI_ROUTE, TERMINAL_FAILED_HEADER, BlockedTurn, context_message, answer_note, owner_cause, report_statement, verified_portion
@@ -1850,7 +1850,7 @@ class WorkExecutor:
         service=self.service
         job=run.job
         goal=service.run_goal_outcome(run)
-        if goal==ws.GOAL_NONE and service.effect_progress_note(job):
+        if goal==ws.GOAL_NONE and effect_continuation_scope(service.store,job['id']):
             goal=ws.GOAL_NOT_JUDGED
         effect=service.work_effect_state(job['id'],run.claimed_at)
         steps=run.outcome

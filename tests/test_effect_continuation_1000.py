@@ -35,6 +35,7 @@ class Wire:
         self.lost = False
         self.status = 'applied'
         self.reference = None
+        self.status_as_of = None
 
     def __call__(self, method, url, headers, body, timeout):
         path = url.rsplit('/', 1)[-1]
@@ -52,7 +53,8 @@ class Wire:
             self.state = 'closed'
             return 200, {}, json.dumps({'receipt': 'closed', 'as_of': self.now}).encode()
         return 200, {}, json.dumps({'request_ref': self.reference or self.first_ref, 'status': self.status,
-                                   'state': self.state, 'as_of': self.now}).encode()
+                                   'state': self.state,
+                                   'as_of': self.now if self.status_as_of is None else self.status_as_of}).encode()
 
 
 @pytest.fixture
@@ -237,6 +239,36 @@ def test_unknown_dispatch_requires_matching_authoritative_read(setup, resolved):
             api.call(CLOSE)
         assert error.value.code == 'effect_unknown'
         assert wire.sent == ['open','state','state','state']
+
+
+@pytest.mark.parametrize('service_time, reconciled', [
+    (1_795_000_000, True),
+    (1_794_999_999, False),
+    (1_795_000_000_120, True),
+    (1_795_000_000_119, False),
+    (1_795_000_000.12, True),
+    ('2026-11-18T11:06:40Z', True),
+    ('2026-11-18T11:06:40.000Z', False),
+    ('2026-11-18T11:06:40.120Z', True),
+    ('2026-11-18T11:06:40.12Z', True),
+    ('2026-11-18T11:06:40.119Z', False),
+])
+def test_reconciliation_compares_at_the_service_timestamp_precision(setup, service_time, reconciled):
+    store, _, wire, _ = setup
+    wire.now = 1_795_000_000.1207
+    job, _, api = claim(setup, 'Determine the outcome of the dispatch')
+    wire.lost = True
+    with pytest.raises(ApiError) as error:
+        interrupted_dispatch(store, job, api)
+    assert error.value.effect == 'unknown'
+    _, [(receipt, _)] = external_effect_events(store, job['id'])
+
+    wire.now = 1_795_000_001
+    wire.status_as_of = service_time
+    api.reconcile = lambda *args, **kwargs: 'applied'
+    proof = api.call({**READ, 'reconcile_receipt': str(receipt), 'receipt_ref_field': '$.request_ref'})
+    assert proof['provenance']['freshness'] == 'fresh'
+    assert proof['provenance'].get('reconciled_receipt') == (receipt if reconciled else None)
 
 
 class TestLineHandoff(_PieceCase):

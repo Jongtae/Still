@@ -331,9 +331,9 @@ class SettingsContinuation:
         ``CONTINUE_REASONS`` order and read as ``CONTINUE_TEXT``; an empty tuple means the Work may continue.
         """
         service=self.service
-        from .agent_runtime import (EFFECT_CHANGED, EFFECT_FREE_READS, EFFECT_LEDGER_TOOLS, EFFECT_UNKNOWN, INTERNAL_STATE_ACTIONS,
-                                    MAX_CONTINUATIONS, call_effects, continuation_count, dispatch_call_accounted, dispatch_call_keys, effect_free_call,
-                                    external_effect_events, keyed_change,
+        from .agent_runtime import (API_ACTIONS, EFFECT_CHANGED, EFFECT_FREE_READS, EFFECT_LEDGER_TOOLS, EFFECT_UNKNOWN,
+                                    INTERNAL_STATE_ACTIONS, MAX_CONTINUATIONS, call_effects, continuation_count, dispatch_call_accounted,
+                                    dispatch_call_keys, effect_free_call, external_effect_events, keyed_change,
                                     unknown_effect_targets)
         if purpose not in service.CONTINUE_PURPOSES:raise ValueError(purpose)
         reasons=[]
@@ -392,9 +392,9 @@ class SettingsContinuation:
         if engine_running or unaccounted:add('unaccounted')
         def cut_off(action,status,detail):
             # A call (paired by its id) with no terminal record got no definite answer, unless it only
-            # reads or stays with the owner; a navigation or input step may have acted on the page.
+            # reads or stays with the owner. A browser step may have acted before observation.
             return (status=='running' and bool(detail.get('call_id'))
-                    and not effect_free_call(action,detail,status)
+                    and not (action in API_ACTIONS and effect_free_call(action,detail,status))
                     and action not in (EFFECT_FREE_READS-{'browser_open'})|OWNER_LOCAL_ACTIONS|INTERNAL_STATE_ACTIONS)
         for action,effect,status,detail in call_effects(calls,with_detail=True):
             # E1: unknown is that call's own.

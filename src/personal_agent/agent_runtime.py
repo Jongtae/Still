@@ -4415,11 +4415,16 @@ class Capabilities:
    refused=work_mode.tool_refusal(self.store,tool['host_action'],args)
    if refused is not None:raise refused
    action = tool['host_action']
+   settings_draft_only = False
    if (action not in API_ACTIONS|CODE_ACTIONS|OWNER_LOCAL_ACTIONS|INTERNAL_STATE_ACTIONS|{'schedule_preparation'}
        and not effect_free_call(action,declared_effect(action,args),'running')):
-    if external_effect_events(self.store,self.job_id)[1]:
+    pending = external_effect_events(self.store,self.job_id)[1]
+    fenced = effect_continuation_scope(self.store,self.job_id)
+    if action=='settings_change':
+     settings_draft_only = bool(pending or fenced)
+    elif pending:
      raise ToolError('Resolve the recorded unknown dispatch before making another change.', 'effect_unknown')
-    if effect_continuation_scope(self.store,self.job_id):
+    elif fenced:
      raise ToolError('This continuation needs a replay-fenced connection for external changes.', 'effect_route_unavailable')
    # #606 T1: every route's attempt, Stop and deadline check happens here.  #620: a browser step
    # spends its attempt in the session, once it reaches the browser (one counter, no refused step spent).
@@ -4691,7 +4696,9 @@ class Capabilities:
    # #617: only a secret blocks the query (#826 removed the saved-private-value guard).
    if name=='capability_search' and self.secret_masked(args.get('query',''))!=str(args.get('query') or ''):
     raise ToolError(msg('agent_runtime.public_server_query'),'private_capability_query',ran=False)
-   try:return self.settings(name,args)
+   try:
+    if settings_draft_only:return self.settings(name,args,draft_only=True)
+    return self.settings(name,args)
    except ToolError:raise
    except ValueError as exc:
     # #617: a refusal that carries its own stable code (a registry query's shape) keeps it.

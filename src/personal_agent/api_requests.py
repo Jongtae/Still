@@ -45,7 +45,7 @@ import urllib.error
 import urllib.request
 from datetime import datetime, timezone
 from collections import OrderedDict
-from decimal import Decimal, InvalidOperation
+from decimal import Decimal, InvalidOperation, ROUND_FLOOR
 from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
 #: Owner config row: ``{name: slot}`` (never the secret).
@@ -619,6 +619,34 @@ def time_of(value):
     return None
 
 
+def _reported_time_quantum(source, data, text):
+    """The service's timestamp resolution in seconds, when it reports one."""
+    if source == 'header:last-modified':
+        return Decimal(1)
+    if not source.startswith('field:'):
+        return None
+    path = source.removeprefix('field:')
+    value, = (value for value in select(data, path) if value is not MISSING)
+    if isinstance(value, (int, float)):
+        digits = 3 if value > 1e12 else 0  # Same epoch units as time_of.
+        if isinstance(value, float):
+            # JSON's default float decoder loses trailing zeroes, including .000.
+            try:
+                exact, = (v for v in select(json.loads(text, parse_float=Decimal), path) if v is not MISSING)
+            except (InvalidOperation, ValueError):
+                return None
+            if not isinstance(exact, Decimal) or float(exact) != value:
+                return None
+            digits += max(0, -exact.as_tuple().exponent)
+    else:
+        stamp = re.fullmatch(r'\d{4}-?\d{2}-?\d{2}.\d{2}:?\d{2}:?\d{2}(?:[.,](\d+))?(?:Z|[+-]\d{2}(?::?\d{2})?)',
+                             value.strip())
+        if stamp is None:
+            return None
+        digits = len(stamp[1] or '')
+    return Decimal(1).scaleb(-min(digits, 6))  # datetime resolves microseconds.
+
+
 def _iso(moment):
     return moment.astimezone(timezone.utc).isoformat().replace('+00:00', 'Z') if moment else None
 
@@ -1133,7 +1161,7 @@ class ApiRequests:
         except Exception:
             raise ApiError(UNKNOWN_EFFECT_TEXT, 'effect_unknown', effect='unknown') from None
 
-    def _reconcile_dispatch(self, slot, receipt, ref_field, data, record):
+    def _reconcile_dispatch(self, slot, receipt, ref_field, data, record, text):
         """Settle only the claim the authoritative response identifies, under the current epoch."""
         from .agent_runtime import external_effect_events
         from .api_credentials import fingerprint
@@ -1157,6 +1185,10 @@ class ApiRequests:
                                     source=record['source'], operation=claim['operation'])
         if resolution not in ('applied', 'not-applied'):
             return False
+        as_of = time_of(record['as_of'])
+        if as_of is None:
+            return False
+        quantum = _reported_time_quantum(record['as_of_source'], data, text)
         with self.store.db() as db:
             db.execute('BEGIN IMMEDIATE')
             self._current_effect_run(db)
@@ -1165,11 +1197,17 @@ class ApiRequests:
                 return False
             row = db.execute("SELECT detail,created FROM tool_events WHERE id=? AND tool='api_dispatch' AND status='dispatching'",
                              (receipt,)).fetchone()
-            as_of = time_of(record['as_of'])
-            if (row is None or as_of is None or as_of.timestamp() < row['created']
-                    or json.loads(row['detail']).get('evidence') != claim):
+            if row is None:
                 return False
             detail = json.loads(row['detail'])
+            if detail.get('evidence') != claim:
+                return False
+            # A status from the bucket containing the dispatch can describe its outcome.
+            dispatched = Decimal(str(row['created']))
+            if quantum is not None:
+                dispatched = dispatched.quantize(quantum, rounding=ROUND_FLOOR)
+            if Decimal(str(as_of.timestamp())) < dispatched:
+                return False
             detail['evidence'].update(resolution=resolution, read_digest=record['content_digest'])
             db.execute("UPDATE tool_events SET status='observed',detail=? WHERE id=?", (json.dumps(detail), receipt))
         return True
@@ -1575,7 +1613,7 @@ class ApiRequests:
             record.update(state='outcome-unknown', completeness='partial')
         else:
             self._settle_effect(claim, 'observed', status)
-        if receipt is not None and self._reconcile_dispatch(slot, int(receipt), ref_field, data, record):
+        if receipt is not None and self._reconcile_dispatch(slot, int(receipt), ref_field, data, record, text):
             record['reconciled_receipt'] = int(receipt)
         return {'data': data, 'provenance': record, 'sources': [f'{parts.scheme}://{named}{path}'],
                 # Typed Evidence qualifiers (``agent_runtime.EVIDENCE_QUALIFIER_FLAGS``).
