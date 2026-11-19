@@ -39,8 +39,6 @@ DAY_PLAN_GOAL = prompt('day_plan') + '\n\n' + DAY_PLAN_LINES
 DAY_PLAN_KEY = 'day_plan'
 #: #780: the recent conversation a plan run is shown, as an owner-present Work is.
 PLAN_HISTORY_MESSAGES = 16
-#: #798: the periodic account's brief: a method for giving an account of a line, never a topic.
-LINE_ACCOUNT_GOAL = prompt('line_account')
 BUNDLE_SETTLE_SECONDS = 1800
 BUNDLE_CHARS = el.BUNDLE_CHARS
 
@@ -1351,6 +1349,7 @@ class PreparationsService:
         """
         service=self.service
         accepted,expired,stale=[],[],[]
+        capacity_refusal=None
         for row in proposals:
             try:
                 resume_offer=row.get('origin')==prep.ORIGIN_LINE_RESUME
@@ -1364,6 +1363,9 @@ class PreparationsService:
                 else:
                     service.cancel_preparation(row['id'])
             except prep.PreparationRefusal as exc:
+                if resume_offer and exc.code=='too_many':
+                    capacity_refusal=str(exc)
+                    continue
                 if resume_offer and exc.code in ('line_resume_stale','invalid_state','not_found'):
                     # It may have changed between binding the message and settling the button.
                     stale.append(row)
@@ -1372,6 +1374,8 @@ class PreparationsService:
                 if exc.code!='expired':raise
                 service.cancel_preparation(row['id'])
                 expired.append(row)
+        if capacity_refusal and not (accepted or expired or stale):
+            return capacity_refusal  # Keep the exact offer open so the owner can retry.
         if accept:
             result_kind='preparation_accepted' if accepted else 'preparation_expired' if expired else 'preparation_already_settled'
         else:
@@ -1386,6 +1390,7 @@ class PreparationsService:
         if stale:
             stale_text=msg('preparations.line_resume_stale')
             text=stale_text if result_kind=='preparation_already_settled' else text+'\n'+stale_text
+        if capacity_refusal:text+='\n'+capacity_refusal
         if isinstance(notification.get('message_id'),int):
             try:service.telegram.edit_message_text(notification['chat_id'],notification['message_id'],text,markup)
             except ProviderError:pass
@@ -2341,25 +2346,15 @@ class PreparationsService:
         """
         service=self.service
         stood=service.lines.provenance(brief['line_id']).get('by')=='look-back'
-        rule=el.account_rule(brief['account_every_days'])
-        now=service.preparations.clock()
-        zone_name=service.home_zone() or 'UTC'
         with service.store.db() as db:
             db.execute('BEGIN IMMEDIATE')
             restart=self.line_start_restart(brief['line_id'],db)
             if stood and self.line_row_started(brief['line_id'],'account',restart,db):return None
-            rows=[row for row in self.line_rows(brief['line_id'],db) if row.get('origin')==prep.ORIGIN_LINE_ACCOUNT]
             # A cancelled account also stays cancelled on a tick; only a new owner act may restart it.
-            existing=any(row['state'] in prep.ACTIVE_STATES for row in rows) or (stood and not restart and bool(rows))
-            result=None if existing else service.preparations.create(kind=prep.KIND_PREPARE,goal=LINE_ACCOUNT_GOAL,
-                                           due_at=now+brief['account_every_days']*86400,timezone=zone_name,
-                                           recurrence=prep.normalize_rrule(rule),
-                                           channel=channel or service.preparation_channel(job,prep.KIND_PREPARE,'send'),
-                                           bundle_channel=bundle_channel,
-                                           created_from=job['id'],state=prep.STATE_SCHEDULED,
-                                           accepted_by=accepted_by,origin=prep.ORIGIN_LINE_ACCOUNT,
-                                           title=el.excerpt(msg('lines.account_title',task=brief['task']),prep.TITLE_MAX_CHARS),
-                                           line_id=brief['line_id'],db=db)
+            result=service.preparations.ensure_line_account(
+                brief,created_from=job['id'],db=db,accepted_by=accepted_by,bundle_channel=bundle_channel,
+                channel=channel or service.preparation_channel(job,prep.KIND_PREPARE,'send'),
+                replace_inactive=not stood or bool(restart))
             if stood:self.record_line_row_started(job['id'],brief['line_id'],'account',restart,db)
             return result
 

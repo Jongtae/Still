@@ -124,6 +124,7 @@ ORIGIN_DAY_PLAN = 'day-plan'
 #: #798: the periodic account of an entrusted line: one repeating run per line that gives an account
 #: of it (what was done and came of it, the rules in force, what was learned, what is open).
 ORIGIN_LINE_ACCOUNT = 'line-account'
+LINE_ACCOUNT_GOAL = prompt('line_account')
 #: #938: the next piece of an entrusted line's work, which a run of that line scheduled itself.
 ORIGIN_LINE_PIECE = 'line-piece'
 #: #1027: a daily-plan offer to resume an owner line. Its origin does not give it acceptance.
@@ -1585,16 +1586,20 @@ class Preparations:
                                'WHERE id=? AND state=?', (goal, due_at, timezone, title, offer, now, child['id'], STATE_SCHEDULED))
                     return {**dict(db.execute('SELECT * FROM preparations WHERE id=?', (child['id'],)).fetchone()),
                             'piece_replaced': True}
-            same = None if piece_of is not None or resume_offer else db.execute(
+            # A line account is kept once per line by ensure_line_account, even when a
+            # single owner answer resumes several lines with the same account cadence.
+            line_specific = piece_of is not None or resume_offer or origin == ORIGIN_LINE_ACCOUNT
+            same = None if line_specific else db.execute(
                               'SELECT * FROM preparations WHERE created_from=? AND kind=? AND goal_text=? AND due_at=? '
-                              'AND state IN (?,?,?,?) AND check_spec IS ? AND origin IS NOT ?',
-                              (created_from, kind, goal, due_at, *ACTIVE_STATES, check_spec, ORIGIN_LINE_RESUME)).fetchone()
+                              'AND state IN (?,?,?,?) AND check_spec IS ? AND origin IS NOT ? AND origin IS NOT ?',
+                              (created_from, kind, goal, due_at, *ACTIVE_STATES, check_spec,
+                               ORIGIN_LINE_RESUME, ORIGIN_LINE_ACCOUNT)).fetchone()
             if same:
                 return dict(same)
             # #574: another Work's identical proposal still waiting for the owner is that same proposal,
             # not a second one.  Scheduled rows are left alone: the owner may want two.
             # #938: a piece never takes up another Work's proposal (that would accept it).
-            proposed = None if piece_of is not None or resume_offer else db.execute(
+            proposed = None if line_specific else db.execute(
                                   'SELECT * FROM preparations WHERE state=? AND created_from IS NOT ? AND kind=? AND goal_text=? '
                                   'AND due_at=? AND recurrence IS ? AND every_seconds IS ? AND window_end IS ? AND max_runs IS ? AND window_terms IS ? '
                                   'AND check_spec IS ? AND origin IS NOT ? ORDER BY created_at LIMIT 1',
@@ -1720,6 +1725,24 @@ class Preparations:
             self.cancel(preparation_id, db=db)
             db.execute('UPDATE preparations SET last_outcome=? WHERE id=?', ('declined', preparation_id))
 
+    def ensure_line_account(self, brief, *, created_from, db, accepted_by=ACCEPTED_OWNER_WORK,
+                            channel=None, bundle_channel=None, replace_inactive=True):
+        """Schedule the periodic account if absent, inside the caller's transaction."""
+        from .entrusted_lines import account_rule, excerpt
+        line_id = brief['line_id']
+        rows = db.execute('SELECT state,channel FROM preparations WHERE line_id=? AND origin=? ORDER BY created_at DESC',
+                          (line_id, ORIGIN_LINE_ACCOUNT)).fetchall()
+        if any(row['state'] in ACTIVE_STATES for row in rows) or (rows and not replace_inactive):
+            return None
+        days = brief['account_every_days']
+        return self.create(kind=KIND_PREPARE, goal=LINE_ACCOUNT_GOAL, due_at=self.clock() + days * 86400,
+                           timezone=str(self._owner_zone(db) or 'UTC'), recurrence=normalize_rrule(account_rule(days)),
+                           channel=channel or (rows[0]['channel'] if rows else CHANNEL_TELEGRAM),
+                           bundle_channel=bundle_channel, created_from=created_from,
+                           state=STATE_SCHEDULED, accepted_by=accepted_by, origin=ORIGIN_LINE_ACCOUNT,
+                           title=excerpt(msg('lines.account_title', task=brief['task']), TITLE_MAX_CHARS),
+                           line_id=line_id, db=db)
+
     def accept(self, preparation_id, accepted_by, *, accepted_from=None, db=None, replaces=None, offer_digest=None):
         """``proposed`` → ``scheduled``: the owner's explicit yes.
 
@@ -1747,8 +1770,10 @@ class Preparations:
                                    (row['created_from'], LINE_RESUME_EVENT, preparation_id, row['line_id'])).fetchone()
                 if not (brief and event and json.loads(event['detail'])['version'] == brief['version']):
                     raise PreparationRefusal('line_resume_stale')
-                from .entrusted_lines import EntrustedLines
-                EntrustedLines(self.store, clock=self.clock).restart(row['line_id'], accepted_from, db=db)
+                from .entrusted_lines import EntrustedLines, STATE_STOPPED
+                if brief['state'] == STATE_STOPPED:
+                    after = EntrustedLines(self.store, clock=self.clock).restart(row['line_id'], accepted_from, db=db)
+                    self.ensure_line_account(after, created_from=accepted_from, db=db)
             if row and row['state'] == STATE_PROPOSED and row['check_spec'] and row['until_at'] > now:
                 self._check_admission(db, row['check_spec'], replaces)
             changed = db.execute("UPDATE preparations SET state='scheduled',accepted_by=?,accepted_from=?,updated_at=? WHERE id=? AND state='proposed' "

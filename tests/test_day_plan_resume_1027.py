@@ -88,6 +88,26 @@ class ResumeOffers(Mode, _Plan, OwnerActCase):
         self.click(self.notice(work))
         self.assert_accepted(brief, row, prep.ACCEPTED_OWNER_BUTTON)
 
+    def test_accepting_a_stopped_line_restores_its_self_set_account(self):
+        brief = self.line()
+        line_id = brief['line_id']
+        lines = self.service.preparations_service
+        owner = self.store.job(brief['written_in'])
+        original = lines.ensure_line_account(owner, brief)
+        stopped, _ = lines.stop_line(line_id, owner['id'])
+        self.assertIsNone(lines.line_account_row(line_id))
+
+        work, row = self.offer(stopped)
+        self.click(self.notice(work))
+
+        self.assert_accepted(stopped, row, prep.ACCEPTED_OWNER_BUTTON)
+        account = lines.line_account_row(line_id)
+        self.assertIsNotNone(account)
+        self.assertEqual(account['state'], prep.STATE_SCHEDULED)
+        self.assertIn(account['accepted_by'], prep.SELF_SET)
+        self.assertEqual((account['recurrence'], account['channel']), (original['recurrence'], original['channel']))
+        self.assertEqual(self.service.preparations.get(original['id'])['state'], prep.STATE_CANCELLED)
+
     def test_judged_owner_answer_restarts_and_records_the_owner_work(self):
         brief = self.line(stop='line')
         work, row = self.offer(brief)
@@ -228,6 +248,7 @@ class ResumeOffers(Mode, _Plan, OwnerActCase):
             self.service.preparations.accept(row['id'], prep.ACCEPTED_OWNER_BUTTON, offer_digest=prep.digest([row]))
         self.assertEqual(self.service.lines.current(brief['line_id']), brief)
         self.assertEqual(self.service.preparations.get(row['id'])['state'], prep.STATE_PROPOSED)
+        self.assertIsNone(self.service.preparations_service.line_account_row(brief['line_id']))
 
     def test_resume_and_piece_follow_current_autonomy_and_never_ask_for_approval(self):
         brief = self.line(stop='line')
