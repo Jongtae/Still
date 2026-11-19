@@ -395,16 +395,18 @@ OUTCOMES_SHOWN, READ_OUTCOMES = 6, 3
 OUTCOME_CHARS, WORDS_CHARS = 600, 300
 INDEX_ITEMS, INDEX_TASK_CHARS = 12, 120
 #: #937 review: the index's bound holds all ``INDEX_ITEMS`` complete entries (number, a ref up to
-#: ``LINE_REF_CHARS``, a task excerpt with its ellipsis and the separator), so no entry is cut or dropped.
+#: ``LINE_REF_CHARS``, the schedule marker, a task excerpt with its ellipsis and the separator).
 LINE_REF_CHARS = 64
-HELD_CHARS = len(HELD_HEADING) + INDEX_ITEMS * (len('12) [] ; ') + len(REF_PREFIX) + LINE_REF_CHARS + INDEX_TASK_CHARS + 1)
+NOTHING_SCHEDULED_MARKER = f"({msg('lines.blocked_unscheduled')}) "
+HELD_CHARS = len(HELD_HEADING) + INDEX_ITEMS * (
+    len('12) [] ; ') + len(REF_PREFIX) + LINE_REF_CHARS + INDEX_TASK_CHARS + 1 + len(NOTHING_SCHEDULED_MARKER))
 
 
 def held_text(briefs, clean=lambda text: text):
-    """#937: the one-line index of the active lines in ``briefs``: each line's ref and task sentence, or ''.
+    """#937: the one-line index of active lines with refs, task sentences and missing schedules.
 
     The secretary contract (#798 "Answers") gives a Work the owner started only each active line's
-    id and task sentence; the brief and outcomes are read with ``entrusted_line read`` when the AI
+    id, task sentence and missing schedule marker. The brief and outcomes are read with ``entrusted_line read`` when the AI
     judges a line relevant, never injected.  One line, so every route reads it as its own fact.
     ``clean`` (stored-secret redaction) runs on each whole task before any cut.
     """
@@ -416,7 +418,8 @@ def held_text(briefs, clean=lambda text: text):
         if task:
             # The ref names the line for ``entrusted_line read`` and for the information-use audit.
             ref = f'[{REF_PREFIX}{brief["line_id"]}] ' if brief.get('line_id') else ''
-            items.append(f'{len(items) + 1}) {ref}{task}')
+            marker = NOTHING_SCHEDULED_MARKER if brief.get('nothing_scheduled') else ''
+            items.append(f'{len(items) + 1}) {marker}{ref}{task}')
     if not items:
         return ''
     return (HELD_HEADING + '; '.join(items))[:HELD_CHARS]
@@ -492,12 +495,16 @@ def entry_text(entry, lang='ko'):
     if entry['state'] != STATE_ACTIVE:
         return msg('lines.list_stopped', lang, task=entry['task'])
     last = entry.get('last_report') or msg('lines.no_report_yet', lang)
-    if entry.get('blocked'):
+    if entry.get('blocked') == msg('lines.blocked_unscheduled'):
+        following = msg('lines.blocked_unscheduled', lang)
+    elif entry.get('blocked'):
         following = msg('lines.list_blocked', lang, reason=entry['blocked'])
     elif entry.get('next_is_account'):
         following = msg('lines.list_next_account', lang, at=entry['next'])
     else:
         following = msg('lines.list_next', lang, at=entry['next'])
+    if entry.get('nothing_scheduled') and entry.get('blocked') != msg('lines.blocked_unscheduled'):
+        following = f"{msg('lines.blocked_unscheduled', lang)} / {following}"
     return msg('lines.list_entry', lang, task=entry['task'], promise=entry['report_promise'], last=last, following=following)
 
 

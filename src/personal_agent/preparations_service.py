@@ -376,7 +376,12 @@ class PreparationsService:
                     'due':prep.iso(row['due_at'],row['timezone']),'due_local':when,'now_local':prep.local_text(now,row['timezone']),
                     'recurrence':row['recurrence'] or 'none','delivery':service.preparation_delivery(row),
                     'accepted_by':row['accepted_by'],'accepted_from':row.get('accepted_from'),'next_step':next_step}
-            if row.get('line_id'):result['line_id']=row['line_id']
+            if row.get('line_id'):
+                result['line_id']=row['line_id']
+                if scheduled and service.owner_typed_work(job):
+                    brief=service.lines.readable(row['line_id'])
+                    note=self.line_schedule_note(brief,row)
+                    if note:result['line_schedule_note']=note
             if spec:
                 result['check']={key:spec['arguments'][key] for key in ('hosts','secrets')}
                 result['check'].update(digest=spec['digest'],every_seconds=spec['every_seconds'])
@@ -2106,6 +2111,30 @@ class PreparationsService:
             'SELECT p.*, j.status AS last_status, j.delivery AS last_delivery FROM preparations p '
             'LEFT JOIN jobs j ON j.id=p.last_run_job_id WHERE p.line_id=? ORDER BY p.created_at DESC', (line_id,))]
 
+    def line_has_pending_work(self, line_id, exclude=None):
+        """Whether a work row is scheduled, apart from the periodic account and the given row."""
+        with self.service.store.db() as db:
+            return db.execute('SELECT 1 FROM preparations WHERE line_id=? AND state=? '
+                              'AND origin IS NOT ? AND id IS NOT ? LIMIT 1',
+                              (line_id,prep.STATE_SCHEDULED,prep.ORIGIN_LINE_ACCOUNT,exclude)).fetchone() is not None
+
+    def line_schedule_note(self, brief, row):
+        """The line's scheduling outlook after this row's current or first run."""
+        if not brief or brief['state']!=el.STATE_ACTIVE or row.get('origin')==prep.ORIGIN_LINE_ACCOUNT:
+            return ''
+        if self.line_has_pending_work(brief['line_id'],exclude=row['id']):
+            return ''
+        now=max(self.service.preparations.clock(),row['due_at'])
+        count=row['run_count']+(row['state']==prep.STATE_SCHEDULED)
+        if row.get('run_return_state'):
+            following=row['run_return_state']==prep.STATE_SCHEDULED
+        elif row['recurrence']==prep.RECURRENCE_WINDOW:
+            current={**row,'run_count':count}
+            following=prep.next_window_slot(current,now) is not None or bool(prep.next_day_window(current,now))
+        else:
+            following=prep.next_due(row['due_at'],row['timezone'],row['recurrence'],now,row.get('rule_start'),count) is not None
+        return '' if following else msg('lines.no_following_run')
+
     def line_outcomes(self, line_id, *, exclude=None, limit=el.OUTCOMES_SHOWN):
         """The line's earlier runs, newest first: each with what came of it and whether it reached the owner.
 
@@ -2157,6 +2186,8 @@ class PreparationsService:
         if self.waiting_line(brief):entry['state']='waiting';return entry
         if brief['state']!=el.STATE_ACTIVE:return entry
         active=[row for row in rows if row['state'] in prep.ACTIVE_STATES]
+        work=[row for row in active if row['state']==prep.STATE_SCHEDULED and row.get('origin')!=prep.ORIGIN_LINE_ACCOUNT]
+        if not work:entry['nothing_scheduled']=True
         blocked=next((row for row in active if row['state']==prep.STATE_RUNNING
                       and row.get('last_status') in ws.WAITING_PREREQUISITE),None)
         if blocked:
@@ -2167,7 +2198,6 @@ class PreparationsService:
             entry['next']=msg('lines.running')
             return entry
         # The line's own work first; its periodic account is the fallback.
-        work=[row for row in active if row['state']==prep.STATE_SCHEDULED and row.get('origin')!=prep.ORIGIN_LINE_ACCOUNT]
         account=[row for row in active if row['state']==prep.STATE_SCHEDULED and row.get('origin')==prep.ORIGIN_LINE_ACCOUNT]
         following=min(work or account,key=lambda row:row['due_at'],default=None)
         if following:
@@ -2670,8 +2700,11 @@ class PreparationsService:
         else:
             lead=msg('lines.run_input')
             # #938 (D2): a run that may continue its line in pieces is told how, in one general sentence.
-            if self.piece_parent(job) is not None:
-                lead+='\n'+msg('lines.piece_guidance',line=row['line_id'],minutes=prep.PIECE_LEAD_SECONDS//60)
+            if brief['state']==el.STATE_ACTIVE:
+                if self.piece_parent(job) is not None:
+                    lead+='\n'+msg('lines.piece_guidance',line=row['line_id'],minutes=prep.PIECE_LEAD_SECONDS//60)
+                note=self.line_schedule_note(brief,row)
+                if note:lead+='\n'+note
         return lead+'\n'+el.brief_text(brief)+'\n'+el.outcomes_text(outcomes,row.get('timezone'))
 
     def record_line_judgment_reads(self, work_id, text):
@@ -2732,7 +2765,7 @@ class PreparationsService:
     def lines_index(self, job):
         """The one-line index of the owner's active lines for a Work the owner started, or '' (#798, #937).
 
-        Only each line's ref and task sentence: whether one bears on the request is the AI's
+        Each line's ref, task sentence and whether it has nothing scheduled: relevance is the AI's
         judgment, and it reads the brief and outcomes with ``entrusted_line`` read.  Since #937 it
         rides in the current context, so the plan and the outcome judgment read it too.  Look-back
         lines not yet announced are left out; stored secrets are redacted before any cut.
@@ -2740,7 +2773,8 @@ class PreparationsService:
         service=self.service
         if service.unattended_work(job):return ''
         try:
-            active=[brief for brief in service.lines.lines() if not self.waiting_line(brief)]
+            active=[{**brief,'nothing_scheduled':not self.line_has_pending_work(brief['line_id'])}
+                    for brief in service.lines.lines() if brief['state']==el.STATE_ACTIVE and not self.waiting_line(brief)]
             return el.held_text(active,service._redact_known_secrets)
         except Exception:
             LOG.info('lines index unavailable job=%s',job.get('id'))

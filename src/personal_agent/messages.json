@@ -11578,6 +11578,12 @@
   "ja": "この仕事が一度で終わらないときは、今回は一段階だけ行って今の状況を伝えて終え、後でさらに必要なら実行の中で待たずに schedule_preparation で次の回を予約してください（kind prepare、line {line}、{minutes}分以降、goal にはしたこと・見つけた状態・次の回が確かめること）。",
   "zh": "如果此事无法一次完成，本次运行只做一步并在结束时说明进展；之后还需继续时，不要在运行中等待，而是用 schedule_preparation 安排下一步（kind prepare，line {line}，至少{minutes}分钟之后，goal 写明已做的事、发现的状态和下一步要确认的内容）。"
  },
+ "lines.no_following_run": {
+  "ko": "이 맡은 일에는 이번 실행 뒤에 예약된 실행이 없어요. 일이 계속되면 적용되는 한도 안에서 다음 실행을 예약하세요(다른 날이어도 돼요). 일이 끝났거나 더 진행할 수 없다면 그 사실과 이유를 기록하고 소유자에게 알리세요. 계속하는 데 필요한 것이 있다면 무엇인지 소유자에게 알리세요. 이미 종료와 이유가 기록돼 있다면 그 판단을 따르세요.",
+  "en": "No further run is scheduled for this line after this one. If the mission continues, schedule the next run within the applicable limits, including on a later day if needed. If the mission has ended or cannot be completed, record why and tell the owner. If continuing needs something, tell the owner what it needs. Honor any recorded decision that the mission has ended.",
+  "ja": "この仕事には今回の後に予約された実行がありません。仕事が続くなら、適用される上限の範囲で次回を予約してください。必要なら別の日でもかまいません。仕事が終わったか完了できない場合は、その理由を記録し、オーナーに伝えてください。続行に必要なものがあれば、それをオーナーに伝えてください。終了の判断がすでに記録されている場合は、その判断に従ってください。",
+  "zh": "此受托事项在本次运行之后没有安排其他运行。如果事项仍需继续，请在适用的限制内安排下一次运行，必要时可以安排在之后的日期。如果事项已经结束或无法完成，请记录原因并告知主人。如果继续需要什么，请告诉主人。若已记录事项结束的判断，请遵循该判断。"
+ },
  "lines.say_in_reply": {
   "ko": "이 대화에는 Still이 따로 보낼 수 없으니, 답에서 이 문장을 그대로 전하세요: {text}",
   "en": "Still cannot send its own message in this conversation, so say this in your reply, as written: {text}",

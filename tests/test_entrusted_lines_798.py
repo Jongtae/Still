@@ -161,6 +161,77 @@ class ContinuityTests(_LineCase):
         users = [message for message in bodies[0]['messages'] if message.get('role') == 'user']
         return users[-1]['content'] if isinstance(users[-1]['content'], str) else json.dumps(users[-1]['content'], ensure_ascii=False)
 
+    def test_another_pending_work_suppresses_the_note_and_marker(self):
+        brief, _ = self.open_line(recurrence=None)
+        line = brief['line_id']
+        [first] = self.work_rows(line)
+        self.script = [
+            {'content': None, 'tool_calls': [call('next', 'schedule_preparation', kind='prepare',
+                                                  goal='다음 단계', due=self.due_iso(86400), line=line)]},
+            {'content': '다음에도 이어서 확인할게요.'},
+        ]
+        self.receive('내일도 이어서 확인해 줘')
+        [schedule] = tool_results(self.model_calls[-1], 'schedule_preparation')
+        self.assertTrue(schedule['scheduled'])
+        self.assertNotIn('line_schedule_note', schedule)
+        bodies = self.run_line(first)
+        self.assertNotIn(msg('lines.no_following_run'), self.run_input(bodies))
+        lines = self.service.preparations_service
+        listing = lines.lines_listing()
+        self.assertNotIn('nothing_scheduled', listing['lines'][0])
+        self.assertNotIn(msg('lines.blocked_unscheduled'), listing['text'])
+        self.assertNotIn(msg('lines.blocked_unscheduled'), lines.lines_index({'id': 'probe'}))
+
+    def test_a_stopped_line_has_no_note_or_marker(self):
+        brief, work = self.open_line(recurrence=None)
+        [row] = self.work_rows(brief['line_id'])
+        lines = self.service.preparations_service
+        self.line_call('이제 그만해 줘', action='stop', line=brief['line_id'], scope='line')
+        listing = lines.lines_listing()
+        self.assertEqual(listing['lines'][0]['state'], el.STATE_STOPPED)
+        self.assertNotIn('nothing_scheduled', listing['lines'][0])
+        self.assertNotIn(msg('lines.blocked_unscheduled'), listing['text'])
+        self.assertEqual(lines.lines_index({'id': 'probe'}), '')
+        self.assertNotIn(msg('lines.no_following_run'), lines.line_run_input({'id': work}, row))
+
+    def test_a_periodic_account_does_not_prompt_the_ai_to_continue_a_finished_mission(self):
+        brief, _ = self.open_line(recurrence=None)
+        [row] = self.work_rows(brief['line_id'])
+        self.run_line(row, [{'content': '필요한 확인을 모두 마쳤으므로 이 일은 끝났습니다.'}])
+        account = self.service.preparations_service.line_account_row(brief['line_id'])
+        seen = self.run_input(self.run_line(account))
+        self.assertIn('이 일은 끝났습니다.', seen)
+        self.assertNotIn(msg('lines.no_following_run'), seen)
+
+    def test_a_recurring_row_gets_the_note_only_on_its_last_run(self):
+        brief, _ = self.open_line(recurrence=None, extra={'rrule': 'FREQ=DAILY;COUNT=2'})
+        [row] = self.work_rows(brief['line_id'])
+        [schedule] = tool_results(self.model_calls[-1], 'schedule_preparation')
+        self.assertNotIn('line_schedule_note', schedule)
+        note = msg('lines.no_following_run')
+        self.assertNotIn(note, self.run_input(self.run_line(row)))
+        following = self.service.preparations.get(row['id'])
+        self.assertEqual(following['state'], prep.STATE_SCHEDULED)
+        self.assertIn(note, self.run_input(self.run_line(following)))
+
+    def test_the_last_run_of_a_bounded_window_can_schedule_a_piece_for_another_day(self):
+        brief, _ = self.open_line(recurrence=None, extra={'every_minutes': '5', 'until': self.due_iso(3900)})
+        line = brief['line_id']
+        [row] = self.work_rows(line)
+        note = msg('lines.no_following_run')
+        self.assertNotIn(note, self.run_input(self.run_line(row)))
+        last = self.service.preparations.get(row['id'])
+
+        def next_piece(_body):
+            return {'content': None, 'tool_calls': [call('next', 'schedule_preparation', kind='prepare',
+                                                          goal='다음 단계', due=self.due_iso(86400), line=line)]}
+
+        bodies = self.run_line(last, [next_piece, {'content': '내일 이어서 확인할게요.'}])
+        self.assertIn(note, self.run_input(bodies))
+        [piece] = [item for item in self.work_rows(line) if item.get('origin') == prep.ORIGIN_LINE_PIECE]
+        self.assertEqual(piece['state'], prep.STATE_SCHEDULED)
+        self.assertGreaterEqual(piece['due_at'], last['due_at'] + 86400)
+
     def test_a_replaced_row_keeps_its_line_and_the_next_run_reads_earlier_outcomes_with_their_labels(self):
         brief, _work = self.open_line(delivery='send')
         [first] = self.work_rows(brief['line_id'])
@@ -189,11 +260,20 @@ class ContinuityTests(_LineCase):
     def test_a_line_outlives_a_period_with_nothing_scheduled_and_an_owner_restart_continues_it(self):
         brief, _work = self.open_line(recurrence=None)
         [first] = self.work_rows(brief['line_id'])
-        self.run_line(first, [{'content': '한 번 정리했습니다.'}])
+        schedule = tool_results(self.model_calls[-1], 'schedule_preparation')[-1]
+        note = msg('lines.no_following_run')
+        self.assertEqual(schedule['line_schedule_note'], note)
+        bodies = self.run_line(first, [{'content': '한 번 정리했습니다.'}])
+        self.assertIn(note, self.run_input(bodies))
         self.assertNotIn(self.service.preparations.get(first['id'])['state'], prep.ACTIVE_STATES)
         self.assertEqual(self.service.lines.current(brief['line_id'])['state'], el.STATE_ACTIVE)
-        [entry] = self.service.preparations_service.lines_listing()['lines']
+        lines = self.service.preparations_service
+        listing = lines.lines_listing()
+        [entry] = listing['lines']
         self.assertTrue(entry.get('next_is_account'))
+        self.assertTrue(entry['nothing_scheduled'])
+        self.assertIn(msg('lines.blocked_unscheduled'), listing['text'])
+        self.assertIn(msg('lines.blocked_unscheduled'), lines.lines_index({'id': 'probe'}))
 
         # Restart Still, then the owner starts the same work again: the AI continues the line.
         self.store = QuickStore(self.root)

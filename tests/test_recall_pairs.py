@@ -189,6 +189,17 @@ def test_eligibility_comes_from_store_even_after_seed(data, seeded):
         pairs.run(lambda q, c='': [{'id': refs['r1'], 'state': 'current'}], [case], refs)
 
 
+def test_eligible_ids_matches_the_per_row_rule(data, seeded):
+    store, refs = seeded
+    per_row = lambda: {ident for ident in refs.values() if refs.eligible(ident)}
+    assert refs.eligible_ids() == per_row()
+    assert refs['r9'] not in refs.eligible_ids()  # expired before the fixture's today
+    assert not {refs[ref] for ref in ('r5', 'r7', 'r10', 'r24')} & refs.eligible_ids()
+    OwnerForget(store).forget(data['owner'], 'memory:' + refs['r1'])
+    assert refs['r1'] not in refs.eligible_ids()
+    assert refs.eligible_ids() == per_row()
+
+
 def test_score_uses_weighted_recall_and_never_pools_splits(data, seeded):
     _, refs = seeded
     cases = copy.deepcopy(data['cases'][:2])
