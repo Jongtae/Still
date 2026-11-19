@@ -30,7 +30,7 @@ class KeptWindowTests(_WatchCase):
         return result
 
     def notifications(self):
-        return [text for text in self.texts() if text.startswith('지켜보던 일에서 알려 드려요')]
+        return [text for text in self.texts() if '\n\n지켜보던 일: ' in text]
 
     def test_due_report_and_closing_are_sent_even_with_an_unchanged_result(self):
         zone = ZoneInfo('Asia/Seoul')

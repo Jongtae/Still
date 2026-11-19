@@ -113,6 +113,18 @@
   "ja": "確認できた作業を{count}段階終えました。",
   "zh": "已完成 {count} 个已观察步骤。"
  },
+ "budget_continue.done_steps": {
+  "ko": "확인한 단계 {count}개까지 진행했어요.",
+  "en": "{count} checked steps done.",
+  "ja": "確認できたステップを{count}個まで進めました。",
+  "zh": "已完成 {count} 个已确认的步骤。"
+ },
+ "budget_continue.tokens": {
+  "ko": "토큰 {count}개",
+  "en": "{count} tokens",
+  "ja": "トークン{count}個",
+  "zh": "{count} 个令牌"
+ },
  "budget_continue.remaining": {
   "ko": "원래 요청에서 아직 완료가 확인되지 않은 부분",
   "en": "The parts of the original request not yet confirmed complete",
@@ -126,10 +138,10 @@
   "zh": "{usage} · {count} 次工具调用"
  },
  "budget_continue.prompt": {
-  "ko": "이번 실행 한도에 도달했어요.\n완료: {done}\n남은 일: {left}\n사용량: {used}\n이어서 할까요?",
-  "en": "This run reached its budget.\nDone: {done}\nLeft: {left}\nUsed: {used}\nContinue?",
-  "ja": "今回の実行上限に達しました。\n完了: {done}\n残り: {left}\n使用量: {used}\n続けますか？",
-  "zh": "本次运行已达到预算。\n完成：{done}\n剩余：{left}\n用量：{used}\n继续吗？"
+  "ko": "이번 실행 한도에 다다라 여기서 멈췄어요.\n지금까지: {done}\n남은 일: {left}\n사용량: {used}\n이어서 할까요?",
+  "en": "This run reached its budget and stopped here.\nSo far: {done}\nLeft: {left}\nUsed: {used}\nContinue?",
+  "ja": "今回の実行上限に達したので、ここで止めました。\nここまで: {done}\n残り: {left}\n使用量: {used}\n続けますか？",
+  "zh": "本次运行已达到预算，在这里停下了。\n目前：{done}\n剩余：{left}\n用量：{used}\n继续吗？"
  },
  "budget_continue.stale": {
   "ko": "지금은 이 요청을 이어서 실행할 수 없어요.",
@@ -7535,10 +7547,10 @@
   "zh": "请确认请求。"
  },
  "quickstart_service.watch_notification": {
-  "ko": "지켜보던 일에서 알려 드려요 ({title}).",
-  "en": "An update on what I was watching ({title}).",
-  "ja": "見守っていたことのお知らせです（{title}）。",
-  "zh": "关注事项有更新（{title}）。"
+  "ko": "지켜보던 일: {title}",
+  "en": "Watching: {title}",
+  "ja": "見守っている件: {title}",
+  "zh": "关注事项：{title}"
  },
  "quickstart_service.stop_watching_hint": {
   "ko": "더 알릴 필요가 없으면 아래 버튼으로 지켜보기를 멈출 수 있어요.",
