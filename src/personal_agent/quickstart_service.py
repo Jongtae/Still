@@ -2089,14 +2089,14 @@ class AgentService:
         """
         return self.preparations_service.offered_proposals(notification)
 
-    def answer_preparation_proposal(self, notification, proposals, accept, by='button'):
+    def answer_preparation_proposal(self, notification, proposals, accept, by='button', owner_work_id=None):
         """The owner's yes or no to exactly the ``proposals`` one sent message offered (#659; #172 judged answers).
 
         The button's path, shared with a judged reply or reaction.  An accepted
         message keeps a cancel button bound to exactly what it accepted (#1455).
         Returns what the message now says.
         """
-        return self.preparations_service.answer_preparation_proposal(notification, proposals, accept, by)
+        return self.preparations_service.answer_preparation_proposal(notification, proposals, accept, by, owner_work_id)
 
     def preparation_reply_prefix(self, job):
         """A prepared answer says what it was prepared for; a reminder needs nothing."""

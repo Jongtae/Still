@@ -126,7 +126,10 @@ ORIGIN_DAY_PLAN = 'day-plan'
 ORIGIN_LINE_ACCOUNT = 'line-account'
 #: #938: the next piece of an entrusted line's work, which a run of that line scheduled itself.
 ORIGIN_LINE_PIECE = 'line-piece'
-ORIGINS = (ORIGIN_DREAM, ORIGIN_DAY_PLAN, ORIGIN_LINE_ACCOUNT, ORIGIN_LINE_PIECE)
+#: #1027: a daily-plan offer to resume an owner line. Its origin does not give it acceptance.
+ORIGIN_LINE_RESUME = 'line-resume'
+LINE_RESUME_EVENT = 'line_resume_proposed'
+ORIGINS = (ORIGIN_DREAM, ORIGIN_DAY_PLAN, ORIGIN_LINE_ACCOUNT, ORIGIN_LINE_PIECE, ORIGIN_LINE_RESUME)
 #: #780: when the first daily plan runs, owner-local; the owner changes or cancels it like any preparation.
 DAY_PLAN_HOUR, DAY_PLAN_MINUTE = 6, 30
 #: #780: how far back a plan run is shown what earlier plan runs set up.
@@ -404,7 +407,8 @@ REFUSALS = {
     'running': '지금 실행 중인 준비는 지울 수 없습니다. 먼저 취소하세요.',
     **{code: msg('preparations.' + code) for code in
        ('invalid_rrule', 'already_running', 'invalid_state', 'goal_not_editable', 'invalid_edit', 'resume_expired', 'queue_full',
-        'replace_not_found', 'replace_not_allowed', 'line_inactive', 'line_piece_invalid', 'line_piece_exists')},
+        'replace_not_found', 'replace_not_allowed', 'line_inactive', 'line_piece_invalid', 'line_piece_exists',
+        'invalid_line_resume_offer', 'line_resume_unavailable', 'line_resume_already_offered', 'line_resume_stale')},
     # #938: the D3 bounds of a line's pieces.
     'line_piece_too_soon': msg('preparations.line_piece_too_soon', minutes=PIECE_LEAD_SECONDS // 60),
     'line_pieces_daily': msg('preparations.line_pieces_daily', maximum=LINE_PIECES_PER_DAY),
@@ -1299,6 +1303,8 @@ def digest(rows):
                                  + ((row.get('title_text'), row.get('offer_text')) if offered(row) else ())
                                  + ((row['window_terms'],) if row.get('window_terms') else ())
                                  + ((json.loads(row['check_spec'])['digest'],) if row.get('check_spec') else ())
+                                 + ((row['line_id'], row['timezone'], row['channel'])
+                                    if row.get('origin') == ORIGIN_LINE_RESUME else ())
                                  for row in rows), ensure_ascii=False)
     return hashlib.sha256(material.encode()).hexdigest()[:32]
 
@@ -1522,6 +1528,11 @@ class Preparations:
         has not started, and is refused once it has started or the owner paused or cancelled it.
         """
         from .agent_runtime import not_run
+        resume_offer = origin == ORIGIN_LINE_RESUME
+        if resume_offer and not (state == STATE_PROPOSED and accepted_by is None and kind == KIND_PREPARE
+                                 and isinstance(line_id, str) and line_id and created_from and offer
+                                 and offer.count('\n') < 2 and not (window or recurrence or max_runs or replaces)):
+            raise not_run(PreparationRefusal('invalid_line_resume_offer'))
         if piece_of is not None and not (origin == ORIGIN_LINE_PIECE and accepted_by in (ACCEPTED_LINE_PIECE, ACCEPTED_LINE_PIECE_OWNER)
                                          and kind == KIND_PREPARE and window is None and recurrence is None and max_runs is None
                                          and line_id and state == STATE_SCHEDULED):
@@ -1565,6 +1576,8 @@ class Preparations:
         owns_transaction = db is None
         with (self.store.db() if owns_transaction else nullcontext(db)) as db:
             if owns_transaction:db.execute('BEGIN IMMEDIATE')
+            if resume_offer:
+                brief = self._admit_line_resume(db, line_id, due_at, now)
             if piece_of is not None:
                 child = self._piece_admission(db, line_id, piece_of, due_at, now)
                 if child is not None:
@@ -1572,20 +1585,21 @@ class Preparations:
                                'WHERE id=? AND state=?', (goal, due_at, timezone, title, offer, now, child['id'], STATE_SCHEDULED))
                     return {**dict(db.execute('SELECT * FROM preparations WHERE id=?', (child['id'],)).fetchone()),
                             'piece_replaced': True}
-            same = None if piece_of is not None else db.execute(
+            same = None if piece_of is not None or resume_offer else db.execute(
                               'SELECT * FROM preparations WHERE created_from=? AND kind=? AND goal_text=? AND due_at=? '
-                              'AND state IN (?,?,?,?) AND check_spec IS ?', (created_from, kind, goal, due_at, *ACTIVE_STATES, check_spec)).fetchone()
+                              'AND state IN (?,?,?,?) AND check_spec IS ? AND origin IS NOT ?',
+                              (created_from, kind, goal, due_at, *ACTIVE_STATES, check_spec, ORIGIN_LINE_RESUME)).fetchone()
             if same:
                 return dict(same)
             # #574: another Work's identical proposal still waiting for the owner is that same proposal,
             # not a second one.  Scheduled rows are left alone: the owner may want two.
             # #938: a piece never takes up another Work's proposal (that would accept it).
-            proposed = None if piece_of is not None else db.execute(
+            proposed = None if piece_of is not None or resume_offer else db.execute(
                                   'SELECT * FROM preparations WHERE state=? AND created_from IS NOT ? AND kind=? AND goal_text=? '
                                   'AND due_at=? AND recurrence IS ? AND every_seconds IS ? AND window_end IS ? AND max_runs IS ? AND window_terms IS ? '
-                                  'AND check_spec IS ? ORDER BY created_at LIMIT 1',
+                                  'AND check_spec IS ? AND origin IS NOT ? ORDER BY created_at LIMIT 1',
                                   (STATE_PROPOSED, created_from, kind, goal, due_at, recurrence,
-                                   every_seconds, window_end, max_runs, terms, check_spec)).fetchone()
+                                   every_seconds, window_end, max_runs, terms, check_spec, ORIGIN_LINE_RESUME)).fetchone()
             if proposed:
                 return {**dict(proposed), 'already_proposed': True}
             active = db.execute('SELECT count(*) FROM preparations WHERE state IN (?,?,?,?)', ACTIVE_STATES).fetchone()[0]
@@ -1615,6 +1629,12 @@ class Preparations:
             if check_spec is not None:
                 row.update(check_spec=check_spec, check_next_at=min(due_at, until_at))
             db.execute(f"INSERT INTO preparations({','.join(row)}) VALUES ({','.join('?' * len(row))})", tuple(row.values()))
+            if resume_offer:
+                # Keep the day cap even if the owner deletes the row. The same receipt binds the brief
+                # version so a later owner stop or correction cannot be undone by an older offer.
+                db.execute('INSERT INTO tool_events(job_id,tool,status,detail,created) VALUES (?,?,?,?,?)',
+                           (created_from, LINE_RESUME_EVENT, 'succeeded',
+                            json.dumps({'preparation_id': row['id'], 'line_id': line_id, 'version': brief['version']}), now))
             if bundle_channel is not None:
                 # The stood row and its original send intent commit together, already on web.
                 db.execute('INSERT INTO tool_events(job_id,tool,status,detail,created) VALUES (?,?,?,?,?)',
@@ -1654,7 +1674,53 @@ class Preparations:
             from .agent_runtime import not_run
             raise not_run(PreparationRefusal('too_many_checks'))
 
-    def accept(self, preparation_id, accepted_by, *, accepted_from=None, db=None, replaces=None):
+    @staticmethod
+    def line_has_pending_work(db, line_id, exclude=None):
+        """#1026: the periodic account is not a pending piece of the line's work."""
+        return db.execute('SELECT 1 FROM preparations WHERE line_id=? AND state=? '
+                          'AND origin IS NOT ? AND id IS NOT ? LIMIT 1',
+                          (line_id, STATE_SCHEDULED, ORIGIN_LINE_ACCOUNT, exclude)).fetchone() is not None
+
+    def line_resume_target(self, line_id, db=None):
+        """The owner-opened, stopped or unscheduled brief eligible for an offer."""
+        from .entrusted_lines import EntrustedLines, STATE_ACTIVE
+        with (self.store.db() if db is None else nullcontext(db)) as db:
+            lines = EntrustedLines(self.store, clock=self.clock)
+            brief = lines.readable(line_id, db)
+            provenance = lines.provenance(line_id, db) if brief else {}
+            if provenance.get('change') != 'opened' or provenance.get('by', 'owner') != 'owner':
+                return None
+            if brief['state'] == STATE_ACTIVE and self.line_has_pending_work(db, line_id):
+                return None
+            return brief
+
+    def _admit_line_resume(self, db, line_id, due_at, now):
+        from .agent_runtime import not_run
+        brief = self.line_resume_target(line_id, db)
+        if brief is None:
+            raise not_run(PreparationRefusal('line_resume_unavailable'))
+        if due_at <= now or self.budget_day(due_at, db) != self.budget_day(now, db):
+            raise not_run(PreparationRefusal('invalid_line_resume_offer'))
+        if db.execute("SELECT 1 FROM tool_events WHERE tool=? AND created>=? "
+                      "AND json_extract(detail,'$.line_id')=? LIMIT 1",
+                      (LINE_RESUME_EVENT, self.owner_day_start(now, db), line_id)).fetchone():
+            raise not_run(PreparationRefusal('line_resume_already_offered'))
+        return brief
+
+    @staticmethod
+    def _exact_line_resume(row, offer_digest):
+        if row['state'] != STATE_PROPOSED or row['origin'] != ORIGIN_LINE_RESUME or digest([row]) != offer_digest:
+            raise PreparationRefusal('line_resume_stale')
+
+    def decline_line_resume(self, preparation_id, offer_digest):
+        with self.store.db() as db:
+            db.execute('BEGIN IMMEDIATE')
+            row = self._editable(db, preparation_id, (STATE_PROPOSED,))
+            self._exact_line_resume(row, offer_digest)
+            self.cancel(preparation_id, db=db)
+            db.execute('UPDATE preparations SET last_outcome=? WHERE id=?', ('declined', preparation_id))
+
+    def accept(self, preparation_id, accepted_by, *, accepted_from=None, db=None, replaces=None, offer_digest=None):
         """``proposed`` → ``scheduled``: the owner's explicit yes.
 
         #395: a watch whose window has already ended is refused (``expired``)
@@ -1666,9 +1732,24 @@ class Preparations:
         with (self.store.db() if owns_transaction else nullcontext(db)) as db:
             if owns_transaction:
                 db.execute('BEGIN IMMEDIATE')
-            row = db.execute("SELECT check_spec FROM preparations WHERE id=? AND state='proposed' "
-                             "AND until_at>?", (preparation_id, now)).fetchone()
-            if row:
+            row = db.execute('SELECT * FROM preparations WHERE id=?', (preparation_id,)).fetchone()
+            if row and row['origin'] == ORIGIN_LINE_RESUME:
+                # Build at the existing #659 transaction boundary: the owner act must activate both
+                # the brief and row together. Ordinary scheduling, deduplication and restore cannot do it.
+                self._exact_line_resume(dict(row), offer_digest)
+                if accepted_by not in (ACCEPTED_OWNER_BUTTON, ACCEPTED_OWNER_ANSWER):
+                    raise PreparationRefusal('line_resume_stale')
+                if row['created_at'] < self.owner_day_start(now, db):
+                    raise PreparationRefusal('line_resume_stale')
+                brief = self.line_resume_target(row['line_id'], db)
+                event = db.execute("SELECT detail FROM tool_events WHERE job_id=? AND tool=? "
+                                   "AND json_extract(detail,'$.preparation_id')=? AND json_extract(detail,'$.line_id')=?",
+                                   (row['created_from'], LINE_RESUME_EVENT, preparation_id, row['line_id'])).fetchone()
+                if not (brief and event and json.loads(event['detail'])['version'] == brief['version']):
+                    raise PreparationRefusal('line_resume_stale')
+                from .entrusted_lines import EntrustedLines
+                EntrustedLines(self.store, clock=self.clock).restart(row['line_id'], accepted_from, db=db)
+            if row and row['state'] == STATE_PROPOSED and row['check_spec'] and row['until_at'] > now:
                 self._check_admission(db, row['check_spec'], replaces)
             changed = db.execute("UPDATE preparations SET state='scheduled',accepted_by=?,accepted_from=?,updated_at=? WHERE id=? AND state='proposed' "
                                  'AND (recurrence IS NOT ? OR until_at>=?) AND (check_spec IS NULL OR until_at>?)',
@@ -1970,6 +2051,8 @@ class Preparations:
         with self.store.db() as db:
             db.execute('BEGIN IMMEDIATE')
             row = self._editable(db, preparation_id, (state,))
+            if row['origin'] == ORIGIN_LINE_RESUME and row['accepted_by'] is None:
+                raise PreparationRefusal('invalid_state')
             if cancelled_at is not None and row['updated_at'] != cancelled_at:
                 raise PreparationRefusal('invalid_state')
             if state == STATE_CANCELLED:
@@ -2036,7 +2119,7 @@ class Preparations:
 
     def preview_edit(self, row, changes, now, *, db=None):
         """Use the same recorded slots for a Settings preview and the atomic edit."""
-        if row.get('check_spec'):
+        if row.get('check_spec') or (row['state'] == STATE_PROPOSED and row.get('origin') == ORIGIN_LINE_RESUME):
             raise PreparationRefusal('invalid_edit')
         if db is None:
             with self.store.db() as db:
@@ -2249,8 +2332,8 @@ class Preparations:
             rows = [dict(row) for row in db.execute(
                 'SELECT p.*, j.status AS last_work_status FROM preparations p '
                 'LEFT JOIN jobs j ON j.id=p.last_run_job_id '
-                'WHERE p.accepted_by=? AND p.origin IS NULL AND p.created_at>=? '
-                'ORDER BY p.created_at DESC LIMIT ?', (ACCEPTED_DAY_PLAN, since, int(limit)))]
+                'WHERE ((p.accepted_by=? AND p.origin IS NULL) OR p.origin=?) AND p.created_at>=? '
+                'ORDER BY p.created_at DESC LIMIT ?', (ACCEPTED_DAY_PLAN, ORIGIN_LINE_RESUME, since, int(limit)))]
             offered = {}
             if rows:
                 for event in db.execute('SELECT job_id,detail FROM tool_events WHERE tool=? AND created>=?',
@@ -2351,17 +2434,18 @@ class Preparations:
     _LAPSED_ONE_OFF = 'state=? AND origin=? AND recurrence IS NULL AND due_at<=?'
 
     def expire_suggestions(self, now):
-        """Look-back suggestions still unanswered after ``SUGGESTION_EXPIRY_SECONDS``, or one-offs whose time
-        came (#638), lapse; returns how many.
+        """Expire unanswered look-back suggestions (#638) and resume offers from an earlier local day.
 
         ``expired``, not ``cancelled``: the owner never said no, so ``declined_goals`` does not count it.
         Nothing to expire is one read.
         """
         cutoff = now - SUGGESTION_EXPIRY_SECONDS
         where = ('origin=? AND ((state=? AND (created_at<=? OR (recurrence IS NULL AND due_at<=?))) '
-                 'OR (state=? AND accepted_by=? AND offered_at IS NULL AND created_at<=?))')
-        params = (ORIGIN_DREAM, STATE_PROPOSED, cutoff, now, STATE_SCHEDULED, ACCEPTED_DREAM, cutoff)
+                 'OR (state=? AND accepted_by=? AND offered_at IS NULL AND created_at<=?)) '
+                 'OR (origin=? AND state=? AND created_at<?)')
         with self.store.db() as db:
+            params = (ORIGIN_DREAM, STATE_PROPOSED, cutoff, now, STATE_SCHEDULED, ACCEPTED_DREAM, cutoff,
+                      ORIGIN_LINE_RESUME, STATE_PROPOSED, self.owner_day_start(now, db))
             if db.execute(f'SELECT 1 FROM preparations WHERE {where} LIMIT 1', params).fetchone() is None:
                 return 0
             return db.execute(f'UPDATE preparations SET state=?,updated_at=? WHERE {where}',

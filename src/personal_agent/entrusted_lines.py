@@ -183,10 +183,10 @@ class EntrustedLines:
             raise LineRefusal('line_unreadable')
         return brief
 
-    def readable(self, line_id):
+    def readable(self, line_id, db=None):
         """The current brief, or None for a forgotten, missing or unreadable line (never raises)."""
         try:
-            return self.current(line_id)
+            return self.current(line_id, db)
         except LineRefusal:
             return None
 
@@ -228,9 +228,9 @@ class EntrustedLines:
             row = self.library.commit(slot(line_id), source, work_id=work_id, stats={'change': 'opened'}, db=db)
         return decode(row)
 
-    def provenance(self, line_id):
+    def provenance(self, line_id, db=None):
         """The immutable opening record, or {} for a missing line."""
-        with self.store.db() as db:
+        with (self.store.db() if db is None else nullcontext(db)) as db:
             row = db.execute('SELECT stats_json FROM procedure_versions WHERE slot=? AND version=1',
                              (slot(line_id),)).fetchone()
         return json.loads(row['stats_json'] or '{}') if row else {}
@@ -285,6 +285,10 @@ class EntrustedLines:
                 return before, before
             row = self.library.commit(slot(line_id), source, work_id=work_id, stats={'change': change}, db=db)
             return before, decode(row)
+
+    def restart(self, line_id, work_id, *, db=None):
+        """Record the owner's restart, leaving an already-active brief intact."""
+        return self.write(line_id, work_id, None, 'restarted', lambda brief: {**brief, 'state': STATE_ACTIVE}, db=db)[1]
 
     def bundle_part_text(self, job):
         """The result, or the same empty-result failure body the direct watch sends."""

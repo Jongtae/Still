@@ -1566,12 +1566,13 @@ function preparationDescription(row){
  if(row.last_result)parts.push(t('마지막 결과: {text}',{text:row.last_result}));return parts.join(' · ');}
 function renderPreparations(){renderScheduledBudget();const list=$('preparations-list');if(!list||!preparationRows)return;const fingerprint=JSON.stringify([preparationRows,preparationGroups,preparationDeletePending,preparationEditPending,preparationLabels,currentLanguage]);if(list.dataset.state===fingerprint)return;list.dataset.state=fingerprint;const focusKey=rememberFocus(list);list.replaceChildren();
  for(const row of preparationRows){const actions=[],pending=preparationDeletePending===row.id;
-  if(row.state==='proposed'){const accept=settingsAction(preparationLabel('accept'),event=>busy(event.currentTarget,()=>preparationAction('accept',row.id,t('준비를 수락했습니다.'))));accept.dataset.focusKey='preparation-accept:'+row.id;actions.push(accept);}
-  if(PREPARATION_ACTIVE.includes(row.state)&&!pending){const cancel=settingsAction(row.state==='proposed'?preparationLabel('decline'):t('취소'),event=>busy(event.currentTarget,()=>preparationAction('cancel',row.id,t('준비를 취소했습니다.'))));cancel.dataset.focusKey='preparation-cancel:'+row.id;actions.push(cancel);}
+  const offerBinding=row.resume_offer_fingerprint?{fingerprint:row.resume_offer_fingerprint}:{};
+  if(row.state==='proposed'){const accept=settingsAction(preparationLabel('accept'),event=>busy(event.currentTarget,()=>preparationAction('accept',row.id,t('준비를 수락했습니다.'),offerBinding)));accept.dataset.focusKey='preparation-accept:'+row.id;actions.push(accept);}
+  if(PREPARATION_ACTIVE.includes(row.state)&&!pending){const cancel=settingsAction(row.state==='proposed'?preparationLabel('decline'):t('취소'),event=>busy(event.currentTarget,()=>preparationAction('cancel',row.id,t('준비를 취소했습니다.'),offerBinding)));cancel.dataset.focusKey='preparation-cancel:'+row.id;actions.push(cancel);}
   // #575: each button is the owner's Settings action, as for cancel.
   if(!pending){
    for(const operation of row.state==='scheduled'?['pause','run_now']:row.state==='paused'?['resume','run_now']:[]){const action=settingsAction(preparationLabel(operation),event=>busy(event.currentTarget,()=>preparationAction(operation,row.id,preparationLabel('saved'))));action.dataset.focusKey='preparation-'+operation+':'+row.id;actions.push(action);}
-   if(!row.check&&['proposed','scheduled','paused'].includes(row.state)){const edit=settingsAction(preparationLabel('edit'),()=>{preparationEditPending=preparationEditPending===row.id?null:row.id;renderPreparations();});edit.dataset.focusKey='preparation-edit:'+row.id;actions.push(edit);}
+   if(!row.check&&!row.resume_offer_fingerprint&&['proposed','scheduled','paused'].includes(row.state)){const edit=settingsAction(preparationLabel('edit'),()=>{preparationEditPending=preparationEditPending===row.id?null:row.id;renderPreparations();});edit.dataset.focusKey='preparation-edit:'+row.id;actions.push(edit);}
   }
   if(row.state!=='running'){
    if(pending){actions.push(element('span',t('이 준비를 지웁니다. 지난 실행 기록은 남습니다.'),'confirm-text'));const keep=settingsAction(t('취소'),()=>{preparationDeletePending=null;renderPreparations();$('preparations-list').querySelector('[data-focus-key="preparation-delete:'+row.id+'"]')?.focus();});keep.dataset.focusKey='preparation-keep:'+row.id;actions.push(keep);}
