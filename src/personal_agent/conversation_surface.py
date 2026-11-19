@@ -240,7 +240,7 @@ def surface_conversation(channel, chat_id):
 def notice_binding(service, notification):
     """What a queued notice is bound to now (``{}`` when nothing), or None when it is no longer to be shown."""
     from . import preparations as prep
-    from .quickstart_service import MEMORY_PROMPT_KINDS, MEMORY_SAVED_KINDS, WORKING_NOTES_KIND, prepared_ids
+    from .quickstart_service import MEMORY_PROMPT_KINDS, MEMORY_SAVED_KINDS, WORKING_LESSON_NOTICE_KINDS, prepared_ids
     kind = notification['kind']
     if kind == DELIVERY_UNKNOWN_KIND:
         # #842: told while its Work is still there to tell about.
@@ -290,8 +290,8 @@ def notice_binding(service, notification):
         # #918: bound now to the Work's current saved facts; none left -> nothing to tell.
         memory_saved = service.bind_memory_saved(notification, time.time())
         return {'memory_saved': memory_saved} if memory_saved else None
-    if kind == WORKING_NOTES_KIND:
-        # #19: told only while its revision is still the current notes.
+    if kind in WORKING_LESSON_NOTICE_KINDS:
+        # Bind to the lesson rows before rendering.
         notes_text = service.working_notes_notice_text(notification)
         return None if notes_text is None else {'notes_text': notes_text}
     if kind == 'settings_change_proposed':
@@ -316,7 +316,7 @@ def notice_binding(service, notification):
 def notice_text(service, notification, bound):
     """The text a notice shows, from what ``notice_binding`` bound."""
     from . import preparations as prep
-    from .quickstart_service import MEMORY_PROMPT_KINDS, MEMORY_SAVED_KINDS, WORKING_NOTES_KIND
+    from .quickstart_service import MEMORY_PROMPT_KINDS, MEMORY_SAVED_KINDS, WORKING_LESSON_NOTICE_KINDS
     kind = notification['kind']
     if kind == 'preparation_proposed':
         return prep.proposal_text(bound['proposals'], bound['remaining'], service.home_zone())
@@ -326,7 +326,7 @@ def notice_text(service, notification, bound):
         return service.memory_prompt_text(notification['job_id'], bound['memory_prompt'])
     if kind in MEMORY_SAVED_KINDS:
         return service.memory_saved_text(bound['memory_saved'])
-    if kind == WORKING_NOTES_KIND:
+    if kind in WORKING_LESSON_NOTICE_KINDS:
         return bound['notes_text']
     if kind == 'settings_change_proposed':
         return service.settings_orchestrator.confirmation_text(bound['settings_drafts'])

@@ -176,6 +176,14 @@ class MultiLineEntriesTest(unittest.TestCase):
                                      f"{msg('providers.unreachable', lang)}\n{expected}\nAn AI-written line.")
                     self.assertEqual(translate(source, None), source, 'Korean owners see no change')
 
+    def test_working_lessons_restore_count_survives_translation(self):
+        text = msg('working_lessons.restored', count=17)
+        for lang in LANGS:
+            with self.subTest(lang=lang):
+                expected = msg('working_lessons.restored', lang, count=17)
+                self.assertIn('17', expected)
+                self.assertEqual(translate(text, lang), expected)
+
     def test_a_placeholder_value_may_span_lines(self):
         text = msg('working_notes.saved', change='first line\nsecond line')
         self.assertEqual(translate(text, 'en'), msg('working_notes.saved', 'en', change='first line\nsecond line'))

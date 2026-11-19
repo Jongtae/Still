@@ -377,7 +377,7 @@ class Lines(_LinesCase):
         self.assertEqual(om.validate_line_actions([item],{'t1':self.b},{})[1][0]['reason'],'line_evidence_sources')
         self.assertEqual(len(om.validate_line_actions([item],{'t1':self.b},{'r1':self.a})[0]),1)
         self.assertEqual(om.validate_line_actions([],{},{}),([],[]))
-        self.assertTrue(om.dream_shape({'proposals':[],'notes':'','change':'','notes_sources':[],'diary':''}))
+        self.assertTrue(om.dream_shape({'proposals':[],'lessons':[],'change':'','lesson_sources':[],'diary':''}))
         self.assertEqual(self.helper.apply_line_actions(self.b,[],self.service.decision_judge),([],0))
         self.assertEqual(self.service.lines.lines(),[])
 
@@ -611,7 +611,7 @@ class Lines(_LinesCase):
         def structured(context,question,schema):
             if context.purpose!=om.DREAM_PURPOSE:return None
             contexts.append(context)
-            return StructuredDecision(OUTCOME_DECIDED,{'proposals':[],'notes':'','change':'','notes_sources':[],
+            return StructuredDecision(OUTCOME_DECIDED,{'proposals':[],'lessons':[],'change':'','lesson_sources':[],
                 'diary':'','suggestions':[],'lines':[self.item(sources=['t1','r1'])]},fixture_confidence())
         self.service.use_decision_engine(FixtureDecisionEngine(structured=structured))
         self.service._owner_model_dream({'job_id':self.b,'reason':str(self.now-3600)},self.store.job(self.b),self.now)
@@ -635,7 +635,7 @@ class Lines(_LinesCase):
             refs=[item['ref'] for item in block['requests']]
             refs+=['t1'] if '[t1]' in context.facts['turns'] else []
             item=self.item(sources=refs[:2])
-            return StructuredDecision(OUTCOME_DECIDED,{'proposals':[],'notes':'','change':'','diary':'','notes_sources':[],
+            return StructuredDecision(OUTCOME_DECIDED,{'proposals':[],'lessons':[],'change':'','diary':'','lesson_sources':[],
                                                        'lines':[item],'suggestions':[]},fixture_confidence())
         with self.store.db() as db:before=[tuple(row) for row in db.execute('SELECT * FROM jobs')]
         out=io.StringIO()
@@ -663,7 +663,7 @@ class Round2Tests(_LinesCase):
             if context.purpose!=om.DREAM_PURPOSE:return None
             contexts.append(context)
             data=payload(context) if callable(payload) else payload
-            return StructuredDecision(OUTCOME_DECIDED,{'proposals':[],'notes':'','change':'','notes_sources':[],
+            return StructuredDecision(OUTCOME_DECIDED,{'proposals':[],'lessons':[],'change':'','lesson_sources':[],
                                      'diary':'','suggestions':[],**data},fixture_confidence())
         self.service.use_decision_engine(FixtureDecisionEngine(structured=structured))
         if fail_input:
@@ -953,7 +953,7 @@ class ReviewFixTests(_LinesCase):
         def structured(context,question,schema):
             if context.purpose!=om.DREAM_PURPOSE:return None
             contexts.append(context)
-            return StructuredDecision(OUTCOME_DECIDED,{'proposals':[],'notes':'','change':'','notes_sources':[],
+            return StructuredDecision(OUTCOME_DECIDED,{'proposals':[],'lessons':[],'change':'','lesson_sources':[],
                                      'diary':'','suggestions':[],'lines':[]},fixture_confidence())
         self.service.use_decision_engine(FixtureDecisionEngine(structured=structured))
         self.service._owner_model_dream({'job_id':self.b,'reason':str(self.now-3600)},self.store.job(self.b),self.now)

@@ -584,8 +584,10 @@ MEMORY_SAVED_KIND='memory_saved'
 #: The notice for facts upkeep saved once the Work's own notice was already settled or lost.
 MEMORY_SAVED_UPKEEP_KIND='memory_saved_upkeep'
 MEMORY_SAVED_KINDS=(MEMORY_SAVED_KIND,MEMORY_SAVED_UPKEEP_KIND)
-#: #19: the one notice of a working-notes revision, queued with the version itself (``WorkingNotes.save``).
+#: Working lesson notices held until the Work's conversation reply settles.
 WORKING_NOTES_KIND=om.NOTICE_KIND
+WORKING_LESSONS_RESTORED_KIND=om.RESTORED_NOTICE_KIND
+WORKING_LESSON_NOTICE_KINDS=(WORKING_NOTES_KIND,WORKING_LESSONS_RESTORED_KIND)
 #: #1455: a reservation message's binding: the ids it confirmed, in its notification fingerprint.
 PREPARED_IDS_PREFIX='ids:'
 
@@ -1689,8 +1691,8 @@ class AgentService:
             stand=lambda items,judgments:self.apply_line_actions(work_id,items,judgments,shown_proposals=shown_proposals))
         detail['period']=period
         upkeep.finish(work_id,state,calls,status,detail,upkeep.clock(),kind=kind)
-        LOG.info('owner-model dream work=%s state=%s calls=%s turns=%s applied=%s notes=%s diary=%s',work_id,state,calls,
-                 len(turns),len(detail.get('applied') or ()),(detail.get('notes') or {}).get('version'),bool(detail.get('diary')))
+        LOG.info('owner-model dream work=%s state=%s calls=%s turns=%s applied=%s lessons=%s diary=%s',work_id,state,calls,
+                 len(turns),len(detail.get('applied') or ()),len((detail.get('lessons') or {}).get('applied') or ()),bool(detail.get('diary')))
         # #425: a dream sends no saved-memory notice: what it changed that the owner relies on is raised at the
         # next request it matters to (``om.MemoryRaise``, in ``owner_profile_snapshot``); the rest is in 내 기록.
 
@@ -1741,17 +1743,17 @@ class AgentService:
             deadline=upkeep.clock()+om.RUN_SECONDS
             cancelled=lambda:self.stop.is_set() or upkeep.clock()>deadline
             if review:
-                # #998: the secretary reviews its own miss from its records; #19: what it learned revises
-                # the working notes (told once, with an exact undo), the blocker stays Evidence on this Work.
+                # The secretary reviews its own miss and saves lesson operations.
+                # The blocker stays Evidence on this Work.
                 # The log line carries no text.
                 # #241: the Work's own request selects the profile, as it did for its worker.
                 state,calls,status,detail=upkeep.run_review(job,row,judgments,answer=job.get('response') or '',
                                                             profile=self.owner_profile_snapshot(job.get('message'),notes=False),clock=clock,
                                                             cancelled=cancelled)
                 upkeep.finish(work_id,state,calls,status,detail,upkeep.clock(),kind=kind)
-                LOG.info('self-review work=%s reason=%s state=%s calls=%s notes=%s blocker=%s',work_id,detail.get('reason'),
-                         state,calls,(detail.get('notes') or {}).get('version'),bool(detail.get('blocker')))
-                # A kept revision's one notice was queued with the version (``WorkingNotes.save``).
+                LOG.info('self-review work=%s reason=%s state=%s calls=%s lessons=%s blocker=%s',work_id,detail.get('reason'),
+                         state,calls,len((detail.get('lessons') or {}).get('applied') or ()),bool(detail.get('blocker')))
+                # The lesson change notice was queued with its Memory operations.
                 return
             # SITUATION-01 (#1004): the same judgment rewrites the running note of the owner's day,
             # only while current context is on; stored secrets are removed.
@@ -2011,13 +2013,8 @@ class AgentService:
         return self.memory_prompts.release_memory_saved(job)
 
     def release_working_notes(self, work_id):
-        """Queue this Work's held working-notes notice once its reply is settled (#233 Codex review).
-
-        ``WorkingNotes.save`` holds the notice while the reply is still awaited, so "I updated my
-        notes" never goes out before the answer it refers to.  Nothing else changes here; the send
-        still checks that the revision is current (``working_notes_notice_text``).
-        """
-        for row in self.store.telegram.notifications_of_kinds(work_id,(WORKING_NOTES_KIND,)):
+        """Queue this Work's held lesson notices after its reply settles."""
+        for row in self.store.telegram.notifications_of_kinds(work_id,WORKING_LESSON_NOTICE_KINDS):
             if row['state']==self.store.NOTICE_HELD:self.store.update_notification(row['id'],'queued')
 
     def release_memory_saved_notices(self, now=None):
@@ -2136,10 +2133,8 @@ class AgentService:
     def owner_profile_snapshot(self, request=None, notes=True, ids=False, recall=True, *, recall_query=None):
         """The bounded ``profile.*`` snapshot text every turn context carries (#658).
 
-        #19: with ``notes`` the owner's working-notes document follows as one
-        block (``WorkingNotes.block``), so every brief carries it whole; the
-        owner-model judgments read the facts alone and the self-review gets
-        the document as its own fact.
+        With ``notes``, the bounded working-lessons block follows the profile facts.
+        Owner-model judgments read facts and working lessons separately.
 
         ``NO_EGRESS_GUARD`` is a decision, not an omission: under the pilot
         posture (docs/secretary-agency-contract.en.md) a profile line in the
@@ -2187,9 +2182,9 @@ class AgentService:
             text += ('\n' if text else '') + f"{snapshot['omitted_count']} saved profile facts omitted by the context limit; use search_memory if relevant."
         if notes:
             try:
-                block=om.WorkingNotes(self.store).block()
+                block=om.WorkingLessons(self.store).block(query)
             except Exception as exc:
-                LOG.warning('working notes unavailable for the brief (%s)',type(exc).__name__)
+                LOG.warning('working lessons unavailable for the brief (%s)',type(exc).__name__)
                 block=''
             if block:text += ('\n' if text else '') + block
             # #205: source-linked earlier exchanges matching the request, in the same
@@ -2262,20 +2257,31 @@ class AgentService:
         return block
 
     def working_notes_notice_text(self, notification):
-        """The notice of one revision while it is still the current document, or None (then it is not sent).
-
-        A revision replaced or forgotten before the send is not told: the
-        later one has its own notice, and a forgotten one is no longer in use.
-        The change line is the AI's own words, in the owner's language;
-        stored secrets and credential shapes are removed again.
-        """
+        """Render the lesson notice only while it still describes a recorded change."""
         try:
             bound=json.loads((notification or {}).get('fingerprint') or '')
-            current=om.WorkingNotes(self.store).current()
-        except Exception:
+        except (TypeError,ValueError):
             return None
-        if not isinstance(bound,dict) or not current or current['ref']!=bound.get('ref'):return None
-        return msg('working_notes.saved',change=self._redact_known_secrets(current['change']))
+        if not isinstance(bound,dict):return None
+
+        def lesson_row(memory_id):
+            row=self.store.memory(memory_id,MEMORY_OWNER,current_only=False)
+            return row if row and row['memory_key'].startswith(om.LESSONS_PREFIX) else None
+
+        if notification.get('kind')==WORKING_LESSONS_RESTORED_KIND:
+            ids=bound.get('memory_ids')
+            if not isinstance(ids,list):return None
+            count=sum(row['state']=='current' for ident in ids if (row:=lesson_row(ident)))
+            return msg('working_lessons.restored',count=count) if count else None
+        items=bound.get('items')
+        change=bound.get('change')
+        if not isinstance(items,list) or not isinstance(change,str):return None
+        for item in items:
+            if not isinstance(item,dict) or not (row:=lesson_row(item.get('memory_id'))):continue
+            if ((item.get('op') in ('add','update') and row['state']=='current')
+                    or (item.get('op')=='remove' and row['state'] not in ('current','forgotten'))):
+                return msg('working_notes.saved',change=self._redact_known_secrets(change))
+        return None
 
     #: The Work identity a Settings profile write is recorded under (#658).
     #: It is an owner operation from the local surface, not a conversation Work.
@@ -2773,8 +2779,11 @@ class AgentService:
         redaction; recorded on the Work's turn record at send time.
         """
         try:
+            def lesson_key(memory_id):
+                row=self.store.memory(memory_id,MEMORY_OWNER,current_only=False)
+                return row['memory_key'] if row and row['memory_key'].startswith(om.LESSONS_PREFIX) else None
             refs=information_use.section_references(sections.get('profile'),sections.get('current_context'),
-                                                    sections.get('prepared'),spliced)
+                                                    sections.get('prepared'),spliced,lesson_key=lesson_key)
             def clean(value):
                 if isinstance(value,str):return self._redact_known_secrets(value)
                 if isinstance(value,list):return [clean(item) for item in value]
@@ -9958,12 +9967,11 @@ class AgentService:
         self.recover_interrupted_work()
         # #794 phase 3: a purge a restart left overdue runs before any Work reads owner state.
         self.purge_forgotten()
-        # #19: earlier profile.working. lessons move into the working notes once, under undoable receipts.
         try:
-            moved=om.WorkingNotes(self.store).migrate()
-            if moved:LOG.info('working notes migration moved=%s left=%s version=%s',moved['moved'],moved['left'],moved['version'])
+            if not om.WorkingLessons(self.store).migrated():
+                LOG.warning('working lessons migration pending')
         except Exception as exc:
-            LOG.warning('working notes migration failed (%s)',type(exc).__name__)
+            LOG.warning('working lessons migration failed (%s)',type(exc).__name__)
         # #1130: a working-copy run is not covered by the release's mcp-host check; say so at start.
         # Each Work turn checks again, so this is a log line, not a gate.
         bridge_problem=bridge_sdk_problem()

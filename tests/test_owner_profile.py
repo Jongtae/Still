@@ -217,15 +217,15 @@ class ProfileSupplyToEveryReader(_OwnerSurface):
         facts = _facts(PROFILE_SNAPSHOT_CHARS // 60)
         facts['profile.zzz.last_in_key_order'] = '산책은 저녁에 한강 쪽으로'
         self.save(facts)
-        points = [f'{index:02d} ' + '가' * (om.POINT_CHARS - 6) for index in range(om.NOTES_POINTS)]
-        while len(om.notes_text(points)) > om.NOTES_CHARS:
-            points.pop()
-        self.assertIsNotNone(om.WorkingNotes(self.store).save(
-            {'points': points, 'text': om.notes_text(points), 'change': '나' * om.CHANGE_CHARS}, None))
+        lessons = om.WorkingLessons(self.store)
+        for start in range(0, om.LESSONS_MAX, om.MAX_LESSON_OPS):
+            ops = [{'op': 'add', 'id': '', 'text': f'{index:02d} ' + 'x' * 72, 'why': 'owner feedback', 'reason': ''}
+                   for index in range(start, min(start + om.MAX_LESSON_OPS, om.LESSONS_MAX))]
+            self.assertEqual(len(lessons.apply(ops, 'seed', None, origin=om.ORIGIN_SELF_REVIEW)['applied']), len(ops))
         section = self.service.owner_profile_snapshot('한강 산책')
         self.assertTrue(section.startswith('profile.zzz.last_in_key_order: 산책은 저녁에 한강 쪽으로'), section[:80])
         self.assertIn('saved profile facts omitted by the context limit', section)
-        self.assertIn('working_notes v1', section)
+        self.assertIn('working_lessons (', section)
         self.assertLessEqual(len(section), PROFILE_SECTION_CHARS, 'the section fits every reader bound')
         for name, text in self.readers(section).items():
             self.assertEqual(text, section, f'{name} gets the same selection, not a second cut')
@@ -278,12 +278,15 @@ class ProfileSupplyToEveryReader(_OwnerSurface):
         self.assertTrue(snapshot['truncated'])
         section = self.service.owner_profile_snapshot()
         self.assertIn('saved profile facts omitted by the context limit', section)
-        # The fixed part of a CLI brief with the largest profile section and working notes
-        # (Korean, 3 bytes a character) still leaves the conversation budget room.
-        notes = '가' * om.NOTES_CHARS + 'x' * 600
+        # Exercise the same headroom check with a substantial set of CJK lessons.
+        lessons = om.WorkingLessons(self.store)
+        for start in (0, 5):
+            ops = [{'op': 'add', 'id': '', 'text': f'{index:02d} ' + '가' * 147, 'why': 'owner feedback', 'reason': ''}
+                   for index in range(start, start + 5)]
+            self.assertEqual(len(lessons.apply(ops, 'seed', None, origin=om.ORIGIN_SELF_REVIEW)['applied']), len(ops))
         instructions = CORE_INSTRUCTIONS + CLI_TOOL_GUIDANCE + CLI_NATIVE_SEARCH_GUIDANCE
         from personal_agent.memory_service import OWNER_WORDS_BYTES
-        fixed = len(instructions.encode()) + PROFILE_SNAPSHOT_BYTES + len(notes.encode()) + OWNER_WORDS_BYTES
+        fixed = len(instructions.encode()) + PROFILE_SNAPSHOT_BYTES + len(lessons.block().encode()) + OWNER_WORDS_BYTES
         self.assertLess(fixed, CONTEXT_BUDGET_BYTES - 4000)
 
     def test_cut_to_fit_cuts_whole_lines_in_order_and_marks_each_cut(self):

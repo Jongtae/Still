@@ -140,8 +140,8 @@ class ConsolidatedPromptTests(unittest.TestCase):
     def test_wrong_method_rule_reaches_the_self_review(self):
         """#202 Q4-A: delivery of the rule text to the self-review prompt, not model behaviour."""
         review = prompt_files.prompt('owner_model_review')
-        self.assertEqual(review.count("When a method in a skill or the assistant's own instruction text was wrong or out of date, give the blocker and no notes: say generally which method and what it led to, so a developer can revise the versioned text; never rewrite it yourself (#202)."), 1)
-        self.assertIn('not a general rule any assistant should follow', review)
+        self.assertEqual(review.count("When a method in a skill or the assistant's own instruction text was wrong or out of date, give the blocker and no lessons: say generally which method and what it led to, so a developer can revise the versioned text; never rewrite it yourself (#202)."), 1)
+        self.assertIn('never a general rule any assistant should follow', review)
         self.assertIn('The blocker is at most 200 characters.', review)
 
     def test_route_skill_states_the_failed_lookup_method(self):
@@ -252,11 +252,9 @@ class ConsolidatedPromptTests(unittest.TestCase):
         from personal_agent.agent_runtime import (CORE_INSTRUCTIONS, CLI_TOOL_GUIDANCE,
                                                   CLI_NATIVE_SEARCH_GUIDANCE, CONTEXT_BUDGET_BYTES)
         from personal_agent.memory_service import PROFILE_SNAPSHOT_BYTES, OWNER_WORDS_BYTES
-        from personal_agent.owner_model import NOTES_CHARS
-        # Same worst-case fixed sections as the owner-profile regression, without
-        # requiring its HTTP fixture just to measure the instruction byte budget.
+        # Match the CJK lesson fixture in the owner-profile headroom regression.
         fixed = (len((CORE_INSTRUCTIONS + CLI_TOOL_GUIDANCE + CLI_NATIVE_SEARCH_GUIDANCE).encode())
-                 + PROFILE_SNAPSHOT_BYTES + OWNER_WORDS_BYTES + len(('가' * NOTES_CHARS + 'x' * 600).encode()))
+                 + PROFILE_SNAPSHOT_BYTES + OWNER_WORDS_BYTES + len(('가' * 1500 + 'x' * 600).encode()))
         self.assertLess(fixed, CONTEXT_BUDGET_BYTES - 4000)
 
     def test_calibration_guidance_keeps_explicit_owner_control(self):

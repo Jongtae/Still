@@ -168,24 +168,31 @@ def _json_after_legend(text):
     return data if isinstance(data, dict) else {}
 
 
-#: #19: the header line of the working-notes block (``owner_model.WorkingNotes.block``): its version and ref.
-_WORKING_NOTES = re.compile(r'^working_notes v(\d+) \(.*?\bref (procedure:[A-Za-z0-9-]+)')
+_LESSON_REF = re.compile(r'^- .* \(memory:([0-9a-f-]{36})\)$')
 
 
 #: #221: how the owner's recalled earlier words start in the profile section (``memory_service.OWNER_WORDS_HEADING``).
 OWNER_SAID_PREFIX = 'owner_said ('
 
 
-def profile_keys(text):
-    """The ``profile.*`` keys of a rendered profile snapshot (``key: value (saved ...)`` lines).
-
-    #19: the working-notes block counts as one entry, ``working_notes v<n> (procedure:<id>)``,
-    so the audit shows the notes were sent without their points.
-    """
+def profile_keys(text, *, lesson_key=None):
+    """Keys of shown profile facts and lessons, resolved from the latter's exact Memory refs."""
     from .memory_service import conversation_block_refs, OWNER_WORDS_HEADING
     exchanges=conversation_block_refs(text)
-    keys, said = [], 0
+    keys, lessons, said = [], [], 0
+    in_lessons = False
     for line in str(text or '').splitlines():
+        if line.startswith('working_lessons ('):
+            in_lessons = True
+            continue
+        if in_lessons:
+            match = _LESSON_REF.fullmatch(line)
+            if match:
+                key = lesson_key(match.group(1)) if lesson_key else None
+                if key and key not in lessons:
+                    lessons.append(key)
+                continue
+            in_lessons = False
         if line==OWNER_WORDS_HEADING or line.startswith('[exchange] '):continue
         # #221: the owner's recalled earlier words count as one entry with how many lines were sent.
         if line.startswith(OWNER_SAID_PREFIX):
@@ -193,12 +200,6 @@ def profile_keys(text):
             continue
         if said and line.startswith('[said '):
             said = 1 if said < 0 else said + 1
-            continue
-        notes = _WORKING_NOTES.match(line)
-        if notes:
-            entry = f'working_notes v{notes.group(1)} ({notes.group(2)})'
-            if entry not in keys:
-                keys.append(entry)
             continue
         key, sep, _rest = line.partition(':')
         key = key.strip()
@@ -209,7 +210,7 @@ def profile_keys(text):
         keys.insert(0, f'owner_said ({said} earlier owner message{"s" if said != 1 else ""})')
     if exchanges:
         keys.insert(0, f'earlier exchanges ({len(exchanges)} exchanges; messages '+','.join(str(i) for ref in exchanges for i in ref['message_ids'])+')')
-    return keys[:40]
+    return keys[:40] + lessons
 
 
 #: #942: the line ``current_context_text`` adds after the JSON, and how many sites it may name.
@@ -268,7 +269,7 @@ def prepared_refs(text):
             if isinstance(item, dict) and item.get('ref')][:MAX_ITEMS]
 
 
-def section_references(profile=None, current_context=None, prepared=None, spliced=()):
+def section_references(profile=None, current_context=None, prepared=None, spliced=(), *, lesson_key=None):
     """What the owner-model sections of a turn referred to: keys, refs and labels, never values.
 
     Recorded on the Work's ``turn_provenance`` at send time
@@ -276,7 +277,7 @@ def section_references(profile=None, current_context=None, prepared=None, splice
     stores hold later.
     """
     from .memory_service import conversation_block_refs
-    return {'earlier_exchanges': conversation_block_refs(profile), 'profile_keys': profile_keys(profile), 'current_context': context_claims(current_context),
+    return {'earlier_exchanges': conversation_block_refs(profile), 'profile_keys': profile_keys(profile, lesson_key=lesson_key), 'current_context': context_claims(current_context),
             'prepared': prepared_refs(prepared),
             'spliced': [{key: _text(value) for key, value in item.items() if key in ('kind', 'ref', 'label')}
                         for item in spliced or () if isinstance(item, dict)][:MAX_ITEMS]}

@@ -920,12 +920,13 @@ class ReviewRegressions(MattermostCase):
         with self.assertRaises(Exception):
             PersonalKnowledgeOrchestrator._request('x', 'slackish:g1', '회의 메모')
 
-    def test_working_notes_and_saved_memory_notices_reach_this_surface(self):
+    def test_working_lessons_and_saved_memory_notices_reach_this_surface(self):
         from personal_agent import owner_model as om
         self.owner_says('기억해줘')
         work = self.mm_jobs()[0]
-        points = ['01 회의는 오전에 잡기']
-        om.WorkingNotes(self.store).save({'points': points, 'text': om.notes_text(points), 'change': '회의 시간'}, work['id'])
+        om.WorkingLessons(self.store).apply(
+            [{'op': 'add', 'id': '', 'text': '01 회의는 오전에 잡기', 'why': 'the owner corrected the time', 'reason': ''}],
+            '회의 시간', work['id'], origin=om.ORIGIN_SELF_REVIEW)
         self.store.save_memory('profile.meeting', '회의는 오전', 'local-owner', work_id=work['id'], notice=True)
         with self.store.db() as db:
             rows = [tuple(row) for row in db.execute(

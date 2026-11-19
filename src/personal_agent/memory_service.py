@@ -71,9 +71,9 @@ PROFILE_SNAPSHOT_CHARS = 12000
 #: The live profile was 5.5 KB (42 facts) in 2026-10.
 PROFILE_SNAPSHOT_BYTES = 12000
 #: #217: what a profile prompt section may carry after the snapshot lines - the
-#: omission line, the working-notes block and (#221) the owner's earlier words -
+#: omission line, working lessons (including exact refs) and (#221) the owner's earlier words -
 #: so a reader's own bound (``PROFILE_SECTION_CHARS``) never cuts what the worker was given.
-PROFILE_SECTION_EXTRA_CHARS = 5500
+PROFILE_SECTION_EXTRA_CHARS = 8500
 #: #205: the existing recall block budget in UTF-8 bytes; each turn's excerpt has its own character cap.
 OWNER_WORDS_BYTES = 3000
 OWNER_WORDS_LINE_CHARS = 180
@@ -414,6 +414,14 @@ class MemoryService:
             "next_offset": offset + limit if len(rows) > limit else None,
         }, len(page))
 
+    @staticmethod
+    def search_terms(query):
+        # SQLite FTS syntax is built from extracted literal words, never from
+        # worker-provided operators. Short Korean terms are kept because
+        # unicode61 indexes them as words; semantic alternatives are selected
+        # by the worker and passed as additional words in the query.
+        return list(dict.fromkeys(re.findall(r"[^\W_]+", query.casefold(), flags=re.UNICODE)))[:12]
+
     def search_memories(self, owner_id, query, *, limit=10, key_prefix=None):
         """Find a small, owner-scoped set of current Memory rows by literal terms."""
         self._identity(owner_id, "owner")
@@ -421,11 +429,7 @@ class MemoryService:
             raise MemoryServiceError("기억 검색어를 확인하세요.")
         if isinstance(limit, bool) or not isinstance(limit, int) or not 1 <= limit <= 20:
             raise MemoryServiceError("기억 검색 범위를 확인하세요.")
-        # SQLite FTS syntax is built from extracted literal words, never from
-        # worker-provided operators. Short Korean terms are kept because
-        # unicode61 indexes them as words; semantic alternatives are selected
-        # by the worker and passed as additional words in the query.
-        terms = list(dict.fromkeys(re.findall(r"[^\W_]+", query.casefold(), flags=re.UNICODE)))[:12]
+        terms = self.search_terms(query)
         searched = self.store.search_memories(owner_id, terms, limit=limit + 1, include_mode=True, key_prefix=key_prefix,
                                               holding_on=self._today()) if terms else {
             'memories': [], 'search_mode': 'fts5' if getattr(self.store, 'memory_search_available', False) else 'bounded-like',

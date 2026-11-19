@@ -1,15 +1,7 @@
-"""STEADY-NOTES-01 (#19): one bounded, revisable working-notes document.
+"""Legacy #19 migration and procedure receipts, plus working-lesson notice regressions.
 
-How to work for the owner lives in one document whose versions sit in the
-reserved slot of the procedural version store (``procedures.NOTES_SLOT``),
-not in ``profile.working.`` fact rows.  The self-review returns no change or a
-whole revision; Still enforces the bounds, secret exclusion, versioning and
-the exact undo (``owner_forget``), and moves the earlier ``profile.working.``
-rows into the first version once, under undoable receipts.
-
-Evidence class: model-free unit and service tests on a real ``QuickStore``
-with a fake clock, a scripted Judgment AI (``FixtureDecisionEngine``) and an
-injected Telegram transport.  No live model, no live Telegram.
+These model-free tests use temporary stores, scripted judgments and an injected
+Telegram transport.
 """
 import json
 import re
@@ -28,6 +20,7 @@ from personal_agent.quickstart_service import WORKING_NOTES_KIND
 from personal_agent.quickstart_store import QuickStore
 
 from test_memory_candidate_confirm import CHAT, GENERATION, TelegramHarness
+from test_self_review import add_lesson, review
 
 SECRET = 'plain-stored-secret-019'
 
@@ -40,13 +33,8 @@ class Clock:
         return self.now
 
 
-def revision(*points, change='c'):
-    text = om.notes_text(list(points))
-    return {'points': list(points), 'text': text, 'change': change}
-
-
 class Document(unittest.TestCase):
-    """The document, its versions and the owner's exact undo, on a real store."""
+    """The reserved slot and legacy receipts remain usable."""
 
     def setUp(self):
         tmp = tempfile.TemporaryDirectory()
@@ -56,8 +44,9 @@ class Document(unittest.TestCase):
         self.notes = om.WorkingNotes(self.store, self.clock)
         self.forget = OwnerForget(self.store, clock=self.clock)
 
-    def save(self, *points, expected=None):
-        return self.notes.save(revision(*points), 'w', expected=expected)
+    def save(self, *points):
+        row = self.notes.library.commit(NOTES_SLOT, om.notes_text(points), work_id='w')
+        return {**row, 'ref': 'procedure:' + row['id']}
 
     def test_the_slot_is_reserved_and_no_secret_set_can_name_it(self):
         self.assertIsNone(NAME.match(NOTES_SLOT), 'set names never hold ":"')
@@ -65,37 +54,23 @@ class Document(unittest.TestCase):
             ProcedureLibrary(self.store).propose('w', NOTES_SLOT, 'def f():\n    pass\n', [])
         self.assertEqual(ProcedureLibrary(self.store).settle('w', True), [], 'the notes have no candidate stage')
 
-    def test_each_revision_is_the_next_version_and_the_brief_carries_the_whole_document(self):
-        self.assertIsNone(self.notes.current())
-        self.assertEqual(self.notes.block(), '')
-        first = self.save('요약은 세 줄로')
-        self.clock.now += 60
-        second = self.save('요약은 세 줄로', '링크는 맨 끝에', expected=first['id'])
-        current = self.notes.current()
-        self.assertEqual((first['version'], second['version'], current['id']), (1, 2, second['id']))
-        self.assertEqual(current['points'], ['요약은 세 줄로', '링크는 맨 끝에'])
-        block = self.notes.block()
-        self.assertTrue(block.startswith(f"working_notes v2 (the assistant's own notes on how to work for this owner; "
-                                         f"ref {second['ref']}, last change 2027-01-15: c; "))
-        self.assertIn(f"forget_record forget {second['ref']} puts the previous notes back", block)
-        self.assertTrue(block.endswith(':\n- 요약은 세 줄로\n- 링크는 맨 끝에'), 'one block, every point, in the owner\'s words')
 
-    def test_cut_to_fit_removes_notes_tail_before_profile_facts_without_changing_the_store(self):
+    def test_cut_to_fit_removes_lessons_tail_before_profile_facts_without_changing_the_store(self):
         from personal_agent.agent_runtime import CUT_TO_FIT_MARKER, cut_to_fit
         from personal_agent.quickstart_service import AgentService
         service = AgentService(self.store)
         self.store.save_memory('profile.preference.format', 'Use numbered paragraphs', MEMORY_OWNER)
-        notes = om.WorkingNotes(self.store)
-        saved = notes.save(revision('Keep source links',
-                                    'Explain uncertainty and distinguish observations from assumptions',
-                                    change='Evidence style'), None)
+        lessons = om.WorkingLessons(self.store)
+        saved = lessons.apply([add_lesson('Keep source links'),
+                               add_lesson('Explain uncertainty and distinguish observations from assumptions')],
+                              'Evidence style', None, origin=om.ORIGIN_SELF_REVIEW)
         profile = service.owner_profile_snapshot(recall=False)
         facts = service.owner_profile_snapshot(notes=False)
-        block = notes.block()
+        block = lessons.block()
         self.assertEqual(profile, facts + '\n' + block)
         sections = {'profile': profile, 'request': 'Compare the alternatives', 'instructions': 'Fixed instructions',
                     'attachments': 'Attached source', 'surface': 'web'}
-        # Cutting just one byte still removes a whole notes line, including
+        # Cutting just one byte still removes a whole lesson line, including
         # enough extra bytes for the omission marker; facts stay at the head.
         out, cut = cut_to_fit(sections, 1)
         self.assertEqual(cut, ['profile'])
@@ -105,27 +80,22 @@ class Document(unittest.TestCase):
             self.assertEqual(out[name], sections[name])
         self.assertGreaterEqual(len(profile.encode()) - len(out['profile'].encode()), 1)
         self.assertEqual(sections['profile'], profile, 'the caller snapshot is not mutated')
-        self.assertEqual(notes.current()['id'], saved['id'])
-        self.assertEqual(notes.block(), block, 'prompt trimming never revises durable notes')
+        self.assertEqual([item['memory_id'] for item in lessons.current()],
+                         [item['memory_id'] for item in saved['applied']])
+        self.assertEqual(lessons.block(), block, 'prompt trimming leaves the durable lessons intact')
 
-    def test_a_save_based_on_a_document_that_changed_meanwhile_is_refused(self):
-        first = self.save('a')
-        self.assertIsNone(self.save('a', 'b', expected=None), 'the document exists now')
-        self.save('a', 'c', expected=first['id'])
-        self.assertIsNone(self.save('a', 'd', expected=first['id']), 'another revision replaced it')
-        self.assertEqual(self.notes.current()['points'], ['a', 'c'])
 
     def test_forgetting_the_version_restores_the_previous_document_and_keeps_the_record(self):
         first = self.save('a')
-        second = self.save('a', 'b', expected=first['id'])
+        second = self.save('a', 'b')
         receipt = self.forget.forget(MEMORY_OWNER, second['ref'])
         self.assertIsNone(receipt['undo_until'], '#367: no undo deadline')
         self.assertEqual(self.notes.current()['id'], first['id'], 'the previous document is back')
-        self.assertTrue(self.notes.forgotten(om.notes_text(['a', 'b'])), 'the host never saves it again')
+        self.assertTrue(self.notes.library.forgotten_digest(NOTES_SLOT, second['digest']))
         self.assertEqual(self.forget.undoable(MEMORY_OWNER, kind='procedure')[0]['item'], {'working_notes_version': 2})
         self.forget.undo(MEMORY_OWNER, receipt['receipt'])
         self.assertEqual(self.notes.current()['id'], second['id'], 'undo puts the forgotten version back, exactly')
-        self.assertFalse(self.notes.forgotten(om.notes_text(['a', 'b'])))
+        self.assertFalse(self.notes.library.forgotten_digest(NOTES_SLOT, second['digest']))
         again = self.forget.forget(MEMORY_OWNER, second['ref'])
         self.clock.now += UNDO_SECONDS + 1
         self.assertEqual(self.forget.purge_due(), 0, '#367: a forget is never purged')
@@ -135,39 +105,37 @@ class Document(unittest.TestCase):
             tombstones = [dict(row) for row in db.execute('SELECT * FROM forgotten_values')]
         self.assertEqual(self.notes.current()['id'], first['id'])
         # The content-free tombstone keeps the forget authoritative: the host never saves the version again.
-        self.assertTrue(self.notes.forgotten(om.notes_text(['a', 'b'])))
+        self.assertIn(second['digest'], {row['digest'] for row in tombstones})
         self.assertNotIn('a\\n- b', json.dumps(tombstones))
         self.assertEqual({row['receipt_id'] for row in tombstones}, {again['receipt']})
 
-    def test_the_notice_is_queued_with_the_version_for_a_telegram_work_only(self):
+    def test_the_notice_is_queued_with_the_operation_for_a_conversation_work_only(self):
         work = self.store.enqueue('그거 찾아줘', 'wn-tg', channel='telegram:g9', chat_id=4040)
         waiting = self.store.enqueue('저거 찾아줘', 'wn-tg-waiting', channel='telegram:g9', chat_id=4040)
         web = self.store.enqueue('그거 찾아줘', 'wn-web')
         with self.store.db() as db:
             db.execute("UPDATE jobs SET delivery='sent' WHERE id=?", (work,))
             db.execute("UPDATE jobs SET delivery='pending' WHERE id=?", (waiting,))
-        saved = self.notes.save(revision('a'), work)
-        second = self.notes.save(revision('a', 'b'), waiting, expected=saved['id'])
-        self.notes.save(revision('a', 'b', 'c'), web, expected=second['id'])
+        lessons = om.WorkingLessons(self.store, self.clock)
+        saved = lessons.apply([add_lesson('a')], 'a saved', work, origin=om.ORIGIN_SELF_REVIEW)
+        second = lessons.apply([add_lesson('b')], 'b saved', waiting, origin=om.ORIGIN_SELF_REVIEW)
+        lessons.apply([add_lesson('c')], 'c saved', web, origin=om.ORIGIN_SELF_REVIEW)
+        self.assertEqual(lessons.apply([], '', work, origin=om.ORIGIN_SELF_REVIEW)['applied'], [])
         with self.store.db() as db:
             rows = [dict(row) for row in db.execute('SELECT job_id,chat_id,generation,kind,fingerprint,state '
                                                     'FROM telegram_notifications ORDER BY created,rowid')]
         self.assertEqual(rows, [{'job_id': work, 'chat_id': 4040, 'generation': 'g9', 'kind': om.NOTICE_KIND,
-                                 'fingerprint': json.dumps({'ref': saved['ref'], 'version': 1}), 'state': 'queued'},
+                                 'fingerprint': json.dumps({'change': 'a saved', 'items': saved['applied']}),
+                                 'state': 'queued'},
                                 {'job_id': waiting, 'chat_id': 4040, 'generation': 'g9', 'kind': om.NOTICE_KIND,
-                                 'fingerprint': json.dumps({'ref': second['ref'], 'version': 2}),
-                                 'state': self.store.NOTICE_HELD}],
-                         'review P1: durable with the version itself, never left untold by a crash; '
-                         '#233: held while the reply it follows is still awaited')
-        self.assertIsNone(self.save('a', 'c'), 'a refused save queues nothing either')
-        with self.store.db() as db:
-            self.assertEqual(db.execute('SELECT COUNT(*) FROM telegram_notifications').fetchone()[0], 2)
+                                 'fingerprint': json.dumps({'change': 'b saved', 'items': second['applied']}),
+                                 'state': self.store.NOTICE_HELD}])
 
     def test_a_later_revision_wins_over_an_undo(self):
-        first = self.save('a')
-        second = self.save('a', 'b', expected=first['id'])
+        self.save('a')
+        second = self.save('a', 'b')
         receipt = self.forget.forget(MEMORY_OWNER, second['ref'])
-        self.save('a', 'c', expected=first['id'])
+        self.save('a', 'c')
         with self.assertRaises(ForgetError) as refused:
             self.forget.undo(MEMORY_OWNER, receipt['receipt'])
         self.assertEqual(refused.exception.code, 'later_value')
@@ -177,27 +145,6 @@ class Document(unittest.TestCase):
         self.assertEqual(om.notes_points(' * 요약은  세 줄로\n\n- 요약은 세 줄로 \n• Links last\n· links LAST\n-5도면 알려줘'),
                          ['요약은 세 줄로', 'Links last', '-5도면 알려줘'])
         self.assertEqual(om.notes_text(['a', 'b']), '- a\n- b')
-
-    def test_bounds_are_checked_whole_and_never_cut(self):
-        exact = [f'{n:02d}' + 'y' * 118 for n in range(om.NOTES_POINTS)]
-        self.assertLessEqual(len(om.notes_text(exact)), om.NOTES_CHARS)
-        kept, _blocker, dropped = om.validate_review({'notes': '\n'.join(exact), 'change': 'c', 'blocker': ''})
-        self.assertEqual((len(kept['points']), dropped), (om.NOTES_POINTS, []))
-        for notes, reason in (('\n'.join(exact + ['one more']), 'points'),
-                              ('- ' + 'z' * (om.POINT_CHARS + 1), 'point-length'),
-                              ('\n'.join(f'{n}' + 'w' * 198 for n in range(8)), 'length')):
-            kept, _blocker, dropped = om.validate_review({'notes': notes, 'change': 'c', 'blocker': ''})
-            self.assertEqual((kept, dropped), (None, [{'note': 'notes', 'reason': reason}]), reason)
-
-    def test_a_reworded_marker_spacing_case_or_order_is_no_change(self):
-        current = ['요약은 세 줄로', 'Links last']
-        for notes in ('- 요약은 세 줄로\n- Links last', '*  요약은 세 줄로 \n• links LAST', '- Links last\n- 요약은 세 줄로',
-                      '- 요약은 세 줄로\n- Links last\n- 요약은  세 줄로'):
-            kept, _blocker, dropped = om.validate_review({'notes': notes, 'change': 'reworded', 'blocker': ''}, current)
-            self.assertEqual((kept, dropped), (None, [{'note': 'notes', 'reason': 'unchanged'}]), notes)
-        kept, _blocker, dropped = om.validate_review({'notes': '- 요약은 세 줄로', 'change': 'dropped the links point',
-                                                      'blocker': ''}, current)
-        self.assertEqual(kept['points'], ['요약은 세 줄로'], 'removing a point that proved wrong is a change')
 
 
 class Migration(unittest.TestCase):
@@ -295,7 +242,7 @@ class Migration(unittest.TestCase):
 
 
 class Told(TelegramHarness):
-    """A revision is told once on Telegram, in the owner's language; the AI forgets it with the existing tool."""
+    """Lesson changes are told in the owner's language and can be forgotten with the existing tool."""
 
     def setUp(self):
         super().setUp()
@@ -323,74 +270,74 @@ class Told(TelegramHarness):
 
     def test_one_notice_per_change_in_the_owners_language_and_none_for_no_change(self):
         change = '"그거"가 직전 메시지의 대상을 가리킨다고 적었어요'
-        job = self.reviewed({'notes': '- "그거"는 직전 메시지에서 말한 것', 'change': change, 'blocker': ''})
+        job = self.reviewed(review([add_lesson('"그거"는 직전 메시지에서 말한 것')], change))
         self.assertTrue(self.service.deliver_notification())
         sent = self.sends()[-1]
         self.assertEqual(sent['text'], msg('working_notes.saved', change=change))
         self.assertTrue(sent['text'].startswith('일하는 방식 메모를 고쳤어요: "그거"가'))
         self.assertIsNone(sent.get('reply_markup'), 'no buttons: the owner answers in words (#996)')
         self.assertEqual(self.notices(job), ['sent'])
-        again = self.reviewed({'notes': '*  "그거"는  직전 메시지에서 말한 것', 'change': '같은 내용', 'blocker': ''})
-        self.assertEqual(self.notices(again), [], 'a reworded existing lesson: no version, no notice')
-        self.assertEqual(om.WorkingNotes(self.store).current()['version'], 1)
-        self.assertEqual(self.store.memories(MEMORY_OWNER), [], 'no fact row either')
+        again = self.reviewed(review([add_lesson('"그거"는  직전 메시지에서 말한 것')], '같은 내용'))
+        self.assertEqual(self.notices(again), [], 'a duplicate lesson queues no notice')
+        self.assertEqual(len(om.WorkingLessons(self.store).current()), 1)
+        self.assertEqual(self.store.memories(MEMORY_OWNER, key_prefix='profile.'), [], 'no profile fact row either')
 
-    def test_a_revision_with_a_blocker_keeps_the_previous_version_and_queues_no_notice(self):
-        self.reviewed({'notes': '- Keep summaries short', 'change': 'Summary length', 'blocker': ''})
-        notes = om.WorkingNotes(self.store)
-        before = notes.current()
-        # Even a blocker too long to retain must veto an otherwise valid revision.
+    def test_lesson_operations_with_a_blocker_keep_current_rows_and_queue_no_notice(self):
+        self.reviewed(review([add_lesson('Keep summaries short')], 'Summary length'))
+        lessons = om.WorkingLessons(self.store)
+        before = lessons.current()
+        # Even a blocker too long to retain must veto otherwise valid operations.
         for blocker in ('The tool result was lost', 'x' * (om.MAX_TEXT_CHARS + 1)):
             with self.subTest(blocker_chars=len(blocker)):
-                job = self.reviewed({'notes': '- Put links last', 'change': 'Link placement', 'blocker': blocker})
-                self.assertEqual(notes.current(), before)
+                job = self.reviewed(review([add_lesson('Put links last')], 'Link placement', blocker))
+                self.assertEqual(lessons.current(), before)
                 self.assertEqual(self.notices(job), [])
                 with self.store.db() as db:
-                    self.assertEqual(db.execute('SELECT COUNT(*) FROM procedure_versions WHERE slot=?',
-                                                (NOTES_SLOT,)).fetchone()[0], 1)
-        # A subsequent unblocked answer can still advance the same document.
-        job = self.reviewed({'notes': '- Put links last', 'change': 'Link placement', 'blocker': ''})
-        self.assertEqual(notes.current()['version'], before['version'] + 1)
-        self.assertEqual(notes.current()['points'], ['Put links last'])
+                    self.assertEqual(db.execute('SELECT COUNT(*) FROM memories WHERE memory_key LIKE ?',
+                                                (om.LESSONS_PREFIX + '%',)).fetchone()[0], 1)
+        # A subsequent unblocked answer can still add the lesson.
+        job = self.reviewed(review([add_lesson('Put links last')], 'Link placement'))
+        self.assertEqual(lessons.current()[:1], before)
+        self.assertEqual([item['text'] for item in lessons.current()], ['Keep summaries short', 'Put links last'])
         self.assertEqual(self.notices(job), ['queued'])
 
     def test_an_english_owner_is_told_in_english(self):
         # #235: the two-line notice was sent in Korean to every en/ja/zh owner.
         self.store.put('telegram', {**self.store.config('telegram', {}), 'owner_language': 'en'})
         change = 'I now keep summaries to three lines'
-        self.reviewed({'notes': '- Summaries stay at three lines', 'change': change, 'blocker': ''})
+        self.reviewed(review([add_lesson('Summaries stay at three lines')], change))
         self.assertTrue(self.service.deliver_notification())
         sent = self.sends()[-1]['text']
         self.assertEqual(sent, msg('working_notes.saved', 'en', change=change))
         self.assertIsNone(re.search('[가-힣]', sent), sent)
 
-    def test_a_revision_forgotten_before_the_send_is_not_told_and_the_brief_shows_the_previous_notes(self):
-        self.reviewed({'notes': '- 요약은 세 줄로', 'change': '요약 길이', 'blocker': ''})
+    def test_a_lesson_forgotten_before_the_send_is_not_told_and_other_lessons_stay(self):
+        self.reviewed(review([add_lesson('요약은 세 줄로')], '요약 길이'))
         self.assertTrue(self.service.deliver_notification())
-        second = self.reviewed({'notes': '- 요약은 세 줄로\n- 링크는 맨 끝에', 'change': '링크 위치', 'blocker': ''})
-        current = om.WorkingNotes(self.store).current()
+        second = self.reviewed(review([add_lesson('링크는 맨 끝에')], '링크 위치'))
+        current = om.WorkingLessons(self.store).current()[-1]
         self.assertIn('- 링크는 맨 끝에', self.service.owner_profile_snapshot())
         undo = self.store.enqueue('방금 그거 되돌려', 'wn-undo')
         caps = Capabilities(self.store, None, {}, '', undo, lambda *event: None)
         result = caps.execute('forget_record', {'action': 'forget', 'ref': current['ref']})
-        self.assertEqual(result['kind'], 'procedure')
+        self.assertEqual(result['kind'], 'memory')
         with self.store.db() as db:
             db.execute("UPDATE jobs SET status='succeeded' WHERE id=?", (undo,))
         self.assertTrue(self.service.deliver_notification())
-        self.assertEqual(self.notices(second), ['cancelled'], 'a revision no longer in use is not told')
+        self.assertEqual(self.notices(second), ['cancelled'], 'a lesson no longer in use is not told')
         snapshot = self.service.owner_profile_snapshot()
-        self.assertIn('working_notes v1', snapshot)
+        self.assertIn('요약은 세 줄로', snapshot)
         self.assertNotIn('링크는 맨 끝에', snapshot)
-        # The same revision is not saved again from a later review while its forget stands.
-        third = self.reviewed({'notes': '- 요약은 세 줄로\n- 링크는 맨 끝에', 'change': '링크 위치', 'blocker': ''})
+        # The same lesson is not saved again from a later review while its forget stands.
+        third = self.reviewed(review([add_lesson('링크는 맨 끝에')], '링크 위치'))
         with self.store.db() as db:
             detail = json.loads(db.execute("SELECT detail FROM tool_events WHERE job_id=? AND tool='self_review'",
                                            (third,)).fetchone()['detail'])
-        self.assertEqual(detail['dropped'], [{'note': 'notes', 'reason': om.FORGOTTEN_VALUE}])
-        self.assertEqual(om.WorkingNotes(self.store).current()['version'], 1)
+        self.assertEqual(detail['dropped'], [{'note': 'lesson', 'op': 'add', 'reason': om.FORGOTTEN_VALUE}])
+        self.assertEqual(len(om.WorkingLessons(self.store).current()), 1)
 
     def test_a_notice_lost_in_sending_is_told_again_once(self):
-        job = self.reviewed({'notes': '- 요약은 세 줄로', 'change': '요약 길이', 'blocker': ''})
+        job = self.reviewed(review([add_lesson('요약은 세 줄로')], '요약 길이'))
         [row] = self.notification(job, WORKING_NOTES_KIND)
         # A crash while the notice was being sent leaves 'sending'; recover() marks it 'unknown' (#581).
         self.store.update_notification(row['id'], 'sending')
@@ -412,7 +359,7 @@ class Told(TelegramHarness):
         """#233 (Codex review): "I updated my notes" never overtakes the answer it is about."""
         from personal_agent.conversation_handoff import TelegramNotSent
         change = '요약 길이를 적었어요'
-        job = self.reviewed({'notes': '- 요약은 세 줄로', 'change': change, 'blocker': ''}, delivery='pending')
+        job = self.reviewed(review([add_lesson('요약은 세 줄로')], change), delivery='pending')
         self.assertEqual(self.notices(job), [self.store.NOTICE_HELD], 'held while the reply is awaited')
         outage, original = [True], self.service.telegram_transport
 
@@ -441,7 +388,7 @@ class Told(TelegramHarness):
 
     def test_a_held_notice_is_released_by_the_sweep_once_the_reply_settled(self):
         """A crash between the reply's delivery and the release, or a cancelled reply, leaves it to the sweep."""
-        job = self.reviewed({'notes': '- 요약은 세 줄로', 'change': '요약 길이', 'blocker': ''}, delivery='pending')
+        job = self.reviewed(review([add_lesson('요약은 세 줄로')], '요약 길이'), delivery='pending')
         self.service._memory_saved_release_sweep = 0
         self.service.release_memory_saved_notices()
         self.assertEqual(self.notices(job), [self.store.NOTICE_HELD])
@@ -451,27 +398,26 @@ class Told(TelegramHarness):
         self.service.release_memory_saved_notices()
         self.assertEqual(self.notices(job), ['queued'])
 
-    def test_a_secret_never_enters_the_notes_or_the_notice(self):
+    def test_a_secret_never_enters_the_lessons_or_the_notice(self):
         self.store.secret('telegram_token', SECRET)
-        job = self.reviewed({'notes': f'- 토큰은 {SECRET}', 'change': 'c', 'blocker': ''})
-        self.assertIsNone(om.WorkingNotes(self.store).current())
+        job = self.reviewed(review([add_lesson(f'토큰은 {SECRET}')], 'c'))
+        self.assertEqual(om.WorkingLessons(self.store).current(), [])
         self.assertEqual(self.notices(job), [])
 
     def test_moved_lessons_leave_the_profile_rows_and_join_the_brief_as_one_block(self):
         self.store.save_memory('profile.working.summary', '요약은 세 줄로', MEMORY_OWNER, work_id='w0')
-        om.WorkingNotes(self.store).migrate()
-        self.assertEqual(om.WorkingNotes(self.store).current()['points'], ['요약은 세 줄로'])
-        self.assertIn('working_notes v1', self.service.owner_profile_snapshot())
+        self.assertTrue(om.WorkingLessons(self.store).migrated())
+        self.assertEqual([item['text'] for item in om.WorkingLessons(self.store).current()], ['요약은 세 줄로'])
+        self.assertIn('working_lessons (', self.service.owner_profile_snapshot())
         self.assertNotIn('profile.working.summary', self.service.owner_profile_snapshot())
 
-    def test_the_information_use_audit_names_the_notes_sent_never_their_points(self):
-        from personal_agent import information_use
+    def test_the_information_use_audit_names_the_lessons_sent_never_their_texts(self):
         self.store.save_memory('profile.place.home', '분당', MEMORY_OWNER, work_id='w0')
-        self.reviewed({'notes': '- 요약은: 세 줄로\n- 링크는 맨 끝에', 'change': '요약 길이', 'blocker': ''})
-        ref = om.WorkingNotes(self.store).current()['ref']
+        self.reviewed(review([add_lesson('요약은: 세 줄로'), add_lesson('링크는 맨 끝에')], '요약 길이'))
+        keys = {item['key'] for item in om.WorkingLessons(self.store).current()}
         refs = self.service.owner_information_refs({'profile': self.service.owner_profile_snapshot()})
-        self.assertEqual(refs['profile_keys'], ['profile.place.home', f'working_notes v1 ({ref})'],
-                         'review P1: the notes are recorded as used, as one reference')
+        self.assertEqual(set(refs['profile_keys']), {'profile.place.home', *keys},
+                         'each shown lesson has its own reference in the audit')
         self.assertNotIn('세 줄', json.dumps(refs, ensure_ascii=False))
 
 
