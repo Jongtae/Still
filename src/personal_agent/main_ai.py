@@ -39,7 +39,7 @@ API_ROUTES = {
     'openai': {'name': 'OpenAI', 'provider': 'openai', 'endpoint': 'https://api.openai.com/v1',
                'model': 'gpt-4o-mini', 'destination': 'api.openai.com'},
     'anthropic': {'name': 'Anthropic', 'provider': 'anthropic', 'endpoint': 'https://api.anthropic.com',
-                  'model': 'claude-sonnet-4-5', 'destination': 'api.anthropic.com'},
+                  'model': 'claude-opus-5-5', 'destination': 'api.anthropic.com'},
     'openrouter': {'name': 'OpenRouter', 'provider': 'compatible', 'endpoint': 'https://openrouter.ai/api/v1',
                    'model': 'openrouter/free', 'destination': 'openrouter.ai'},
 }

@@ -122,10 +122,11 @@ RANKED_MODELS = {
     # (Settings › 판단 AI › 고급 › OpenAI API › 모델), move it first here and
     # record that evidence in docs/decision-layer.en.md.
     'openai': ('gpt-4o-mini', 'gpt-6-luna'),
-    # Anthropic API.  Source, checked 2026-09-27:
-    # https://docs.anthropic.com/en/docs/about-claude/models (Claude Haiku 4.5,
-    # $1/$5 per MTok, the cheapest current model).
-    'anthropic': ('claude-haiku-4-5',),
+    # Anthropic API.  Source, checked 2026-11-20: Anthropic's current model
+    # table (Claude Haiku 5.5, $0.10/$0.50 per MTok up to 100K-token prompts,
+    # the cheapest current model).  Haiku 4.5 stays as the fallback for a key
+    # whose model list does not include Haiku 5.5 (#1047).
+    'anthropic': ('claude-haiku-5-5', 'claude-haiku-4-5'),
 }
 #: The default reasoning effort for a judgment, sent only where the model
 #: supports it (``supported_efforts``).
@@ -160,7 +161,7 @@ def known_models(route_id, listed=None):
 #: Owner-visible label of a listed model: a listing is not a qualification.
 LISTED_LABEL = msg('decision_routes.listed_unverified')
 #: Official model-list endpoints for the API routes (explicit refresh only).
-ANTHROPIC_CONFIG = {'provider': 'anthropic', 'endpoint': 'https://api.anthropic.com', 'model': 'claude-haiku-4-5'}
+ANTHROPIC_CONFIG = {'provider': 'anthropic', 'endpoint': 'https://api.anthropic.com', 'model': 'claude-haiku-5-5'}
 API_MODEL_LISTS = {
     'openai': {'url': 'https://api.openai.com/v1/models', 'config': dict(DEFAULT_DECISION_PROVIDER)},
     'anthropic': {'url': 'https://api.anthropic.com/v1/models', 'config': dict(ANTHROPIC_CONFIG)},

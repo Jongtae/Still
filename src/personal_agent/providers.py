@@ -83,6 +83,11 @@ def _error_reason(detail):
     return ' '.join(f'({part})' if part is param else part for part in (kind,param) if part)
 
 
+#: Current Claude models think by default and the thinking counts toward
+#: ``max_tokens``; Anthropic's recommended non-streaming cap (#1047).
+ANTHROPIC_MAX_TOKENS = 16000
+
+
 def validate_model(config):
     provider = config.get('provider', '')
     if provider not in ('ollama', 'compatible', 'openai', 'anthropic'):
@@ -276,8 +281,11 @@ class ModelAdapter:
                     else:entry={'role':m['role'],'content':[{'type':'text','text':m.get('content') or ' '}]}
                     if converted and converted[-1]['role']==entry['role']:converted[-1]['content']+=entry['content']
                     else:converted.append(entry)
-                choice={'type':'any'} if tool_choice=='required' else {'type':'auto'}
-                data=self._send(cfg['endpoint']+'/v1/messages',{'model':cfg['model'],'system':'\n'.join(m['content'] for m in messages if m['role']=='system'),'messages':converted,'tools':[{'name':t['function']['name'],'description':t['function']['description'],'input_schema':t['function']['parameters']} for t in tools],'max_tokens':4096,'tool_choice':choice},{'x-api-key':key,'anthropic-version':'2023-06-01'},timeout)
+                # Always `auto`: current Claude models (Opus 5.5, Sonnet 5.5)
+                # reject a forced `any`/`tool` choice with a 400, and every
+                # caller that needs a call checks the returned call itself (#1047).
+                choice={'type':'auto'}
+                data=self._send(cfg['endpoint']+'/v1/messages',{'model':cfg['model'],'system':'\n'.join(m['content'] for m in messages if m['role']=='system'),'messages':converted,'tools':[{'name':t['function']['name'],'description':t['function']['description'],'input_schema':t['function']['parameters']} for t in tools],'max_tokens':ANTHROPIC_MAX_TOKENS,'tool_choice':choice},{'x-api-key':key,'anthropic-version':'2023-06-01'},timeout)
                 message={'role':'assistant','content':'\n'.join(c['text'] for c in data['content'] if c['type']=='text')}
                 calls=[{'id':c['id'],'type':'function','function':{'name':c['name'],'arguments':json.dumps(c['input'])}} for c in data['content'] if c['type']=='tool_use']
                 if calls:message['tool_calls']=calls
@@ -311,7 +319,7 @@ class ModelAdapter:
                     raise ValueError(msg('providers.enter_anthropic_key'))
                 system = '\n'.join(m['content'] for m in messages if m['role'] == 'system')
                 history = [m for m in messages if m['role'] != 'system']
-                data = self.transport(endpoint+'/v1/messages', {'model': model, 'system': system, 'messages': history, 'max_tokens': 2048}, {'x-api-key': key, 'anthropic-version': '2023-06-01'})
+                data = self.transport(endpoint+'/v1/messages', {'model': model, 'system': system, 'messages': history, 'max_tokens': ANTHROPIC_MAX_TOKENS}, {'x-api-key': key, 'anthropic-version': '2023-06-01'})
                 content = '\n'.join(c['text'] for c in data['content'] if c.get('type') == 'text')
             if not isinstance(content, str) or not content.strip():
                 raise ProviderError(msg('providers.no_text_response'))
