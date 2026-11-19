@@ -198,12 +198,15 @@ def recorded_arguments(action,args,redact=None):
  ``redact`` (#659) scrubs a ``SCRUBBED_ARGUMENTS`` field instead.
  """
  #814: a ``SCRUBBED_ARGUMENTS`` entry may name several fields.
- fields=REDACTED_ARGUMENTS.get(action) or SCRUBBED_ARGUMENTS.get(action)
- if fields is None or not isinstance(args,dict):return args
- for field in (fields,) if isinstance(fields,str) else fields:
+ hidden=REDACTED_ARGUMENTS.get(action) or ()
+ scrubbed=SCRUBBED_ARGUMENTS.get(action) or ()
+ if isinstance(hidden,str):hidden=(hidden,)
+ if isinstance(scrubbed,str):scrubbed=(scrubbed,)
+ if not isinstance(args,dict):return args
+ for field in (*hidden,*scrubbed):
   if field not in args:continue
   text=args.get(field)
-  if action in SCRUBBED_ARGUMENTS and redact is not None and isinstance(text,str):
+  if field not in hidden and redact is not None and isinstance(text,str):
    try:
     args={**args,field:str(redact(text))};continue
    except Exception:pass
@@ -443,6 +446,8 @@ SCHEDULE_PREPARATION_ARGUMENTS={
  'report_every_minutes':'For a when_needed watch, use when the owner requests or agrees to progress reports at an interval even without a change. A whole number multiple of every_minutes, measured from each window’s first scheduled slot. The final check is reported as well.',
  'delivery':'send (the owner is told each time), keep (the owner is not told; results can be looked up on request), or when_needed (kind prepare: the owner is told only when a result needs them). Choose by when the owner needs to hear: a check whose value is hearing in time needs send or when_needed, not keep. Preserve the owner\'s explicit delivery choice.',
  'title':'For kind prepare, what the owner reads for the scheduled preparation or proposal (#393, #755), apart from goal: a short name in the owner\'s language (at most 60 characters).',
+ 'check':('A JSON object with the proven code_run code, hosts, secrets and timeout_seconds, plus every_seconds '
+  '(minimum 15, default 60). For prepare windows with until. Output wakes the AI; use no packages.'),
  'replaces':('The id (from settings_read preparations) of an active preparation this one takes the place of, when the owner changes what an existing watch or schedule does (another target, a new plan, a different time) (#766). '
   'In a Work the owner started, Still stops it once this one is scheduled, so the two never run side by side and the new one need not wait for the old to end; say in your answer what was stopped. '
   'A scheduled run the owner steered may replace its own preparation this way. Omit it for an additional preparation.'),
@@ -613,7 +618,7 @@ DEFINITIONS=[
  schema('calendar_query','List the owner\'s calendar events between two RFC3339 timestamps that both carry an explicit UTC offset, from every calendar the owner shows in Google Calendar; each event names its calendar. Use this to answer what is scheduled. Read-only: to create, change or delete an event, use api_request with the google-calendar slot (Google Calendar API v3).',{'start':STRING,'end':STRING,'timezone':STRING},['start','end','timezone']),
  schema('weather',WEATHER_DESCRIPTION,{'city':STRING,'country':STRING,'location_ref':STRING}),
  schema('propose_current_state',PROPOSE_CURRENT_STATE_DESCRIPTION,described({'predicate':{'type':'string','enum':['current_place','work_mode','availability_hint']},'value':STRING,'place_ref':STRING,'source':STRING,'until':STRING,'supersedes':STRING},PROPOSE_CURRENT_STATE_ARGUMENTS),['predicate']),
- schema('schedule_preparation',SCHEDULE_PREPARATION_DESCRIPTION,described({'kind':{'type':'string','enum':['reminder','prepare']},'goal':STRING,'due':STRING,'timezone':STRING,'recurrence':{'type':'string','enum':['daily','weekdays','weekly']},'rrule':STRING,'every_minutes':STRING,'until':STRING,'max_runs':STRING,'report_every_minutes':STRING,'delivery':{'type':'string','enum':['send','keep','when_needed']},'title':STRING,'offer':STRING,'replaces':STRING,'line':STRING},SCHEDULE_PREPARATION_ARGUMENTS),['kind','goal','due']),
+ schema('schedule_preparation',SCHEDULE_PREPARATION_DESCRIPTION,described({'kind':{'type':'string','enum':['reminder','prepare']},'goal':STRING,'due':STRING,'timezone':STRING,'recurrence':{'type':'string','enum':['daily','weekdays','weekly']},'rrule':STRING,'every_minutes':STRING,'until':STRING,'max_runs':STRING,'report_every_minutes':STRING,'delivery':{'type':'string','enum':['send','keep','when_needed']},'title':STRING,'offer':STRING,'replaces':STRING,'line':STRING,'check':STRING},SCHEDULE_PREPARATION_ARGUMENTS),['kind','goal','due']),
  schema('entrusted_line',ENTRUSTED_LINE_DESCRIPTION,described({'action':{'type':'string','enum':['list','read','open','revise','undo','stop','restart']},'line':STRING,'task':STRING,'report_promise':STRING,'rules':STRING,'rule':STRING,'drop_rule':STRING,'open_matters':STRING,'expected_version':STRING,'version':STRING,'account_every_days':STRING},ENTRUSTED_LINE_ARGUMENTS),['action']),
  schema('tell_owner',TELL_OWNER_DESCRIPTION,{'text':STRING},['text']),
  schema('ask_location',ASK_LOCATION_DESCRIPTION,described({'reason':STRING,'button_label':STRING,'mode':{'type':'string','enum':['ask','with_answer']}},ASK_LOCATION_ARGUMENTS),['reason']),
@@ -2045,22 +2050,25 @@ def refused_before_hand_off(execute):
  run.__name__,run.__qualname__,run.__doc__=execute.__name__,execute.__qualname__,execute.__doc__ or run.__doc__
  return run
 
+def outside_result_source(action,name,args,*,dispatched_error=False):
+ """Standing for sandbox results, page reads and other outside content, including dispatched errors."""
+ if not dispatched_error and action in OWNER_ONLY_RESULT_ACTIONS:return None
+ source={'operation':action or name, 'category':PRIVATE_PROVENANCE.get(action,UNATTRIBUTED_PROVENANCE)}
+ source.update({key:args[key] for key in ('url','slot','root_id','path','agent_id','peer_id') if isinstance(args,dict) and key in args})
+ return source
+
 def record_outside_result(execute):
  """Persist intake before results OR dispatched errors leave either worker route."""
  def recorded(self,name,args):
   action=(self.tools.get(name) or {}).get('host_action')
-  def mark():
-   source={'operation':action or name, 'category':PRIVATE_PROVENANCE.get(action,UNATTRIBUTED_PROVENANCE)}
-   source.update({key:args[key] for key in ('url','slot','root_id','path','agent_id','peer_id') if isinstance(args,dict) and key in args})
-   self.store.mark_outside_content(self.job_id,source)
   try:result=execute(self,name,args)
   except Exception as exc:
-   # The inner hand-off guard has already identified Still's own refusals.
-   # executed:false is a *remote* refusal, whose reason is still outside text.
-   # Unknown phase is outside by default, even for a normally owner-only tool.
-   if not ran_field(exc):mark()
+   # Still's pre-dispatch refusals carry no outside content.
+   if not ran_field(exc):
+    self.store.mark_outside_content(self.job_id,outside_result_source(action,name,args,dispatched_error=True))
    raise
-  if action not in OWNER_ONLY_RESULT_ACTIONS and not isinstance(result,_HostOnlyResult):mark()
+  if not isinstance(result,_HostOnlyResult) and (source:=outside_result_source(action,name,args)):
+   self.store.mark_outside_content(self.job_id,source)
   return result
  @wraps(execute)
  def run(self,name,args):
@@ -2838,6 +2846,8 @@ def worker_result(action, result):
  digests, refusal reason) for its own Evidence and trail.  Every other
  result is unchanged.
  """
+ if action in CODE_ACTIONS and isinstance(result,dict) and 'check_proof' in result:
+  return {key:value for key,value in result.items() if key!='check_proof'}
  if memory_proposal(action,result):
   return {'remembered':False,'content':result.get('content'),'next':MEMORY_ASK_WORKER_NOTE}
  if action=='save_memory' and isinstance(result,dict) and result.get('auto_saved') and result.get('state')=='current':
@@ -5332,7 +5342,8 @@ def _evidence_detail(name,result):
  if name=='schedule_preparation':
   # #659: which preparation, its state and slot; never the goal text.
   return {key:result.get(key) for key in ('preparation_id','kind','state','scheduled','requires_owner_acceptance',
-                                          'due','recurrence','delivery','accepted_by','every_minutes','until','max_runs')}
+                                          'due','recurrence','delivery','accepted_by','every_minutes','until','max_runs')} | (
+   {'check':result['check']} if 'check' in result else {})
  if name=='entrusted_line':
   # #798: which line, its version and state; never the brief's text.
   return {key:result.get(key) for key in ('line_id','version','state','restated','changed','money_rules') if key in result}|(

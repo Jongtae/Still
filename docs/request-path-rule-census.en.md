@@ -266,3 +266,7 @@ Owner decision 2026-11-14 ([#817](https://github.com/Jongtae/Still/issues/817), 
 ### Left as they were
 
 The worker CLI and code-run sandboxes, the completion and goal judgments, tool budgets, the turn-record envelope withholding for private stores, the web transcript's unverified-result label (B5), and the refusal of loopback and private-network destinations are outside #817. Known gaps each slice recorded (encoded owner data in a public address, #744; a restart dropping a waiting sign-in, #826) stay on those issues.
+
+## Condition checks amendment (#972 slice 1)
+
+The same-Work proof, the interval and wake limits, and the package exclusion are functional execution conditions. Package installation can take longer than the interval. A check has no Work to own an effect claim or guard against replay (C8), so its runner has no approval surface and can send only GET, HEAD and owner-reviewed reads. Acting on the result costs one wake. The woken Work uses its row’s existing approval and payment standing (C17 case 2). Like ordinary code_run, the handoff applies outside-content standing to results and dispatched errors (C17 case 3). Credential redaction applies before recording or delivering output and again on owner-facing code reads (C17 case 1).
