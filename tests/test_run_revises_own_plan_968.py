@@ -341,9 +341,10 @@ class SteeredRunTests(_RunCase):
                                                    task='t', report_promise='p'), 'unattended_run')
         self.assertEqual(self.refused_line(run, action='revise', line=other['line_id'], expected_version='1',
                                            rule='x'), 'unattended_run')
-        self.assertEqual(self.refused_line(run, action='stop', line=other['line_id']), 'unattended_run')
+        for scope in ('work', 'line'):
+            self.assertEqual(self.refused_line(run, action='stop', line=other['line_id'], scope=scope), 'unattended_run')
         self.assertEqual(self.service.lines.current(other['line_id'])['state'], el.STATE_ACTIVE)
-        self.line_call(run, action='stop', line=brief['line_id'])
+        self.line_call(run, action='stop', line=brief['line_id'], scope='line')
         self.assertEqual(self.service.lines.current(brief['line_id'])['state'], el.STATE_STOPPED)
 
     def test_a_marked_steered_run_changes_its_line_only_as_asked(self):
@@ -357,13 +358,38 @@ class SteeredRunTests(_RunCase):
         self.assertEqual(self.service.lines.current(brief['line_id'])['version'], 1)
         self.assertEqual(self.asked[-1][1]['owner_message'], STEER)
         # A stop after outside content is judged too: the steer did not ask to stop the work.
-        self.assertEqual(self.refused_line(run, action='stop', line=brief['line_id']), 'line_change_needs_owner')
+        for scope in ('work', 'line'):
+            self.assertEqual(self.refused_line(run, action='stop', line=brief['line_id'], scope=scope),
+                             'line_change_needs_owner')
         self.assertEqual(self.service.lines.current(brief['line_id'])['state'], el.STATE_ACTIVE)
         self.assertEqual(self.preps.get(row['id'])['state'], prep.STATE_RUNNING)
         self.assertIn(brief['task'], self.asked[-1][1]['proposed_change'])
         self.yes = True
-        self.line_call(run, action='stop', line=brief['line_id'])
+        self.line_call(run, action='stop', line=brief['line_id'], scope='line')
         self.assertEqual(self.service.lines.current(brief['line_id'])['state'], el.STATE_STOPPED)
+
+    def test_a_marked_run_can_stop_current_work_when_its_own_owner_steer_asks_for_that(self):
+        brief = self.line()
+        line_id = brief['line_id']
+        row, run = self.running(line=line_id)
+        args = {'action': 'stop', 'line': line_id}
+        for scope in ('work', 'line'):
+            self.assertEqual(self.refused_line(run, **args, scope=scope), 'unattended_run')
+        words = 'Stop the current work. Keep the mission.'
+        self.steer(run, words)
+        self.mark(run)
+
+        def judge(context, proposition):
+            if context.purpose == 'explicit-line-change':
+                asked = (context.facts['owner_message'] == words and
+                         'keeping this entrusted mission active' in context.facts['proposed_change'])
+                return BinaryDecision(OUTCOME_DECIDED, asked, fixture_confidence())
+            return None
+        self.service.use_decision_engine(FixtureDecisionEngine(judge=judge))
+        self.assertEqual(self.refused_line(run, **args, scope='line'), 'line_change_needs_owner')
+        self.assertTrue(self.line_call(run, **args, scope='work')['changed'])
+        self.assertEqual(self.service.lines.current(line_id), brief)
+        self.assertEqual(self.preps.get(row['id'])['state'], prep.STATE_CANCELLED)
 
     def test_every_changed_place_of_a_long_goal_is_judged_and_shown(self):
         filler = ' '.join(f'step {n} reads the list.' for n in range(250))

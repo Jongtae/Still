@@ -126,6 +126,14 @@ LOCAL_KEPT_WORKSPACE_TEXT=msg('service.an_output_folder_is_already_connected')
 SETTINGS_FOLDER_LOCAL_TEXT=msg('service.continue_on_the_mac_adding_or')
 
 
+
+def first_answer_line(text):
+    """The first non-empty line of an answer, without Markdown emphasis or list marks, or '' (#1034)."""
+    for line in str(text or '').splitlines():
+        line=re.sub(r'[*_`]+','',line).strip().lstrip('#>-• ').strip()
+        if line:return line
+    return ''
+
 class OwnerLocalRequired(Exception):
     """A Settings folder change that adds or widens authority, asked off this Mac (#779)."""
 
@@ -8127,16 +8135,23 @@ class AgentService:
         reads=read_state_text(observed)
         verified=job.get('owner_verified') or reads
         if verified:done+=' '+verified[:500]
+        # #1034: the owner is told what they got (the verified part, else the answer's first line), not
+        # the step count or Still's read record; ``done`` above stays the resume brief's fact.
+        got=job.get('owner_verified') or first_answer_line(job.get('response'))
+        owner_done=got[:300] if got else msg('budget_continue.done_steps',count=len(observed))
         gap=(getattr(run.orchestration,'terminal_gap','') or (run.agency_report or {}).get('gap')
              or (run.agency_report or {}).get('next') or msg('budget_continue.remaining'))
         totals=self.work_information_use(job['id'],compare_held_values=False)['usage']['totals']
-        usage=' · '.join(f'{key}: {value}' for key,value in (totals.get('usage') or {}).items()) or msg('information_use.usage_not_reported')
-        if totals.get('cost_usd') is not None:usage+=f" · USD {totals['cost_usd']}"
-        for key in ('num_turns','cli_tool_calls'):
-            if totals.get(key) is not None:usage+=f' · {key}: {totals[key]}'
+        # #1034: #471's figure without raw keys: the reported cost, else input and output tokens.
+        tokens=sum(value for key,value in (totals.get('usage') or {}).items()
+                   if key in ('input_tokens','output_tokens') and isinstance(value,(int,float)))
+        usage=' · '.join(([f"USD {totals['cost_usd']}"] if totals.get('cost_usd') is not None else [])
+                         +([msg('budget_continue.tokens',count=f'{int(tokens):,}')] if tokens else [])) or msg('information_use.usage_not_reported')
         if totals.get('cli_tool_calls_partial'):usage+=' · '+msg('information_use.usage_partial')
-        used=msg('budget_continue.used',usage=usage,count=sum(status in ('succeeded','failed') and data.get('ran') is not False for _,status,data in tools))
-        text=msg('budget_continue.prompt',done=done,left=gap[:500],used=used)
+        # A CLI's own tool calls may not all be Still tool events: the larger count, never more than observed.
+        calls=sum(status in ('succeeded','failed') and data.get('ran') is not False for _,status,data in tools)
+        used=msg('budget_continue.used',usage=usage,count=max(calls,int(totals.get('cli_tool_calls') or 0)))
+        text=msg('budget_continue.prompt',done=owner_done,left=gap[:500],used=used)
         from .memory_service import recalled_tool_exchanges
         recalled=self.conversation_block_for_work(job['id'],recalled_tool_exchanges(self.store,job['id']),budget=12000)
         history=run.orchestration._attempts_text() if run.orchestration is not None else ''

@@ -282,6 +282,8 @@ class PreparationEarlierReportTests(_Case):
         row = self.scheduled()
         first = self.run_job(row, 1, response='First report')
         self.assertEqual([r['role'] for r in self.service.preparation_history(first)], ['user'])
+        # #1035: the series note goes only with an earlier delivered report.
+        self.assertNotIn(msg('preparations.series_update'), self.service.preparation_history(first)[-1]['content'])
         second = self.run_job(row, 2, status='queued')
         self.assertEqual(self.service.preparation_history(second)[0]['content'], 'First report')
         latest = self.run_job(row, 3, response='Latest report', status='partial', delivery='sent', chat_id=CHAT,
@@ -303,6 +305,8 @@ class PreparationEarlierReportTests(_Case):
         history = self.service.preparation_history(current)
         self.assertEqual([r['role'] for r in history], ['assistant', 'user'])
         self.assertIn(msg('preparations.previous_report', at=prep.local_text(self.now + 3, 'Asia/Seoul')), history[-1]['content'])
+        self.assertIn(msg('preparations.previous_report', at=prep.local_text(self.now + 3, 'Asia/Seoul')) + '\n'
+                      + msg('preparations.series_update'), history[-1]['content'])
         self.assertEqual(history[0], {'role': 'assistant', 'content': 'Latest report', 'job_id': latest['id'],
                                      'channel': 'telegram', 'qualifier': None,
                                      'request_key': self.store.job(latest['id'])['request_key'], 'created': self.now + 3})
@@ -1524,7 +1528,7 @@ class SilentDeliveryTests(_WatchCase):
         self.service.use_decision_engine(self.judge)
 
     def notifications(self):
-        return [text for text in self.texts() if text.startswith('지켜보던 일에서 알려 드려요')]
+        return [text for text in self.texts() if '\n\n지켜보던 일: ' in text]
 
     def test_quiet_runs_send_nothing_and_notify_sends_once_per_new_decision(self):
         self.use([False, True, True])
@@ -2149,8 +2153,9 @@ class OwnerOfferTests(_WatchCase):
         self.assertNotIn('마다 최대', run_prompt, 'no schedule line re-rendered from the advanced due time')
         [asked] = [item[1] for item in self.judge.asked if item[0] == 'judge' and item[1].purpose == 'watch-notification']
         self.assertIn('1,000원 이하', asked.facts['accepted_offer'])
-        [told] = [text for text in self.texts() if text.startswith('지켜보던 일에서 알려 드려요')]
-        self.assertTrue(told.startswith(f'지켜보던 일에서 알려 드려요 ({self.TITLE}).'), told)
+        [told] = [text for text in self.texts() if '\n\n지켜보던 일: ' in text]
+        self.assertTrue(told.endswith(f'\n\n지켜보던 일: {self.TITLE}\n' + msg('quickstart_service.stop_watching_hint')), told)
+        self.assertFalse(told.startswith('지켜보던 일'), 'the result leads, not the footer (#1034)')
         listed = self.service.preparations_status()['preparations'][0]
         self.assertEqual((listed['title'], listed['offer']), (self.TITLE, self.OFFER))
 

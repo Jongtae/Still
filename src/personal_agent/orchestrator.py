@@ -71,8 +71,13 @@ def cut_profile_fact(text, items=(), *, redact=None, limit_chars=None):
     text = str(text or '')
     redact = redact or (lambda value: value)
     rendered = redact(text)
+    # A text redaction left unchanged keeps every row where it was; only a changed text
+    # needs each row's position re-measured on its redacted prefix (quadratic in rows).
+    # ``kept`` still checks every position against ``rendered``.
+    moved = rendered != text
     inventory = tuple({**item, 'line': redact(item['line']),
-                       'start': len(redact(text[:item['start']]))} for item in items)
+                       'start': len(redact(text[:item['start']])) if moved else item['start']}
+                      for item in items)
     limit = PROFILE_FACT_CHARS if limit_chars is None else limit_chars
     end = len(rendered)
     if end > limit:

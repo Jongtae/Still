@@ -144,6 +144,15 @@ class _SeedRefs(dict):
         return bool(row and row['state'] == 'current'
                     and (not row.get('valid_until') or row['valid_until'] >= self.today))
 
+    def eligible_ids(self):
+        """The seeded ids ``eligible`` admits, read from the store in one query."""
+        with self.store.db() as db:
+            rows = db.execute('SELECT id, state, valid_until FROM memories WHERE owner_key=?',
+                              (self.store._memory_binding(self.owner),)).fetchall()
+        admitted = {row[0] for row in rows
+                    if row[1] == 'current' and (not row[2] or row[2] >= self.today)}
+        return {ident for ident in self.values() if ident in admitted}
+
 
 def seed(store, data):
     """Seed an empty caller-owned QuickStore through its real write/forget APIs."""
@@ -182,7 +191,7 @@ def run(retriever, cases, refs):
         if not isinstance(returned, list) or any(not isinstance(ident, str) for ident in returned):
             raise RecallPairsError('Retriever must return a list of memory ids')
         returned = list(dict.fromkeys(returned))
-        eligible = {ident for ident in refs.values() if refs.eligible(ident)}
+        eligible = refs.eligible_ids()
         forbidden = set(refs.values()) - eligible
         needed = {refs[ref] for ref in case['needed']}
         got = set(returned)
