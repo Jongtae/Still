@@ -70,7 +70,7 @@ MAX_READ_REQUESTS = 8
 #: response-time codes are not here because they can follow a dispatch.
 PRE_DISPATCH_CODES = frozenset({'api_slot_code_only', 'api_slot_unknown', 'api_slot_invalid', 'api_argument_invalid',
                                 'api_path_invalid', 'api_path_refused', 'api_body_refused', 'api_read_only', 'api_approval_unrepresentable', 'approval_required', 'approval_note_required',
-                                'api_effect_replayed', 'api_work_inactive'})
+                                'api_effect_replayed', 'api_work_inactive', 'effect_route_unavailable'})
 #: #1445: the pre-dispatch refusals of a call that could not be made as written (the wrong tool for a
 #: set, an unknown slot, a malformed argument or path).  Like a click on a target that was not on the
 #: page (#1276) no effect asked of the service was refused; an authority refusal is not here.
@@ -1122,8 +1122,15 @@ class ApiRequests:
             # an unscoped one still holds it: no blind cross-route replay.
             target = effect_target(TARGET_API, slot['name'], slot.get('hosts') or ())
             targets = unknown_effect_targets(self.store, self.work_id)
-            if (targets and (observed or effect_continuation_scope(self.store, self.work_id))) or unknown_effect_holds(targets, target):
+            continuing = effect_continuation_scope(self.store, self.work_id)
+            if (targets and (observed or continuing)) or unknown_effect_holds(targets, target):
                 raise ApiError(UNKNOWN_EFFECT_TEXT, 'effect_unknown', effect='unknown')
+            # #1020 review: the mirror of the connector fence (``_connector_effect_seen``).  A carried
+            # connector effect shares no replay key with an API slot, so a continuation cannot prove an
+            # API write is not that same change again.
+            if continuing and any(row.get('kind') != 'api-slot' for row in observed):
+                raise ApiError('이어서 하는 작업에서는 이미 다른 연결로 한 변경을 API로 반복하지 않도록 보내지 않았습니다. '
+                               '그 연결로 남은 일을 확인하세요.', 'effect_route_unavailable')
             if any(row.get('kind') == 'api-slot' and row.get('input_digest') in {identity, *prior} for row in observed):
                 raise ApiError('이미 보낸 API 동작이라 반복 실행하지 않았습니다. 기존 결과와 남은 일을 확인하세요.',
                                'api_effect_replayed')
