@@ -1847,8 +1847,10 @@ class SettingsOrchestrator:
         pause or narrow it atomically with its audit and owner notice, without leaving a draft.
         #968: ``own_goal(row, before, after) -> bool`` says whether that run may also rewrite the
         preparation's goal (an ``edit`` with ``goal``), asked when the run applies it.
+
+        ``draft_only`` leaves settings application to the owner while an external effect is fenced.
         """
-        def call(action, args):
+        def call(action, args, *, draft_only=False):
             args = args if isinstance(args, dict) else {}
             if action == "capability_search":
                 return self.service.search_capabilities(work_id, args)
@@ -1859,17 +1861,18 @@ class SettingsOrchestrator:
             if args.get("continue_work", "no") not in ("yes", "no"):
                 raise SettingsError(msg('settings_orchestrator.invalid_continue_work_option'))
             if unattended:
-                if own_preparation and (args.get('category'), args.get('setting')) in SELF_NARROWING:
+                if not draft_only and own_preparation and (args.get('category'), args.get('setting')) in SELF_NARROWING:
                     return self._apply_own_run(owner, channel, work_id, args, own_preparation, own_goal)
                 return {"state": "not_proposed", "unattended": True, "category": args.get("category"),
                         "setting": args.get("setting"), "applied": False,
                         "next_step": UNATTENDED_SETTINGS_TEXT}
-            own = self._own_proposal_edit(args, work_id)
-            if own is not None:
-                return own
+            if not draft_only:
+                own = self._own_proposal_edit(args, work_id)
+                if own is not None:
+                    return own
             draft = self.propose(owner, channel, args.get("category"), args.get("setting"), args.get("value"),
                                  args.get("reason"), work_id, continue_work=args.get("continue_work") == "yes", required_skill=args.get("required_skill"))
-            if (callable(owner_request) and args.get("continue_work", "no") == "no"
+            if (not draft_only and callable(owner_request) and args.get("continue_work", "no") == "no"
                     and direct_request_setting(draft["category"], draft["setting"], draft["after"])):
                 applied = self._apply_owner_request(owner, channel, draft, owner_request)
                 if applied is not None:

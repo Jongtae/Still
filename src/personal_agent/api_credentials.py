@@ -81,7 +81,7 @@ def fingerprint(name, slot):
             if slot.get(key):
                 bound[key] = slot[key]
     # #1380: a code-run secret set binds its named fields and owner-reviewed reads too.
-    for key in ('oauth', 'credential_parent', 'token_expires_at', 'kind', 'fields', 'reads'):
+    for key in ('oauth', 'credential_parent', 'token_expires_at', 'kind', 'fields', 'reads', 'registration_id'):
         if key in slot:
             bound[key] = slot[key]
     return hashlib.sha256(json.dumps(bound, sort_keys=True, separators=(',', ':')).encode()).hexdigest()

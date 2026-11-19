@@ -456,11 +456,16 @@ class PreparationsService:
         accepted_by=prep.piece_standing(parent['accepted_by'])
         if accepted_by is None:raise refused('line_piece_invalid')
         try:
+            ledger = getattr(service.current_decision_budget(),'ledger',None)
             with service.store.db() as db:
                 db.execute('BEGIN IMMEDIATE')
+                current = db.execute('SELECT status FROM jobs WHERE id=?',(job['id'],)).fetchone()
                 refusal=prep.Preparations.run_refusal(db,job['id'],now)
                 if refusal in (prep.LINE_STOPPED,prep.LINE_UNREADABLE):raise refused('line_stopped')
                 if refusal:raise not_run(ToolError(UNATTENDED_APPROVAL_TEXT,'unattended_run'))
+                if (not current or current['status'] not in ('queued','running')
+                        or (ledger is not None and (current['status']!='running' or ledger.lapse(db=db))) or service.work_stopped(job['id'])):
+                    raise refused('line_piece_invalid')
                 row=service.preparations.create(kind=prep.KIND_PREPARE,goal=fields['goal'],due_at=fields['due_at'],
                                                 timezone=fields['timezone'],recurrence=None,channel=parent['channel'],
                                                 created_from=job['id'],state=prep.STATE_SCHEDULED,accepted_by=accepted_by,
