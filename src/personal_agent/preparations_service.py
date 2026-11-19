@@ -960,9 +960,10 @@ class PreparationsService:
         body=service.telegram_result_text(job['response'],
                                        job.get('owner_cause') or job.get('error'),job.get('status'),
                                        verified=job.get('owner_verified'),note=job.get('owner_note'))
-        # #393: the watch is named as the owner accepted it, not by its run's brief.
-        return ((msg('quickstart_service.watch_notification', title=prep.owner_title(row))+'\n\n')+body+
-                ('\n\n'+msg('quickstart_service.stop_watching_hint')))
+        # #1034: the result leads, so a notification preview shows it; the footer names the watch as
+        # the owner accepted it (#393), not by its run's brief, with the stop hint.
+        return (body+'\n\n'+msg('quickstart_service.watch_notification', title=prep.owner_title(row))+'\n'+
+                msg('quickstart_service.stop_watching_hint'))
 
     def scrub_prepared_answer(self, job):
         """A prepared answer with stored secrets removed before reuse in later turns."""

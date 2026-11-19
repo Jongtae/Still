@@ -51,7 +51,11 @@ class BudgetContinueTests(unittest.TestCase):
                 self.assertTrue(service.offer_budget_continue(run))
                 offer=service.budget_continue_offer(job)
                 self.assertIn(msg('information_use.usage_not_reported'),offer['text'])
-                self.assertIn(msg('budget_continue.done',count=1),offer['text'])
+                # #1034: the owner is told what they got (the answer's first line), not Still's records.
+                self.assertIn('지금까지: Compared A and B; C still needs comparison.',offer['text'])
+                for machinery in (msg('budget_continue.done',count=1),'read_state','num_turns','cli_tool_calls'):
+                    self.assertNotIn(machinery,offer['text'])
+                self.assertIn(msg('budget_continue.done',count=1),offer['progress'])
                 self.assertIn(msg('budget_continue.remaining'),offer['text'])
                 self.assertIn('1',offer['text'])
                 self.assertIn('Read A, B and C',offer['progress'])
@@ -61,6 +65,30 @@ class BudgetContinueTests(unittest.TestCase):
                 self.assertEqual((renewed['attempts'],renewed['turns']),(0,0))
                 self.assertGreater(renewed['remaining_seconds'],0)
                 service.work_budget(job).check()
+
+    def test_owner_question_falls_back_to_steps_and_names_usage_without_raw_keys(self):
+        """#1034: no answer yet -> the step count in plain words; usage is cost, else tokens, never key names."""
+        service,store,job,run,_=self.stopped()
+        with store.db() as db:db.execute("UPDATE jobs SET response=NULL WHERE id=?",(job,))
+        totals={'usage':{'input_tokens':1200,'output_tokens':34,'cache_read_input_tokens':9000},'num_turns':7,
+                'cost_usd':None,'cli_tool_calls':76,'partial':False}
+        real=service.work_information_use
+        def info(work_id,**kwargs):
+            value=real(work_id,**kwargs)
+            return {**value,'usage':{**value['usage'],'totals':totals}}
+        with mock.patch.object(service,'work_information_use',info):
+            self.assertTrue(service.offer_budget_continue(run))
+        text=service.budget_continue_offer(job)['text']
+        self.assertIn(msg('budget_continue.done_steps',count=1),text)
+        self.assertIn(msg('budget_continue.tokens',count='1,234'),text)
+        for raw in ('input_tokens','cache_read','num_turns','cli_tool_calls'):
+            self.assertNotIn(raw,text)
+        service,store,job,run,_=self.stopped()
+        real=service.work_information_use
+        with mock.patch.object(service,'work_information_use',
+                               lambda work_id,**kwargs:{**real(work_id,**kwargs),'usage':{'totals':{**totals,'cost_usd':0.42}}}):
+            self.assertTrue(service.offer_budget_continue(run))
+        self.assertIn('USD 0.42',service.budget_continue_offer(job)['text'])
 
     def test_real_worker_resumes_same_work_with_fresh_budget_and_carried_answer(self):
         script=loop.Script({'tool_calls':[loop.call('a','list_notes')]},
@@ -179,7 +207,10 @@ class BudgetContinueTests(unittest.TestCase):
                         'usage':{'input_tokens':1234,'output_tokens':56},'cli_tool_calls':7,'num_turns':3,'cost_usd':0.25}),time.time()))
         self.assertTrue(service.offer_budget_continue(run))
         text=service.budget_continue_offer(job)['text']
-        for value in ('1234','56','7','3','0.25'):self.assertIn(value,text)
+        # #1034: the reported figures in plain words, without the audit's key names.
+        for value in ('USD 0.25',msg('budget_continue.tokens',count='1,290'),msg('budget_continue.used',usage='',count=7).split(' · ')[-1]):
+            self.assertIn(value,text)
+        for raw in ('input_tokens','num_turns','cli_tool_calls'):self.assertNotIn(raw,text)
         self.assertNotIn(msg('information_use.usage_not_reported'),text)
         self.assertIn('Continue?',service.task_progress(job)['selected']['budget_continue']['texts']['en'])
 
