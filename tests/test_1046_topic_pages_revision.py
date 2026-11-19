@@ -3,7 +3,7 @@
 #1043 found that topic pages raised needed facts but also misleading items, and the misleading items came from stale
 "latest state" entries. These tests pin the revised page rules: standards and decisions come first, a state item has an
 as-of date and an optional expiry and is not shown as current once it expires, only the newest state item per thread
-is shown, a weak match gets no page, and the pre-registered rule needs B to beat both A and search without more traps
+is shown, a request matching no topic term gets no page, and the pre-registered rule needs B to beat both A and search without more traps
 or other misleading items.
 """
 import sys
@@ -148,7 +148,7 @@ def test_a_page_never_rewritten_whole_still_holds(page):
     assert report['refused'] == [{'index': None, 'code': 'rewrite'}] and out == page
 
 
-# --- weak matches get no page ----------------------------------------------------------------------------------
+# --- page attachment ------------------------------------------------------------------------------------------
 
 def test_only_a_request_matching_no_term_gets_no_page():
     # Amended before scoring: a one-term match is not the weak signal on #1043's data, so it keeps its page.
