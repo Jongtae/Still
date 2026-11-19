@@ -109,7 +109,7 @@ def exposed_strings(rows):
     return sorted({value for row in rows for value in json.loads(row['strings_json']) if isinstance(value, str)})
 
 
-def redact_known_secrets(store, text):
+def redact_known_secrets(store, text, *, extra_values=()):
     """The stored secrets' literal values and credential shapes, replaced.
 
     The deterministic pass provenance records and the #658 profile snapshot
@@ -119,17 +119,24 @@ def redact_known_secrets(store, text):
     A bridge store carries the service's pass (``mcp_bridge.relay_store_redaction``): encrypted
     API slot values need the owner's Keychain key, which the process a CLI starts cannot read
     (#369).  A failed relayed call raises, so the caller withholds as before.
+
+    ``extra_values`` are run-local secrets and must never enter the store's redaction cache.
     """
     from .bounded_execution import SECRET_PATTERN
     text = str(text or '')
     relayed = getattr(store, 'relayed_secret_redaction', None)
     if callable(relayed):
-        return str(relayed(text))
+        text = str(relayed(text))
+        for value in sorted(extra_values, key=len, reverse=True):
+            text = text.replace(value, '[redacted]')
+        return text
     entry = _material_entry(store)
     values, ledger = entry['values'], entry['ledger']
+    if extra_values:
+        values = sorted(set(values).union(extra_values), key=len, reverse=True)
     # #819: the same text (a prompt envelope, a recorded step) is redacted several times per Work; its result
     # is kept with this secrets revision's own entry, so it is dropped with it on any secrets change.
-    memo = entry.get('results')
+    memo = None if extra_values else entry.get('results')
     if memo is not None:
         with _MATERIAL_LOCK:
             known = memo.pop(text, None)

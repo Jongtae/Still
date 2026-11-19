@@ -326,6 +326,12 @@ def _arguments(args, declared=lambda host: False):
     return code, packages, hosts, names, max(1, min(seconds, MAX_SECONDS))
 
 
+def check_arguments_digest(code, hosts, names, timeout):
+    """Identity of the normalized, replayable arguments of a check's proving run."""
+    encoded = json.dumps([code, hosts, names, timeout], separators=(',', ':')).encode()
+    return hashlib.sha256(encoded).hexdigest()
+
+
 def _library_argument(args, names):
     """#1486: the library module a run proposes for its one named secret set, or None."""
     from .procedures import MAX_SOURCE_BYTES
@@ -462,6 +468,10 @@ def _hostname(host):
 class CodeRunner:
     """One Work's sandboxed code runs; every request decision is made here."""
 
+    library_hints = True
+    persist_states = True
+    withhold_truncated_output = False
+
     def __init__(self, store, work_id, *, popen=subprocess.Popen, node=None, interrupted=None,
                  install=ensure_runtime, clock=time.monotonic, approvals=None, provide_node=node_runtime.ensure,
                  download_budget=None):
@@ -560,9 +570,14 @@ class CodeRunner:
     def run(self, args, *, seconds=None):
         # #233: first, so a run refused below never reports an earlier run's requests as its own.
         self.sent = []
+        self.allowed_hosts = set()
+        self.started = False
+        self.changed_state = False
+        rerun = False
         # Live 2026-10-14: a resumed Work rewrote the code that asked for approval, so the request no
         # longer matched the approval.  ``rerun: approved`` runs exactly the run that asked.
         if isinstance(args, dict) and str(args.get('rerun') or '').strip().lower() == 'approved':
+            rerun = True
             kept = self._approval_runs().get(self.work_id)
             if not isinstance(kept, dict):
                 raise CodeRunError('이 작업에는 승인을 요청한 코드 실행이 없어요. 코드를 직접 주세요.', 'code_run_argument_invalid')
@@ -575,6 +590,7 @@ class CodeRunner:
         # Owner choice 2026-10-14 (clear signing): "label=FIELD[=meaning]; ..." the owner reads instead of the raw request.
         fields = args.get('approval_fields') if isinstance(args, dict) else None
         self._fields = parse_approval_fields(fields)
+        declared_timeout = timeout
         if seconds is not None:
             timeout = max(1, min(timeout, int(seconds)))
         masked, plain, set_hosts = self.secret_sets(names, hosts)
@@ -611,6 +627,7 @@ class CodeRunner:
                 prefix = ['.venv/bin/python', '-I']
             command = prefix + (['-c', LAUNCHER] if libraries else ['main.py'])
             policy = {**{host: set() for host in hosts}, **set_hosts}
+            self._state_before = {}
             states = self._load_states(names, workdir, plain)
             download_options = {}
             if download is not None:
@@ -622,9 +639,9 @@ class CodeRunner:
                 download_options['download_file'] = str(path)
             outcome = self._session(node, runtime, workdir, command, policy, roots, timeout, requests, 'run',
                                     masked=masked, plain=plain, **download_options)
-            saved = self._save_states(states)
+            saved, scratch_secrets = self._save_states(states)
             kept = self._keep_libraries(libraries, workdir, outcome, (node, runtime, prefix, policy, roots, masked, plain))
-        result = self._result(code, packages, hosts, outcome, requests, names)
+        result = self._result(code, packages, hosts, outcome, requests, names, scratch_secrets=scratch_secrets)
         if download is not None:
             result['download_artifact'] = args['download_artifact']
         if saved:
@@ -639,10 +656,18 @@ class CodeRunner:
         # functions says, once it worked, how to keep them.
         unsaved = [name for name in names if name not in libraries and name not in self._hinted] \
             if callable(getattr(self.store, 'db', None)) else []
-        if unsaved and not outcome.get('timed_out') and outcome.get('exit_status') == 0:
+        if self.library_hints and unsaved and not outcome.get('timed_out') and outcome.get('exit_status') == 0:
             from .procedures import module_name
             self._hinted.add(unsaved[0])
             result['library_hint'] = LIBRARY_HINT.format(set=unsaved[0], module=module_name(unsaved[0]))
+        if (not rerun and not packages and download is None and not outcome['timed_out']
+                and outcome['exit_status'] == 0 and not self._claims and not self._asked
+                and not self.changed_state and all(item.get('row') for item in libraries.values())):
+            result['check_proof'] = {
+                'arguments': check_arguments_digest(code, hosts, names, declared_timeout),
+                'libraries': {name: {'id': item['row']['id'], 'digest': item['row']['digest']}
+                              for name, item in libraries.items()},
+            }
         self._settle(outcome, result)
         return result
 
@@ -727,7 +752,7 @@ class CodeRunner:
         """
         if not libraries:
             return {}
-        from .procedures import IDENTIFIER, MAX_FUNCTIONS, ProcedureLibrary, clean_functions, dropped
+        from .procedures import IDENTIFIER, MAX_FUNCTIONS, ProcedureLibrary, clean_functions, digest, dropped
         store = ProcedureLibrary(self.store)
         kept = {}
         for name, item in libraries.items():
@@ -748,6 +773,7 @@ class CodeRunner:
                 kept[name] = {'module': item['module'], 'state': 'not_saved', 'reason': problem}
                 continue
             row_id = store.propose(self.work_id, name, item['source'], report['functions'])
+            item['row'] = {'id': row_id, 'digest': digest(item['source'])}
             store.record_calls(row_id, calls)
             functions = clean_functions(report['functions'])
             kept[name] = {'module': item['module'], 'state': 'saved_if_fulfilled',
@@ -872,21 +898,31 @@ class CodeRunner:
             if slot is None:
                 continue
             path = Path(workdir, f'state-{name}.json')
-            path.write_text(ApiCredentials(self.store).read_state(name, slot) or '{}', encoding='utf-8')
+            original = ApiCredentials(self.store).read_state(name, slot)
+            path.write_text(original or '{}', encoding='utf-8')
+            self._state_before[name] = hashlib.sha256((original or '{}').encode()).digest()
             env[env_name(name, 'STATE_FILE')] = str(path)
             states[name] = (slot, path)
         return states
 
     def _save_states(self, states):
-        from .api_credentials import ApiCredentials
-        saved = {}
+        from .api_credentials import ApiCredentials, secret_state_values
+        saved, scratch_secrets = {}, set()
         for name, (slot, path) in states.items():
             try:
                 text = path.read_text(encoding='utf-8') if path.is_file() else ''
             except (OSError, UnicodeDecodeError):
                 text = None
+            if not self.persist_states:
+                try:
+                    scratch_secrets.update(secret_state_values(text))
+                except ValueError:
+                    pass  # A malformed state is not accepted by the ordinary run either.
+                continue
             saved[name] = text is not None and ApiCredentials(self.store).write_state(name, slot, text)
-        return saved
+            if saved[name] and hashlib.sha256(text.encode()).digest() != self._state_before[name]:
+                self.changed_state = True
+        return saved, scratch_secrets
 
     def _decide(self, message, policy, check=False):
         """Reads only: GET/HEAD to a host this run may reach, or a non-GET request the owner reviewed as a read.
@@ -1074,6 +1110,7 @@ class CodeRunner:
             # line is complete once written (line buffered), so the mark comes before the flush.
             from .agent_runtime import handed_off
             handed_off()
+            self.started = True
             process.stdin.flush()
             while True:
                 if self.interrupted is not None and self.interrupted():
@@ -1099,6 +1136,8 @@ class CodeRunner:
                                                      if isinstance(pair, list) and len(pair) == 2)[:APPROVAL_BODY_CHARS]
                         recorded.append(entry)
                     allow, reason = self._decide(message, policy, check=recorded is not None)
+                    if allow and phase == 'run':
+                        self.allowed_hosts.add(_host(message.get('host'))[:253])
                     if allow and len(self.sent) < MAX_CHECKED_REQUESTS:
                         pairs = message.get('headers') if isinstance(message.get('headers'), list) else []
                         parts = [message.get('path'), message.get('query'), message.get('bodyText'),
@@ -1111,8 +1150,12 @@ class CodeRunner:
                     process.stdin.write(json.dumps({'id': message.get('id'), 'allow': allow, 'reason': reason}) + '\n')
                     process.stdin.flush()
                 elif message.get('type') == 'result':
-                    return {'exit_status': message.get('exit'), 'timed_out': bool(message.get('timedOut')),
-                            'stdout': str(message.get('stdout') or ''), 'stderr': str(message.get('stderr') or '')}
+                    output = {stream: str(message.get(stream) or '') for stream in ('stdout', 'stderr')}
+                    if self.withhold_truncated_output:
+                        for stream in message.get('truncated') or ():
+                            if stream in output:
+                                output[stream] = '[output exceeded capture limit]'
+                    return {'exit_status': message.get('exit'), 'timed_out': bool(message.get('timedOut')), **output}
                 elif message.get('type') == 'error':
                     raise CodeRunError('코드 실행 환경을 시작하지 못했어요.', 'code_run_failed')
         except (OSError, ValueError) as exc:
@@ -1127,13 +1170,14 @@ class CodeRunner:
                 except subprocess.TimeoutExpired:
                     process.kill()
 
-    def _result(self, code, packages, hosts, outcome, requests, names=(), failed=None):
+    def _result(self, code, packages, hosts, outcome, requests, names=(), failed=None, *, scratch_secrets=()):
         from .current_context import redact_known_secrets
         # An in_code value can appear in a request path; the log keeps it redacted like the output.
         requests = [{**row, 'path': redact_known_secrets(self.store, row['path'])} for row in requests[:200]]
+        scratch = {'extra_values': scratch_secrets} if scratch_secrets else {}
         result = {'exit_status': outcome['exit_status'], 'timed_out': outcome['timed_out'],
-                  'stdout': redact_known_secrets(self.store, outcome['stdout']),
-                  'stderr': redact_known_secrets(self.store, outcome['stderr']),
+                  'stdout': redact_known_secrets(self.store, outcome['stdout'], **scratch),
+                  'stderr': redact_known_secrets(self.store, outcome['stderr'], **scratch),
                   'requests': requests, 'packages': packages, 'hosts': hosts, 'secrets': list(names),
                   'sandbox': f'sandbox-runtime {RUNTIME_VERSION}',
                   'code_digest': hashlib.sha256(code.encode()).hexdigest()[:16],
@@ -1152,7 +1196,7 @@ def evidence(result):
     and the ones waiting for the owner (``refused_because``), by method, host and path only.
     """
     kept = {key: result.get(key) for key in ('exit_status', 'timed_out', 'packages', 'hosts', 'secrets', 'sandbox', 'code_digest',
-                                             'failed_phase', 'effects', 'effect', 'download_artifact') if key in result}
+                                             'failed_phase', 'effects', 'effect', 'download_artifact', 'check_proof') if key in result}
     if result.get('approval_requested'):
         kept['refused_because'] = 'owner-approval-requested'
         kept['approval_requested'] = result['approval_requested']

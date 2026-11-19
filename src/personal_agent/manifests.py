@@ -59,7 +59,7 @@ HOST_TOOLS={
     # CONTEXT-STATE-01 (#627): a revisable current-state hypothesis.
     'propose_current_state': HostTool(True, False, False, 'current_context', False, 'value'),
     # SEC-ATTN-01 (#659): an owner-accepted preparation (reminder/prepare).
-    'schedule_preparation': HostTool(True, False, True, None, False, None),
+    'schedule_preparation': HostTool(True, False, True, None, False, 'check'),
     # #798: the owner's entrusted lines (list/read, and owner-started writes of a brief version); a read
     # shows a line's brief and its runs' outcomes, so the information-use audit lists it.
     'entrusted_line': HostTool(True, False, True, 'lines', False, None),

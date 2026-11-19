@@ -607,6 +607,10 @@ def _work_information_use(store, job_id, redact=None, *, compare_held_values=Tru
     # #636: sites the AI signed back in to through the provider the owner used (site and provider host only).
     resigned = []
     events = store.task_events(job_id)
+    from .condition_checks import handoff_event
+    handoff = handoff_event(store, job)
+    if handoff and handoff['job_id'] != job_id:
+        events = [handoff, *events]
     clock_fn = clock or time.monotonic
     deadline = clock_fn() + COMPARISON_SECONDS
     cache_key = (job_id, max((row.get('id') or 0 for row in events), default=0))
@@ -643,6 +647,21 @@ def _work_information_use(store, job_id, redact=None, *, compare_held_values=Tru
                                 ('engine', 'phase', 'destination', 'state', 'remote_receipt')}
             continue
         evidence = trace.get('evidence') if isinstance(trace.get('evidence'), dict) else {}
+        if action == 'condition_check' and status == 'woken':
+            for host in trace.get('allowed_hosts') or ():
+                destination = label(host, 200)
+                connections[(action, event['id'], destination)] = {
+                    'engine': 'agentos', 'phase': 'condition-check',
+                    'destination': destination, 'state': 'allowed', 'remote_receipt': ''}
+            continue
+        if action == 'schedule_preparation' and isinstance(evidence.get('check'), dict):
+            check = evidence['check']
+            add('api', check.get('secrets') or ())
+            for host in check.get('hosts') or ():
+                destination = label(host, 200)
+                connections[(action, event['id'], destination)] = {
+                    'engine': 'agentos', 'phase': 'condition-check-setup',
+                    'destination': destination, 'state': 'configured', 'remote_receipt': ''}
         if action == 'api_dispatch':
             evidence_state = 'response-observed' if status == 'observed' else 'authentication-refused' if status == 'rejected' else 'outcome-unknown'
             connections[('api', event.get('id'))] = {'engine': 'agentos', 'phase': 'api-dispatch',

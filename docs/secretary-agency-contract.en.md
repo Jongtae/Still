@@ -131,6 +131,8 @@ With `when_needed` delivery, a bounded judgment compares the accepted goal, scru
 
 An accepted preparation sends one notice to its paired conversation when a quiet run starts waiting for a connection or a window expires without its result. It uses the existing Work continuation when the connection is ready. A new connection wait after a resume can send its own notice. The day plan reads the recorded wait or expiry, and does not offer the same work again while it is waiting.
 
+A preparation window can carry a proven condition check (#972 slice 1). It runs every 60 seconds by default with a 15-second floor. The next check is due one interval after the prior check finishes, capped at the window end. There are up to 10 scheduled or running checks across Still, and the runner evaluates one at a time. A hit admits ordinary Work under the shared scheduled Work budget and a separate cap of 24 wakes per check per owner-local day. A row’s `max_runs` counts wakes. Checks wait while a woken run is active. The owner’s run-now has its own key and uses no wakes. Three consecutive failures pause the check and attempt one diagnostic wake. Woken Works retain the row’s payment standing. An owner-accepted row follows current payment autonomy, and a self-set row cannot pay.
+
 ### Offered preparations
 
 Under #582/#583, the worker may answer and propose a plausible repeating preparation, and the daily look-back may suggest one from requests on separate owner days. Proposals remained `proposed` until accepted; #717 replaced that with act-then-tell (above). A previously declined equivalent goal is not offered for 30 days; identity uses exact goal equality or the existing judgment. Do not substitute a hard-coded category list.
