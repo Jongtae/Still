@@ -460,15 +460,13 @@ SCHEDULE_PREPARATION_ARGUMENTS={
 ENTRUSTED_LINE_DESCRIPTION=(
  'Keep entrusted work in one line across schedules (#798). Open it with the task in the owner\'s words, report promise '
  'and standing rules (one per line), then schedule with schedule_preparation line. Reuse the line for the same work. '
- 'For owner corrections, revise with rule (or drop_rule) only for a standing change. If unclear, apply it today only '
- 'and say so. Daily limits and today-only corrections govern that day\'s work. The mission continues until its end '
- 'condition is met, the owner ends it, or you judge it complete or impossible and report why. Record the end and reason '
- 'in open_matters when available. Honor a recorded end. '
- 'list answers what you are handling for the owner; read gives one line\'s brief and latest outcomes when it '
- 'bears on a question. For stop, choose the scope from the owner\'s words. If unclear, stop current work only and tell '
- 'the owner in your reply that the mission is still held and that they can ask to end it. A line grants nothing: '
- 'approvals and payment stay as they are. Still tells the owner itself when a line opens, takes a standing rule or stops; '
- 'do not repeat that message.')
+ 'Revise with rule (or drop_rule) only for a standing correction; if unclear, apply it today only and say so. '
+ 'Daily limits and today-only corrections govern that day\'s work. The mission continues until its end condition is met, '
+ 'the owner ends it, or you judge it complete or impossible and report why; record the end and reason in open_matters '
+ 'and honor a recorded end. list answers what you handle for the owner; read gives a line\'s brief and latest outcomes. '
+ 'For stop, choose the scope from the owner\'s words; if unclear, stop current work only and say in your reply that the '
+ 'mission is still held and that they can ask to end it. A line grants nothing: approvals and payment stay as they are. '
+ 'Still tells the owner when a line opens, takes a standing rule or stops; do not repeat that.')
 ENTRUSTED_LINE_ARGUMENTS={
  'action':('list, read, open, revise, undo, stop or restart. Only a Work the owner started may open, revise, undo, stop or restart, '
            'with two exceptions for a scheduled run of a line: one the owner steered may revise or stop its own line as their words ask; '
