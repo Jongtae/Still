@@ -928,3 +928,32 @@ def test_unresolved_receipt_is_visible_in_the_terminal_work(setup):
     work = store.job(work_id)
     assert work['status'] == 'unknown' and work['effect_state'] == 'unknown'
     assert wire.sent == ['open']
+
+
+@pytest.mark.parametrize('route', ['api_request', 'code_run'])
+def test_observed_connector_effect_fences_api_mutation_but_allows_read(setup, route):
+    """#1020 review: no replay key spans a connector call and an API slot, so the fence holds both ways."""
+    store, service, wire, _ = setup
+    job, _, api = claim(setup, 'Apply the change and verify the state')
+    detail = {'evidence': {'kind': 'owner-mcp', 'identity': 'synthetic', 'operation': 'apply_change',
+                           'effect': 'mutate', 'input_digest': 'connector-digest'}}
+    with store.db() as db:
+        permission = db.execute('INSERT INTO tool_events(job_id,tool,status,detail,created) VALUES (?,?,?,?,?)',
+                                (job['id'], 'connector_permission', 'allowed', json.dumps(detail), time.time())).lastrowid
+        db.execute('INSERT INTO tool_events(job_id,tool,status,detail,created) VALUES (?,?,?,?,?)',
+                   (job['id'], 'connector_read', 'succeeded',
+                    json.dumps({'permission_event': permission, 'effect': 'mutate'}), time.time()))
+        db.execute('INSERT INTO tool_events(job_id,tool,status,detail,created) VALUES (?,?,?,?,?)',
+                   (job['id'], 'effect_continuation', 'recorded', '{}', time.time()))
+    assert external_effect_events(store, job['id'])[0]
+    if route == 'api_request':
+        with pytest.raises(ApiError) as refused:
+            api.call(OPEN)
+    else:
+        slot = api.slots()['fixture']
+        identity, replay_keys = api._effect_identities(slot, 'POST', OPEN['url'], '')
+        with pytest.raises(ApiError) as refused:
+            api._effect_guard(slot, identity, replay_keys)
+    assert refused.value.code == 'effect_route_unavailable'
+    assert api.call(READ)['data']['state'] == 'initial'
+    assert wire.sent == ['state']
