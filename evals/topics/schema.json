@@ -123,7 +123,9 @@
         "complete": { "type": "boolean" },
         "A": { "$ref": "#/$defs/metrics" },
         "B": { "$ref": "#/$defs/metrics" },
-        "C": { "$ref": "#/$defs/metrics" }
+        "C": { "$ref": "#/$defs/metrics" },
+        "D": { "$ref": "#/$defs/metrics" },
+        "by_section": { "$ref": "#/$defs/bySection" }
       }
     },
     "build": {
@@ -224,6 +226,43 @@
         "total": { "$ref": "#/$defs/count" }
       }
     },
+    "locationCounts": {
+      "type": "object",
+      "required": ["standard", "decision", "state", "brief", "added", "none"],
+      "propertyNames": { "enum": ["standard", "decision", "state", "brief", "added", "none"] },
+      "additionalProperties": { "$ref": "#/$defs/count" }
+    },
+    "sectionMetrics": {
+      "type": "object",
+      "required": ["gained", "traps", "misleading_other"],
+      "propertyNames": { "enum": ["gained", "traps", "misleading_other"] },
+      "additionalProperties": { "$ref": "#/$defs/locationCounts" }
+    },
+    "bySection": {
+      "type": "object",
+      "required": ["A", "B", "C"],
+      "propertyNames": { "enum": ["A", "B", "C", "D"] },
+      "additionalProperties": { "$ref": "#/$defs/sectionMetrics" }
+    },
+    "decisionRevised": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["integrate", "reasons"],
+      "properties": {
+        "integrate": { "type": "boolean" },
+        "reasons": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "enum": [
+              "not_every_run_vs_a", "within_noise_vs_a", "ci_vs_a_includes_zero",
+              "not_every_run_vs_c", "within_noise_vs_c", "ci_vs_c_includes_zero",
+              "more_traps", "more_misleading_other"
+            ]
+          }
+        }
+      }
+    },
     "report": {
       "type": "object",
       "additionalProperties": false,
@@ -242,7 +281,8 @@
           "properties": {
             "A": { "$ref": "#/$defs/aggregateMetrics" },
             "B": { "$ref": "#/$defs/aggregateMetrics" },
-            "C": { "$ref": "#/$defs/aggregateMetrics" }
+            "C": { "$ref": "#/$defs/aggregateMetrics" },
+            "D": { "$ref": "#/$defs/aggregateMetrics" }
           }
         },
         "paired_deltas": {
@@ -261,7 +301,16 @@
             "B_minus_C_traps": { "$ref": "#/$defs/countDelta" },
             "B_minus_A_misleading_other": { "$ref": "#/$defs/countDelta" },
             "C_minus_A_misleading_other": { "$ref": "#/$defs/countDelta" },
-            "B_minus_C_misleading_other": { "$ref": "#/$defs/countDelta" }
+            "B_minus_C_misleading_other": { "$ref": "#/$defs/countDelta" },
+            "D_minus_A": { "$ref": "#/$defs/delta" },
+            "D_minus_C": { "$ref": "#/$defs/delta" },
+            "B_minus_D": { "$ref": "#/$defs/delta" },
+            "D_minus_A_traps": { "$ref": "#/$defs/countDelta" },
+            "D_minus_C_traps": { "$ref": "#/$defs/countDelta" },
+            "B_minus_D_traps": { "$ref": "#/$defs/countDelta" },
+            "D_minus_A_misleading_other": { "$ref": "#/$defs/countDelta" },
+            "D_minus_C_misleading_other": { "$ref": "#/$defs/countDelta" },
+            "B_minus_D_misleading_other": { "$ref": "#/$defs/countDelta" }
           }
         },
         "decision": {
@@ -279,25 +328,18 @@
             }
           }
         },
-        "decision_revised": {
+        "decision_revised": { "$ref": "#/$defs/decisionRevised" },
+        "decision_ablation": {
           "type": "object",
           "additionalProperties": false,
-          "required": ["integrate", "reasons"],
+          "required": ["B", "D", "choice"],
           "properties": {
-            "integrate": { "type": "boolean" },
-            "reasons": {
-              "type": "array",
-              "uniqueItems": true,
-              "items": {
-                "enum": [
-                  "not_every_run_vs_a", "within_noise_vs_a", "ci_vs_a_includes_zero",
-                  "not_every_run_vs_c", "within_noise_vs_c", "ci_vs_c_includes_zero",
-                  "more_traps", "more_misleading_other"
-                ]
-              }
-            }
+            "B": { "$ref": "#/$defs/decisionRevised" },
+            "D": { "$ref": "#/$defs/decisionRevised" },
+            "choice": { "enum": ["B", "D", null] }
           }
         },
+        "by_section": { "$ref": "#/$defs/bySection" },
         "complete": { "type": "boolean" },
         "early_stop": { "type": "boolean" },
         "early_stop_ci_b_minus_a": { "anyOf": [{ "$ref": "#/$defs/interval" }, { "type": "null" }] },
@@ -317,6 +359,7 @@
             "heldout_limit": { "$ref": "#/$defs/count" },
             "largest_judge_prompt_chars_approx": { "$ref": "#/$defs/count" },
             "projected_calls": { "$ref": "#/$defs/callPlan" },
+            "expected_calls": { "$ref": "#/$defs/callPlan" },
             "default_calls": { "$ref": "#/$defs/callPlan" }
           }
         },

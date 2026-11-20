@@ -27,6 +27,21 @@ def compact(text):
     return ' '.join(text.split())
 
 
+def locate(span, context, brief, page_text):
+    span = compact(span)
+    if not span or span not in compact(context):
+        return 'none'
+    headings = dict(zip(HEADINGS, SECTIONS))
+    section = None
+    for line in page_text.splitlines():
+        line = compact(line)
+        if line in headings:
+            section = headings[line]
+        elif section and line.startswith('- ') and span in line:
+            return section
+    return 'brief' if span in compact(brief) else 'added'
+
+
 def short_ref(work_id):
     return work_id[:8]
 
@@ -162,15 +177,21 @@ def _recency(positioned_item):
     return item['day'], latest.get('day', ''), latest.get('order', 0), position
 
 
-def render(page, budget=PAGE_CHARS, *, include_ids=False, as_of=None):
+def render(page, budget=PAGE_CHARS, *, include_ids=False, as_of=None, sections=SECTIONS):
+    headings = {section: heading for section, heading in zip(SECTIONS, HEADINGS) if section in sections}
+    positioned = [(position, item) for position, item in enumerate(page['items']) if item['section'] in headings]
+    if not positioned and tuple(sections) != SECTIONS:
+        # Only a section-restricted page (arm D) can be empty; the full page keeps its header, which the builder
+        # needs on a topic's first day.
+        return ''
     name, summary = compact(page['name']), compact(page['summary'])
     header = (
         f'topic_page "{name}" — {summary} (from earlier conversations; '
         'each item cites its source Work):'
     )
-    lines = [header, *HEADINGS]
+    lines = [header, *headings.values()]
     items, threads, hidden = [], set(), 0
-    for _, item in sorted(enumerate(page['items']), key=_recency, reverse=True):
+    for _, item in sorted(positioned, key=_recency, reverse=True):
         if as_of is not None and item['section'] == 'state':
             thread = compact(item.get('thread') or '').casefold()
             superseded = thread in threads
@@ -204,7 +225,7 @@ def render(page, budget=PAGE_CHARS, *, include_ids=False, as_of=None):
     used = len('\n'.join(lines))
     selected = defaultdict(list)
     for item in items:
-        if HEADINGS[SECTIONS.index(item['section'])] not in lines:
+        if headings[item['section']] not in lines:
             continue
         line = _item_line(item, include_ids)
         remaining = sum(len(line) + 1 for line in footers(omitted - 1))
@@ -213,7 +234,7 @@ def render(page, budget=PAGE_CHARS, *, include_ids=False, as_of=None):
             used += len(line) + 1
             omitted -= 1
     rendered = [lines[0]]
-    for section, heading in zip(SECTIONS, lines[1:]):
+    for section, heading in zip(headings, lines[1:]):
         rendered.extend([heading, *selected[section]])
     rendered.extend(footers(omitted))
     return '\n'.join(rendered)
@@ -359,24 +380,34 @@ def early_stop(runs, ci=None):
     ))
 
 
-def decide_revised(summary):
+def decide_revised(summary, candidate='B'):
     runs = summary['runs']
-    b = [run['B']['needed'] for run in runs]
+    scores = [run[candidate]['needed'] for run in runs]
     reasons = []
     for arm in 'AC':
         baseline = [run[arm]['needed'] for run in runs]
-        deltas = [right - left for left, right in zip(baseline, b)]
+        deltas = [right - left for left, right in zip(baseline, scores)]
         label = arm.lower()
         if not runs or any(delta <= 0 for delta in deltas):
             reasons.append(f'not_every_run_vs_{label}')
-        if runs and mean(deltas) <= max(max(baseline) - min(baseline), max(b) - min(b)):
+        if runs and mean(deltas) <= max(max(baseline) - min(baseline), max(scores) - min(scores)):
             reasons.append(f'within_noise_vs_{label}')
-        if summary[f'ci_b_minus_{label}'][0] <= 0:
+        if summary[f'ci_{candidate.lower()}_minus_{label}'][0] <= 0:
             reasons.append(f'ci_vs_{label}_includes_zero')
     for metric in ('traps', 'misleading_other'):
-        if runs and mean(run['B'][metric] - run['A'][metric] for run in runs) > 0:
+        if runs and mean(run[candidate][metric] - run['A'][metric] for run in runs) > 0:
             reasons.append(f'more_{metric}')
     return {'integrate': not reasons, 'reasons': reasons}
+
+
+def decide_ablation(summary):
+    b, d = (decide_revised(summary, candidate) for candidate in ('B', 'D'))
+    choice = None
+    if d['integrate']:
+        choice = 'B' if b['integrate'] and summary['ci_b_minus_d'][0] > 0 else 'D'
+    elif b['integrate']:
+        choice = 'B'
+    return {'B': b, 'D': d, 'choice': choice}
 
 
 def early_stop_revised(runs, ci=None):

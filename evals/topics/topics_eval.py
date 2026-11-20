@@ -34,14 +34,14 @@ REPO = Path(__file__).resolve().parents[2]
 DEFAULT_HELDOUT_FROM = '2026-11-10'
 MAX_CALLS = 400
 MAX_FIND_CALLS = 3
-MAX_REPLAY_DAYS = 60
+MAX_REPLAY_DAYS = 80
 MAX_RETRIES = 10
 MAX_REQUESTS = 40
 MAX_WEAK = 10
 MAX_DRAFT_REQUESTS = 20
 ARMS = ('A', 'B', 'C')
+ABLATION_ARMS = (*ARMS, 'D')
 DRAFT_ARMS = ('A', 'B')
-LABELS = ('X1', 'X2', 'X3')
 LONG_TOKEN = re.compile(
     r'(?<![A-Za-z0-9])(?=[A-Za-z0-9+/=_\-]*[0-9])(?=[A-Za-z0-9+/=_\-]*[A-Za-z])[A-Za-z0-9+/=_\-]{20,}'
 )
@@ -316,11 +316,19 @@ BUILD_SCHEMA = _object(topics=_array(_object(
                        thread=STRING, expires=STRING)),
 )))
 DRAFT_SCHEMA = _object(reply=STRING)
-JUDGE_SCHEMA = _object(contexts=_array(_object(
-    label=_enum(*LABELS), needed=_array(_object(verdict=_enum('yes', 'partial', 'no'), support=STRING)),
-    traps=_array(INTEGER), lesson_present=_array(_enum('yes', 'no')),
-    misleading_other=_array(STRING), lessons=_array(_enum(*lessons_eval.VERDICTS)),
-), minItems=3, maxItems=3))
+
+
+def judge_labels(arms):
+    return tuple(f'X{index}' for index in range(1, len(arms) + 1))
+
+
+def judge_schema(arms):
+    return _object(contexts=_array(_object(
+        label=_enum(*judge_labels(arms)), needed=_array(_object(verdict=_enum('yes', 'partial', 'no'), support=STRING)),
+        traps=_array(_object(number=INTEGER, support=STRING)), lesson_present=_array(_enum('yes', 'no')),
+        misleading_other=_array(_object(statement=STRING, support=STRING)),
+        lessons=_array(_enum(*lessons_eval.VERDICTS)),
+    ), minItems=len(arms), maxItems=len(arms)))
 
 
 def _subscription_env():
@@ -598,7 +606,7 @@ def _heldout(args, store, works):
         if args.heldout_from < found['heldout_from'] or found.get('heldout_to') != cutoffs['heldout_to']:
             raise ValueError('cutoff_mismatch')
         candidates = _heldout_candidates(store, found['topics'], works, args.heldout_from, cutoffs['heldout_to'])
-        saved = dict(cutoffs, requests=_sample(candidates))
+        saved = dict(cutoffs, requests=_sample(candidates), arms=getattr(args, 'arms', 'ABC'))
         _save(path, saved)
     _check_cutoffs(saved, cutoffs)
     print('heldout', len(saved['requests']), 'weak', sum(work['weak'] for work in saved['requests']))
@@ -612,6 +620,13 @@ def _saved_heldout(args, default=None):
 
 def _requests(args):
     return _saved_heldout(args)['requests']
+
+
+def _saved_arms(heldout):
+    arms = tuple(heldout.get('arms', ARMS))
+    if arms not in (ARMS, ABLATION_ARMS):
+        raise ValueError('invalid_arms')
+    return arms
 
 
 GOLD_INSTRUCTION = (
@@ -904,14 +919,18 @@ def _transcript_block(store, queries, at, exclude_works, target_chars, aliases):
     return ('\n'.join([heading, *selected]) if selected else ''), ids
 
 
-def arm_texts(a, page_text, search, *, attach):
-    return {'A': a, 'B': f'{a}\n\n{page_text}' if attach and page_text else a,
-            'C': f'{a}\n\n{search}' if attach and search else a}
+def arm_texts(a, page_text, search, *, attach, page_without_state=None):
+    additions = {'B': page_text, 'C': search}
+    if page_without_state is not None:
+        additions['D'] = page_without_state
+    return {'A': a, **{arm: f'{a}\n\n{text}' if attach and text else a for arm, text in additions.items()}}
 
 
 def _contexts(args, store):
     path = _run_file(args, 'contexts.json')
     saved = _read(path, {})
+    heldout = _saved_heldout(args)
+    arms = _saved_arms(heldout)
     topics = {topic['id']: topic for topic in _topics(args)['topics']}
     snapshots = _read(_run_file(args, 'pages.json'))['snapshots']
     tz = ZoneInfo(resolve_local_timezone(store))
@@ -919,7 +938,7 @@ def _contexts(args, store):
     learned = _lesson_history(store, memories)
     tmp = _output_child(args.out, 'tmp')
     tmp.mkdir(mode=0o700, exist_ok=True)
-    for request in _requests(args):
+    for request in heldout['requests']:
         if request['id'] in saved:
             continue
         at = _day_start(request['day'], tz)
@@ -938,10 +957,14 @@ def _contexts(args, store):
         a = '\n\n'.join(part for part in (_clean(store, profile), lessons, recall) if part)
         page = pages.page_at(snapshots[request['topic_id']], request['day'])
         page_text = ''
+        page_without_state = '' if 'D' in arms else None
         if page is not None:
             pages.assert_no_leak(page, request)
             if page['items']:
-                page_text = pages.render(_clean_page(store, page), as_of=request['day'])
+                page = _clean_page(store, page)
+                page_text = pages.render(page, as_of=request['day'])
+                if 'D' in arms:
+                    page_without_state = pages.render(page, as_of=request['day'], sections=('standard', 'decision'))
         attach = pages.attach_page(request['match_strength'])
         search = ''
         if attach and page_text:
@@ -949,7 +972,7 @@ def _contexts(args, store):
             # Each term alone too, so C can fill the page's length with whole exchanges (3 per query).
             queries = [' '.join([*terms, text]), ' '.join(terms), text, *terms]
             search, _ = _transcript_block(store, queries, at, aliases, len(page_text), aliases)
-        context = arm_texts(a, page_text, search, attach=attach)
+        context = arm_texts(a, page_text, search, attach=attach, page_without_state=page_without_state)
         saved[request['id']] = dict(
             context, attached=attach and bool(page_text),
             chars={**{arm: len(value) for arm, value in context.items()}, 'page': len(page_text), 'search': len(search)},
@@ -957,7 +980,7 @@ def _contexts(args, store):
         _save(path, saved)
     if not path.exists():
         _save(path, saved)
-    for arm in ARMS:
+    for arm in arms:
         lengths = [len(context[arm]) for context in saved.values()]
         print(f'{arm} mean_chars {_mean(lengths):.1f} max_chars {max(lengths, default=0)}')
 
@@ -1009,28 +1032,63 @@ def _drafts(args, store):
 
 
 JUDGE_INSTRUCTION = (
-    "You grade what three memory systems would show a personal assistant before it handles one request. "
+    "You grade what {count} memory systems would show a personal assistant before it handles one request. "
     "For each context label: for every numbered fact, in order, answer yes (the context states it or it "
     "follows directly), partial (only part of it, or only vaguely), or no. For each yes or partial, copy a "
     "short verbatim supporting span from that context into support. For no, use an empty support string. "
-    "List the trap numbers the context "
-    "presents as current/valid on the request day (a trap shown clearly as past or superseded does not count). "
-    "Under misleading_other, quote briefly any other statement in that context that is relevant to this request "
-    "and would likely mislead the assistant (outdated, wrong, or a past request stored as a preference); empty "
-    "if none. For every applicable lesson, in order, record yes in lesson_present if the context states it "
-    "and no otherwise. Judge only the text shown; ignore length and style."
+    "For every trap the context presents as current/valid on the request day, list its number in traps and "
+    "copy a short verbatim supporting span into support. A trap shown clearly as past or superseded does not count. "
+    "Under misleading_other, list any other statement in that context that is relevant to this request "
+    "and would likely mislead the assistant (outdated, wrong, or a past request stored as a preference). "
+    "For each, give the statement and copy a short verbatim span from the context into support. "
+    "Use an empty list if there are none. For every applicable lesson, in order, record yes in lesson_present "
+    "if the context states it and no otherwise. Judge only the text shown; ignore length and style."
 )
 
 
-def _judge_answer(args, store, request, gold, contexts, drafts):
-    arms = list(ARMS)
-    random.Random(f"{request['id']}|{args.run}").shuffle(arms)
-    labels = dict(zip(LABELS, arms))
+def judged_entry(raw, gold, context, *, lessons_expected=0):
+    fields = {'needed', 'traps', 'lesson_present', 'lessons', 'misleading_other'}
+    if (not isinstance(raw, dict) or raw.keys() - fields - {'label'}
+            or any(not isinstance(raw.get(field), list) for field in fields)):
+        raise ModelError('invalid_model_output')
+    if (len(raw['needed']) != len(gold['needed']) or len(raw['lessons']) != lessons_expected
+            or len(raw['lesson_present']) != len(gold['lessons'])
+            or any(mark not in ('yes', 'no') for mark in raw['lesson_present'])
+            or any(verdict not in lessons_eval.VERDICTS for verdict in raw['lessons'])):
+        raise ModelError('invalid_model_output')
+    for field, key, value_type in (('needed', 'verdict', str), ('traps', 'number', int),
+                                   ('misleading_other', 'statement', str)):
+        if any(not isinstance(item, dict) or item.keys() != {key, 'support'}
+               or type(item[key]) is not value_type or not isinstance(item['support'], str)
+               for item in raw[field]):
+            raise ModelError('invalid_model_output')
+    if any(fact['verdict'] not in SCORES for fact in raw['needed']):
+        raise ModelError('invalid_model_output')
+    checks = [pages.check_support(fact['verdict'], fact['support'], context) for fact in raw['needed']]
+    traps = _checked_indexes([trap['number'] for trap in raw['traps']], len(gold['traps']))
+    trap_spans = {}
+    for trap in raw['traps']:
+        trap_spans.setdefault(trap['number'], trap['support'])
+    return {
+        'needed': [verdict for verdict, _ in checks],
+        'downgraded': sum(downgraded for _, downgraded in checks),
+        'support': [fact['support'] for fact in raw['needed']],
+        'traps': traps, 'trap_support': [trap_spans[number] for number in traps],
+        'misleading_other': [item['statement'] for item in raw['misleading_other']],
+        'misleading_support': [item['support'] for item in raw['misleading_other']],
+        'lessons': raw['lessons'], 'lesson_present': raw['lesson_present'],
+    }
+
+
+def _judge_answer(args, store, request, gold, contexts, drafts, *, arms=ARMS):
+    shuffled = list(arms)
+    random.Random(f"{request['id']}|{args.run}").shuffle(shuffled)
+    labels = dict(zip(judge_labels(arms), shuffled))
     facts = _numbered(_clean(store, fact['fact']) for fact in gold['needed'])
     traps = _numbered(_clean(store, f"{trap['statement']} ({trap['why']})") for trap in gold['traps'])
     lessons = [_clean(store, gold['lesson_list'][index - 1]) for index in gold['lessons']]
     blocks = [
-        f"{JUDGE_INSTRUCTION}\n{DATA_INSTRUCTION}\n"
+        f"{JUDGE_INSTRUCTION.format(count=len(arms))}\n{DATA_INSTRUCTION}\n"
         f"The day of the request is {request['day']}.\nRequest work:w1: {_clean(store, request['owner_text'])}\n\n"
         f"Facts the assistant should have in mind:\n{facts}\n\n"
         f"Traps (earlier statements that would mislead if presented as current):\n{traps}\n\n"
@@ -1047,35 +1105,18 @@ def _judge_answer(args, store, request, gold, contexts, drafts):
         )
     else:
         blocks.append('Return an empty lessons list for each label.')
-    answer = _call(args, claude, '\n\n'.join(blocks), JUDGE_SCHEMA)
-    if not isinstance(answer, dict) or not isinstance(answer.get('contexts'), list):
+    answer = _call(args, claude, '\n\n'.join(blocks), judge_schema(arms))
+    if not isinstance(answer, dict) or answer.keys() != {'contexts'} or not isinstance(answer['contexts'], list):
         raise ModelError('invalid_model_output')
     judged = {}
     for context in answer['contexts']:
-        if (not isinstance(context, dict) or not isinstance(context.get('label'), str)
-                or any(not isinstance(context.get(field), list) for field in
-                       ('needed', 'traps', 'lesson_present', 'lessons', 'misleading_other'))):
+        if not isinstance(context, dict) or not isinstance(context.get('label'), str):
             raise ModelError('invalid_model_output')
         arm = labels.get(context['label'])
-        if (arm is None or arm in judged or len(context['needed']) != len(gold['needed'])
-                or len(context['lessons']) != (len(lessons) if arm in drafts else 0)
-                or len(context['lesson_present']) != len(lessons)
-                or any(mark not in ('yes', 'no') for mark in context['lesson_present'])
-                or any(not isinstance(fact, dict) or fact.get('verdict') not in ('yes', 'partial', 'no')
-                       or not isinstance(fact.get('support'), str) for fact in context['needed'])
-                or any(not isinstance(text, str) for text in context['misleading_other'])
-                or any(verdict not in lessons_eval.VERDICTS for verdict in context['lessons'])):
+        if arm is None or arm in judged:
             raise ModelError('invalid_model_output')
-        checks = [pages.check_support(fact['verdict'], fact['support'], contexts[arm]) for fact in context['needed']]
-        judged[arm] = {
-            'needed': [verdict for verdict, _ in checks],
-            'downgraded': sum(downgraded for _, downgraded in checks),
-            'traps': _checked_indexes(context['traps'], len(gold['traps'])),
-            'misleading_other': context['misleading_other'],
-            'lessons': context['lessons'],
-            'lesson_present': context['lesson_present'],
-        }
-    if judged.keys() != set(ARMS):
+        judged[arm] = judged_entry(context, gold, contexts[arm], lessons_expected=len(lessons) if arm in drafts else 0)
+    if judged.keys() != set(arms):
         raise ModelError('invalid_model_output')
     return judged
 
@@ -1086,7 +1127,9 @@ def _judge(args, store):
     gold, gold_skipped = _load_stage(_output_child(args.out, 'gold.json'))
     contexts = _read(_run_file(args, 'contexts.json'))
     drafts, _ = _load_stage(_run_file(args, 'drafts.json')) if args.run == 1 else ({}, set())
-    pending = [request for request in _requests(args)
+    heldout = _saved_heldout(args)
+    arms = _saved_arms(heldout)
+    pending = [request for request in heldout['requests']
                if request['id'] not in saved and request['id'] not in skipped and request['id'] not in gold_skipped]
 
     def judge(request):
@@ -1094,6 +1137,7 @@ def _judge(args, store):
         return _judge_answer(
             args, store, request, gold[work_id], contexts[work_id],
             {arm: draft for arm, draft in drafts.get(work_id, {}).items() if arm in DRAFT_ARMS},
+            arms=arms,
         )
 
     def save(request, answer):
@@ -1118,6 +1162,9 @@ METRICS = (
     'lesson_present', 'exploratory_follow', 'characters', 'downgraded',
 )
 PAIRS = (('B', 'A'), ('C', 'A'), ('B', 'C'))
+ABLATION_PAIRS = (*PAIRS, ('D', 'A'), ('D', 'C'), ('B', 'D'))
+LOCATIONS = (*pages.SECTIONS, 'brief', 'added', 'none')
+SECTION_METRICS = ('gained', 'traps', 'misleading_other')
 
 
 def _mean(values):
@@ -1131,13 +1178,13 @@ def _group(request, gold):
     return 'scored' if _scored(gold) else 'control'
 
 
-def _run_scores(judged, gold, requests, contexts):
-    scores = {arm: defaultdict(list) for arm in ARMS}
-    for work_id, arms in judged.items():
+def _run_scores(judged, gold, requests, contexts, *, arms=ARMS):
+    scores = {arm: defaultdict(list) for arm in arms}
+    for work_id, entries in judged.items():
         facts = gold[work_id]['needed']
         group = _group(requests[work_id], gold[work_id])
-        for arm in ARMS:
-            entry = arms[arm]
+        for arm in arms:
+            entry = entries[arm]
             score = scores[arm]
             values = [SCORES[mark] for mark in entry['needed']]
             if group == 'weak':
@@ -1154,7 +1201,7 @@ def _run_scores(judged, gold, requests, contexts):
             score['lesson_present'].extend(mark == 'yes' for mark in entry['lesson_present'])
             score['downgraded'].append(entry['downgraded'])
     for context in contexts.values():
-        for arm in ARMS:
+        for arm in arms:
             scores[arm]['characters'].append(context['chars'][arm])
     return {
         arm: {
@@ -1164,6 +1211,28 @@ def _run_scores(judged, gold, requests, contexts):
         }
         for arm, score in scores.items()
     }
+
+
+def _section_counts(judged, contexts, arms):
+    counts = {arm: {metric: dict.fromkeys(LOCATIONS, 0) for metric in SECTION_METRICS} for arm in arms}
+    for work_id, entries in judged.items():
+        saved = contexts.get(work_id, {})
+        brief = saved.get('A', '')
+        for arm in arms:
+            context = saved.get(arm, '')
+            page_text = context.removeprefix(f'{brief}\n\n') if arm in ('B', 'D') and context != brief else ''
+            entry = entries[arm]
+            supports = iter(entry.get('support', ()))
+            for baseline, verdict in zip(entries['A']['needed'], entry['needed']):
+                span = next(supports, '')
+                if SCORES[verdict] > SCORES[baseline]:
+                    counts[arm]['gained'][pages.locate(span, context, brief, page_text)] += 1
+            for metric, field in (('traps', 'trap_support'), ('misleading_other', 'misleading_support')):
+                supports = iter(entry.get(field, ()))
+                for _ in entry[metric]:
+                    location = pages.locate(next(supports, ''), context, brief, page_text)
+                    counts[arm][metric][location] += 1
+    return counts
 
 
 def _paired_deltas(judgments, requests, *, metrics=('needed', 'traps', 'misleading_other'), pairs=PAIRS):
@@ -1177,9 +1246,9 @@ def _paired_deltas(judgments, requests, *, metrics=('needed', 'traps', 'misleadi
                 if metric == 'needed':
                     if not arms['A']['needed']:
                         continue
-                    values = {arm: _mean(SCORES[mark] for mark in arms[arm]['needed']) for arm in ARMS}
+                    values = {arm: _mean(SCORES[mark] for mark in entry['needed']) for arm, entry in arms.items()}
                 else:
-                    values = {arm: len(arms[arm][metric]) for arm in ARMS}
+                    values = {arm: len(entry[metric]) for arm, entry in arms.items()}
                 for left, right in pairs:
                     paired = samples[metric, left, right]
                     _, deltas = paired.setdefault(work_id, (request['topic_id'], []))
@@ -1214,8 +1283,7 @@ def _call_counts(args):
 
 
 def _call_plan(find=MAX_FIND_CALLS, gold=MAX_REQUESTS + MAX_WEAK, replay_days=MAX_REPLAY_DAYS,
-               max_retries=MAX_RETRIES, *, bounded=False):
-    attempts = 2  # every gold and judge item may be retried once on an invalid output
+               max_retries=MAX_RETRIES, *, bounded=False, attempts=2):
     counts = {'find': find, 'gold': gold * attempts, 'build': replay_days * 3,
               'build_retries': min(replay_days, max_retries) * 3,
               'drafts': 0 if bounded else min(gold, MAX_DRAFT_REQUESTS) * len(DRAFT_ARMS),
@@ -1223,13 +1291,14 @@ def _call_plan(find=MAX_FIND_CALLS, gold=MAX_REQUESTS + MAX_WEAK, replay_days=MA
     return dict(counts, total=sum(counts.values()))
 
 
-def _judge_prompt_chars(sample):
+def _judge_prompt_chars(sample, arms=ARMS):
     if not sample:
         return 0
     base = PROFILE_SNAPSHOT_CHARS + LESSONS_BRIEF_CHARS + OWNER_WORDS_BYTES
     labels_and_drafts = 8_000  # Approximate labelled facts, traps, applicable lessons and two drafts.
-    return (len(JUDGE_INSTRUCTION) + len(DATA_INSTRUCTION) + max(len(work['owner_text']) for work in sample)
-            + len(ARMS) * base + 2 * pages.PAGE_CHARS + labels_and_drafts)
+    instruction = JUDGE_INSTRUCTION.format(count=len(arms))
+    return (len(instruction) + len(DATA_INSTRUCTION) + max(len(work['owner_text']) for work in sample)
+            + len(arms) * base + (len(arms) - 1) * pages.PAGE_CHARS + labels_and_drafts)
 
 
 def _plan_counts(args, store, works, cutoff):
@@ -1239,6 +1308,7 @@ def _plan_counts(args, store, works, cutoff):
     found = _read(_output_child(args.out, 'topics.json'), {})
     _check_cutoffs(found, {'heldout_to': heldout_to})
     saved = _saved_heldout(args, {})
+    arms = _saved_arms(saved or {'arms': getattr(args, 'arms', None) or 'ABC'})
     candidates = {}
     if found:
         candidates = _heldout_candidates(store, found['topics'], works, cutoff, heldout_to)
@@ -1253,17 +1323,22 @@ def _plan_counts(args, store, works, cutoff):
         sample = saved['requests'] if saved else longest[:MAX_REQUESTS + MAX_WEAK]
         last_day = max((work['day'] for work in (sample if saved else eligible)), default='')
         replay_days = len({work['day'] for work in works if work['day'] <= last_day})
-    return {
+    bounded = heldout_to is not None
+    plan_inputs = (_finder_calls(chunks), len(sample), replay_days, args.max_retries)
+    plan = {
         'works_before': before,
         'works_on_or_after': len(works) - before,
         'replay_days': replay_days,
         'heldout_candidates': sum(map(len, candidates.values())) if found else None,
         'heldout_limit': len(sample),
-        'largest_judge_prompt_chars_approx': _judge_prompt_chars(sample),
-        'projected_calls': _call_plan(_finder_calls(chunks), len(sample), replay_days, args.max_retries,
-                                      bounded=heldout_to is not None),
-        'default_calls': _call_plan(bounded=heldout_to is not None),
+        'largest_judge_prompt_chars_approx': _judge_prompt_chars(sample, arms),
+        'projected_calls': _call_plan(*plan_inputs, bounded=bounded),
+        'default_calls': _call_plan(bounded=bounded),
     }
+    if 'D' in arms:
+        # Gold and judge may retry once on invalid output. The preregistered estimate counts the initial calls.
+        plan['expected_calls'] = _call_plan(*plan_inputs, bounded=bounded, attempts=1)
+    return plan
 
 
 def _print_counts(data):
@@ -1275,8 +1350,11 @@ def _plan(args, store, works):
     _print_counts(dict(plan, max_calls=args.max_calls))
     if plan['replay_days'] > MAX_REPLAY_DAYS:
         raise PlanExceeded(f"Replay days {plan['replay_days']} exceed the limit of {MAX_REPLAY_DAYS}.")
-    if plan['projected_calls']['total'] > args.max_calls:
-        raise PlanExceeded(f"Worst-case calls {plan['projected_calls']['total']} exceed --max-calls {args.max_calls}.")
+    estimate, label = (plan['expected_calls'], 'Expected') if 'expected_calls' in plan else (
+        plan['projected_calls'], 'Worst-case'
+    )
+    if estimate['total'] > args.max_calls:
+        raise PlanExceeded(f"{label} calls {estimate['total']} exceed --max-calls {args.max_calls}.")
     if plan['projected_calls']['find'] > MAX_FIND_CALLS:
         raise PlanExceeded(f'Finder input requires more than {MAX_FIND_CALLS} calls.')
 
@@ -1292,7 +1370,7 @@ def _group_counts(judged, gold, requests):
     return {group: counts[group] for group in GROUPS}
 
 
-def _decision_runs(runs):
+def _decision_runs(runs, *, arms=ARMS):
     return [
         {
             arm: {
@@ -1302,7 +1380,7 @@ def _decision_runs(runs):
                     / max(1, run['groups']['scored'] + run['groups']['control'])
                 ) for metric in MISLEADING_METRICS},
             }
-            for arm in ARMS
+            for arm in arms
         }
         for run in runs
     ]
@@ -1332,6 +1410,8 @@ def _snapshot_day(out, store, works):
 def _report(args, store, works):
     gold, gold_skipped = _load_stage(_output_child(args.out, 'gold.json'))
     saved = _saved_heldout(args, {})
+    arms = _saved_arms(saved)
+    ablation = 'D' in arms
     requests = {request['id']: request for request in saved.get('requests', [])}
     runs, judgments, builds = [], [], []
     for run in (1, 2, 3):
@@ -1351,10 +1431,11 @@ def _report(args, store, works):
                 'scored': groups['scored'], 'groups': groups,
                 'attached': sum(context.get('attached', False) for context in contexts.values()),
                 'complete': bool(saved) and _complete(judged, gold, requests, gold_skipped, judge_skipped),
-                **_run_scores(judged, gold, requests, contexts),
+                'by_section': _section_counts(judged, contexts, arms),
+                **_run_scores(judged, gold, requests, contexts, arms=arms),
             })
     aggregates = {}
-    for arm in ARMS:
+    for arm in arms:
         aggregates[arm] = {}
         for metric in METRICS:
             values = [run[arm][metric] for run in runs if run[arm][metric] is not None]
@@ -1362,9 +1443,9 @@ def _report(args, store, works):
                 'mean': _mean(values), 'range': max(values, default=0) - min(values, default=0),
             } if values or metric != 'exploratory_follow' else None
         aggregates[arm]['downgraded_total'] = sum(run[arm]['downgraded'] for run in runs)
-    deltas = _paired_deltas(judgments, requests)
+    deltas = _paired_deltas(judgments, requests, pairs=ABLATION_PAIRS if ablation else PAIRS)
     stopped, stop_ci = _stop_summary(runs, judgments, requests)
-    decision_runs = _decision_runs(runs)
+    decision_runs = _decision_runs(runs, arms=arms)
     all_complete = len(runs) == 3 and all(run['complete'] for run in runs)
     historical_stop = _first_two_complete(runs) and pages.early_stop(decision_runs, ci=stop_ci)
     summary = {'runs': decision_runs, 'ci_b_minus_a': deltas['B_minus_A']['ci95'],
@@ -1373,16 +1454,34 @@ def _report(args, store, works):
     decision['integrate'] = all_complete and not historical_stop and decision['integrate']
     revised = pages.decide_revised(summary)
     revised['integrate'] = all_complete and not stopped and revised['integrate']
+    if ablation:
+        stopped, stop_ci = False, None
+    by_section = {
+        arm: {
+            metric: {location: sum(run['by_section'][arm][metric][location] for run in runs)
+                     for location in LOCATIONS}
+            for metric in SECTION_METRICS
+        }
+        for arm in arms
+    }
     heldout_to = getattr(args, 'heldout_to', None)
     report = {
         'runs': runs, 'builds': builds, 'gold_skipped': len(gold_skipped),
-        'aggregate': aggregates, 'paired_deltas': deltas, 'decision': decision,
+        'aggregate': aggregates, 'paired_deltas': deltas, 'by_section': by_section, 'decision': decision,
         'decision_revised': revised, 'complete': stopped or all_complete,
         'early_stop': stopped, 'early_stop_ci_b_minus_a': stop_ci,
         'provisional': heldout_to is not None and heldout_to <= _snapshot_day(args.out, store, works),
         'plan': _plan_counts(args, store, works, saved.get('heldout_from', args.heldout_from)),
         'budget': _call_counts(args),
     }
+    if ablation:
+        summary.update((f'ci_{left.lower()}_minus_{right.lower()}', deltas[f'{left}_minus_{right}']['ci95'])
+                       for left, right in ABLATION_PAIRS[len(PAIRS):])
+        result = pages.decide_ablation(summary)
+        if not all_complete:
+            result['B']['integrate'] = result['D']['integrate'] = False
+            result['choice'] = None
+        report['decision_ablation'] = result
     _save(_output_child(args.out, 'report.json'), report)
     _print_counts(report)
 
@@ -1390,8 +1489,11 @@ def _report(args, store, works):
 def _skip_third_run(args):
     if args.run != 3:
         return False
+    heldout = _saved_heldout(args, {})
+    if 'D' in _saved_arms(heldout):
+        return False
     gold, gold_skipped = _load_stage(_output_child(args.out, 'gold.json'))
-    requests = {request['id']: request for request in _saved_heldout(args, {}).get('requests', [])}
+    requests = {request['id']: request for request in heldout.get('requests', [])}
     stages = [_load_stage(_output_child(args.out, f'run{run}', 'judged.json')) for run in (1, 2)]
     if not requests or not all(_complete(run, gold, requests, gold_skipped, skipped) for run, skipped in stages):
         return False
@@ -1411,6 +1513,8 @@ def main(argv=None):
         command.add_argument('--max-calls', type=int, default=MAX_CALLS)
         if name in ('plan', 'build', 'report'):
             command.add_argument('--max-retries', type=int, default=MAX_RETRIES)
+        if name in ('plan', 'heldout'):
+            command.add_argument('--arms', choices=('ABC', 'ABCD'), default='ABC' if name == 'heldout' else None)
         if name in ('gold', 'drafts', 'judge'):
             command.add_argument('--jobs', type=int, choices=(1, 2, 3), default=1)
         if name == 'snapshot':
@@ -1431,7 +1535,12 @@ def main(argv=None):
         args.heldout_from = args.heldout_from.isoformat()
         if args.heldout_to is not None:
             args.heldout_to = args.heldout_to.isoformat()
-        _saved_heldout(args, {})
+        heldout = _saved_heldout(args, {})
+        if 'D' in _saved_arms(heldout) and args.command in ('gold', 'build', 'contexts', 'drafts', 'judge'):
+            requests = heldout['requests']
+            regular = sum(not request['weak'] for request in requests)
+            if len(requests) < 27 or regular < 19:
+                raise PlanExceeded(f'Held-out gate needs 27 requests and 19 regular. Found {len(requests)} and {regular}.')
         store = _open_snapshot(args.out)
         if getattr(args, 'run', None) and _skip_third_run(args):
             print('early_stop 1')
