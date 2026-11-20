@@ -86,6 +86,8 @@ let summaryVariant=JSON.parse(JSON.stringify(summaryState));summaryVariant.decis
 let summary=ctx.judgmentSummary(summaryVariant);assert(summary.summary.includes('fallback-model'));assert(!summary.summary.includes('low'));assert(!summary.summary.includes('Codex'));assert(summary.relationship.includes('현재는 대체 AI'));
 summaryVariant.decision_route.effective.state='checking';assert(ctx.judgmentSummary(summaryVariant).relationship.includes('적용 확인 중'));
 summaryVariant.decision_route.effective={state:'off',transport:'off',model:''};summary=ctx.judgmentSummary(summaryVariant);assert.equal(summary.summary,'사용 안 함');
+// #1059: following with no route yet, the mode is the heading, not "설정된 모델 없음" over it.
+summaryVariant=JSON.parse(JSON.stringify(summaryState));summaryVariant.decision_route={mode:'follow_main',active:{transport:'none'}};summary=ctx.judgmentSummary(summaryVariant);assert.equal(summary.summary,'기본 AI 따라가기');assert.equal(summary.relationship,'');
 summaryVariant=JSON.parse(JSON.stringify(summaryState));summaryVariant.decision_route.mode='explicit';assert.equal(ctx.judgmentSummary(summaryVariant).relationship,'따로 지정');
 summaryVariant.decision_route.mode='follow_main';summaryVariant.main_ai.current=null;assert(!ctx.judgmentSummary(summaryVariant).relationship.includes('구독 사용'));summaryVariant.main_ai.current='codex';summaryVariant.decision_route.active.stale=true;assert(!ctx.judgmentSummary(summaryVariant).relationship.includes('구독 사용'));
 summaryVariant.decision_route.active.stale=false;summaryVariant.decision_route.active.effort=null;assert(!ctx.judgmentSummary(summaryVariant).summary.includes('low'));
