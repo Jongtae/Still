@@ -48,6 +48,12 @@ def test_full_page_is_unchanged_by_the_sections_parameter(page):
     assert tp.render(page, as_of=DAY2) == tp.render(page, as_of=DAY2, sections=tp.SECTIONS)
 
 
+def test_empty_full_page_keeps_its_header_for_the_builder():
+    page = tp.new_page('t1', 'Garden', 'The vegetable garden')
+    shown = tp.render(page, include_ids=True, as_of=DAY1)
+    assert 'Garden' in shown and 'The vegetable garden' in shown
+
+
 def test_page_with_no_section_left_renders_nothing():
     page = tp.new_page('t1', 'Garden', 'x')
     page, _ = tp.apply_answer(page, {'ops': [
