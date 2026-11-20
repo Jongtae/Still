@@ -288,6 +288,48 @@ Same subscription routes and the same 400-call cap, in a fresh output folder wit
 | judge (Claude) | ≤ 50 × 3 |
 | **total** | about 365 at most, hard cap 400 |
 
+### Result (#1046, 2026-11-20, provisional)
+
+Counts only, from the same read-only copy. 8 topics found from requests before 2026-11-01; 43 replay days; 27
+held-out requests from 2026-11-01 to 2026-11-09 (19 regular, all scored; 8 weak), every one labelled and judged in
+every run (no skips). Builder: 178–183 operations applied per run, one whole-answer refusal and one retry in run 3.
+Pages ended with 98–106 state items, every one with a thread and 37–42 with an expiry, against 11–12 standards and
+16–17 decisions. At render time about a third of the state items are hidden as superseded or expired.
+
+Rule data (needed facts over the 19 scored requests; misleading per request over scored and control, here the same
+19). Mean over 3 runs, range in brackets:
+
+| Arm | needed facts | traps shown as current | other misleading |
+| --- | --- | --- | --- |
+| A today's brief | 44.6% (0.9) | 0.46 (0.05) | 0.61 (0.05) |
+| B + revised page | 54.3% (4.3) | 0.63 (0.11) | 0.89 (0.21) |
+| C + length-matched search | 48.0% (0.9) | 0.49 (0.11) | 0.93 (0.11) |
+
+- **B−A +9.7 points [+4.2, +18.5]**, positive in every run (8.1–11.5) and beyond noise. **B−C +6.1 [+2.8, +10.6]**,
+  positive in every run (4.7–8.1) and beyond noise. Conditions 1 and 2 hold.
+- Traps shown as current rise with the page: B−A +0.18 per request [+0.02, +0.32]. Search barely moves them
+  (C−A +0.04). Condition 3 fails.
+- Other misleading statements rise with any added material: B−A +0.28 [+0.10, +0.39], C−A +0.32. B is no worse
+  than search here (B−C −0.04 [−0.23, +0.12]), but the rule compares with A. Condition 4 fails.
+- **Decision: do not integrate** (`more_traps`, `more_misleading_other`). #1043's rule gives the same answer.
+- Where B's added misleading statements sit (83 over the 81 B contexts, matched to the page by text overlap): 34
+  in state lines, 13 in decisions, none in standards; the other 36 come from the shared brief, as in A. All 34 state
+  lines were open-ended (no expiry). Of 678 state lines shown, only 21 carried an expiry: expiry catches dated plans,
+  not state that later changed without a date.
+- The weak group (8 requests, not in the rule) now gains needed facts (A 30.6%, B 62.1%, C 41.8%). Its misleading
+  items rise much more, though (A 0.25, B 2.04, C 0.83).
+- Cost: 239 subscription calls of the 400 cap (Codex 131: find 1, build 130; Claude 108: labels 27, judge 81),
+  about 3.4 hours of summed call time, Claude notional USD 24.22. No API key was billed.
+
+Reading: the revised page still delivers facts beyond noise, against both today's brief and search. The state
+section is still where its cost sits, and dates and threads do not remove it. Most stale state is open-ended, and
+later Works do not always continue the thread. Standards carry no misleading items at all. This split is now
+inspected, so it cannot confirm a further change.
+
+What would change next (not run): a page of standards and decisions only, with state left to recall and search.
+Pre-register it, as here, and score it on requests after 2026-11-20. The saved snapshots allow re-rendering that page
+without a rebuild (about 27 judge calls per run).
+
 ## Limits
 
 - A local observation of **one owner's** copy, judged by a model, not human labels; the labels come from the owner's
@@ -306,3 +348,4 @@ Same subscription routes and the same 400-call cap, in a fresh output folder wit
 | `topics_eval.py` | The commands above: snapshot, finder, builder replay, held-out, labels, contexts, drafts, judge, report. |
 | `schema.json` | JSON Schema of a page and of the counts-only report. |
 | `tests/test_1031_topic_pages.py` | Unit tests over synthetic stores and fake judgments: no live data, no model, no network. |
+| `tests/test_1046_topic_pages_revision.py` | #1046 acceptance tests: section order, dated and threaded state, page attachment, the revised rule. |
