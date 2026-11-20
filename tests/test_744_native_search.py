@@ -179,6 +179,11 @@ def test_browser_press_classifies_before_waiting(host, effect):
             assert service.self_set_write(job, binding, None, 'browser_click', 'https://outside.test') is None
             waited.assert_not_called()
             assert store.outside_content_sources(job['id']) == []
+        elif effect == 'reversible' and service.owner_typed_work(job):
+            # #1065: after the wait, the owner's typed request covers a reversible press.
+            ticket = service.self_set_write(job, binding, None, 'browser_click', 'https://outside.test')
+            assert ticket['authorized_by'] == 'reversible'
+            waited.assert_called_once()
         else:
             with pytest.raises(ToolError) as held:
                 service.self_set_write(job, binding, None, 'browser_click', 'https://outside.test')

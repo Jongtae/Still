@@ -97,7 +97,8 @@ def test_marked_browser_write_resumes_once_on_fresh_capabilities(host):
         caps.execute('browser_open', {'url': ORIGIN + '/product', 'effect': 'navigate'})
         return caps, driver
 
-    with mock.patch.object(service.decision_judge, 'connector_effect', return_value='reversible'):
+    # #1065: an owner Work's reversible press runs; an irreversible one still asks once.
+    with mock.patch.object(service.decision_judge, 'connector_effect', return_value='irreversible'):
         caps, first = open_product()
         with pytest.raises(ToolError) as held:
             caps.execute('browser_click', {'target': '장바구니', 'effect': 'mutate'})

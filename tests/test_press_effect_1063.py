@@ -1,4 +1,5 @@
-"""#1063: a browser press in a narrowed Work is judged as a press on a page element.
+"""#1063: a browser press in a narrowed Work is judged as a press on a page element; #1065: the owner's
+typed request covers a reversible press after outside content was read.
 
 Model-free evidence: a real temporary store, an owner-typed Work that read a page (so its
 presses are narrowed, #744), the fixture ``FakeDriver`` and an injected decision engine.
@@ -6,16 +7,18 @@ Reuse review: the production change reuses ``connector_effect``'s engine, policy
 set; it only asks the question with the press target's kind (#971's first proposal).
 No live account, model or site is contacted.
 """
+import json
 from unittest import mock
 
 import pytest
 
-from personal_agent import conversation_handoff as ch
+from personal_agent import conversation_handoff as ch, preparations as prep
 from personal_agent.agent_runtime import Capabilities, ToolError
 from personal_agent.decision import OUTCOME_UNAVAILABLE, SelectionDecision
 from personal_agent.quickstart_service import AgentService
 from personal_agent.quickstart_store import QuickStore
 
+import test_scheduled_runs_ask_821 as scheduled
 from test_browser_session import FakeDriver
 
 ORIGIN = 'https://videos.test'
@@ -59,8 +62,8 @@ def test_press_is_judged_with_its_target_kind(work):
     assert service._browser_request(job['id']) is None
 
 
-@pytest.mark.parametrize('judged', [None, 'reversible', 'irreversible'])
-def test_press_not_judged_read_still_waits_for_the_owner(work, judged):
+@pytest.mark.parametrize('judged', [None, 'irreversible'])
+def test_press_not_judged_read_or_reversible_still_waits_for_the_owner(work, judged):
     service, job, driver, caps, number = work
     with mock.patch.object(service.decision_judge, 'connector_effect', return_value=judged):
         with pytest.raises(ToolError) as refusal:
@@ -68,6 +71,27 @@ def test_press_not_judged_read_still_waits_for_the_owner(work, judged):
     assert refusal.value.code == 'approval_required' and refusal.value.ran is False
     assert presses(driver) == [] and driver.posts == []
     assert service._browser_request(job['id'])['state'] == 'requested'
+
+
+def test_owner_request_covers_a_reversible_press_after_outside_content(work):
+    # #1065 (owner decision 2026-11-21): the owner's typed request covers a reversible press.
+    service, job, driver, caps, number = work
+    with mock.patch.object(service.decision_judge, 'connector_effect', return_value='reversible'):
+        caps.execute('browser_click', {'target': number('More actions'), 'effect': 'mutate'})
+    assert len(presses(driver)) == 1
+    assert service._browser_request(job['id']) is None
+    with service.store.db() as db:
+        rows = db.execute("SELECT status,detail FROM tool_events WHERE job_id=? AND tool='self_set_write'",
+                          (job['id'],)).fetchall()
+    assert [(row['status'], json.loads(row['detail'])['authorized_by']) for row in rows] == [('observed', 'reversible')]
+
+
+def test_payment_press_still_refused_in_an_owner_work(work):
+    service, job, driver, caps, number = work
+    with mock.patch.object(service.decision_judge, 'connector_effect', return_value='payment'):
+        with pytest.raises(ToolError) as refusal:
+            caps.execute('browser_click', {'target': number('More actions'), 'effect': 'read'})
+    assert refusal.value.ran is False and presses(driver) == []
 
 
 class _Engine:
@@ -103,3 +127,20 @@ def test_connector_operation_keeps_its_question(tmp_path):
     (context, _, question), = judge.engine.asked
     assert context.purpose == 'connector-effect' and question == ch.CONNECTOR_EFFECT_QUESTION
     assert context.facts['argument_names'] == 'title, start'
+
+
+class TestScheduledRunStillAsks(scheduled._Runs):
+    """#1065 covers only a Work the owner's own typed message started: a self-set run's reversible press still waits."""
+
+    def test_self_set_run_reversible_press_does_not_run(self):
+        _, job = self.started(accepted_by=prep.ACCEPTED_DREAM)
+        driver = FakeDriver(pages=PAGES, origin=ORIGIN)
+        caps = Capabilities(self.store, None, {}, '', job['id'], lambda *args: None, browser=lambda: driver,
+                            browser_approvals=self.service.browser_approvals_for(job))
+        page = caps.execute('browser_open', {'url': ORIGIN + '/watch', 'effect': 'read'})
+        assert self.service.self_set_run(job) and not self.service.owner_typed_work(job)
+        target = str(next(row['n'] for row in page['elements'] if row['name'] == 'More actions'))
+        with mock.patch.object(self.service.decision_judge, 'connector_effect', return_value='reversible'):
+            with pytest.raises(ToolError) as refusal:
+                caps.execute('browser_click', {'target': target, 'effect': 'mutate'})
+        assert refusal.value.ran is False and presses(driver) == []
