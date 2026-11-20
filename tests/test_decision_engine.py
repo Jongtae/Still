@@ -111,27 +111,18 @@ class ModelEngineTests(unittest.TestCase):
     """The production adapter over the repository's ModelAdapter tool-call shape."""
 
     def test_direct_engine_only_passes_and_audits_valid_effort(self):
-        """The effort rides in the config handed to the shared adapter (#1051 sends it per provider)."""
+        """The effort rides in the config; the shared adapter sends it in the provider's own field (#1051)."""
         reply = openai_tool_reply({'answer': True, 'confidence': 0.9})
-        for effort in ('none', 'invalid', None):
+        for effort in ('low', 'none', 'invalid', None):
             with self.subTest(effort=effort):
-                adapter = ModelAdapter(ScriptedTransport(reply))
-                seen = []
-                original = adapter.tool_turn
-
-                def recording(config, *args, **kwargs):
-                    seen.append(dict(config))
-                    return original(config, *args, **kwargs)
-                adapter.tool_turn = recording
-                audit = []
-                engine = ModelDecisionEngine(adapter, lambda: ({**OPENAI, 'effort': effort}, 'fixture-key'),
-                                             audit=audit.append)
+                transport = ScriptedTransport(reply)
+                engine, audit = engine_for(transport, route=lambda: ({**OPENAI, 'effort': effort}, 'fixture-key'))
                 self.assertTrue(engine.judge(DecisionContext('test'), 'test').decided)
-                if effort == 'none':
-                    self.assertEqual(seen[0].get('effort'), 'none')
-                    self.assertEqual(audit[0]['effort'], 'none')
+                if effort == 'low':
+                    self.assertEqual(transport.calls[0]['body']['reasoning'], {'effort': 'low'})
+                    self.assertEqual(audit[0]['effort'], 'low')
                 else:
-                    self.assertNotIn('effort', seen[0])
+                    self.assertNotIn('reasoning', transport.calls[0]['body'])
                     self.assertNotIn('effort', audit[0])
 
     def context(self):

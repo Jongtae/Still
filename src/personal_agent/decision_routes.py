@@ -127,9 +127,11 @@ RANKED_MODELS = {
 # https://developers.openai.com/api/docs/models
 # https://developers.openai.com/api/docs/guides/reasoning
 _REASONING_LEVELS = ('low', 'medium', 'high', 'xhigh', 'max')
+# Luna and Terra also accept `none` and `minimal`, but the shared adapter sends
+# only low..max (``providers.validate_model``), so only those are offered.
 OPENAI_EFFORTS = {
-    'gpt-6-luna': ('none', 'minimal', *_REASONING_LEVELS),
-    'gpt-6.1-terra': ('none', 'minimal', *_REASONING_LEVELS),
+    'gpt-6-luna': _REASONING_LEVELS,
+    'gpt-6.1-terra': _REASONING_LEVELS,
     'gpt-6.2-sol': _REASONING_LEVELS,
     'gpt-6.2-astra': _REASONING_LEVELS,
 }

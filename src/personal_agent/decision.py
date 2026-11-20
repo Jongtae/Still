@@ -698,10 +698,10 @@ def audit_record(context, kind, outcome, data, confidence, at, failure='', diagn
 
 
 def valid_api_effort(value):
-    """API effort names include two levels beyond the CLI vocabulary."""
+    """An effort the shared model adapter sends (``providers.validate_model`` keeps only these)."""
     from .decision_adapters import valid_effort
 
-    return isinstance(value, str) and (valid_effort(value) or value in ('none', 'minimal'))
+    return isinstance(value, str) and valid_effort(value)
 
 
 class ModelDecisionEngine(SchemaDecisionEngine):

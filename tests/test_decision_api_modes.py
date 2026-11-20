@@ -65,19 +65,19 @@ class ApiModeTests(JobFixture):
         record = service.list_decision_models('openai')
         self.assertEqual(self.list_calls, [('https://api.openai.com/v1/models', None,
                                            {'Authorization': 'Bearer openai-slot-fixture'})])
-        all_levels = ['none', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max']
+        all_levels = ['low', 'medium', 'high', 'xhigh', 'max']
         self.assertEqual([(row['id'], row['recommended'], row['rank'], row['efforts']) for row in record['models']], [
             ('gpt-6-luna', True, 0, all_levels),
             ('gpt-6.1-terra', True, 1, all_levels),
             ('gpt-4o-mini', False, None, []),
-            ('gpt-6.2-astra', False, None, all_levels[2:]),
-            ('gpt-6.2-sol', False, None, all_levels[2:]),
+            ('gpt-6.2-astra', False, None, all_levels),
+            ('gpt-6.2-sol', False, None, all_levels),
         ])
         status = service.decision_routes.status()
         api = next(row for row in status['apis'] if row['id'] == 'openai')
         self.assertTrue(status['direct_api']['configured'])
         self.assertEqual((api['configured'], api['key_source'], api['has_decision_key']), (True, 'slot', False))
-        self.assertEqual(api['model_efforts']['gpt-6.2-sol'], all_levels[2:])
+        self.assertEqual(api['model_efforts']['gpt-6.2-sol'], all_levels)
         self.assertEqual(status['active']['transport'], 'none')
         self.assertNotIn('openai-slot-fixture', json.dumps(status))
         self.assertEqual(self.openai.requests, [])
@@ -214,7 +214,7 @@ class ApiModeTests(JobFixture):
     def test_follow_switches_from_explicit_route_and_preserves_pins_per_main(self):
         service = self.service()
         self.store.secret('api_key:openai', 'openai-slot-fixture')
-        service.activate_decision_route({'transport': 'direct_api', 'model': 'gpt-6-luna', 'effort': 'minimal'})
+        service.activate_decision_route({'transport': 'direct_api', 'model': 'gpt-6-luna', 'effort': 'medium'})
         service.activate_main_ai({'route': 'openai'})
         before = service.decision_routes.active()
         count, turns = len(self.openai.requests), len(self.turns)
