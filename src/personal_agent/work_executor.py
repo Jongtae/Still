@@ -1988,7 +1988,9 @@ class WorkExecutor:
             # #598: the conversation reads the cause in owner words and,
             # for a partial Work, the portion its typed Evidence supports.
             # #752 review: scrubbed before owner_cause cuts each reason, so no cut splits a value.
-            spoken=owner_cause([(tool,scrub(service._redact_reason(reason))) for tool,reason in run.refusals]) if run.outcome in ('failed','partial') else None
+            # #769: the owner's line leaves out refusals meant only for the worker; ``cause`` keeps them.
+            spoken=owner_cause([(tool,scrub(service._redact_reason(reason))) for tool,reason in
+                                service.owner_refusals(job['id'],run.attempt_start,run.refusals)]) if run.outcome in ('failed','partial') else None
             # #847: what follows the answer when there is one - no tool names or errors.
             # #173 slice C: a draft's pending line is not said again after the answer next to Still's
             # own confirmation, which already says nothing is applied before the owner's yes; the
