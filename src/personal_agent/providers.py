@@ -106,7 +106,10 @@ def validate_model(config):
     model = config.get('model', '').strip()
     if not model or len(model) > 200:
         raise ValueError(msg('providers.enter_model_name'))
-    return {'provider': provider, 'endpoint': endpoint, 'model': model}
+    from .decision_adapters import valid_effort
+    effort = config.get('effort')
+    return {'provider': provider, 'endpoint': endpoint, 'model': model,
+            **({'effort': effort} if valid_effort(effort) else {})}
 
 
 #: Recorded when a provider/CLI did not report the model it used.  The
@@ -248,11 +251,13 @@ class ModelAdapter:
                         if isinstance(tool_choice,dict) else tool_choice)
                 body={'model':cfg['model'],'input':_openai_input(messages),'tools':_openai_tools(tools),
                       'tool_choice':choice,'store':False,'include':['reasoning.encrypted_content'],'stream':False}
+                if cfg.get('effort'):body['reasoning']={'effort':cfg['effort']}
                 data=self._send(cfg['endpoint']+'/responses',body,{'Authorization':'Bearer '+key} if key else {},timeout)
                 message=_openai_message(data)
                 if not message['content'] and not message.get('tool_calls'):raise TypeError()
             elif provider=='compatible':
                 body={'model':cfg['model'],'messages':messages,'tools':tools,'tool_choice':tool_choice,'stream':False}
+                if cfg.get('effort'):body['reasoning']={'effort':cfg['effort']}
                 if cfg['endpoint']=='https://openrouter.ai/api/v1':body['provider']={'require_parameters':True}
                 data=self._send(cfg['endpoint']+'/chat/completions',body,{'Authorization':'Bearer '+key} if key else {},timeout)
                 message=data['choices'][0]['message']
@@ -296,7 +301,7 @@ class ModelAdapter:
                 # reject a forced `any`/`tool` choice with a 400, and every
                 # caller that needs a call checks the returned call itself (#1047).
                 choice={'type':'auto'}
-                data=self._send(cfg['endpoint']+'/v1/messages',{'model':cfg['model'],'system':'\n'.join(system),'messages':converted,'tools':[{'name':t['function']['name'],'description':t['function']['description'],'input_schema':t['function']['parameters']} for t in tools],'max_tokens':ANTHROPIC_MAX_TOKENS,'tool_choice':choice},{'x-api-key':key,'anthropic-version':'2023-06-01'},timeout)
+                data=self._send(cfg['endpoint']+'/v1/messages',{'model':cfg['model'],'system':'\n'.join(system),'messages':converted,'tools':[{'name':t['function']['name'],'description':t['function']['description'],'input_schema':t['function']['parameters']} for t in tools],'max_tokens':ANTHROPIC_MAX_TOKENS,'tool_choice':choice,**({'output_config':{'effort':cfg['effort']}} if cfg.get('effort') else {})},{'x-api-key':key,'anthropic-version':'2023-06-01'},timeout)
                 message={'role':'assistant','content':'\n'.join(c['text'] for c in data['content'] if c['type']=='text')}
                 calls=[{'id':c['id'],'type':'function','function':{'name':c['name'],'arguments':json.dumps(c['input'])}} for c in data['content'] if c['type']=='tool_use']
                 if calls:message['tool_calls']=calls
@@ -323,17 +328,17 @@ class ModelAdapter:
                 data = self.transport(endpoint+'/api/chat', {'model': model, 'messages': messages, 'stream': False}, headers)
                 content = data['message']['content']
             elif provider == 'openai':
-                data = self.transport(endpoint+'/responses', {'model': model, 'input': _openai_input(messages), 'store': False}, headers)
+                data = self.transport(endpoint+'/responses', {'model': model, 'input': _openai_input(messages), 'store': False, **({'reasoning': {'effort': cfg['effort']}} if cfg.get('effort') else {})}, headers)
                 content = _openai_message(data)['content']
             elif provider == 'compatible':
-                data = self.transport(endpoint+'/chat/completions', {'model': model, 'messages': messages, 'stream': False}, headers)
+                data = self.transport(endpoint+'/chat/completions', {'model': model, 'messages': messages, 'stream': False, **({'reasoning': {'effort': cfg['effort']}} if cfg.get('effort') else {})}, headers)
                 content = data['choices'][0]['message']['content']
             else:
                 if not key:
                     raise ValueError(msg('providers.enter_anthropic_key'))
                 system = '\n'.join(m['content'] for m in messages if m['role'] == 'system')
                 history = [m for m in messages if m['role'] != 'system']
-                data = self.transport(endpoint+'/v1/messages', {'model': model, 'system': system, 'messages': history, 'max_tokens': ANTHROPIC_MAX_TOKENS}, {'x-api-key': key, 'anthropic-version': '2023-06-01'})
+                data = self.transport(endpoint+'/v1/messages', {'model': model, 'system': system, 'messages': history, 'max_tokens': ANTHROPIC_MAX_TOKENS, **({'output_config': {'effort': cfg['effort']}} if cfg.get('effort') else {})}, {'x-api-key': key, 'anthropic-version': '2023-06-01'})
                 content = '\n'.join(c['text'] for c in data['content'] if c.get('type') == 'text')
             if not isinstance(content, str) or not content.strip():
                 raise ProviderError(msg('providers.no_text_response'))

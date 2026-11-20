@@ -488,6 +488,33 @@ class RoutingAndBriefs(Harness):
         self.assertIn('"as_of":"2026-10-14T12:01:00Z"', self.engine.turns[-1]['prompt'],
                       'the worker reads the later minute')
 
+    def test_saved_api_effort_reaches_worker_and_record(self):
+        with mock.patch.object(self.service.decision_routes, 'follow_main_switched', return_value={'state': 'skipped'}):
+            self.service.activate_main_ai({'route': 'openai', 'model_mode': 'auto', 'effort': 'high'})
+        self.script([plan('openai', 'Fixture work')], goals=[True])
+        job, result = self.run_work('Fixture API effort')
+        self.assertEqual(result['status'], 'succeeded')
+        self.assertEqual(self.transport.bodies[-1]['reasoning'], {'effort': 'high'})
+        self.assertEqual(self.store.turn_provenance(job)['workers'][-1]['effort'], 'high')
+
+    def test_owner_effort_follows_only_the_owner_model(self):
+        from personal_agent.main_ai import MAIN_AI_CHOICES, SUBSCRIPTION_MODELS
+        self.store.put(SUBSCRIPTION_MODELS, {'codex': 'gpt-5.6-luna'})
+        self.store.put(MAIN_AI_CHOICES, {'codex': {'mode': 'pinned', 'effort': 'high'}})
+        self.service.decision_routes.bundled_efforts = lambda engine: {'gpt-5.6-luna': ['low', 'medium', 'high']}
+        for index, (model, effort, expected) in enumerate([
+                ('gpt-5.6-luna', None, 'high'), ('gpt-5.6-terra', None, None),
+                ('gpt-5.6-luna', 'medium', 'medium')]):
+            with self.subTest(model=model, effort=effort):
+                self.script([plan('codex', 'Check it.', model=model, effort=effort)], goals=[True])
+                job, result = self.run_work('Fixture owner effort ' + str(index))
+                self.assertEqual(result['status'], 'succeeded')
+                self.assertEqual(self.engine.turns[-1]['effort'], expected)
+                self.assertEqual(self.store.turn_provenance(job)['workers'][-1]['effort'], expected or '')
+                with self.store.db() as db:
+                    rows = db.execute("SELECT detail FROM tool_events WHERE job_id=? AND tool='subscription_engine' AND status='running'", (job,)).fetchall()
+                self.assertEqual(json.loads(rows[-1]['detail'])['effort'], expected or '')
+
     def test_the_planned_effort_reaches_the_worker_turn_and_its_evidence(self):
         """#1434: the catalogue shows each model's declared efforts; the chosen one reaches the CLI turn."""
         self.service.decision_routes.bundled_efforts = lambda engine: (
@@ -1739,8 +1766,8 @@ class CatalogueData(Harness):
         self.assertIn('list_notes', codex['tools'])
         self.assertNotIn('private_tools', codex)
         self.assertTrue(openai['available'])
-        self.assertEqual(openai['models'], ['gpt-4o-mini'], 'only the tool-call-verified model')
-        self.assertEqual(openai['model_tiers'], {'gpt-4o-mini': 'lowest-cost'})
+        self.assertEqual(openai['models'], ['gpt-6.2-sol'], 'only the tool-call-verified model')
+        self.assertEqual(openai['model_tiers'], {'gpt-6.2-sol': 'unranked'})
         self.assertEqual((catalogue.worker('claude-code')['available'], catalogue.worker('claude-code')['reason']),
                          (False, 'not_connected'))
         self.assertEqual(catalogue.worker('anthropic')['reason'], 'no_api_key')
@@ -1759,7 +1786,7 @@ class CatalogueData(Harness):
             self.service.activate_main_ai({'route': 'openai'})
         self.service.check_main_ai()
         check = self.store.config('main_ai_checks', {})['openai']
-        self.assertEqual((check['state'], check['config']['model']), ('ok', 'gpt-4o-mini'))
+        self.assertEqual((check['state'], check['config']['model']), ('ok', 'gpt-6.2-sol'))
         self.assertTrue(check['test']['tools_ok'])
         self.assertNotIn(OPENAI_KEY, json.dumps(check))
         with mock.patch.object(self.service.decision_routes, 'follow_main_switched', return_value={'state': 'skipped'}):

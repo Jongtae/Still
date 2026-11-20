@@ -1424,20 +1424,26 @@ class WorkExecutor:
             owner_information=service.owner_information_refs({} if engine_context.get('mode')=='bare-request' else engine_context,run.spliced_refs),
             # #211: the cloud provider and destination are durable before the CLI starts.
             **(cloud.record() if cloud is not None else {}))
+        # Resolve once so execution and its owner-visible records agree.
+        owner_model=service.main_ai.subscription_model(run.subscription['id'])
+        attempt_model=getattr(run.attempt,'model','') if run.attempt is not None else ''
+        work_model=attempt_model or owner_model
+        work_effort=(getattr(run.attempt,'effort','') if run.attempt is not None else '') or (
+            service.main_ai.subscription_effort(run.subscription['id'])
+            if not attempt_model or attempt_model==owner_model else '')
         service.record_turn_worker(job['id'],{'attempt':run.attempt.number if run.attempt is not None else 1,
                                            # #308 S1: a worker turn made for the owner's steers.
                                            'steer_continuation':True if run.steer_note else None,'route':'subscription',
-                                           'engine':run.subscription['id'],
-                                           'model':(run.attempt.model if run.attempt is not None and run.attempt.model else None) or service.main_ai.subscription_model(run.subscription['id']) or None,
+                                           'engine':run.subscription['id'],'effort':work_effort,
+                                           'model':work_model or None,
                                            'own_web_search':bool(native_search),
-                                           'earlier_exchanges':information_use.section_references(engine_context.get('profile') if adapter_context is not None else '')['earlier_exchanges']},effort=getattr(run.attempt,'effort','') if run.attempt is not None else '')
+                                           'earlier_exchanges':information_use.section_references(engine_context.get('profile') if adapter_context is not None else '')['earlier_exchanges']},effort=work_effort)
         run.record('subscription_engine','running',json.dumps({'engine':run.subscription['id'],'mode':mode,
             # #473: same resolved model as turn provenance; unknown remains null.
-            'model':(run.attempt.model if run.attempt is not None and run.attempt.model else None) or service.main_ai.subscription_model(run.subscription['id']) or None,
-            'effort':getattr(run.attempt,'effort','') if run.attempt is not None else '',
+            'model':work_model or None,
+            'effort':work_effort,
             'context_messages':len(engine_context['conversation']),'context_bytes':len(engine_prompt.encode()),
             'context_mode':engine_context.get('mode','shared-context')}))
-        work_model=''
         # #825: set just before the worker is handed its input; a failure before it is a failed preflight.
         dispatched=False
         reply_evidence={}
@@ -1469,10 +1475,6 @@ class WorkExecutor:
                     service.isolated_mcp_registry.revoke(token)
                 run.result=ExecutionResult(content,run.subscription['id'],0)
             else:
-                # #679: the owner's Main AI model for this CLI (none: the CLI's own default).
-                # #710: the model the orchestrator chose for this attempt, if any.
-                work_model=(run.attempt.model if run.attempt is not None and run.attempt.model
-                            else service.main_ai.subscription_model(run.subscription['id']))
                 served=facade(run.capabilities,**facade_options)
                 # #211: the profile this Work resolved, not a later Settings change; already admitted above.
                 served.cloud_profile=cloud
@@ -1528,7 +1530,7 @@ class WorkExecutor:
                     if run.image_inputs:execution_options['images']=run.image_inputs
                     if work_model:execution_options['model']=work_model
                     # #1434: the reasoning effort the plan chose for that model.
-                    if run.attempt is not None and getattr(run.attempt,'effort',''):execution_options['effort']=run.attempt.effort
+                    if work_effort:execution_options['effort']=work_effort
                     self._commit_profile_shown(run,engine_context)
                     dispatched=True
                     run.result=service.execution_adapter.execute(run.subscription['id'],engine_prompt,served,**execution_options)
@@ -1677,6 +1679,8 @@ class WorkExecutor:
         if not service.model_ready(run.config,run.attempt_test):
             raise BlockedTurn(BLOCKER_MODEL_UNVERIFIED,msg('quickstart_service.verify_model_tools'))
         runtime_config=dict(run.config)
+        if run.attempt is not None and getattr(run.attempt,'effort',''):
+            runtime_config['effort']=run.attempt.effort
         checked=run.attempt_test if isinstance(run.attempt_test,dict) else service.store.config('model_test',{})
         if checked.get('runtime_model'):
             runtime_config['model']=checked['runtime_model']
@@ -1760,8 +1764,8 @@ class WorkExecutor:
                                            # #308 S1: a worker turn made for the owner's steers.
                                            'steer_continuation':True if run.steer_note else None,'route':'direct-api',
                                            'provider':runtime_config.get('provider'),'model':runtime_config.get('model'),
-                                           'own_web_search':False,
-                                           'earlier_exchanges':information_use.section_references(api_context.get('profile'))['earlier_exchanges']},effort=getattr(run.attempt,'effort','') if run.attempt is not None else '')
+                                           'effort':runtime_config.get('effort',''),'own_web_search':False,
+                                           'earlier_exchanges':information_use.section_references(api_context.get('profile'))['earlier_exchanges']},effort=runtime_config.get('effort',''))
         try:
             # #658/#627: the direct route carries the owner profile and
             # current-context sections in its system text, the same

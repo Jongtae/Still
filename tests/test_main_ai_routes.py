@@ -123,6 +123,74 @@ class MainAiRouteTests(unittest.TestCase):
     def _save(self, provider, key):
         return self.service.save_main_ai_key({'provider': provider, 'key': key})
 
+    def test_model_choices_probe_and_commit(self):
+        from unittest.mock import patch
+        from personal_agent.main_ai import MAIN_AI_CHOICES, API_ROUTES
+        self.store.put('decision_route', {'transport': 'off'})
+        self._save('openai', OPENAI_KEY)
+        with patch.object(self.service, 'probe_model', wraps=self.service.probe_model) as probe:
+            self._activate({'route': 'openai', 'model_mode': 'pinned', 'model': 'gpt-6.2-sol', 'effort': 'high'})
+            self.assertEqual(probe.call_args.args[0]['effort'], 'high')
+        self.assertEqual(self.store.config(MAIN_AI_CHOICES)['openai'], {'mode': 'pinned', 'effort': 'high'})
+        before = {key: self.store.config(key) for key in ('model', MAIN_AI_CHOICES, 'subscription_engine')}
+        self.transport.refuse.add('api.openai.com')
+        with self.assertRaises(MainAiError):
+            self._activate({'route': 'openai', 'model_mode': 'auto', 'effort': 'low'})
+        self.assertEqual(before, {key: self.store.config(key) for key in before})
+        self.transport.refuse.clear()
+        result = self._activate({'route': 'openai', 'model_mode': 'auto', 'model': 'ignored-model', 'effort': 'medium'})
+        row = next(row for row in result['main_ai']['routes'] if row['id'] == 'openai')
+        self.assertEqual((row['model_mode'], row['model'], row['default_model'], row['effort']),
+                         ('auto', API_ROUTES['openai']['model'], 'gpt-6.2-sol', 'medium'))
+        self.assertEqual(self.store.config('model')['effort'], 'medium')
+        self._activate({'route': 'codex', 'model_mode': 'pinned', 'model': 'fixture-model', 'effort': 'high'})
+        self.assertEqual(self.service.main_ai.subscription_effort('codex'), 'high')
+        self.store.enqueue('fixture work', 'owner-effort')
+        self.assertTrue(self.service.run_one())
+        self.assertEqual(self.service.execution_adapter.kwargs[-1]['effort'], 'high')
+        result = self._activate({'route': 'codex', 'model_mode': 'auto', 'effort': ''})
+        row = next(row for row in result['main_ai']['routes'] if row['id'] == 'codex')
+        self.assertEqual((row['model_mode'], row['model'], row['default_model'], row['effort']), ('auto', '', '', ''))
+
+    def test_invalid_choices_change_nothing(self):
+        from unittest.mock import patch
+        from personal_agent.main_ai import MAIN_AI_CHOICES
+        self._activate({'route': 'codex', 'model': 'fixture-model', 'effort': 'high'})
+        before = {key: self.store.config(key) for key in (MAIN_AI_CHOICES, 'subscription_engine_models', 'subscription_engine', 'model')}
+        for body in ({'model_mode': 'bad'}, {'model_mode': None}, {'effort': 'bad'}, {'effort': None},
+                     {'model_mode': 'pinned'}, {'model_mode': 'pinned', 'model': 'a b'}):
+            with self.subTest(body=body), self.assertRaises(MainAiError):
+                self._activate({'route': 'codex', **body})
+            self.assertEqual(before, {key: self.store.config(key) for key in before})
+        with patch.object(self.service, 'connect_subscription_engine', side_effect=ValueError('fixture refused')):
+            with self.assertRaises(MainAiError):
+                self._activate({'route': 'codex', 'model_mode': 'auto', 'effort': 'low'})
+        self.assertEqual(before, {key: self.store.config(key) for key in before})
+        with patch.object(self.service, 'isolated_engine_adapter', object()):
+            with self.assertRaises(MainAiError):
+                self._activate({'route': 'codex', 'model_mode': 'auto', 'effort': 'high'})
+        self.assertEqual(before, {key: self.store.config(key) for key in before})
+
+    def test_switch_without_model_fields_keeps_saved_choice(self):
+        # `/ai codex` names no model or effort: the pinned model and effort stay.
+        self.store.put('decision_route', {'transport': 'off'})
+        self._activate({'route': 'codex', 'model_mode': 'pinned', 'model': 'fixture-model', 'effort': 'high'})
+        self._save('openai', OPENAI_KEY)
+        self._activate({'route': 'openai'})
+        self._activate({'route': 'codex'})
+        rows = {row['id']: row for row in self.service.main_ai.status()['routes']}
+        self.assertEqual((rows['codex']['model_mode'], rows['codex']['model'], rows['codex']['effort']),
+                         ('pinned', 'fixture-model', 'high'))
+
+    def test_legacy_model_modes_are_inferred_without_writes(self):
+        from personal_agent.main_ai import MAIN_AI_CHOICES
+        self.store.put('subscription_engine_models', {'codex': 'fixture-model'})
+        self.store.put('model', {'provider': 'openai', 'endpoint': 'https://api.openai.com/v1', 'model': 'legacy-model'})
+        rows = {row['id']: row for row in self.service.main_ai.status()['routes']}
+        self.assertEqual((rows['codex']['model_mode'], rows['openai']['model_mode'], rows['anthropic']['model_mode']),
+                         ('pinned', 'pinned', 'auto'))
+        self.assertIsNone(self.store.config(MAIN_AI_CHOICES))
+
     # -- AC4 per-provider keys -------------------------------------------------
     def test_keys_are_stored_per_provider_and_never_returned(self):
         self._save('openai', OPENAI_KEY)
