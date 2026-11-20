@@ -29,3 +29,23 @@ def msg(message_id, lang='ko', **values):
     entry = catalog()[message_id]
     text = entry.get(lang) or entry['ko']
     return text.format(**values) if values else text
+
+
+#: #1052: the web screen's language codes for the catalog's languages.
+WEB_LANGUAGES = {'en': 'en', 'ja': 'ja', 'zh': 'zh-CN'}
+
+
+@lru_cache(maxsize=1)
+def web_catalog_script():
+    """``/messages.js``: the catalog as Korean source → translation per web language.
+
+    The web screen shows Still's own lines in Korean as the server sends them and
+    translates them by their Korean text; this keeps that table in step with the
+    catalog (#1052).
+    """
+    tables = {web: {} for web in WEB_LANGUAGES.values()}
+    for entry in catalog().values():
+        for lang, web in WEB_LANGUAGES.items():
+            if entry.get(lang) and entry[lang] != entry['ko']:
+                tables[web].setdefault(entry['ko'], entry[lang])
+    return ('globalThis.STILL_MESSAGES=' + json.dumps(tables, ensure_ascii=False, separators=(',', ':')) + ';\n').encode('utf-8')

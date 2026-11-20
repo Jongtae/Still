@@ -76,6 +76,8 @@ input,textarea,select{
  width:100%;min-width:0;min-height:var(--control-h);padding:6px 10px;
  border:1px solid var(--line-strong);border-radius:var(--r-1);background:var(--surface);color:var(--ink);
 }
+/* #1052: radios and checkboxes are not text fields; the field sizing above stretched them across a row. */
+input:is([type="radio"],[type="checkbox"]){width:auto;min-height:0;padding:0}
 input::placeholder,textarea::placeholder{color:var(--faint)}
 textarea{resize:vertical;line-height:1.5;padding:8px 10px}
 select{appearance:none;-webkit-appearance:none;padding-right:30px;
@@ -502,7 +504,7 @@ details.technical details>summary{color:var(--muted)}
 /* #580 대화 해석: the DecisionEngine route rows reuse the settings row grammar. */
 .settings-subheading{margin:var(--sp-4) 0 0;padding-bottom:6px;font-size:var(--fs-2);font-weight:600;color:var(--muted);border-bottom:1px solid var(--line)}
 .decision-choice{display:flex;align-items:center;gap:8px;min-height:32px;font-size:var(--fs-2)}
-.decision-choice input{margin:0}
+.decision-choice input{flex:0 0 16px;width:16px;height:16px;min-height:0;margin:0;accent-color:var(--accent)}
 
 /* Compact peer AI preferences; values reflect current server evidence. */
 #active-ai{display:grid;gap:var(--sp-4)}
@@ -534,9 +536,9 @@ details.technical details>summary{color:var(--muted)}
 .dialog-actions{justify-self:stretch;justify-content:flex-end;position:sticky;bottom:0;padding:var(--sp-2) 0 0;border-top:1px solid var(--line);background:var(--surface)}
 /* Native dialogs retain one scrolling body and an unobscured action row. */
 .preference-dialog[open]{display:grid;grid-template-rows:auto minmax(0,1fr) auto;overflow:hidden}
-.dialog-header{padding:20px 24px 0}
+.dialog-header{padding:20px 24px 12px;border-bottom:1px solid var(--line);background:var(--surface)}
 .dialog-header h2{font-size:var(--fs-4,1.125rem);margin:0}
-.preference-dialog .dialog-body{scroll-padding-block:12px;overflow:auto;min-height:0;padding:16px 24px;overscroll-behavior:contain}
+.preference-dialog .dialog-body{align-content:start;scroll-padding-block:12px;overflow:auto;min-height:0;padding:16px 24px;overscroll-behavior:contain}
 .preference-dialog .dialog-actions{position:static;margin:0;padding:12px 24px;background:var(--surface);border-top:1px solid var(--line)}
 .chooser-group{display:grid;gap:0;margin:0 0 16px;padding:0;border:0;min-width:0}
 .chooser-group legend{margin-bottom:4px;padding:0;font-size:var(--fs-2);font-weight:600;color:var(--muted)}
@@ -564,7 +566,7 @@ details.technical details>summary{color:var(--muted)}
 #ai-chooser-consequence:empty,#ai-chooser-feedback:empty{display:none}
 @media(max-width:620px){
  .settings-dialog{width:100vw;max-width:100vw;height:100dvh;max-height:100dvh;margin:0;border:0;border-radius:0}
- .dialog-header{padding:16px 16px 0}
+ .dialog-header{padding:16px 16px 10px}
  .preference-dialog .dialog-body{padding:12px 16px}
  .preference-dialog .dialog-actions{padding:12px 16px max(12px,env(safe-area-inset-bottom))}
  .chooser-row{gap:8px;padding:10px 0}
@@ -586,6 +588,10 @@ details.technical details>summary{color:var(--muted)}
  .ai-fact>.settings-state{min-width:0;white-space:normal;overflow-wrap:anywhere;grid-column:2;grid-row:1}
  .ai-fact .settings-row-title{grid-column:1;grid-row:1}
  .ai-fact .settings-row-action{min-height:44px}
+ /* #1052: on a phone the AI name takes its own full-width line under the label, so it does not wrap inside a name. */
+ .ai-summary>.settings-state{grid-column:1/-1;grid-row:2;justify-self:start;text-align:left}
+ .ai-summary .settings-row-actions{grid-column:2;grid-row:1;justify-self:end}
+ .ai-summary .settings-row-description{grid-row:3}
  .rail-foot .language-picker select{min-height:44px}
 }
 
@@ -696,6 +702,8 @@ details.technical details>summary{color:var(--muted)}
  .app{grid-template-columns:1fr;background:var(--canvas)}
  .rail{gap:var(--sp-2) var(--sp-3);padding:10px 16px}
  .primary-nav button{min-height:36px}
+ /* #1052: the nav keeps its button's width; shrunk, the button ran into the Diagnostics link. */
+ .primary-nav{flex:0 0 auto}
  .settings-nav button,.nav-foot-link{min-height:44px}
  .brand{padding:0}
  .content{padding:16px 16px 48px}
@@ -713,7 +721,7 @@ details.technical details>summary{color:var(--muted)}
 }
 .ai-preference-group{padding:0 18px;border-radius:12px}
 .settings-pane .settings-list:not(:has(>:not([data-inactive]))){display:none}
-.settings-section p[role="status"]:empty,.settings-section .field-feedback:empty,.settings-pane #telegram-status:empty{min-height:0;margin:0}
+.settings-section p[role="status"]:empty,.settings-section .field-feedback:empty,.dialog-body>.field-feedback:empty,.settings-pane #telegram-status:empty{min-height:0;margin:0}
 /* #535 Google card: one row per service with the routes it uses; each grant is a level under 세부 정보. */
 .google-routes{margin:2px 0 0;padding:0;list-style:none;display:grid;gap:2px}
 .google-routes>li{overflow-wrap:anywhere}
@@ -728,3 +736,15 @@ details.technical details>summary{color:var(--muted)}
 .settings-methods>.settings-subheading{margin:0;padding-bottom:6px;border-bottom:0}
 .settings-methods>.settings-list{margin-top:0}
 .settings-pane .settings-methods:not(:has(.settings-row:not([data-inactive]))){display:none}
+/* #1052: an empty live region in a dialog takes no grid row (it stays in the accessibility tree),
+   a dialog section does not add its own margin to the grid gap, and a section heading keeps
+   clear of the first row's divider. */
+.dialog-body>.field-feedback:empty{position:absolute}
+.dialog-body>.settings-section{margin-top:var(--sp-2)}
+.settings-section-heading+:is(.settings-row,.settings-empty){margin-top:10px}
+/* #1052: an AI title breaks between words, not inside a name (anywhere also shrank its column to one letter). */
+.ai-summary>.settings-state{overflow-wrap:break-word}
+/* Korean text breaks between words, as written, not between syllables; a word too long for its line still
+   breaks (overflow-wrap). Japanese and Chinese keep their own line breaking. */
+html:lang(ko){word-break:keep-all;overflow-wrap:break-word}
+.settings-state:empty{display:none}
