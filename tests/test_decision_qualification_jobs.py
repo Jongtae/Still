@@ -143,6 +143,37 @@ class AutomaticCandidateQualificationTests(JobFixture):
         self.assertEqual(self.tried_models(), ['gpt-5.6-luna'])
         self.assertNotIn('declared_candidates', active)
 
+    def test_follow_pin_is_used_again_after_a_cli_update(self):
+        service = self.service()
+        self.store.put('subscription_engine', {'id': 'codex'})
+        separate = service.activate_decision_route({'transport': 'subscription_cli', 'engine': 'codex',
+                                                    'model_policy': 'explicit', 'model': 'gpt-5.6-luna'})['active']
+        pin = {'model': 'gpt-5.6-terra', 'effort': 'high'}
+        status = service.activate_decision_route({'transport': MODE_FOLLOW, **pin})
+        self.assertEqual(status['follow_pin'], pin)
+        self.assertTrue(status['follow']['pinned'])
+        self.assertEqual(status['follow']['candidates'], ['gpt-5.6-terra'])
+        self.assertEqual(status['active'], separate)
+        self.assertTrue(service.run_due_qualification())
+        self.assertEqual(service.decision_routes.mode(), MODE_FOLLOW)
+
+        self.update_binary()
+        self.assertTrue(service.run_due_qualification())
+        active = service.decision_routes.active()
+        self.assertEqual((active['mode'], active['model_policy'], active['requested_model'], active['effort']),
+                         (MODE_FOLLOW, 'explicit', 'gpt-5.6-terra', 'high'))
+        self.assertEqual(self.tried_models(), ['gpt-5.6-terra'])
+        self.assertTrue(all('model_reasoning_effort="high"' in call['argv'] for call in self.judgments('codex')))
+
+        self.update_binary()
+        queued = service.activate_decision_route({'transport': MODE_FOLLOW})
+        self.assertIsNone(queued['follow_pin'])
+        self.assertTrue(service.run_due_qualification())
+        active = service.decision_routes.active()
+        self.assertEqual((active['mode'], active['model_policy'], active['requested_model'], active['effort']),
+                         (MODE_FOLLOW, 'fastest_qualified', 'gpt-5.6-luna', 'low'))
+        self.assertEqual(self.job(service)['state'], JOB_PASSED)
+
     def test_main_answer_first_queues_and_commits_the_persisted_judgment_configuration(self):
         for policy in ('lowest_qualified', 'explicit'):
             for main_model in ('gpt-5.6-terra', ''):

@@ -150,10 +150,10 @@ class DecisionConfidence:
     """
 
     __slots__ = ('probability', 'provider', 'model', 'observed_model', 'elapsed_seconds',
-                 'route', 'engine', 'model_policy', 'sent', 'destination', 'cloud_profile')
+                 'route', 'engine', 'model_policy', 'sent', 'destination', 'cloud_profile', 'effort')
 
     def __init__(self, probability=None, *, provider='', model='', observed_model='', elapsed_seconds=None,
-                 route='', engine='', model_policy='', sent=None, destination='', cloud_profile=''):
+                 route='', engine='', model_policy='', sent=None, destination='', cloud_profile='', effort=None):
         self.probability = probability
         #: #211: a CLI judgment on a cloud provider profile names where it went and which
         #: profile revision; empty on the subscription and for other routes.
@@ -161,6 +161,7 @@ class DecisionConfidence:
         self.provider, self.model, self.observed_model = provider, model, observed_model
         self.elapsed_seconds = elapsed_seconds
         self.route, self.engine, self.model_policy = route, engine, model_policy
+        self.effort = effort
         #: #805 review: whether the adapter started a call on its transport (an HTTP
         #: request, a CLI process).  False when it answered before one; None when
         #: the engine does not report it (a caller counting calls counts it).
@@ -482,7 +483,7 @@ class DecisionPolicy:
 
 
 # --- the model-backed adapters ----------------------------------------------
-DEFAULT_DECISION_MODEL = 'gpt-4o-mini'
+DEFAULT_DECISION_MODEL = 'gpt-6-luna'
 DEFAULT_DECISION_PROVIDER = {'provider': 'openai', 'endpoint': 'https://api.openai.com/v1',
                              'model': DEFAULT_DECISION_MODEL}
 
@@ -684,6 +685,8 @@ def audit_record(context, kind, outcome, data, confidence, at, failure='', diagn
         record['destination'] = confidence.destination
     if getattr(confidence, 'cloud_profile', ''):
         record['cloud_profile'] = confidence.cloud_profile
+    if confidence.sent and getattr(confidence, 'effort', None):
+        record['effort'] = confidence.effort
     if failure:
         record['failure'] = failure
     for name in AUDIT_DIAGNOSTIC_FIELDS:
@@ -692,6 +695,13 @@ def audit_record(context, kind, outcome, data, confidence, at, failure='', diagn
                 or name != 'error_source' and isinstance(value, int) and not isinstance(value, bool):
             record[name] = value
     return record
+
+
+def valid_api_effort(value):
+    """API effort names include two levels beyond the CLI vocabulary."""
+    from .decision_adapters import valid_effort
+
+    return isinstance(value, str) and (valid_effort(value) or value in ('none', 'minimal'))
 
 
 class ModelDecisionEngine(SchemaDecisionEngine):
@@ -723,6 +733,7 @@ class ModelDecisionEngine(SchemaDecisionEngine):
             return self._done(context, kind, OUTCOME_UNAVAILABLE, {}, DecisionConfidence(route=self.route_label),
                               started, 'not-configured')
         config, key = resolved
+        effort = config.get('effort') if isinstance(config, dict) else None
         try:
             config = validate_model(config)
         except ValueError:
@@ -730,6 +741,9 @@ class ModelDecisionEngine(SchemaDecisionEngine):
                               started, 'invalid-configuration')
         identity = dict(provider=config['provider'], model=config['model'], route=self.route_label,
                         engine=config['provider'])
+        effort_options = {}
+        if valid_api_effort(effort):
+            effort_options['effort'] = identity['effort'] = effort
         if context.is_cancelled():
             return self._done(context, kind, OUTCOME_CANCELLED, {}, DecisionConfidence(**identity), started)
         rendered = context.render()
@@ -743,8 +757,10 @@ class ModelDecisionEngine(SchemaDecisionEngine):
             return self._done(context, kind, OUTCOME_CANCELLED, {}, DecisionConfidence(**identity), started,
                               context.refused or '', sent=False)
         try:
-            message, observed = self.adapter.tool_turn(config, key, messages, tools, tool_choice='required',
-                                                       timeout=self.timeout, report_observed=True)
+            # The effort rides in the config; the shared adapter sends it in each provider's own field (#1051).
+            message, observed = self.adapter.tool_turn({**config, **effort_options}, key, messages, tools,
+                                                       tool_choice='required', timeout=self.timeout,
+                                                       report_observed=True)
         except ProviderError as exc:
             outcome = OUTCOME_TIMEOUT if exc.status == 'timeout' else OUTCOME_REJECTED if exc.status in (400, 413) else OUTCOME_UNAVAILABLE
             failure = 'auth' if exc.status in (401, 403) else 'usage-limit' if exc.status == 429 else ''

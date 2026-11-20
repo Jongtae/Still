@@ -110,6 +110,30 @@ class PolicyTests(unittest.TestCase):
 class ModelEngineTests(unittest.TestCase):
     """The production adapter over the repository's ModelAdapter tool-call shape."""
 
+    def test_direct_engine_only_passes_and_audits_valid_effort(self):
+        """The effort rides in the config handed to the shared adapter (#1051 sends it per provider)."""
+        reply = openai_tool_reply({'answer': True, 'confidence': 0.9})
+        for effort in ('none', 'invalid', None):
+            with self.subTest(effort=effort):
+                adapter = ModelAdapter(ScriptedTransport(reply))
+                seen = []
+                original = adapter.tool_turn
+
+                def recording(config, *args, **kwargs):
+                    seen.append(dict(config))
+                    return original(config, *args, **kwargs)
+                adapter.tool_turn = recording
+                audit = []
+                engine = ModelDecisionEngine(adapter, lambda: ({**OPENAI, 'effort': effort}, 'fixture-key'),
+                                             audit=audit.append)
+                self.assertTrue(engine.judge(DecisionContext('test'), 'test').decided)
+                if effort == 'none':
+                    self.assertEqual(seen[0].get('effort'), 'none')
+                    self.assertEqual(audit[0]['effort'], 'none')
+                else:
+                    self.assertNotIn('effort', seen[0])
+                    self.assertNotIn('effort', audit[0])
+
     def context(self):
         return DecisionContext('parked-work-withdrawal', {'waiting_connection': 'Gmail', 'owner_message': '취소해줘'})
 

@@ -8956,6 +8956,18 @@
   "ja": "OpenAI API キーがないため会話解釈に使用できません。",
   "zh": "缺少 OpenAI API 密钥，无法用于对话解析。"
  },
+ "decision_routes.api_key_missing": {
+  "ko": "{name} 키가 없어 대화 해석에 사용할 수 없어요.",
+  "en": "Conversation interpretation requires a key for {name}.",
+  "ja": "{name} のキーがないため会話解釈に使用できません。",
+  "zh": "缺少 {name} 密钥，无法用于对话解析。"
+ },
+ "decision_routes.select_api": {
+  "ko": "판단에 사용할 API를 선택하세요.",
+  "en": "Select an API for Judgment AI.",
+  "ja": "判断 AI に使用する API を選択してください。",
+  "zh": "请选择判断 AI 使用的 API。"
+ },
  "decision_routes.invalid_model": {
   "ko": "사용할 모델 이름 형식을 확인하세요.",
   "en": "Check the model name format.",
@@ -8967,6 +8979,12 @@
   "en": "No OpenAI API model ({candidates}) passed conversation interpretation qualification ({suite_version}).",
   "ja": "OpenAI API モデル（{candidates}）に会話解釈の適格性検査（{suite_version}）を通過したモデルがありません。",
   "zh": "OpenAI API 模型（{candidates}）均未通过对话解析资格检查（{suite_version}）。"
+ },
+ "decision_routes.api_candidates_failed": {
+  "ko": "{name}의 모델({candidates}) 중 대화 해석 적격성 검사({suite_version})를 통과한 모델이 없어요.",
+  "en": "None of the {name} models ({candidates}) passed conversation interpretation qualification ({suite_version}).",
+  "ja": "{name} のモデル（{candidates}）に会話解釈の適格性検査（{suite_version}）を通過したモデルがありません。",
+  "zh": "{name} 模型（{candidates}）均未通过对话解析资格检查（{suite_version}）。"
  },
  "decision_routes.codex_isolation_unverifiable": {
   "ko": "이 실행 환경에서는 Codex 판단의 엄격 격리를 검증할 수 없어요.",
@@ -9123,6 +9141,12 @@
   "en": "Could not fetch the {name} model list ({status}). Current Judgment AI is unchanged.",
   "ja": "{name} のモデル一覧を取得できませんでした（{status}）。現在の判断 AI は変更されません。",
   "zh": "无法获取 {name} 模型列表（{status}）。当前判断 AI 保持不变。"
+ },
+ "decision_routes.api_list_invalid": {
+  "ko": "{name} 모델 목록을 읽을 수 없어요.",
+  "en": "Could not read the {name} model list.",
+  "ja": "{name} のモデル一覧を読み取れませんでした。",
+  "zh": "无法读取 {name} 模型列表。"
  },
  "decision_routes.failure_unchanged": {
   "ko": "{message} 현재 대화 해석 경로는 그대로 유지돼요.",

@@ -8,7 +8,7 @@ the decision route:
 
 * ``decision_route`` config row - the *active* route, written only by an
   explicit owner activation that passed its probe/qualification.  When the
-  row is absent the #417 default applies (OpenAI ``gpt-4o-mini`` when an
+  row is absent the #417 default applies (OpenAI ``gpt-6-luna`` when an
   OpenAI key is already the owner's choice for that destination).
 * ``decision_route_checks`` - the last explicit check per route option,
   content free.
@@ -48,11 +48,11 @@ import tempfile
 import time
 import uuid
 from pathlib import Path
-from urllib.parse import urlsplit
+from urllib.parse import urlencode, urlsplit
 
 from .decision import (DEFAULT_DECISION_MODEL, DEFAULT_DECISION_PROVIDER, OUTCOME_DECIDED,
                        ROUTE_DIRECT_API, ROUTE_JEV, ROUTE_SUBSCRIPTION_CLI, DecisionContext,
-                       ModelDecisionEngine, UnavailableDecisionEngine)
+                       ModelDecisionEngine, UnavailableDecisionEngine, valid_api_effort)
 import re
 import threading
 
@@ -61,7 +61,7 @@ from .decision_adapters import (CLI_BINARIES, JEV_DEFAULT_MODEL, JEV_DESTINATION
                                 codex_still_enabled, parse_codex_features, valid_effort, valid_model_id)
 from .bounded_execution import parse_cli_version, strict_allowed_features
 from .decision_qualification import CASE_IDS, SUITE_VERSION, qualify
-from .main_ai import CHOOSER_ORDER, api_route_of, key_slot
+from .main_ai import API_ROUTES, CHOOSER_ORDER, api_route_of, key_slot
 from .providers import ProviderError, request_json
 
 ROUTE_OFF = 'off'
@@ -114,20 +114,26 @@ RANKED_MODELS = {
     # `claude --help` 2.1.280 (`--model` accepts haiku/sonnet/opus or a full
     # name; there is no machine-readable model list).
     'claude-code': ('haiku', 'sonnet'),
-    # OpenAI API.  Source, checked 2026-09-27: https://platform.openai.com/docs/pricing.
-    # gpt-6-luna is cheaper, but its Chat Completions compatibility (the
-    # transport ModelAdapter uses) is unverified, so gpt-4o-mini stays first.
-    # To promote gpt-6-luna: after an owner live check in which an explicit
-    # `gpt-6-luna` choice passed the full qualification on the owner's key
-    # (Settings › 판단 AI › 고급 › OpenAI API › 모델), move it first here and
-    # record that evidence in docs/decision-layer.en.md.
-    'openai': ('gpt-4o-mini', 'gpt-6-luna'),
+    # OpenAI Responses API models: https://developers.openai.com/api/docs/models
+    'openai': (DEFAULT_DECISION_MODEL, 'gpt-6.1-terra'),
     # Anthropic API.  Source, checked 2026-11-20: Anthropic's current model
     # table (Claude Haiku 5.5, $0.10/$0.50 per MTok up to 100K-token prompts,
     # the cheapest current model).  Haiku 4.5 stays as the fallback for a key
     # whose model list does not include Haiku 5.5 (#1047).
     'anthropic': ('claude-haiku-5-5', 'claude-haiku-4-5'),
+    'openrouter': ('openai/gpt-6-luna', 'anthropic/claude-haiku-5-5'),
 }
+# OpenAI's model list has no capability fields. Use the documented levels.
+# https://developers.openai.com/api/docs/models
+# https://developers.openai.com/api/docs/guides/reasoning
+_REASONING_LEVELS = ('low', 'medium', 'high', 'xhigh', 'max')
+OPENAI_EFFORTS = {
+    'gpt-6-luna': ('none', 'minimal', *_REASONING_LEVELS),
+    'gpt-6.1-terra': ('none', 'minimal', *_REASONING_LEVELS),
+    'gpt-6.2-sol': _REASONING_LEVELS,
+    'gpt-6.2-astra': _REASONING_LEVELS,
+}
+DOCUMENTED_API_EFFORTS = {'openai': OPENAI_EFFORTS}
 #: The default reasoning effort for a judgment, sent only where the model
 #: supports it (``supported_efforts``).
 DEFAULT_EFFORT = 'low'
@@ -162,14 +168,46 @@ def known_models(route_id, listed=None):
 LISTED_LABEL = msg('decision_routes.listed_unverified')
 #: Official model-list endpoints for the API routes (explicit refresh only).
 ANTHROPIC_CONFIG = {'provider': 'anthropic', 'endpoint': 'https://api.anthropic.com', 'model': 'claude-haiku-5-5'}
+API_BASES = {api: {field: config[field] for field in ('provider', 'endpoint')}
+             for api, config in (('openai', DEFAULT_DECISION_PROVIDER), ('anthropic', ANTHROPIC_CONFIG),
+                                 ('openrouter', API_ROUTES['openrouter']))}
+
+
+def _anthropic_efforts(row):
+    capabilities = row.get('capabilities')
+    effort = capabilities.get('effort') if isinstance(capabilities, dict) else None
+    if not isinstance(effort, dict) or effort.get('supported') is not True:
+        return ()
+    return tuple(level for level in _REASONING_LEVELS if isinstance(effort.get(level), dict)
+                 and effort[level].get('supported') is True)
+
+
+def _openrouter_efforts(row):
+    reasoning = row.get('reasoning')
+    if not isinstance(reasoning, dict) or 'supported_efforts' not in reasoning:
+        return ()
+    levels = reasoning['supported_efforts']
+    if levels is None:
+        return ('low', 'medium', 'high')
+    return tuple(dict.fromkeys(level for level in levels if valid_api_effort(level))) if isinstance(levels, list) else ()
+
+
 API_MODEL_LISTS = {
-    'openai': {'url': 'https://api.openai.com/v1/models', 'config': dict(DEFAULT_DECISION_PROVIDER)},
-    'anthropic': {'url': 'https://api.anthropic.com/v1/models', 'config': dict(ANTHROPIC_CONFIG)},
+    'openai': {'url': API_BASES['openai']['endpoint'] + '/models', 'key_header': 'Authorization', 'key_prefix': 'Bearer ',
+               'efforts': lambda row: OPENAI_EFFORTS.get(row['id'], ())},
+    # https://platform.claude.com/docs/en/api/models/list
+    'anthropic': {'url': API_BASES['anthropic']['endpoint'] + '/v1/models', 'key_header': 'x-api-key',
+                  'headers': {'anthropic-version': '2023-06-01'}, 'efforts': _anthropic_efforts,
+                  'page_limit': 1000, 'max_pages': 5, 'dated_aliases': True},
+    # https://openrouter.ai/docs/api/api-reference/models/get-models
+    'openrouter': {'url': API_BASES['openrouter']['endpoint'] + '/models', 'key_header': 'Authorization',
+                   'key_prefix': 'Bearer ',
+                   'efforts': _openrouter_efforts},
     # #609: TypeSafe's own listing for the Jev decision route.  Every listed
     # name is offered (no Still catalogue); `jev-latest` stays the default.
     ROUTE_JEV: {'url': JEV_MODELS_ENDPOINT},
 }
-MODEL_LIST_ROUTES = ('codex', 'claude-code', 'openai', 'anthropic', ROUTE_JEV)
+MODEL_LIST_ROUTES = ('codex', 'claude-code', *API_MODEL_LISTS)
 #: Bounds for the secondary, technical metadata a Jev listing may carry.
 JEV_LIST_TEXT_LIMIT = 200
 
@@ -178,13 +216,9 @@ JEV_LIST_TEXT_LIMIT = 200
 #: Every entry runs ``fastest_qualified`` over its ranked list (#472; #679 ran
 #: ``lowest_qualified``).
 FOLLOW_CANDIDATES = {
-    'openai': {'transport': ROUTE_DIRECT_API, 'config': dict(DEFAULT_DECISION_PROVIDER),
-               'model_policy': POLICY_FASTEST_QUALIFIED, 'candidates': list(RANKED_MODELS['openai'])},
-    'anthropic': {'transport': ROUTE_DIRECT_API, 'config': dict(ANTHROPIC_CONFIG),
-                  'model_policy': POLICY_FASTEST_QUALIFIED, 'candidates': list(RANKED_MODELS['anthropic'])},
-    'openrouter': {'transport': ROUTE_DIRECT_API, 'config': {'provider': 'compatible', 'endpoint': 'https://openrouter.ai/api/v1',
-                                                              'model': 'openai/gpt-4o-mini'},
-                   'model_policy': POLICY_FASTEST_QUALIFIED, 'candidates': ['openai/gpt-4o-mini']},
+    **{api: {'transport': ROUTE_DIRECT_API, 'config': {**base, 'model': RANKED_MODELS[api][0]},
+             'model_policy': POLICY_FASTEST_QUALIFIED, 'candidates': list(RANKED_MODELS[api])}
+       for api, base in API_BASES.items()},
     'claude-code': {'transport': ROUTE_SUBSCRIPTION_CLI, 'engine': 'claude-code', 'model_policy': POLICY_FASTEST_QUALIFIED,
                     'candidates': list(RANKED_MODELS['claude-code'])},
     'codex': {'transport': ROUTE_SUBSCRIPTION_CLI, 'engine': 'codex', 'model_policy': POLICY_FASTEST_QUALIFIED,
@@ -235,6 +269,14 @@ FOLLOW_UNAVAILABLE = {
 }
 ROUTE_NAMES = {'codex': 'Codex', 'claude-code': 'Claude Code', 'openai': 'OpenAI API', 'anthropic': 'Anthropic API',
                'openrouter': 'OpenRouter', 'other': msg('label.other_connection')}
+API_CHECK_OPTIONS = {api: f'{ROUTE_DIRECT_API}:{api}' for api in API_BASES}
+API_CHECK_OPTIONS['openai'] = ROUTE_DIRECT_API
+API_DECISION_KEY_SLOTS = {'openai': 'decision_model_key'}
+
+
+def _api_label(route):
+    return ROUTE_NAMES.get(route.get('api') or route.get('main')
+                           or {'openai': 'openai'}.get(route.get('provider')), 'API')
 
 
 def supported_efforts(engine_id, model, capability=None):
@@ -411,18 +453,20 @@ class DecisionRoutes:
         return ModelDecisionEngine(self.service.adapter, resolve or (lambda: self._direct_resolve(route)), audit=audit)
 
     def _direct_resolve(self, route):
-        """The #417/#580 direct destination and key, with an activated model (#679).
-
-        The destination and key still come only from ``service.decision_route``;
-        an owner-activated route adds only the qualified model for the same
-        provider, so a model choice never changes where a judgment goes.
-        """
+        """Resolve an API choice with its live key, or use the legacy #417 binding."""
+        route = route or {}
+        if 'api' in route:
+            api = route['api']
+            if api not in API_BASES:
+                return None
+            key = self._api_key(api)
+            return (self._api_config(API_BASES[api], route.get('requested_model'), route.get('effort')), key) if key else None
         resolved = self.service.decision_route()
         if not resolved:
             return None
         config, key = resolved
-        model = (route or {}).get('requested_model')
-        if model and (route or {}).get('provider') == config.get('provider') and valid_model_id(model):
+        model = route.get('requested_model')
+        if model and route.get('provider') == config.get('provider') and valid_model_id(model):
             config = {**config, 'model': model}
         return config, key
 
@@ -513,7 +557,8 @@ class DecisionRoutes:
                 # Pre-#988 checks did not retain a route snapshot. Reuse the
                 # still-persisted route, including its strict isolation binding.
                 route_option = (f"{ROUTE_SUBSCRIPTION_CLI}:{route.get('engine')}"
-                                if route['transport'] == ROUTE_SUBSCRIPTION_CLI else route['transport'])
+                                if route['transport'] == ROUTE_SUBSCRIPTION_CLI
+                                else API_CHECK_OPTIONS.get(route.get('api'), route['transport']))
                 if option in (route_option, f"{MODE_FOLLOW}:{route.get('main')}"):
                     candidate = route
             if not candidate:
@@ -559,9 +604,10 @@ class DecisionRoutes:
                                   'score': qualified.get('score'), 'at': check.get('checked_at')}}
 
     def _fallback_params(self, route):
+        label = (_api_label(route) if route['transport'] == ROUTE_DIRECT_API
+                 else ENGINE_NAMES.get(route.get('engine')) or route.get('provider') or route['transport'])
         return {'main': ROUTE_NAMES.get(self.service.main_ai.current(), self.service.main_ai.current()),
-                'label': ENGINE_NAMES.get(route.get('engine')) or route.get('provider') or route['transport'],
-                'model': route.get('requested_model') or '-'}
+                'label': label, 'model': route.get('requested_model') or '-'}
 
     def _fallback_text(self, route):
         return msg('decision_routes.qualified_fallback_used', **self._fallback_params(route))
@@ -644,9 +690,13 @@ class DecisionRoutes:
         A removed key makes the route unavailable; nothing falls back.
         """
         key = self._main_key(route.get('main', ''))
-        config = {'provider': route.get('provider'), 'endpoint': route.get('endpoint'),
-                  'model': route.get('requested_model')}
+        base = {'provider': route.get('provider'), 'endpoint': route.get('endpoint')}
+        config = self._api_config(base, route.get('requested_model'), route.get('effort'))
         return (config, key) if key else None
+
+    def _follow_pins(self):
+        pins = self.store.config('decision_follow_pins', {})
+        return dict(pins) if isinstance(pins, dict) else {}
 
     def mode(self, route=None):
         route = self.active() if route is None else route
@@ -654,24 +704,27 @@ class DecisionRoutes:
             return MODE_FOLLOW
         return ROUTE_OFF if route['transport'] == ROUTE_OFF else 'explicit'
 
-    def follow_preview(self, main_id):
+    def follow_preview(self, main_id, *, pins=None):
         """What following ``main_id`` would resolve to.  No call, no subprocess."""
         candidate = FOLLOW_CANDIDATES.get(main_id)
+        pin = (self._follow_pins() if pins is None else pins).get(main_id)
+        preview = {'main': main_id, 'pinned': bool(pin)}
         if not candidate:
-            return {'main': main_id, 'available': False,
+            return {**preview, 'available': False,
                     'reason': FOLLOW_UNAVAILABLE.get(main_id, FOLLOW_UNAVAILABLE['other'])}
+        policy = POLICY_EXPLICIT if pin else candidate['model_policy']
         if candidate['transport'] == ROUTE_DIRECT_API:
-            candidates = list(candidate['candidates'])
-            return {'main': main_id, 'available': True, 'transport': ROUTE_DIRECT_API,
-                    'model': candidates[0], 'candidates': candidates, 'model_policy': candidate['model_policy'],
+            candidates = [pin['model']] if pin else list(candidate['candidates'])
+            return {**preview, 'available': True, 'transport': ROUTE_DIRECT_API,
+                    'model': candidates[0], 'candidates': candidates, 'model_policy': policy,
                     'destination': urlsplit(candidate['config']['endpoint']).hostname}
         if self.service.isolated_engine_adapter:
-            return {'main': main_id, 'available': False,
+            return {**preview, 'available': False,
                     'reason': msg('decision_routes.isolated_judgment_unavailable')}
-        candidates = self._ranked(candidate['engine'])
-        return {'main': main_id, 'available': True, 'transport': ROUTE_SUBSCRIPTION_CLI,
+        candidates = [pin['model']] if pin else self._ranked(candidate['engine'])
+        return {**preview, 'available': True, 'transport': ROUTE_SUBSCRIPTION_CLI,
                 'model': candidates[0] if candidates else '', 'candidates': candidates,
-                'model_policy': candidate['model_policy'], 'destination': self._cli_destination(candidate['engine'])}
+                'model_policy': policy, 'destination': self._cli_destination(candidate['engine'])}
 
     def _ranked(self, engine_id, capability=None):
         """The ranked candidates for one CLI, filtered by what the installed binary bundles.
@@ -779,7 +832,7 @@ class DecisionRoutes:
             # it may have captured the previous key or login of this same
             # route.  Its next checkpoint - including the one right before the
             # commit - sees another id and stops without writing.
-            job = {'id': f'{option}@{now}', 'option': option, 'main': main_id, 'state': JOB_QUEUED,
+            job = {'id': f'{option}@{uuid.uuid4().hex}', 'option': option, 'main': main_id, 'state': JOB_QUEUED,
                    'queued_at': now, 'requeued': 0, 'route_rev': rev, 'explicit': bool(explicit)}
             rows[option] = job
             self._put_jobs(rows)
@@ -814,6 +867,10 @@ class DecisionRoutes:
             identity = self._cli_update_identity(route)
             option = f"update:{route['engine']}"
             rows = self._jobs()
+            # A queued follow choice will qualify the new binary itself.
+            follow = rows.get(f'{MODE_FOLLOW}:{self.service.main_ai.current()}') or {}
+            if follow.get('state') in (JOB_QUEUED, JOB_RUNNING) and self._job_current(follow):
+                return
             current = rows.get(option) or {}
             if current.get('route_rev') == route.get('activated_at') and current.get('target_identity') == identity:
                 return
@@ -912,14 +969,12 @@ class DecisionRoutes:
                 # keep_previous: the decision_route row changes only on a pass.
                 if job.get('target_identity') is not None:
                     route = job['route']
-                    policy = route.get('model_policy')
-                    if route.get('mode') == MODE_FOLLOW and route.get('main') in FOLLOW_CANDIDATES:
-                        # #472: a follow row's policy is the follow default, not an owner
-                        # choice, so a CLI update requalifies it under the current one.
-                        policy = FOLLOW_CANDIDATES[route['main']]['model_policy']
-                    body = {'engine': route['engine'], 'model_policy': policy,
+                    body = {'engine': route['engine'], 'model_policy': route.get('model_policy'),
                             'model': route.get('requested_model'), 'effort': route.get('effort')}
-                    if policy in CANDIDATE_POLICIES and 'declared_candidates' in route:
+                    if route.get('mode') == MODE_FOLLOW and route.get('main') in FOLLOW_CANDIDATES:
+                        pin = self._follow_pins().get(route['main'])
+                        body = self._follow_cli_body(FOLLOW_CANDIDATES[route['main']], pin)
+                    elif body['model_policy'] in CANDIDATE_POLICIES and 'declared_candidates' in route:
                         body['candidates'] = route['declared_candidates']
                     extra = {key: route[key] for key in ('mode', 'main') if key in route}
                     self._activate_cli(body, extra=extra)
@@ -1042,23 +1097,26 @@ class DecisionRoutes:
         if not candidate:
             return failed('follow-unsupported', FOLLOW_UNAVAILABLE.get(main_id, FOLLOW_UNAVAILABLE['other']))
         follow = {'mode': MODE_FOLLOW, 'main': main_id}
+        pin = self._follow_pins().get(main_id)
         if candidate['transport'] == ROUTE_DIRECT_API:
             key = self._main_key(main_id)
             if not key:
                 return failed('not-configured', msg('decision_routes.main_key_missing'))
-            base = dict(candidate['config'])
-            # #679/#472: the ranked list, each through the full qualification
-            # suite; the follow policy picks among those that pass.
-            policy = candidate['model_policy']
+            base = API_BASES[main_id]
+            policy = POLICY_EXPLICIT if pin else candidate['model_policy']
+            candidates = [pin['model']] if pin else candidate['candidates']
+            configs = {name: self._api_config(base, name, pin['effort'] if pin else self._auto_api_effort(main_id, name))
+                       for name in candidates}
             model, result, tried = self._first_qualified(
-                candidate['candidates'],
+                candidates,
                 lambda name, audit: ModelDecisionEngine(self.service.adapter,
-                                                        lambda: ({**base, 'model': name}, key), audit=audit), policy)
+                                                        lambda: (configs[name], key), audit=audit), policy)
             if not model:
                 return failed('no-qualified-candidate',
-                              msg('decision_routes.follow_candidates_failed', candidates=", ".join(candidate["candidates"]), suite_version=SUITE_VERSION), candidates=tried, suite_version=SUITE_VERSION)
-            self._commit(option, {**follow, 'transport': ROUTE_DIRECT_API, 'provider': base['provider'],
-                                  'endpoint': base['endpoint'], 'requested_model': model, 'key_source': 'main',
+                              msg('decision_routes.follow_candidates_failed', candidates=", ".join(candidates), suite_version=SUITE_VERSION), candidates=tried, suite_version=SUITE_VERSION)
+            effort = configs[model].get('effort')
+            self._commit(option, {**follow, 'transport': ROUTE_DIRECT_API, **base,
+                                  'requested_model': model, 'key_source': 'main', 'effort': effort,
                                   'model_policy': policy,
                                   'qualification': self._qualification_record(model, result, tried=tried)},
                          {'model_policy': policy, 'requested_model': model, 'candidates': tried,
@@ -1067,7 +1125,7 @@ class DecisionRoutes:
         try:
             # No candidates: the ranked list, filtered by the capability check
             # that activation itself runs (#679).
-            self._activate_cli({'engine': candidate['engine'], 'model_policy': candidate['model_policy']}, extra=follow)
+            self._activate_cli(self._follow_cli_body(candidate, pin), extra=follow)
         except DecisionRouteError as exc:
             if keep_previous:
                 raise
@@ -1078,6 +1136,11 @@ class DecisionRoutes:
             return {'state': 'attention', 'failure': 'probe-failed', 'message': str(exc)}
         self._record_check(option, {'state': 'active', 'route': self.active()})
         return {'state': 'active'}
+
+    @staticmethod
+    def _follow_cli_body(candidate, pin):
+        return {'engine': candidate['engine'], 'model_policy': POLICY_EXPLICIT if pin else candidate['model_policy'],
+                **(pin or {})}
 
     def _codex_instructions_qualified(self, route):
         checks = (route.get('strict_profile') or {}).get('checks') or ()
@@ -1265,20 +1328,38 @@ class DecisionRoutes:
                   for key, row in self._checks().items()}
         capabilities = self._capabilities()
         direct_config = resolved[0] if resolved else None
-        explicit = self.store.config('decision_model', {})
-        key_source = ('decision' if isinstance(explicit, dict) and explicit.get('provider') and resolved
-                      else 'work-api' if resolved else '')
-        has_decision_key = bool(self.store.secret('decision_model_key'))
-        direct_resolved = self._direct_resolve(route if route and route.get('transport') == ROUTE_DIRECT_API
-                                               and route.get('mode') != MODE_FOLLOW else None)
-        direct = {'transport': ROUTE_DIRECT_API, 'configured': bool(resolved) or has_decision_key,
-                  'provider': direct_config['provider'] if direct_config else DEFAULT_DECISION_PROVIDER['provider'],
-                  'model': direct_resolved[0]['model'] if direct_resolved else DEFAULT_DECISION_MODEL,
-                  'destination': urlsplit((direct_config or DEFAULT_DECISION_PROVIDER)['endpoint']).hostname,
-                  'key_source': key_source, 'has_decision_key': bool(self.store.secret('decision_model_key')),
-                  # #679: the ranked candidates the activation qualifies (all of them under fastest_qualified, #472).
-                  'ranked_models': list(RANKED_MODELS['openai']),
-                  'check': checks.get(ROUTE_DIRECT_API)}
+        model_lists = self._model_lists()
+        apis = []
+        for api, base in API_BASES.items():
+            key, source = self._api_credentials(api)
+            efforts = self._api_efforts(api, model_lists)
+            ranked = list(RANKED_MODELS[api])
+            apis.append({'id': api, 'name': ROUTE_NAMES[api], 'configured': bool(key), 'key_source': source,
+                         **({'has_decision_key': source == 'decision'} if api in API_DECISION_KEY_SLOTS else {}),
+                         'ranked_models': ranked, 'destination': urlsplit(base['endpoint']).hostname,
+                         'model_efforts': {model: list(efforts.get(model, ()))
+                                           for model in dict.fromkeys([*ranked, *efforts])},
+                         'check': checks.get(API_CHECK_OPTIONS[api])})
+        openai = next(item for item in apis if item['id'] == DEFAULT_DECISION_PROVIDER['provider'])
+        explicit_direct = route and route.get('transport') == ROUTE_DIRECT_API and route.get('mode') != MODE_FOLLOW
+        direct_resolved = self._direct_resolve(route) if explicit_direct else resolved
+        legacy_config = direct_config or DEFAULT_DECISION_PROVIDER
+        direct_base = legacy_config
+        direct_model = legacy_config['model']
+        if explicit_direct:
+            if route.get('api') == openai['id']:
+                direct_base = API_BASES[openai['id']]
+                direct_model = route['requested_model']
+            elif 'api' not in route:
+                if direct_resolved:
+                    direct_model = direct_resolved[0]['model']
+                elif valid_model_id(route.get('requested_model')):
+                    direct_model = route['requested_model']
+        direct = {'transport': ROUTE_DIRECT_API, 'configured': openai['configured'],
+                  'provider': direct_base['provider'], 'model': direct_model,
+                  'destination': urlsplit(direct_base['endpoint']).hostname,
+                  'key_source': openai['key_source'], 'has_decision_key': openai['has_decision_key'],
+                  'ranked_models': openai['ranked_models'], 'check': openai['check']}
         jev_config = self.store.config('decision_jev', {})
         jev = {'transport': ROUTE_JEV, 'configured': bool(self.store.secret('decision_jev_key')),
                'model': (jev_config.get('model') if isinstance(jev_config, dict) else None) or JEV_DEFAULT_MODEL,
@@ -1308,8 +1389,9 @@ class DecisionRoutes:
                                               for model in ranked},
                             'check': checks.get(f'{ROUTE_SUBSCRIPTION_CLI}:{engine_id}')})
         main = self.service.main_ai.current()
-        follow = self.follow_preview(main) if main else {'main': '', 'available': False,
-                                                            'reason': msg('decision_routes.main_missing')}
+        pins = self._follow_pins()
+        follow = self.follow_preview(main, pins=pins) if main else {'main': '', 'available': False, 'pinned': False,
+                                                                   'reason': msg('decision_routes.main_missing')}
         if route is not None and route.get('mode') == MODE_FOLLOW:
             stale = route.get('main') != main
             active = {**{k: v for k, v in route.items() if k not in ('fingerprint', 'binary_identity', 'declared_candidates')}, 'source': 'follow', 'stale': stale}
@@ -1327,8 +1409,13 @@ class DecisionRoutes:
         else:
             active = {**{k: v for k, v in route.items() if k not in ('fingerprint', 'binary_identity', 'declared_candidates')}, 'source': 'owner'}
             if route['transport'] == ROUTE_DIRECT_API:
-                active.update(provider=direct['provider'], requested_model=direct['model'],
-                              destination=direct['destination'], available=bool(resolved))
+                if 'api' in route:
+                    base = API_BASES.get(route['api'], {})
+                    active.update(destination=urlsplit(base.get('endpoint', '')).hostname,
+                                  available=bool(direct_resolved))
+                else:
+                    active.update(provider=direct['provider'], requested_model=direct['model'],
+                                  destination=direct['destination'], available=bool(direct_resolved))
             elif route['transport'] == ROUTE_JEV:
                 active.update(destination=JEV_DESTINATION, available=jev['configured'])
             elif route['transport'] == ROUTE_SUBSCRIPTION_CLI:
@@ -1342,7 +1429,13 @@ class DecisionRoutes:
             if fallback['transport'] == ROUTE_SUBSCRIPTION_CLI:
                 active.update(self._cli_active(fallback, engines))
             else:
-                active['destination'] = urlsplit(self._direct_resolve(fallback)[0]['endpoint']).hostname
+                if fallback.get('mode') == MODE_FOLLOW:
+                    endpoint = fallback.get('endpoint') or ''
+                elif fallback.get('api') in API_BASES:
+                    endpoint = API_BASES[fallback['api']]['endpoint']
+                else:
+                    endpoint = legacy_config['endpoint']
+                active['destination'] = urlsplit(endpoint).hostname
         elif self._follow_failed():
             active = {'transport': 'none', 'source': 'follow', 'available': False}
         # #685: the background qualification for the current Main AI, if any.
@@ -1353,13 +1446,14 @@ class DecisionRoutes:
                 (qualification.get('explicit') or qualification.get('target_identity') is not None)
                 and qualification.get('route_rev') == (route or {}).get('activated_at')):
             qualification = None
-        return {'active': active, 'direct_api': direct, 'jev': jev, 'subscription_cli': engines,
+        return {'active': active, 'direct_api': direct, 'apis': apis, 'jev': jev, 'subscription_cli': engines,
                 'suite_version': SUITE_VERSION, 'mode': self.mode(route), 'main': main, 'follow': follow,
-                'follow_candidates': {route_id: self.follow_preview(route_id) for route_id in CHOOSER_ORDER},
+                'follow_pin': pins.get(main),
+                'follow_candidates': {route_id: self.follow_preview(route_id, pins=pins) for route_id in CHOOSER_ORDER},
                 'follow_check': follow_check, 'qualification': ({k: v for k, v in qualification.items()
                     if k not in ('target_identity', 'route')} if qualification else None),
                 'effective': self.effective(active, route, main, follow, follow_check, qualification),
-                'model_lists': self._model_lists()}
+                'model_lists': model_lists}
 
     def effective(self, active, route, main, follow, follow_check=None, qualification=None):
         """What answers the next judgment, in words the owner can check (#679).
@@ -1450,7 +1544,7 @@ class DecisionRoutes:
             return said('attention', msg('decision_routes.attention'), reason)
         # Explicitly chosen (따로 지정).
         transport = active.get('transport')
-        label = ({ROUTE_DIRECT_API: 'OpenAI API' if active.get('provider') == 'openai' else 'API', ROUTE_JEV: 'Jev (TypeSafe)',
+        label = ({ROUTE_DIRECT_API: _api_label(active), ROUTE_JEV: 'Jev (TypeSafe)',
                   ROUTE_SUBSCRIPTION_CLI: ENGINE_NAMES.get(active.get('engine'), active.get('engine') or '-')}
                  .get(transport, transport or '-'))
         if active.get('available') is False:
@@ -1722,7 +1816,7 @@ class DecisionRoutes:
         instead (#760).
         """
         if isinstance(body, dict) and body.get('transport') == MODE_FOLLOW:
-            return self._request_follow()
+            return self._request_follow(body)
         if not self._activating.acquire(blocking=False):
             raise DecisionRouteError(msg('decision_routes.check_in_progress'))
         try:
@@ -1730,7 +1824,7 @@ class DecisionRoutes:
         finally:
             self._activating.release()
 
-    def _request_follow(self):
+    def _request_follow(self, body):
         """Explicit owner choice of 기본 AI 따라가기 (#760): returns at once.
 
         Refusals that need no call stay synchronous.  Otherwise the #685
@@ -1739,26 +1833,37 @@ class DecisionRoutes:
         the job passes, and any other owner choice made meanwhile
         supersedes it.
         """
-        main = self.service.main_ai.current()
-        if not main:
-            raise DecisionRouteError(msg('decision_routes.no_main_to_follow'))
-        if main not in FOLLOW_CANDIDATES:
-            self._fail(f'{MODE_FOLLOW}:{main}', 'follow-unsupported',
-                       FOLLOW_UNAVAILABLE.get(main, FOLLOW_UNAVAILABLE['other']))
+        model, effort = body.get('model'), body.get('effort')
         # Review (#761): an explicit activation still running would commit
         # after this request and supersede it, so it is refused like every
         # other concurrent activation.  A background job holding the lock is
         # fine: the request queues (a same-route running job is replaced).
-        if self._activating.acquire(blocking=False):
+        with self.service.lock:
+            main = self.service.main_ai.current()
+            if not main:
+                raise DecisionRouteError(msg('decision_routes.no_main_to_follow'))
+            if main not in FOLLOW_CANDIDATES:
+                self._fail(f'{MODE_FOLLOW}:{main}', 'follow-unsupported',
+                           FOLLOW_UNAVAILABLE.get(main, FOLLOW_UNAVAILABLE['other']))
+            if model is not None and not valid_model_id(model):
+                raise DecisionRouteError(msg('decision_routes.invalid_model'))
+            valid = valid_api_effort if main in API_BASES else valid_effort
+            if effort is not None and (model is None or not valid(effort)):
+                raise DecisionRouteError(msg('decision_routes.invalid_effort'))
+            acquired = self._activating.acquire(blocking=False)
+            if not acquired and not self._job_holds_lock:
+                raise DecisionRouteError(msg('decision_routes.check_in_progress'))
             try:
+                pins = self._follow_pins()
+                if model is None:
+                    pins.pop(main, None)
+                else:
+                    pins[main] = {'model': model, 'effort': effort}
+                self.store.put('decision_follow_pins', pins)
                 self.queue_qualification(main, explicit=True)
             finally:
-                self._activating.release()
-        else:
-            with self.service.lock:
-                if not self._job_holds_lock:
-                    raise DecisionRouteError(msg('decision_routes.check_in_progress'))
-                self.queue_qualification(main, explicit=True)
+                if acquired:
+                    self._activating.release()
         return self.status()
 
     def _activate(self, body):
@@ -1783,46 +1888,50 @@ class DecisionRoutes:
         return self._activate_cli(body)
 
     def _activate_direct(self, body):
-        """The direct API route: the ranked list, or the owner's one model, through ``qualify()`` (#679).
+        """Qualify a separate API route's ranked models or the owner's pinned choice."""
+        api = body.get('api', 'openai')
+        if not isinstance(api, str) or api not in API_BASES:
+            raise DecisionRouteError(msg('decision_routes.select_api'))
+        option, base = API_CHECK_OPTIONS[api], API_BASES[api]
+        key, source = self._api_credentials(api)
+        if not key:
+            self._fail(option, 'not-configured', msg('decision_routes.api_key_missing', name=ROUTE_NAMES[api]))
 
-        The destination and key are exactly the pre-#679 ones (a decision-only
-        OpenAI key, or the #417 default); only the model is chosen here.
-        """
-        decision_key = self.store.secret('decision_model_key') or ''
-        if decision_key:
-            # A saved decision-only key: exactly that destination/key.
-            base, key = dict(DEFAULT_DECISION_PROVIDER), decision_key
-        elif self.service.decision_route():
-            base, key = self.service.decision_route()
-        else:
-            self._fail(ROUTE_DIRECT_API, 'not-configured', msg('decision_routes.openai_key_missing'))
-        model = body.get('model') or None
+        model, effort = body.get('model'), body.get('effort')
         if model is not None and not valid_model_id(model):
             raise DecisionRouteError(msg('decision_routes.invalid_model'))
-        if model:
-            policy, candidates = POLICY_EXPLICIT, [model]
-        elif base['provider'] == 'openai':
-            policy, candidates = POLICY_FASTEST_QUALIFIED, list(RANKED_MODELS['openai'])
-        else:
-            policy, candidates = POLICY_EXPLICIT, [base['model']]
+        if effort is not None:
+            if model is None or not valid_api_effort(effort):
+                raise DecisionRouteError(msg('decision_routes.invalid_effort'))
+            if effort not in self.api_model_efforts(api, model):
+                raise DecisionRouteError(msg('decision_routes.model_effort_unverified', model=model,
+                                             requested_effort=effort))
+        policy, candidates = (POLICY_EXPLICIT, [model]) if model else (POLICY_FASTEST_QUALIFIED, RANKED_MODELS[api])
+        configs = {name: self._api_config(base, name, effort if model else self._auto_api_effort(api, name))
+                   for name in candidates}
         chosen, result, tried = self._first_qualified(
             candidates, lambda name, audit: ModelDecisionEngine(self.service.adapter,
-                                                                lambda: ({**base, 'model': name}, key), audit=audit),
+                                                                lambda: (configs[name], key), audit=audit),
             policy)
         if not chosen:
-            self._fail(ROUTE_DIRECT_API, 'model-not-verified' if model else 'no-qualified-candidate',
-                       msg('decision_routes.openai_candidates_failed', candidates=", ".join(candidates), suite_version=SUITE_VERSION), candidates=tried, suite_version=SUITE_VERSION,
+            self._fail(option, 'model-not-verified' if model else 'no-qualified-candidate',
+                       msg('decision_routes.api_candidates_failed', name=ROUTE_NAMES[api], candidates=", ".join(candidates),
+                           suite_version=SUITE_VERSION), candidates=tried, suite_version=SUITE_VERSION,
                        **({'requested_model': model} if model else {}))
-        if decision_key:
-            # Written only here, after the qualification passed (#580 review F1).
-            with self.service.lock:
-                self.store.put('decision_model', {**DEFAULT_DECISION_PROVIDER, 'model': chosen})
-        return self._commit(ROUTE_DIRECT_API, {'transport': ROUTE_DIRECT_API, 'provider': base['provider'],
-                                               'requested_model': chosen, 'model_policy': policy,
-                                               'qualification': self._qualification_record(chosen, result, tried=tried),
-                                               'key_source': 'decision' if decision_key else 'existing'},
-                            {'observed_model': observed_of(tried, chosen), 'model_policy': policy,
-                             'requested_model': chosen, 'candidates': tried, 'suite_version': result['suite_version']})
+        config = configs[chosen]
+        effort_field = {'effort': config['effort']} if 'effort' in config else {}
+        with self.service.lock:
+            if self._api_credentials(api) != (key, source):
+                self._fail(option, 'requalification-needed', msg('decision_routes.connection_changed_during_check'))
+            if source == 'decision':
+                # Preserve the legacy default binding only after this key proved it could answer.
+                self.store.put('decision_model', {**base, 'model': chosen})
+            return self._commit(option, {'transport': ROUTE_DIRECT_API, 'api': api, **base, **effort_field,
+                                         'requested_model': chosen, 'model_policy': policy,
+                                         'qualification': self._qualification_record(chosen, result, tried=tried),
+                                         'key_source': source},
+                                {'observed_model': observed_of(tried, chosen), 'model_policy': policy, **effort_field,
+                                 'requested_model': chosen, 'candidates': tried, 'suite_version': result['suite_version']})
 
     def _codex_strict_profile(self, option, binary):
         """The #616 strict-isolated qualification, reused for Codex judgments (#679).
@@ -2010,14 +2119,82 @@ class DecisionRoutes:
                              'suite_version': result['suite_version'], **warning})
 
     # -- model lists (explicit owner action only, #679) ------------------------
-    def _api_list_key(self, route_id):
-        """The key that route would use; '' when none is saved.  Never returned."""
-        if route_id == 'openai' and self.store.secret('decision_model_key'):
-            return self.store.secret('decision_model_key')
-        key = self.store.secret(key_slot(route_id)) or ''
-        if not key and api_route_of(self.store.config('model', {})) == route_id:
-            key = self.store.secret('model_key') or ''
-        return key
+    def _api_credentials(self, api):
+        """One snapshot of a separate API choice's credential and its provenance."""
+        with self.service.lock:
+            decision_slot = API_DECISION_KEY_SLOTS.get(api)
+            key = self.store.secret(decision_slot) if decision_slot else ''
+            if key:
+                return key, 'decision'
+            key = self.store.secret(key_slot(api))
+            if key:
+                return key, 'slot'
+            if api_route_of(self.store.config('model', {})) == api:
+                key = self.store.secret('model_key')
+                if key:
+                    return key, 'main'
+        return '', ''
+
+    def _api_key(self, api):
+        return self._api_credentials(api)[0]
+
+    def _api_efforts(self, api, model_lists):
+        rows = (model_lists.get(api) or {}).get('models') or ()
+        efforts = {row['id']: tuple(level for level in row.get('efforts') or () if valid_api_effort(level))
+                   for row in rows if isinstance(row, dict) and isinstance(row.get('id'), str)}
+        # Older model-list records predate effort metadata.
+        efforts.update(DOCUMENTED_API_EFFORTS.get(api, {}))
+        return efforts
+
+    def api_model_efforts(self, api, model):
+        return self._api_efforts(api, self._model_lists()).get(model, ())
+
+    def _auto_api_effort(self, api, model):
+        return DEFAULT_EFFORT if DEFAULT_EFFORT in self.api_model_efforts(api, model) else None
+
+    @staticmethod
+    def _api_config(base, model, effort):
+        return {**base, 'model': model, **({'effort': effort} if effort is not None else {})}
+
+    def _list_api_models(self, api, ranked):
+        key, spec = self._api_key(api), API_MODEL_LISTS[api]
+        if not key:
+            raise DecisionRouteError(msg('decision_routes.list_key_missing', name=ROUTE_NAMES[api]))
+        headers = {spec['key_header']: spec.get('key_prefix', '') + key, **spec.get('headers', {})}
+        url, limit = spec['url'], spec.get('page_limit')
+        query = {'limit': limit} if limit else {}
+        models = {}
+        seen_cursors = set()
+        max_pages = spec.get('max_pages', 1)
+        for page in range(max_pages):
+            try:
+                reply = self.models_transport(url + ('?' + urlencode(query) if query else ''), None, headers, 15)
+            except ProviderError as exc:
+                raise DecisionRouteError(msg('decision_routes.list_failed', name=ROUTE_NAMES[api],
+                                             status=exc.status or msg('decision_routes.connection_error'))) from None
+            rows = reply.get('data') if isinstance(reply, dict) else None
+            if not isinstance(rows, list):
+                raise DecisionRouteError(msg('decision_routes.api_list_invalid', name=ROUTE_NAMES[api]))
+            for row in rows:
+                model = row.get('id') if isinstance(row, dict) else None
+                if isinstance(model, str) and model:
+                    models[model] = list(spec['efforts'](row))
+            if not limit or page + 1 == max_pages or not reply.get('has_more'):
+                break
+            cursor = reply.get('last_id')
+            if not isinstance(cursor, str) or not cursor or cursor in seen_cursors:
+                raise DecisionRouteError(msg('decision_routes.api_list_invalid', name=ROUTE_NAMES[api]))
+            seen_cursors.add(cursor)
+            query['after_id'] = cursor
+        if spec.get('dated_aliases'):
+            # Keep all versions and synthesize a recommended alias only if it was omitted.
+            # Use the newest dated row for the alias's capabilities.
+            listed = sorted(models, reverse=True)
+            for alias in ranked:
+                dated = next((model for model in listed if re.fullmatch(re.escape(alias) + r'-[0-9]{8}', model)), None)
+                if dated:
+                    models.setdefault(alias, models[dated])
+        return [{'id': model, 'efforts': efforts} for model, efforts in models.items()]
 
     def _jev_models(self):
         """#609: TypeSafe's ``GET /v1/models`` with the saved Jev key.
@@ -2059,8 +2236,8 @@ class DecisionRoutes:
         CODEX_HOME; the plain form, which rewrites the shared
         ``models_cache.json``, is never run).  Claude Code: the documented
         aliases (no machine-readable list exists).  APIs: the provider's
-        official ``GET /v1/models`` with the key that route would use,
-        narrowed to the ranked candidates (other ids can still be typed).
+        official model list with the key that route would use. Ranked entries
+        are recommended, and every other entry is listed after them.
         Choosing an entry is a separate activation that runs ``qualify()``.
         """
         if route_id not in MODEL_LIST_ROUTES:
@@ -2084,25 +2261,12 @@ class DecisionRoutes:
                       if row['visible'] or row['id'] in ranked]
             source = 'codex debug models --bundled'
         else:
-            key = self._api_list_key(route_id)
-            if not key:
-                raise DecisionRouteError(msg('decision_routes.list_key_missing', name=ROUTE_NAMES[route_id]))
-            headers = ({'Authorization': 'Bearer ' + key} if route_id == 'openai'
-                       else {'x-api-key': key, 'anthropic-version': '2023-06-01'})
-            try:
-                reply = self.models_transport(API_MODEL_LISTS[route_id]['url'], None, headers, 15)
-            except ProviderError as exc:
-                raise DecisionRouteError(msg('decision_routes.list_failed', name=ROUTE_NAMES[route_id], status=exc.status or msg('decision_routes.connection_error'))) from None
-            rows = reply.get('data') if isinstance(reply, dict) else None
-            ids = {row.get('id') for row in rows or () if isinstance(row, dict) and isinstance(row.get('id'), str)}
-            # A dated id (e.g. `claude-haiku-4-5-20251001`) lists its alias.
-            models = [{'id': model, 'efforts': []} for model in ranked
-                      if model in ids or any(item.startswith(model + '-') for item in ids)]
-            source = 'GET /v1/models'
+            models, source = self._list_api_models(route_id, ranked), 'GET /v1/models'
         rank = {model: index for index, model in enumerate(ranked)}
-        models.sort(key=lambda row: rank.get(row['id'], len(ranked)))
+        models.sort(key=lambda row: (rank.get(row['id'], len(ranked)), row['id'] if route_id in API_BASES else ''))
         record = {'route': route_id, 'source': source, 'checked_at': self.clock(), 'ranked': ranked,
-                  'models': [{**row, 'rank': rank.get(row['id']), 'label': LISTED_LABEL} for row in models]}
+                  'models': [{**row, 'rank': rank.get(row['id']), 'recommended': row['id'] in rank,
+                              'label': LISTED_LABEL} for row in models]}
         with self.service.lock:
             rows = self._model_lists()
             rows[route_id] = record

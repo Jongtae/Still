@@ -397,20 +397,20 @@ class MainAiRouteTests(unittest.TestCase):
         result = self._activate({'route': 'openai'})
         active = result['decision_route']['active']
         self.assertEqual((active['model_policy'], active['requested_model'], active['destination']),
-                         ('fastest_qualified', 'gpt-4o-mini', 'api.openai.com'), 'equal speed: the ranked order decides')
-        self.assertEqual(active['qualification']['model'], 'gpt-4o-mini')
-        for model in ('gpt-4o-mini', 'gpt-6-luna'):
+                         ('fastest_qualified', 'gpt-6-luna', 'api.openai.com'), 'equal speed: the ranked order decides')
+        self.assertEqual(active['qualification']['model'], 'gpt-6-luna')
+        for model in ('gpt-6-luna', 'gpt-6.1-terra'):
             judged = [call for call in self.transport.calls if call['model'] == model]
             self.assertGreaterEqual(len(judged), len(CASE_IDS), 'the full suite on every candidate, not a single probe')
-        self.assertEqual([row['model'] for row in active['qualification']['compared']], ['gpt-4o-mini', 'gpt-6-luna'])
-        self.assertEqual(result['decision_route']['effective']['text'], '기본 AI(OpenAI API)를 따라가는 중 — gpt-4o-mini, 검증됨')
+        self.assertEqual([row['model'] for row in active['qualification']['compared']], ['gpt-6-luna', 'gpt-6.1-terra'])
+        self.assertEqual(result['decision_route']['effective']['text'], '기본 AI(OpenAI API)를 따라가는 중 — gpt-6-luna, 검증됨')
 
     def test_openai_follow_tries_the_next_ranked_model_only_when_the_first_fails(self):
         self._save('openai', OPENAI_KEY)
-        self.transport.careless.add('gpt-4o-mini')
-        active = self._activate({'route': 'openai'})['decision_route']['active']
-        self.assertEqual(active['requested_model'], 'gpt-6-luna')
         self.transport.careless.add('gpt-6-luna')
+        active = self._activate({'route': 'openai'})['decision_route']['active']
+        self.assertEqual(active['requested_model'], 'gpt-6.1-terra')
+        self.transport.careless.add('gpt-6.1-terra')
         self.store.put('decision_route', None)
         result = self._activate({'route': 'openai'})
         self.assertEqual((result['judgment']['state'], result['judgment']['failure']), ('attention', 'no-qualified-candidate'))
