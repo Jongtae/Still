@@ -213,7 +213,9 @@ def authorize(service, job, binding, connection, operation, target, names=(), *,
                 from urllib.parse import urlsplit
                 page=urlsplit(target)
                 metadata += ' @ ' + page.scheme + '://' + page.netloc
-            effect = service.decision_judge.connector_effect(metadata, sorted(names), '', job['id'])
+            # #1063: a press is judged as a press, with its target's role, name and form fields in order.
+            effect = service.decision_judge.connector_effect(metadata, sorted(names), '', job['id'],
+                                                             **({'target': tuple(names)} if browser_press else {}))
         except Exception:
             effect = None
     if browser_press and effect in ('read', 'navigate'):

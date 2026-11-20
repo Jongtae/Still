@@ -384,7 +384,7 @@ class TestMarkedScheduled(scheduled._Runs):
         with mock.patch.object(self.service.decision_judge,'connector_effect',return_value='payment') as decide:
             with pytest.raises(ToolError) as refused:
                 caps.execute('browser_click',{'target':str(target),'effect':'navigate'})
-        decide.assert_called_once_with('browser_click @ https://notes.test',['More','button'],'',job['id'])
+        decide.assert_called_once_with('browser_click @ https://notes.test',['More','button'],'',job['id'],target=('button','More'))
         assert (refused.value.code,str(refused.value))==('unattended_run',msg('write_allowances.payment'))
         assert refused.value.ran is False
         assert not any(row[0]=='click' for row in driver.log)
