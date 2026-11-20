@@ -340,6 +340,71 @@ What would change next (not run):
    request (C does too). Whether a page should instead be held to "no more than search" is the owner's call, to be
    settled before the next pre-registration, not after it.
 
+## Next run (#1046): pre-registered 2026-11-20, before any of its data exists
+
+Owner decision, 2026-11-20: condition 4 keeps today's brief (A) as the bar. Neither traps nor other misleading
+statements may rise over A. Everything below is fixed before the run's requests exist; nothing in it may change
+after `heldout` selects them.
+
+### Arms
+
+A, B and C as in #1046 phase 1, plus **D**: A followed by the same page as B, rendered for the same day without its
+state section (standards and decisions only; `render(sections=('standard', 'decision'))`). B and D come from one
+build, so D costs no build calls. C stays length-matched to B. The judge sees the four contexts under shuffled labels
+`X1..X4`.
+
+### Requests and gate
+
+- A fresh snapshot of the live store (read-only), a fresh topic finding from requests **before 2026-11-21**, fresh
+  labels and a fresh build (3 runs).
+- Held-out window: requests from **2026-11-21** up to the snapshot day (`--heldout-from 2026-11-21 --heldout-to
+  <snapshot day>`). Selection as in phase 1, with no gate on match strength.
+- The earliest snapshot day is **2026-12-01**. #1043 and phase 1 selected 36 and 27 requests (45 and 27 matching
+  candidates) from 10 and 9 days of requests, about 3 to 4.5 per day. That puts the same count at about ten days
+  after 2026-11-20.
+- **Gate:** `heldout` must select at least 27 requests, at least 19 of them regular. If it selects fewer, nothing
+  after `heldout` runs: a later snapshot extends the window and selects again. Selection reads no outcome.
+
+### Spans
+
+The judge's verbatim spans are saved for every needed fact (`support`), every trap it marks (`trap_support`) and
+every other misleading statement (`misleading_support`). Counting is unchanged: a needed-fact span not found in its
+context is downgraded as before, and trap and misleading counts do not depend on their spans. Each saved span is
+located (`topic_pages.locate`) in a page section (`standard`, `decision`, `state`), the shared brief (`brief`), other
+added text (`added`, i.e. C's search) or nowhere (`none`). The report gives counts by section: facts gained over A,
+traps, and other misleading statements.
+
+### Decision rule
+
+For each candidate page P in {B, D}, conditions 1–4 of the phase-1 rule hold with P in place of B:
+
+1. P−A on needed facts is positive in every run, its mean exceeds the larger of the two arms' run-to-run range, and
+   its topic-clustered 95% interval excludes 0;
+2. the same for P−C;
+3. P's traps shown as current, per request, are not higher than A's (mean over runs);
+4. P's other misleading statements, per request, are not higher than A's (mean over runs).
+
+Then:
+
+- both pass: choose B if the B−D interval on needed facts lies above 0, otherwise D, which is the smaller page;
+- one passes: choose it;
+- neither passes: do not integrate.
+
+No early stop: all three runs are judged. Weak requests are reported apart and decide nothing.
+
+### Budget
+
+Subscription routes only, hard cap 400 calls. If `plan` projects more than 400 for the expected (not worst-case)
+counts, stop and ask before any model call.
+
+| Step | Expected calls |
+| --- | --- |
+| find (Codex) | 1–3 |
+| gold (Claude) | about 36 (one retry per invalid answer) |
+| build (Codex) | about 64 replay days × 3, plus at most 10 retries per run |
+| judge (Claude) | about 36 × 3 |
+| **total** | about 340, hard cap 400 |
+
 ## Limits
 
 - A local observation of **one owner's** copy, judged by a model, not human labels; the labels come from the owner's
@@ -358,4 +423,5 @@ What would change next (not run):
 | `topics_eval.py` | The commands above: snapshot, finder, builder replay, held-out, labels, contexts, drafts, judge, report. |
 | `schema.json` | JSON Schema of a page and of the counts-only report. |
 | `tests/test_1031_topic_pages.py` | Unit tests over synthetic stores and fake judgments: no live data, no model, no network. |
+| `tests/test_1046_topic_pages_ablation.py` | Next-run acceptance tests: arm D, saved and located spans, the B/D choice. |
 | `tests/test_1046_topic_pages_revision.py` | #1046 acceptance tests: section order, dated and threaded state, page attachment, the revised rule. |
