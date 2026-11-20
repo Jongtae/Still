@@ -1,7 +1,7 @@
 """Launch a local personal agent and its browser setup, using only Python."""
 
 from . import work_status as ws
-from .messages import msg
+from .messages import msg, web_catalog_script
 import argparse
 import fcntl
 import getpass
@@ -961,6 +961,8 @@ def make_handler(service, public_hosts=(), public_access_token=''):
                 except (AttributeError, ValueError, OSError):
                     return self.reply(400,b'Gmail modify connection could not be completed. Start the connection again from Still.','text/plain; charset=utf-8')
                 return self.reply(200,connected_page('Gmail modify'),'text/plain; charset=utf-8')
+            if path=='/messages.js':
+                return self.reply(200,web_catalog_script(),'text/javascript; charset=utf-8')
             if path in ('/','/app.js','/style.css'):
                 filename={'/':'index.html','/app.js':'app.js','/style.css':'style.css'}[path]
                 mime={'/':'text/html; charset=utf-8','/app.js':'text/javascript; charset=utf-8','/style.css':'text/css; charset=utf-8'}[path]
