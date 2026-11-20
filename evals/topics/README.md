@@ -215,6 +215,131 @@ run-to-run noise. Its misleading cost is the cost of adding old topic material a
 state section. A blind review agreed with the reading, and suggested comparing criterion 3 against C in a future
 pre-registered rule rather than rescuing this one.
 
+## Revision (#1046): pre-registered before any scoring
+
+[#1046](https://github.com/Jongtae/Still/issues/1046) fixes what made the rule above say "do not integrate", then
+re-runs. This section was committed before any revised page was built or judged.
+
+### What changes
+
+- **Order.** Standards, then decisions, then state, and the budget is filled in that order: a state item never
+  pushes a standard or a decision out.
+- **State items carry dates.** Each state item shows `as of <its source day>`. The builder may give it a `thread`
+  (a short label for what it tracks) and an `expires` date (the last day it holds; empty when open-ended). At render
+  time, for the request's day:
+  - a state item whose `expires` is before that day is not shown;
+  - of the state items sharing a thread (compared case- and space-insensitively), only the newest is shown;
+  - the hidden count is stated in one line. Items stay on the page with their history; only the rendering hides
+    them, so nothing is rewritten.
+- ~~**No page for a weak match.**~~ Dropped before any scoring; see the amendment below. A page is attached
+  whenever the request matches the topic, as in #1043 (`topic_pages.attach_page`). Without a page, B and C both
+  equal A for that request.
+
+### Amendment before scoring (same day, before any label, page or judgment of this split)
+
+The first version of this section attached no page when the request matched only one of the topic's terms. After
+`heldout` selected this split, its match-strength counts (no outcome, no request text) showed 17 of 19 regular
+requests match one term. Checking #1043's tuning data by match strength then showed the gate rests on a mislabel:
+
+| #1043 group (per-request B−A, averaged over runs) | requests | needed facts | misleading items |
+| --- | --- | --- | --- |
+| regular, one term | 19 | +11.8 points | +0.33 |
+| regular, two or more terms | 5 | +23.8 points | +0.47 |
+| "weak" extras, one term | 10 | +1.9 points | +0.17 |
+
+The "weak" extras match one term just as most regular requests do. They differ by selection: they are the overflow
+of the largest topics after the first six requests. So the term count does not mark a request a page cannot help,
+and the gate would have removed the page from most of the requests that gained. The gate is dropped and nothing
+replaces it. The other three fixes and the decision rule are unchanged. The weak group stays reported on its own.
+
+### Requests: an uninspected time split
+
+#1043's requests (2026-11-10 onward) were inspected while finding these fixes, so they are not scored again.
+Requests after 2026-11-20 are still accumulating. This run scores **2026-11-01 to 2026-11-09**
+(`--heldout-from 2026-11-01 --heldout-to 2026-11-10`): requests nobody read while tuning. Topics are found again
+from requests **before 2026-11-01**, so the finder never sees them. Pages replay through 2026-11-09. The result is
+labelled **provisional** until it is confirmed on requests after 2026-11-20.
+
+### Decision rule (revised)
+
+Integrate only if all hold, on needed facts over scored requests and misleading items over scored and control
+requests:
+
+1. B−A is positive in every run, its mean exceeds the larger of A's and B's run-to-run range, and its
+   topic-clustered 95% interval excludes 0;
+2. B−C is positive in every run, its mean exceeds the larger of B's and C's run-to-run range, and its interval
+   excludes 0;
+3. traps presented as current, per request, are not higher in B than in A (mean over runs);
+4. other misleading statements, per request, are not higher in B than in A (mean over runs).
+
+Each condition is reported on its own. Early stop: after two runs, run 3 is skipped and the result is "do not
+integrate" when the #1043 early-stop holds or B−C is ≤ 0 in both runs.
+
+### Budget
+
+Same subscription routes and the same 400-call cap, in a fresh output folder with its own ledger
+(`topics-2026-11-20-r2`). No drafts this time: lesson follow sat at its ceiling in #1043 and decides nothing.
+
+| Step | Calls |
+| --- | --- |
+| find (Codex) | ≤ 3 |
+| gold (Claude) | ≤ 50 |
+| build (Codex) | ≤ 44 replay days × 3, plus at most 10 retries per run |
+| judge (Claude) | ≤ 50 × 3 |
+| **total** | about 365 at most, hard cap 400 |
+
+### Result (#1046, 2026-11-20, provisional)
+
+Counts only, from the same read-only copy. 8 topics found from requests before 2026-11-01; 43 replay days; 27
+held-out requests from 2026-11-01 to 2026-11-09 (19 regular, all scored; 8 weak), every one labelled and judged in
+every run (no skips). Builder: 178–183 operations applied per run, one whole-answer refusal and one retry in run 3.
+Pages ended with 98–106 state items, every one with a thread and 37–42 with an expiry, against 11–12 standards and
+16–17 decisions. At render time about a third of the state items are hidden as superseded or expired.
+
+Rule data (needed facts over the 19 scored requests; misleading per request over scored and control, here the same
+19). Mean over 3 runs, range in brackets:
+
+| Arm | needed facts | traps shown as current | other misleading |
+| --- | --- | --- | --- |
+| A today's brief | 44.6% (0.9) | 0.46 (0.05) | 0.61 (0.05) |
+| B + revised page | 54.3% (4.3) | 0.63 (0.11) | 0.89 (0.21) |
+| C + length-matched search | 48.0% (0.9) | 0.49 (0.11) | 0.93 (0.11) |
+
+- **B−A +9.7 points [+4.2, +18.5]**, positive in every run (8.1–11.5) and beyond noise. **B−C +6.1 [+2.8, +10.6]**,
+  positive in every run (4.7–8.1) and narrowly beyond noise (B's range is 4.3). Conditions 1 and 2 hold.
+- Traps shown as current rise with the page: B−A +0.18 per request [+0.02, +0.32]. Search barely moves them
+  (C−A +0.04). Condition 3 fails.
+- Other misleading statements rise with any added material: B−A +0.28 [+0.10, +0.39], C−A +0.32. B is no worse
+  than search here (B−C −0.04 [−0.23, +0.12]), but the rule compares with A. Condition 4 fails.
+- **Decision: do not integrate** (`more_traps`, `more_misleading_other`). #1043's rule gives the same answer.
+- Where B's other misleading statements sit (all 83 of them, over all 81 B contexts including the weak group,
+  matched to the page by text overlap; an ad-hoc private analysis, not in this code): 34 in state lines (of 678 shown,
+  about 5%), 13 in decisions (of about 160, about 8%), none in the roughly 12 standards (too few to rate); the other
+  36 come from the shared brief, as in A. All 34 flagged state lines were open-ended. Only 21 of the 678 state lines
+  shown carried an expiry, too few to show what expiry does. Traps, the condition that failed most clearly, could not
+  be located by section: the labeller's wording does not overlap the page's.
+- The weak group (8 requests, not in the rule) now gains needed facts (A 30.6%, B 62.1%, C 41.8%). Its misleading
+  items rise much more, though (A 0.25, B 2.04, C 0.83).
+- Cost: 239 subscription calls of the 400 cap (Codex 131: find 1, build 130; Claude 108: labels 27, judge 81),
+  about 3.4 hours of summed call time, Claude notional USD 24.22. No API key was billed.
+
+Reading: the revised page still delivers facts beyond noise, against both today's brief and search, and still
+shows more traps and more other misleading statements than today's brief. State and decision lines both carry
+misleading statements; per line, decisions are no better than state. Nothing was ablated on this split, so it does
+not show what dates and threads removed. This split is now inspected, so it cannot confirm a further change.
+
+Which section supplies the gain is not recoverable: the judge's support spans were checked but not saved, and text
+overlap between labelled facts and page lines attributes 10% to 32% of the gain to state depending on the threshold.
+A page without state may lose part of the benefit along with the cost.
+
+What would change next (not run):
+1. Save the judge's verbatim support spans, so each gained or misleading item can be located by section.
+2. Pre-register, before any scoring, an ablation beside B: a page without state. Score both on requests after
+   2026-11-20, with a fresh build, since the saved pages end at 2026-11-09.
+3. Condition 4 compares other misleading statements with A, and any added material raises them by about +0.3 per
+   request (C does too). Whether a page should instead be held to "no more than search" is the owner's call, to be
+   settled before the next pre-registration, not after it.
+
 ## Limits
 
 - A local observation of **one owner's** copy, judged by a model, not human labels; the labels come from the owner's
@@ -233,3 +358,4 @@ pre-registered rule rather than rescuing this one.
 | `topics_eval.py` | The commands above: snapshot, finder, builder replay, held-out, labels, contexts, drafts, judge, report. |
 | `schema.json` | JSON Schema of a page and of the counts-only report. |
 | `tests/test_1031_topic_pages.py` | Unit tests over synthetic stores and fake judgments: no live data, no model, no network. |
+| `tests/test_1046_topic_pages_revision.py` | #1046 acceptance tests: section order, dated and threaded state, page attachment, the revised rule. |
