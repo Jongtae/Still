@@ -306,29 +306,39 @@ Rule data (needed facts over the 19 scored requests; misleading per request over
 | C + length-matched search | 48.0% (0.9) | 0.49 (0.11) | 0.93 (0.11) |
 
 - **B−A +9.7 points [+4.2, +18.5]**, positive in every run (8.1–11.5) and beyond noise. **B−C +6.1 [+2.8, +10.6]**,
-  positive in every run (4.7–8.1) and beyond noise. Conditions 1 and 2 hold.
+  positive in every run (4.7–8.1) and narrowly beyond noise (B's range is 4.3). Conditions 1 and 2 hold.
 - Traps shown as current rise with the page: B−A +0.18 per request [+0.02, +0.32]. Search barely moves them
   (C−A +0.04). Condition 3 fails.
 - Other misleading statements rise with any added material: B−A +0.28 [+0.10, +0.39], C−A +0.32. B is no worse
   than search here (B−C −0.04 [−0.23, +0.12]), but the rule compares with A. Condition 4 fails.
 - **Decision: do not integrate** (`more_traps`, `more_misleading_other`). #1043's rule gives the same answer.
-- Where B's added misleading statements sit (83 over the 81 B contexts, matched to the page by text overlap): 34
-  in state lines, 13 in decisions, none in standards; the other 36 come from the shared brief, as in A. All 34 state
-  lines were open-ended (no expiry). Of 678 state lines shown, only 21 carried an expiry: expiry catches dated plans,
-  not state that later changed without a date.
+- Where B's other misleading statements sit (all 83 of them, over all 81 B contexts including the weak group,
+  matched to the page by text overlap; an ad-hoc private analysis, not in this code): 34 in state lines (of 678 shown,
+  about 5%), 13 in decisions (of about 160, about 8%), none in the roughly 12 standards (too few to rate); the other
+  36 come from the shared brief, as in A. All 34 flagged state lines were open-ended. Only 21 of the 678 state lines
+  shown carried an expiry, too few to show what expiry does. Traps, the condition that failed most clearly, could not
+  be located by section: the labeller's wording does not overlap the page's.
 - The weak group (8 requests, not in the rule) now gains needed facts (A 30.6%, B 62.1%, C 41.8%). Its misleading
   items rise much more, though (A 0.25, B 2.04, C 0.83).
 - Cost: 239 subscription calls of the 400 cap (Codex 131: find 1, build 130; Claude 108: labels 27, judge 81),
   about 3.4 hours of summed call time, Claude notional USD 24.22. No API key was billed.
 
-Reading: the revised page still delivers facts beyond noise, against both today's brief and search. The state
-section is still where its cost sits, and dates and threads do not remove it. Most stale state is open-ended, and
-later Works do not always continue the thread. Standards carry no misleading items at all. This split is now
-inspected, so it cannot confirm a further change.
+Reading: the revised page still delivers facts beyond noise, against both today's brief and search, and still
+shows more traps and more other misleading statements than today's brief. State and decision lines both carry
+misleading statements; per line, decisions are no better than state. Nothing was ablated on this split, so it does
+not show what dates and threads removed. This split is now inspected, so it cannot confirm a further change.
 
-What would change next (not run): a page of standards and decisions only, with state left to recall and search.
-Pre-register it, as here, and score it on requests after 2026-11-20. The saved snapshots allow re-rendering that page
-without a rebuild (about 27 judge calls per run).
+Which section supplies the gain is not recoverable: the judge's support spans were checked but not saved, and text
+overlap between labelled facts and page lines attributes 10% to 32% of the gain to state depending on the threshold.
+A page without state may lose part of the benefit along with the cost.
+
+What would change next (not run):
+1. Save the judge's verbatim support spans, so each gained or misleading item can be located by section.
+2. Pre-register, before any scoring, an ablation beside B: a page without state. Score both on requests after
+   2026-11-20, with a fresh build, since the saved pages end at 2026-11-09.
+3. Condition 4 compares other misleading statements with A, and any added material raises them by about +0.3 per
+   request (C does too). Whether a page should instead be held to "no more than search" is the owner's call, to be
+   settled before the next pre-registration, not after it.
 
 ## Limits
 
