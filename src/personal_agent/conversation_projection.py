@@ -140,6 +140,21 @@ def first_sentence(text, limit):
     return text if len(text) <= limit else text[:limit - 1].rstrip() + '…'
 
 
+def worker_directed_refusal(detail):
+    """Whether a failed call's record is a correction meant only for the worker (#769).
+
+    Still refused the call before running it (``ran: false``), as written it can never be made
+    (``retry: permanent``), and it waits for nothing from the owner (no ``requires``).  Its text
+    tells the worker how to call again (a length bound, an argument format, the other tool for a
+    set, a repeated input), so it stays in the tool events and the worker's and judgment's facts
+    and never becomes a line the owner reads.  An owner wait is reported by its own typed wait
+    (#240) or its ``requires``; a budget stop, a needs-setup refusal and a call that ran keep
+    their reason.
+    """
+    detail = detail if isinstance(detail, dict) else {}
+    return detail.get('ran') is False and detail.get('retry') == 'permanent' and not detail.get('requires')
+
+
 def owner_cause(steps):
     """The owner-language cause of a failed/partial Work, or ``None``.
 

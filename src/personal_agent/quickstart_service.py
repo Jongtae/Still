@@ -45,7 +45,7 @@ from .conversation_projection import (BLOCKER_CLOUD_PROFILE, BLOCKER_MODEL_UNVER
                                       TERMINAL_INTERRUPTED_HEADER, TERMINAL_NEXT_ACTION, TERMINAL_PARTIAL_HEADER,
                                       BlockedTurn, ConversationProjection, context_message, earlier_turn_line,
                                       answer_note, owner_cause, report_statement, terminal_text, tried_statement, turn_qualifier,
-                                      verified_portion)
+                                      verified_portion, worker_directed_refusal)
 from .subscription_engines import SubscriptionEngines
 from .bounded_execution import SECRET_PATTERN, reported_usage, BRIDGE_UNAVAILABLE, CLI_TOOL_CALLS_KEPT, TOOL_INCOMPLETE, TOOL_INCOMPLETE_TEXT, bridge_sdk_problem, incomplete_bridge_calls, MAX_NATIVE_EXCERPT
 from .bounded_execution import AgentOSMcpTools, ReadOnlyAgentOSMcpTools, StrictIsolatedAgentOSMcpTools, BoundedExecutionAdapter, ExecutionError, ExecutionResult, MAX_PROMPT_BYTES, BOUNDED_PROFILE, HOST_CLI_PROFILES, STRICT_PROFILE, profile_actions, profile_status, route_unavailable
@@ -3231,7 +3231,7 @@ class AgentService:
                            (job['id'],)).fetchone() is not None
         if not ran:return None
         failures,tried,stopped,setup=[],[],None,False
-        for event in events:
+        for index,event in enumerate(events):
             trace=event.get('trace') if isinstance(event.get('trace'),dict) else {}
             tool,status=event.get('tool'),event.get('status')
             if tool==ORCHESTRATION_EVENT:
@@ -3240,7 +3240,12 @@ class AgentService:
             # Still's own bookkeeping, not a step a worker tried.
             if tool in ('local_authority','conversation_continuity'):continue
             if status=='failed':
-                failures.append((tool,self._redact_reason(trace.get('error') or trace.get('code')) or ''))
+                # #769: a refusal meant only for the worker never brings its text; a later success of
+                # the same tool means the worker corrected its call, so it is not named at all.
+                if worker_directed_refusal(trace):
+                    if not any(later.get('tool')==tool and later.get('status')=='succeeded' for later in events[index+1:]):
+                        failures.append((tool,''))
+                else:failures.append((tool,self._redact_reason(trace.get('error') or trace.get('code')) or ''))
                 if trace.get('requires'):setup=True
             if tool!='subscription_engine' and status in ('succeeded','failed'):
                 host=self._event_host(trace) or ''
@@ -5415,6 +5420,34 @@ class AgentService:
         held={(tool,reason) for index,(tool,_action,state,_detail,reason) in enumerate(steps)
               if state in FAILED_CALL_STATES and marks.get(index)!=RECOVERED}
         return [pair for pair in refusals if pair not in recovered or pair in held]
+
+    def owner_refusals(self, job_id, since, refusals):
+        """``refusals`` as the owner's notice names them (#769).
+
+        Read from this Work's tool events after ``since``.  A refusal meant only for the worker
+        (``worker_directed_refusal``) never brings its text: when a later call of the same action
+        succeeded, the worker corrected its call and the pair is dropped; otherwise the step stays
+        named without a reason ``(tool, None)``, so what did not get done is still said.  A pair
+        that another failure also names keeps its reason, and so does a refusal that is not a
+        recorded tool failure (a sign-in wait).  The Work's technical cause, its tool events and
+        the judgment's facts keep every refusal as recorded.
+        """
+        from .agent_runtime import FAILED_CALL_STATES, trail_steps
+        with self.store.db() as db:
+            rows=db.execute('SELECT tool,status,detail FROM tool_events WHERE job_id=? AND id>? ORDER BY id',
+                            (job_id,since or 0)).fetchall()
+        steps=trail_steps((row['tool'],row['status'],row['detail']) for row in rows if row['tool'] not in self.LOCAL_NON_TOOL_EVENTS)
+        corrected,bare,held=set(),set(),set()
+        for index,(tool,action,state,detail,reason) in enumerate(steps):
+            if state not in FAILED_CALL_STATES:continue
+            if not worker_directed_refusal(detail):held.add((tool,reason));continue
+            redone=any(other==action and result=='succeeded' for _t,other,result,_d,_r in steps[index+1:])
+            (corrected if redone else bare).add((tool,reason))
+        named=[]
+        for tool,reason in refusals:
+            if (tool,reason) in held or (tool,reason) not in corrected|bare:named.append((tool,reason))
+            elif (tool,reason) in bare:named.append((tool,None))
+        return named
 
     def cli_work_outcome(self, job_id, tools, since=0):
         """``(outcome, refusals)`` of a CLI Work from its own tool events (#606 T3).

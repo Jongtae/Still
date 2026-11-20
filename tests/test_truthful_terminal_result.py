@@ -240,7 +240,9 @@ class PartialTurnTests(TerminalResultTestCase):
         # #598 X1: the same observed cause, in owner words; the technical
         # cause with the tool id stays on the Work record for Task detail.
         self.assertTrue(job['owner_cause'])
-        self.assertIn('준비 예약: 이 시각은 이미 지났습니다.', job['owner_cause'])
+        # #769: the refusal told the worker how to call again; the owner reads the step, not its text.
+        self.assertIn('준비 예약', job['owner_cause'])
+        self.assertNotIn('이 시각은 이미 지났습니다', job['owner_cause'])
         self.assertIn('schedule_preparation', job['error'])
         # #847: with the answer delivered, the bubble carries neither the
         # tool id nor the tool's error; the step is counted and stays in 상세.
