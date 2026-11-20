@@ -213,7 +213,9 @@ def authorize(service, job, binding, connection, operation, target, names=(), *,
                 from urllib.parse import urlsplit
                 page=urlsplit(target)
                 metadata += ' @ ' + page.scheme + '://' + page.netloc
-            effect = service.decision_judge.connector_effect(metadata, sorted(names), '', job['id'])
+            # #1063: a press is judged as a press, with its target's role, name and form fields in order.
+            effect = service.decision_judge.connector_effect(metadata, sorted(names), '', job['id'],
+                                                             **({'target': tuple(names)} if browser_press else {}))
         except Exception:
             effect = None
     if browser_press and effect in ('read', 'navigate'):
@@ -227,7 +229,10 @@ def authorize(service, job, binding, connection, operation, target, names=(), *,
     if effect == 'payment' and (service.unattended_work(job) or not (marked and browser_press)):
         raise not_run(ToolError(msg('write_allowances.payment'), 'unattended_run'))
     # A known state change cannot be downgraded to read by a classifier.
-    reversible = effect == 'reversible' and not marked
+    # #1065 (owner decision 2026-11-21): in a Work the owner's own typed message started, the
+    # owner's request covers a reversible press even after outside content was read; that
+    # content only informs which one. Irreversible and payment presses still ask.
+    reversible = effect == 'reversible' and (not marked or browser_press and service.owner_typed_work(job))
     scoped = scoped_binding(binding)
     digest = service._browser_step_keys(scoped)['digest']
     label = service._redact_known_secrets(f'{connection or "browser"} / {operation} / {target}' +

@@ -943,7 +943,7 @@ class VerifierRegressions(_Runs):
                 fixture.type(args['index'],args['text'],timeout)
             else:self.assertIn(op,('self_set_writes','settle'))
             return {}
-        def reorder(*args):
+        def reorder(*args,**kwargs):
             fixture.pages['/edit']=page(other+intended)
             return 'reversible'
         with mock.patch.object(driver,'_request',side_effect=worker):
@@ -1079,7 +1079,7 @@ class VerifierRegressions(_Runs):
             driver.held=None
             return {'posted':True}
         args={'target':'메모 저장','effect':'mutate',**({'text':'value'} if kind=='type' else {})}
-        with mock.patch.object(driver,kind,side_effect=held) as input_call, mock.patch.object(driver,'release_submit',side_effect=release) as release_call, mock.patch.object(self.service.decision_judge,'connector_effect',side_effect=lambda operation,*a:'irreversible' if operation.startswith('browser_submit') else 'reversible'):
+        with mock.patch.object(driver,kind,side_effect=held) as input_call, mock.patch.object(driver,'release_submit',side_effect=release) as release_call, mock.patch.object(self.service.decision_judge,'connector_effect',side_effect=lambda operation,*a,**k:'irreversible' if operation.startswith('browser_submit') else 'reversible'):
             with self.assertRaises(ToolError):getattr(browser,kind)(args)
             self.ended_waiting(job)
             Capabilities.close_browser(runtime1)

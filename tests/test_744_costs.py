@@ -45,7 +45,7 @@ def test_marked_press_judged_read_needs_no_confirmation(browser, judgment):
     target=next(e['n'] for e in page['elements'] if e['name']=='Expand')
     with mock.patch.object(service.decision_judge,'connector_effect',return_value=judgment) as decide:
         caps.execute('browser_click',{'target':str(target),'effect':'navigate'})
-    decide.assert_called_once_with('browser_click @ https://notes.test', ['Expand','button'], '',job['id'])
+    decide.assert_called_once_with('browser_click @ https://notes.test', ['Expand','button'], '',job['id'],target=('button','Expand'))
     assert any(row[0]=='click' for row in driver.log)
     assert service._browser_request(job['id']) is None
 
@@ -55,12 +55,23 @@ def test_marked_search_enter_needs_no_confirmation(browser):
     target=next(e['n'] for e in page['elements'] if e['name']=='Search')
     with mock.patch.object(service.decision_judge,'connector_effect',return_value='navigate') as decide:
         caps.execute('browser_type',{'target':str(target),'text':'a private query','key':'Enter','effect':'navigate'})
-    decide.assert_called_once_with('browser_type @ https://notes.test',['Search','textbox'],'',job['id'])
+    decide.assert_called_once_with('browser_type @ https://notes.test',['Search','textbox'],'',job['id'],target=('textbox','Search'))
     assert any(row[0]=='type' and row[2]=='a private query' for row in driver.log)
     assert service._browser_request(job['id']) is None
 
 
-@pytest.mark.parametrize('judgment',['reversible','irreversible','payment',None,'exception'])
+def test_marked_owner_work_reversible_press_runs(browser):
+    # #1065 (owner decision 2026-11-21): the owner's typed request covers a reversible press.
+    store,service,job,caps,driver,page=browser
+    assert service.owner_typed_work(job)
+    target=next(e['n'] for e in page['elements'] if e['name']=='Expand')
+    with mock.patch.object(service.decision_judge,'connector_effect',return_value='reversible'):
+        caps.execute('browser_click',{'target':str(target),'effect':'mutate'})
+    assert any(row[0]=='click' for row in driver.log)
+    assert service._browser_request(job['id']) is None
+
+
+@pytest.mark.parametrize('judgment',['irreversible','payment',None,'exception'])
 def test_marked_browser_nonread_or_failed_judgment_is_held(browser,judgment):
     store,service,job,caps,driver,page=browser
     target=next(e['n'] for e in page['elements'] if e['name']=='Expand')

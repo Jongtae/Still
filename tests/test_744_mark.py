@@ -97,7 +97,8 @@ def test_marked_browser_write_resumes_once_on_fresh_capabilities(host):
         caps.execute('browser_open', {'url': ORIGIN + '/product', 'effect': 'navigate'})
         return caps, driver
 
-    with mock.patch.object(service.decision_judge, 'connector_effect', return_value='reversible'):
+    # #1065: an owner Work's reversible press runs; an irreversible one still asks once.
+    with mock.patch.object(service.decision_judge, 'connector_effect', return_value='irreversible'):
         caps, first = open_product()
         with pytest.raises(ToolError) as held:
             caps.execute('browser_click', {'target': '장바구니', 'effect': 'mutate'})
@@ -384,7 +385,7 @@ class TestMarkedScheduled(scheduled._Runs):
         with mock.patch.object(self.service.decision_judge,'connector_effect',return_value='payment') as decide:
             with pytest.raises(ToolError) as refused:
                 caps.execute('browser_click',{'target':str(target),'effect':'navigate'})
-        decide.assert_called_once_with('browser_click @ https://notes.test',['More','button'],'',job['id'])
+        decide.assert_called_once_with('browser_click @ https://notes.test',['More','button'],'',job['id'],target=('button','More'))
         assert (refused.value.code,str(refused.value))==('unattended_run',msg('write_allowances.payment'))
         assert refused.value.ran is False
         assert not any(row[0]=='click' for row in driver.log)
