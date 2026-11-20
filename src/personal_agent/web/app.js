@@ -357,6 +357,36 @@ Object.assign(I18N["zh-CN"],{"- 기록된 기억 일치 표시 일부를 숨겼�
 Object.assign(I18N["en"],{"- 기록된 보관 정보 일치 표시는 {limit}개까지만 보여요. 나머지는 표시하지 않았어요.": "- Only {limit} recorded held-value match labels are shown; remaining labels were not displayed."});
 Object.assign(I18N["ja"],{"- 기록된 보관 정보 일치 표시는 {limit}개까지만 보여요. 나머지는 표시하지 않았어요.": "- 記録済みの保管情報の一致ラベルは {limit} 件まで表示します。残りは表示していません。"});
 Object.assign(I18N["zh-CN"],{"- 기록된 보관 정보 일치 표시는 {limit}개까지만 보여요. 나머지는 표시하지 않았어요.": "- 最多显示 {limit} 个已记录的保存值匹配标签，其余未显示。"});
+Object.assign(I18N["en"],{
+ "(고정)":"(pinned)",
+ "{name} · 키 필요":"{name} · Key required",
+ "키 필요 — 기본 AI 설정에서 {name} 키를 저장하세요.":"Key required. Save a {name} key in Main AI settings.",
+ "자동 — Still이 적격성 검사를 통과한 가벼운 모델을 고릅니다":"Auto — Still picks a lightweight model that passes qualification",
+ "직접 고정":"Pin a model",
+ "후보 모델: {models}":"Candidate models: {models}",
+ "{model} · 추천":"{model} · Recommended",
+ "기본":"Default"
+});
+Object.assign(I18N["zh-CN"],{
+ "(고정)":"（已固定）",
+ "{name} · 키 필요":"{name} · 需要密钥",
+ "키 필요 — 기본 AI 설정에서 {name} 키를 저장하세요.":"需要密钥。请在主 AI 设置中保存 {name} 密钥。",
+ "자동 — Still이 적격성 검사를 통과한 가벼운 모델을 고릅니다":"自动 — Still 会选择通过资格检查的轻量模型",
+ "직접 고정":"手动固定模型",
+ "후보 모델: {models}":"候选模型：{models}",
+ "{model} · 추천":"{model} · 推荐",
+ "기본":"默认"
+});
+Object.assign(I18N["ja"],{
+ "(고정)":"（固定）",
+ "{name} · 키 필요":"{name} · キーが必要",
+ "키 필요 — 기본 AI 설정에서 {name} 키를 저장하세요.":"キーが必要です。メイン AI の設定で {name} のキーを保存してください。",
+ "자동 — Still이 적격성 검사를 통과한 가벼운 모델을 고릅니다":"自動 — Still が適格性チェックに合格した軽量モデルを選びます",
+ "직접 고정":"モデルを固定",
+ "후보 모델: {models}":"候補モデル：{models}",
+ "{model} · 추천":"{model} · 推奨",
+ "기본":"既定"
+});
 function t(source,vars){let text=String(source??'');if(currentLanguage!=='ko'){const entry=I18N[currentLanguage]?.[text];if(entry!==undefined)text=entry;}if(vars)text=text.replace(/\{(\w+)\}/g,(match,key)=>key in vars?String(vars[key]):match);return text;}
 function setLanguage(language){currentLanguage=Object.hasOwn(LANGUAGES,language)?language:'en';const locale=LOCALES[currentLanguage];TIME_MINUTE=new Intl.DateTimeFormat(locale,{hour:'2-digit',minute:'2-digit',hourCycle:'h23'});TIME_CLOCK=new Intl.DateTimeFormat(locale,{hour:'2-digit',minute:'2-digit',second:'2-digit',hourCycle:'h23'});TIME_ABSOLUTE=new Intl.DateTimeFormat(locale,{dateStyle:'medium',timeStyle:'short'});TIME_RELATIVE=new Intl.RelativeTimeFormat(locale,{numeric:'auto'});TIME_DAY=new Intl.DateTimeFormat(locale,{month:'long',day:'numeric'});TIME_YEAR=new Intl.DateTimeFormat(locale,{year:'numeric',month:'long',day:'numeric'});return currentLanguage;}
 function storedLanguage(){try{return typeof document!=='undefined'?window.localStorage.getItem('agentos-language'):null;}catch(_error){return null;}}
@@ -1048,18 +1078,38 @@ async function applyAiChoice(button,discarded=false){
  }catch(error){completion=[error.message,true];aiNotice=completion;aiFeedback(error.message,true);if(session===aiChooserSession&&$('ai-chooser').open)chooserFeedback(error.message,true);}
  finally{aiPending=false;if($('ai-chooser').open){renderAiChooser();if(session!==aiChooserSession&&completion)chooserFeedback(...completion);}}
 }
-function openJudgmentChooser(opener){decisionClearDiscard();decisionEditorRevision++;const dialog=$('judgment-chooser');renderJudgmentFollow();renderDecisionRoute(aiSettings);dialog.onclose=()=>{if(opener?.isConnected)opener.focus();};if(!dialog.open)dialog.showModal();dialog.querySelector('button')?.focus();}
-// #472: why fastest_qualified chose its model: the measured speed and the candidates it was compared with.
-function decisionSpeedReason(qualification){const record=qualification||{},seconds=value=>Number(value).toFixed(1);if(!Number.isFinite(record.p50_seconds))return '';
+function openJudgmentChooser(opener){
+ const dialog=$('judgment-chooser');if(dialog.open)return;
+ decisionClearDiscard();decisionEditorRevision++;
+ renderDecisionRoute(decisionSettings||aiSettings,true);
+ setFeedback('decision-route-feedback','');setFeedback('judgment-feedback','');
+ const dismiss=()=>decisionDiscard(()=>dialog.close());
+ $('judgment-chooser-close').onclick=dismiss;
+ dialog.oncancel=event=>{event.preventDefault();dismiss();};
+ dialog.onclose=()=>{decisionClearDiscard();decisionEditorRevision++;renderDecisionRoute(decisionSettings,true);if(opener?.isConnected)opener.focus();};
+ dialog.showModal();$('decision-route').querySelector('select')?.focus();
+}
+function decisionSpeedReason(qualification){
+ const record=qualification||{},seconds=value=>Number(value).toFixed(1);if(!Number.isFinite(record.p50_seconds))return '';
  const others=(record.compared||[]).filter(row=>row.model!==record.model).map(row=>row.qualified&&Number.isFinite(row.p50_seconds)?t('{model} {seconds}초',{model:row.model,seconds:seconds(row.p50_seconds)}):t('{model} 검사 미통과',{model:row.model}));
- return ' '+t('응답 시간 중앙값 {p50}초, 95% {p95}초.',{p50:seconds(record.p50_seconds),p95:seconds(record.p95_seconds)})+(others.length?' '+t('비교한 후보: {models}',{models:others.join(', ')}):'');}
-function renderJudgmentFollow(){const box=$('judgment-follow'),route=aiSettings?.decision_route||{},follow=route.follow||{},mode=route.mode||'follow_main';box.replaceChildren();
- const active=route.active||{},following=active.source==='follow'&&active.available;
- // #472: a follow route qualified under an earlier policy (cheapest first) is re-checked only when the owner presses 다시 확인.
- const outdated=mode==='follow_main'&&following&&follow.available&&!!follow.model_policy&&!!active.model_policy&&active.model_policy!==follow.model_policy;
- const description=follow.available?(following?(active.model_policy==='fastest_qualified'?t('기본 AI와 같은 계정에서 적격성 검사를 통과한 가장 빠른 모델 {model}을(를) 씁니다.',{model:active.requested_model||'-'})+decisionSpeedReason(active.qualification):t('기본 AI와 같은 계정의 가벼운 모델 {model}을(를) 씁니다.',{model:active.requested_model||'-'})):follow.model_policy==='fastest_qualified'?t('기본 AI와 같은 계정의 후보 {models}을(를) 모두 확인해 가장 빠른 적격 모델을 씁니다.',{models:(follow.candidates||[follow.model||'-']).join(', ')}):t('기본 AI와 같은 계정의 가벼운 모델 {model}부터 확인해 사용합니다.',{model:follow.model||'-'}))+(outdated?' '+t('지금 모델은 이전 방식(처음 통과한 가장 저렴한 모델)으로 골랐습니다. 다시 확인하면 후보를 모두 재서 가장 빠른 적격 모델을 씁니다.'):'')+' '+t('전송 대상: {destination}',{destination:t((following&&active.destination)||follow.destination||'-')}):t('기본 AI를 따라갈 수 없습니다: {reason}',{reason:t(follow.reason||'-')});
- const action=(mode!=='follow_main'||outdated)&&follow.available?settingsAction(outdated?t('다시 확인'):t('따라가기 사용'),event=>{if(decisionActivationPending)return;decisionClearDiscard();const revision=decisionEditorRevision;decisionActivationPending=true;return busy(event.currentTarget,async()=>{setFeedback('judgment-feedback',t('판단 AI 확인을 요청하는 중…'));try{await api('/api/decision-route/activate',{transport:'follow_main'});if(revision===decisionEditorRevision){setFeedback('judgment-feedback',outdated?t('판단 AI를 백그라운드에서 다시 확인합니다. 통과할 때까지 지금 모델을 그대로 씁니다.'):t('판단 AI 확인을 백그라운드에서 시작했습니다. 통과하면 기본 AI를 따라갑니다.'));if(!decisionDraftDirty())$('decision-route').dataset.state='';}$('active-ai').dataset.state='';await refresh();if(revision===decisionEditorRevision)renderJudgmentFollow();}catch(error){if(revision===decisionEditorRevision)setError('judgment-feedback',error);}finally{decisionActivationPending=false;}});}):null;
- box.append(settingsRow(t('기본 AI 따라가기 (기본값)'),description,mode==='follow_main'?t('선택됨'):t('선택 안 됨'),mode==='follow_main'?'active':'neutral',action));}
+ return ' '+t('응답 시간 중앙값 {p50}초, 95% {p95}초.',{p50:seconds(record.p50_seconds),p95:seconds(record.p95_seconds)})+(others.length?' '+t('비교한 후보: {models}',{models:others.join(', ')}):'');
+}
+function renderJudgmentFollow(route){
+ const box=$('judgment-follow');if(!box)return;
+ const active=route.active||{},effective=route.effective,follow=route.follow||{},following=active.source==='follow';
+ const transport=active.transport||'none',usable=!['none','off'].includes(transport)&&active.available!==false;
+ const state=usable?[t('대화 해석에 사용 중'),'active']:transport==='off'&&!following?[t('사용 안 함'),'neutral']:following||transport!=='none'?[t('확인 필요'),'attention']:[t('설정 안 됨'),'neutral'];
+ let description=effectiveJudgmentText(effective);
+ if(!description){
+  if(transport==='off'&&!following)description=t('보조 판단을 쓰지 않습니다.');
+  else if(!usable)description=following&&!follow.available?t('기본 AI를 따라갈 수 없습니다: {reason}',{reason:t(follow.reason||'-')}):t('쓸 수 있는 대화 해석 경로가 없어 보조 판단을 건너뜁니다.');
+ }
+ const destination=effective?.destination||active.destination||(following&&usable&&follow.destination);
+ if(destination)description+=(description?' · ':'')+t('전송 대상: {destination}',{destination:t(destination)});
+ if(usable&&active.model_policy==='fastest_qualified')description+=decisionSpeedReason(active.qualification);
+ if(active.requalification_needed)description+=' '+t('CLI가 바뀌어 자동으로 확인합니다. 통과할 때까지 이전 판단 경로는 사용할 수 없습니다.');
+ box.replaceChildren(settingsRow(t('사용 방식'),decisionActiveTitle(active,route)+(description?' — '+description:''),...state));
+}
 const ENGINE_LOGIN_TEXT={'signed-in':'로그인 확인됨','signed-out':'로그인 안 됨','unknown':'로그인 확인 안 됨','unchecked':'확인 전','token-saved':'토큰 저장됨, 다음 요청에서 확인','sidecar':'격리 런타임이 로그인을 관리'};
 // A CLI that is installed but not selected: "사용 가능" only when a login was
 // actually observed; an unchecked or failed check is never shown as usable.
@@ -1130,164 +1180,405 @@ function renderSubscriptionEngines(subscription){const box=$('subscription-engin
 // #580: 대화 해석 (the DecisionEngine route). A separate role from the Work AI listed above: choosing it here
 // never changes that route, and the Work route never changes this one. Only explicit owner actions call the
 // server; rendering this section never contacts a model or runs a CLI.
-const DECISION_TRANSPORT_LABEL={direct_api:'API',jev:'Jev',subscription_cli:'구독 AI',off:'사용 안 함',none:'설정 안 됨'};
-const DECISION_POLICY_LABEL={fastest_qualified:'자동 · 가장 빠른 적격 모델',lowest_qualified:'자동 · 가장 저렴한 적격 모델',explicit:'직접 선택',engine_default:'구독 AI 기본 모델'};
+const DECISION_TRANSPORT_LABEL={off:'사용 안 함',none:'설정 안 됨'};
 const DECISION_FAILURE_TEXT={'auth':'로그인 또는 인증 실패','not-configured':'설정 필요','timeout':'시간 초과','usage-limit':'사용량 한도','request-rejected':'요청 거부','model-not-verified':'모델을 확인하지 못함','model-selection-unsupported':'모델 지정 미지원','no-qualified-candidate':'적격 모델 없음','requalification-needed':'CLI가 바뀌어 다시 확인 필요','cli-not-found':'CLI 없음','isolated-deployment':'격리 런타임에서 미지원','isolation-flags-missing':'격리 옵션 미지원','tool-surface-unverified':'도구 기능을 모두 끌 수 있는지 확인 못 함','instruction-files-unqualified':'지침 파일 전송 여부 확인 전','capability-unchecked':'CLI 기능 확인 필요','follow-unsupported':'기본 AI를 따라갈 수 없음','probe-failed':'확인 실패','not-qualified':'적격성 검사 미통과','strict-profile-unqualified':'엄격 격리 검증 실패','cloud-budget':'클라우드 하루 호출 한도','cloud-not-configured':'클라우드 제공자 설정 필요'};
 const DECISION_ENGINE_NAMES={codex:'Codex','claude-code':'Claude Code'};
-let decisionChooser='',decisionSettings=null,decisionEditorRevision=0,decisionActivationPending=false,decisionDiscardTarget=null;
-function decisionInstructionWarning(active){const files=active?.instruction_files_present||[];return files.length?' '+t('주의: Codex 로그인 프로필의 {files}이(가) 판단 요청에 함께 전송됩니다. Still은 크기만 확인하고 내용은 읽지 않습니다.',{files:files.map(file=>`${file.file} (${file.bytes} B)`).join(', ')}):'';}
-function decisionFailedSuffix(check){return check&&check.state==='failed'?' · '+decisionCheckText(check):'';}
-function decisionActiveTitle(active){if(active.source==='follow')return active.transport==='off'?t('기본 AI 따라가기 · 확인 필요'):t('기본 AI 따라가기 · {model}',{model:active.requested_model||'-'});if(active.transport==='direct_api')return t('OpenAI API · {model}',{model:active.requested_model||'gpt-4o-mini'});if(active.transport==='jev')return t('Jev (TypeSafe) · {model}',{model:active.requested_model||'jev-latest'});if(active.transport==='subscription_cli')return t('구독 AI · {engine}',{engine:DECISION_ENGINE_NAMES[active.engine]||active.engine||'-'});return t(DECISION_TRANSPORT_LABEL[active.transport]||'설정 안 됨');}
+const DECISION_API_NAMES={openai:'OpenAI API',anthropic:'Anthropic API',openrouter:'OpenRouter'};
+let decisionSettings=null,decisionEditorRevision=0,decisionActivationPending=false,decisionCredentialPending=false,decisionDiscardTarget=null,decisionEditor=null;
+
+function decisionInstructionWarning(active){
+ const files=active?.instruction_files_present||[];
+ return files.length?t('주의: Codex 로그인 프로필의 {files}이(가) 판단 요청에 함께 전송됩니다. Still은 크기만 확인하고 내용은 읽지 않습니다.',{files:files.map(file=>`${file.file} (${file.bytes} B)`).join(', ')}):'';
+}
+function decisionFailedSuffix(check){return check?.state==='failed'?decisionCheckText(check):'';}
+function decisionActiveTitle(active,route=decisionSettings?.decision_route){
+ const model=active.requested_model||'-',effort=active.effort?' · '+t('추론 강도: {effort}',{effort:active.effort}):'';
+ if(active.source==='follow'){
+  const title=t('기본 AI 따라가기 · {model}',{model});
+  return title+(route?.follow_pin||route?.follow?.pinned?' '+t('(고정)'):'')+effort;
+ }
+ if(active.transport==='direct_api'){
+  const id=active.api||'openai',name=route?.apis?.find(api=>api.id===id)?.name||DECISION_API_NAMES[id]||id;
+  return `${name} · ${model}${effort}`;
+ }
+ if(active.transport==='jev')return t('Jev (TypeSafe) · {model}',{model})+effort;
+ if(active.transport==='subscription_cli'){
+  const name=route?.subscription_cli?.find(engine=>engine.id===active.engine)?.name||DECISION_ENGINE_NAMES[active.engine]||active.engine||'-';
+  return t('구독 AI · {engine}',{engine:name})+` · ${model}`+effort;
+ }
+ return t(DECISION_TRANSPORT_LABEL[active.transport]||'설정 안 됨');
+}
 function effectiveJudgmentText(effective){if(!effective)return '';const params={...(effective.params||{})};for(const key of ['main','label','verified','progress'])if(params[key])params[key]=t(params[key]);if(params.model==='기본 모델')params.model=t('기본 모델');
  const reason=effective.reason_template?t(effective.reason_template,Object.fromEntries(Object.entries(effective.reason_params||{}).map(([key,value])=>[key,t(value)]))):t(effective.reason||'');
  // #760: an explicit 기본 AI 따라가기 that did not pass is shown next to the unchanged off/explicit sentence.
  const note=effective.note_template?' '+t(effective.note_template,Object.fromEntries(Object.entries(effective.note_params||{}).map(([key,value])=>[key,t(value)]))):'';
  return t(effective.template||effective.text||'',{...params,reason})+note;}
 function decisionCheckText(check){if(!check)return t('확인 기록 없음');const when=safeTime(check.checked_at);if(check.state==='active')return t('마지막 확인: 통과 ({time})',{time:when});return t('마지막 확인: 실패 · {reason} ({time})',{reason:t(DECISION_FAILURE_TEXT[check.failure]||'확인 실패'),time:when});}
-function decisionDraftState(form){return JSON.stringify([...form.querySelectorAll('input,select,textarea')].filter(input=>input.type!=='password').map(input=>[input.type||input.tagName,input.value,Boolean(input.checked)]));}
-function decisionDraftDirty(form=$('decision-route')?.querySelector('form')){return Boolean(form&&([...form.querySelectorAll('input[type="password"]')].some(input=>input.value)||form.dataset.initialDraft!==decisionDraftState(form)));}
-function decisionEditorContract(settings,chooser){const route=settings?.decision_route||{};
- if(chooser.startsWith('cli:')){const engine=(route.subscription_cli||[]).find(item=>item.id===chooser.slice(4));return JSON.stringify(engine?[engine.installed,engine.login==='signed-out',engine.isolated_deployment,engine.tool_surface,engine.model_selection,engine.ranked_models,engine.model_efforts,decisionModelList(engine.id)?.models]:null);}
- const provider=route[chooser.split(':')[0]]||{};return JSON.stringify([provider.configured,provider.has_decision_key,provider.ranked_models,provider.model,chooser.endsWith(':model')?decisionModelList(chooser.startsWith('jev:')?'jev':'openai')?.models:null]);
+function decisionDraftState(form){
+ return JSON.stringify([...form.querySelectorAll('input,select,textarea')].filter(input=>input.type!=='password').map(input=>[input.type||input.tagName,input.value,Boolean(input.checked)]));
+}
+function decisionFormDirty(form){
+ return [...form.querySelectorAll('input[type="password"]')].some(input=>input.value)||form.dataset.initialDraft!==decisionDraftState(form);
+}
+function decisionDraftDirty(){
+ return [...($('decision-route')?.querySelectorAll('form')||[])].some(decisionFormDirty);
 }
 function decisionClearDiscard(){decisionDiscardTarget=null;$('decision-discard')?.remove();}
+function decisionDiscard(action,dirty=decisionDraftDirty()){
+ if(!dirty){decisionClearDiscard();action();return;}
+ decisionDiscardTarget=action;renderDecisionDiscard();
+ $('decision-discard')?.querySelector('button')?.focus();
+}
 function renderDecisionDiscard(){
  $('decision-discard')?.remove();if(!decisionDiscardTarget)return;
  const prompt=element('div',undefined,'settings-inline-confirm');prompt.id='decision-discard';prompt.setAttribute('role','status');
- prompt.append(element('span',t('입력한 변경 사항을 버릴까요?')),settingsAction(t('계속 편집'),()=>{decisionClearDiscard();$('decision-route').querySelector('form')?.querySelector('input')?.focus();}),settingsAction(t('변경 사항 버리기'),()=>{const pending=decisionDiscardTarget;decisionClearDiscard();if(pending&&pending.revision===decisionEditorRevision)openDecisionChooser(pending.id,true,pending.reopen);},'destructive'));$('decision-route').append(prompt);
+ prompt.append(element('span',t('입력한 변경 사항을 버릴까요?')),
+  settingsAction(t('계속 편집'),()=>{decisionClearDiscard();$('decision-route').querySelector('select')?.focus();}),
+  settingsAction(t('변경 사항 버리기'),()=>{const action=decisionDiscardTarget;decisionClearDiscard();action?.();},'destructive'));
+ $('decision-route').append(prompt);
 }
-function openDecisionChooser(id,discarded=false,reopen=false){
- if(!discarded&&decisionDraftDirty()){decisionDiscardTarget={id,reopen,revision:decisionEditorRevision};renderDecisionDiscard();return;}
- decisionClearDiscard();decisionEditorRevision++;decisionChooser=reopen?id:decisionChooser===id?'':id;const box=$('decision-route');if(box)box.dataset.state='';renderDecisionRoute(decisionSettings);
+function decisionCurrentProvider(route){
+ const active=route.active||{};
+ if(route.mode==='follow_main'||active.source==='follow')return 'follow_main';
+ if(route.mode==='off'||active.transport==='off')return 'off';
+ if(active.transport==='direct_api')return active.api||'openai';
+ if(active.transport==='subscription_cli')return active.engine||'follow_main';
+ return active.transport==='jev'?'jev':'follow_main';
+}
+function decisionCliRefusal(engine){
+ if(engine.isolated_deployment)return t('지원 안 함');
+ if(!engine.installed)return t('설치 안 됨');
+ if(engine.login==='signed-out')return t('로그인 안 됨');
+ if(engine.tool_surface&&engine.tool_surface!=='allowlisted-features-only'){
+  return t('이 CLI의 도구 기능을 모두 끌 수 없어 대화 해석에 쓰지 않습니다.')+(engine.tool_surface_detail?' '+t('켜진 기능: {features}',{features:engine.tool_surface_detail}):'');
+ }
+ return '';
+}
+function decisionProviders(route){
+ return [
+  {id:'follow_main',name:t('기본 AI 따라가기 (기본값)'),available:route.follow?.available===true,check:route.follow_check},
+  ...(route.apis||[]).map(api=>({...api,transport:'direct_api',name:api.name||api.id,available:api.configured,
+   option:api.configured?api.name||api.id:t('{name} · 키 필요',{name:api.name||api.id})})),
+  {id:'jev',name:'Jev (TypeSafe)',available:route.jev?.configured,check:route.jev?.check},
+  ...(route.subscription_cli||[]).map(engine=>{
+   const reason=decisionCliRefusal(engine),name=engine.name||DECISION_ENGINE_NAMES[engine.id]||engine.id;
+   return {...engine,transport:'subscription_cli',name,available:!reason,disabled:!!reason,option:reason?`${name} · ${reason}`:name};
+  }),
+  {id:'off',name:t('끄기'),available:true}
+ ];
+}
+function decisionOption(value,label,disabled=false){
+ const option=element('option',label);option.value=value;option.disabled=disabled;return option;
 }
 function decisionActivate(body,button){
- if(decisionActivationPending)return;decisionClearDiscard();const revision=decisionEditorRevision,form=$('decision-route').querySelector('form'),submittedState=form?decisionDraftState(form):'';decisionActivationPending=true;
- return busy(button,async()=>{setError('decision-route-feedback','');setFeedback('decision-route-feedback',t('확인 판단을 보내 경로를 검증하는 중… 통과한 경우에만 바뀝니다.'));
-  try{await api('/api/decision-route/activate',body);if(revision===decisionEditorRevision){setFeedback('decision-route-feedback',t('대화 해석 경로를 바꿨습니다. 작업 실행 AI는 그대로입니다.'));if(!form||(form===$('decision-route').querySelector('form')&&decisionDraftState(form)===submittedState&&!form.querySelector('input[type="password"]'))){decisionClearDiscard();decisionChooser='';$('decision-route').dataset.state='';}}await refresh();}
-  catch(error){if(revision===decisionEditorRevision)setError('decision-route-feedback',error);}
+ if(decisionActivationPending)return;
+ decisionClearDiscard();
+ const revision=decisionEditorRevision,editor=decisionEditor,form=editor.form,submitted=decisionDraftState(form);
+ const follow=body.transport==='follow_main',feedback=follow?'judgment-feedback':'decision-route-feedback';
+ decisionActivationPending=true;
+ setError(feedback,'');setFeedback(feedback,follow?t('판단 AI 확인을 요청하는 중…'):t('확인 판단을 보내 경로를 검증하는 중… 통과한 경우에만 바뀝니다.'));
+ return busy(button,async()=>{
+  try{
+   const route=await api('/api/decision-route/activate',body);
+   if(revision===decisionEditorRevision){
+    const unchanged=decisionDraftState(form)===submitted;
+    form.dataset.initialDraft=submitted;
+    setFeedback(feedback,follow?t('판단 AI 확인을 백그라운드에서 시작했습니다. 통과하면 기본 AI를 따라갑니다.'):t('대화 해석 경로를 바꿨습니다. 작업 실행 AI는 그대로입니다.'));
+    if(route?.active)renderDecisionRoute({...decisionSettings,decision_route:route},unchanged&&!decisionDraftDirty()&&(!follow||route.mode==='follow_main'));
+   }
+   if($('active-ai'))$('active-ai').dataset.state='';
+   await refresh();
+  }catch(error){if(revision===decisionEditorRevision)setError(feedback,error);}
   finally{decisionActivationPending=false;}
- });
+ }).finally(()=>decisionEditor?.sync(decisionSettings.decision_route));
 }
-function decisionKeyForm(transport,withModel,removable=false){const form=element('form',undefined,'engine-token');const input=element('input');input.type='password';input.autocomplete='off';input.spellcheck=false;input.setAttribute('aria-label',transport==='jev'?t('TypeSafe API 키'):t('OpenAI API 키'));form.append(element('span',transport==='jev'?t('TypeSafe API 키'):t('OpenAI API 키 (대화 해석 전용)'),'settings-technical-line'),input);
- let model=null;if(withModel){model=element('input');model.type='text';model.autocomplete='off';model.spellcheck=false;model.value='jev-latest';model.setAttribute('aria-label',t('Jev 모델'));form.append(element('span',t('Jev 모델'),'settings-technical-line'),model);}
- const save=element('button',t('키 저장'),'small');save.type='submit';form.append(element('span',t('저장만 합니다. 대화 해석에 쓰려면 저장 후 사용을 따로 누르세요.'),'settings-technical-line'),save);
- // A saved key can be replaced (above) or removed; removing never switches to another route.
- if(removable)form.append(settingsAction(t('키 제거'),event=>{decisionClearDiscard();const revision=decisionEditorRevision;return busy(event.currentTarget,async()=>{try{await api('/api/decision-route/credential',{transport,key:''});if(revision===decisionEditorRevision){decisionClearDiscard();decisionChooser='';setFeedback('decision-route-feedback',t('키를 제거했습니다. 다른 경로로 자동 전환하지 않습니다.'));$('decision-route').dataset.state='';}await refresh();}catch(error){if(revision===decisionEditorRevision)setError('decision-route-feedback',error);}});},'destructive'));
- form.onsubmit=event=>{event.preventDefault();if(!input.value.trim()){setError('decision-route-feedback',t('API 키를 붙여 넣은 뒤 저장하세요.'));input.focus();return;}decisionClearDiscard();const revision=decisionEditorRevision,submittedKey=input.value,submittedModel=model?.value||'';return busy(save,async()=>{try{await api('/api/decision-route/credential',{transport,key:submittedKey,...(model?{model:submittedModel.trim()||'jev-latest'}:{})});const unchanged=input.value===submittedKey&&(model?.value||'')===submittedModel;if(input.value===submittedKey&&(!input.isConnected||(revision===decisionEditorRevision&&unchanged)))input.value='';if(revision===decisionEditorRevision&&unchanged){decisionClearDiscard();decisionChooser='';setFeedback('decision-route-feedback',t('키를 저장했습니다. 아직 대화 해석 경로는 바뀌지 않았습니다.'));$('decision-route').dataset.state='';}await refresh();}catch(error){if(revision===decisionEditorRevision)setError('decision-route-feedback',error);}});};
- return form;}
-// #679: a model list appears only after the owner presses 모델 목록 새로고침 (never on page open); a listed model is
-// labelled 목록에 있음(검증 전) and is used only after 확인 후 사용 passes the qualification suite.
-const decisionModelLists={};
-function decisionModelList(routeId){return decisionModelLists[routeId]||decisionSettings?.decision_route?.model_lists?.[routeId]||null;}
-function decisionModelRefresh(routeId){return settingsAction(t('모델 목록 새로고침'),event=>{decisionClearDiscard();const revision=decisionEditorRevision;return busy(event.currentTarget,async()=>{setError('decision-route-feedback','');setFeedback('decision-route-feedback',t('모델 목록을 가져오는 중… 판단 AI는 바뀌지 않습니다.'));
- try{decisionModelLists[routeId]=await api('/api/decision-route/models',{route:routeId});if(revision===decisionEditorRevision){setFeedback('decision-route-feedback',t('모델 목록을 가져왔습니다. 목록에 있어도 사용 전에 적격성 검사를 합니다.'));if(!decisionDraftDirty())$('decision-route').dataset.state='';renderDecisionRoute(decisionSettings);}else await refresh();}
- catch(error){if(revision===decisionEditorRevision)setError('decision-route-feedback',error);}
-});});}
-function decisionModelPicker(routeId,ranked,efforts,withEffort=true,listedKey='{count}개 모델이 목록에 있습니다 ({source}). 목록에 있어도 계정에서 쓸 수 있는지는 확인 후 사용에서 적격성 검사로 확인합니다.'){
- // A free-text model name with the refreshed list (or the ranked defaults) as suggestions, and the effort
- // levels that model supports. Returns {nodes, model(), effort()}.
- const list=decisionModelList(routeId),entries=list?.models||[],input=element('input');input.type='text';input.autocomplete='off';input.spellcheck=false;input.setAttribute('aria-label',t('직접 선택할 모델 이름'));
- const listId='decision-models-'+routeId,datalist=element('datalist');datalist.id=listId;input.setAttribute('list',listId);
- for(const id of [...entries.map(entry=>entry.id),...ranked.filter(id=>!entries.some(entry=>entry.id===id))]){const option=element('option');option.value=id;option.textContent=entries.some(entry=>entry.id===id)?t('{model} · 목록에 있음(검증 전)',{model:id}):id;datalist.append(option);}
- const levelsFor=model=>(entries.find(entry=>entry.id===model)?.efforts)||efforts?.[model]||[];
- const effort=element('select');effort.setAttribute('aria-label',t('추론 강도'));
- const fill=()=>{const levels=levelsFor(input.value.trim()),previous=effort.value;effort.replaceChildren();const auto=element('option',levels.length?t('기본 (지원하면 low)'):t('이 모델은 추론 강도 설정 없음'));auto.value='';effort.append(auto);for(const level of levels){const option=element('option',level);option.value=level;effort.append(option);}effort.value=levels.includes(previous)?previous:'';effort.disabled=!levels.length;};
- input.oninput=fill;fill();
- const listed=list?t(listedKey,{count:entries.length,source:list.source||'-'}):t('모델 목록은 새로고침을 눌렀을 때만 가져옵니다.');
- const effortNodes=withEffort?[element('span',t('추론 강도'),'settings-technical-line'),effort]:[];
- return {nodes:[element('span',t('직접 선택할 모델 이름'),'settings-technical-line'),input,datalist,...effortNodes,element('span',listed,'settings-technical-line'),decisionModelRefresh(routeId)],model:()=>input.value.trim(),effort:()=>withEffort?effort.value:'',input,effortSelect:effort};}
-function decisionPolicyForm(engine){const form=element('form',undefined,'engine-token');form.append(element('span',t('판단 모델'),'settings-technical-line'));const name='decision-policy-'+engine.id,supported=engine.model_selection!=='unsupported',choices=[['engine_default',t('구독 AI 기본 모델')]];
- if(supported)choices.unshift(['fastest_qualified',t('자동 — 가장 빠른 적격 모델')],['lowest_qualified',t('자동 — 가장 저렴한 적격 모델')],['explicit',t('직접 선택')]);
- // #472: the fastest qualified model is the default (#679 had the cheapest); the engine default (Opus for Claude Code) is never preselected.
- const radios=[];for(const [value,label] of choices){const wrap=element('label',undefined,'decision-choice'),radio=element('input');radio.type='radio';radio.name=name;radio.value=value;radio.checked=value===(supported?'fastest_qualified':'engine_default');radios.push(radio);wrap.append(radio,element('span',label));form.append(wrap);}
- let picker=null,candidates=null;const ranked=engine.ranked_models||[];
- if(supported){candidates=element('input');candidates.type='text';candidates.autocomplete='off';candidates.spellcheck=false;candidates.value=ranked.join(', ');candidates.setAttribute('aria-label',t('후보 모델 (가벼운 순서, 쉼표로 구분, 최대 3개)'));
-  form.append(element('span',t('후보 모델 (가벼운 순서, 쉼표로 구분, 최대 3개)'),'settings-technical-line'),candidates,element('span',t('가장 빠른 적격 모델은 모든 후보에 적격성 검사를 실행하고, 통과한 모델 중 응답이 가장 빠른 모델을 씁니다. 가장 저렴한 적격 모델은 가장 저렴한 후보부터 검사해 처음 통과한 모델을 씁니다. 통과한 모델이 없으면 바꾸지 않습니다.'),'settings-technical-line'));
-  picker=decisionModelPicker(engine.id,ranked,engine.model_efforts);form.append(...picker.nodes);}
- else form.append(element('span',t('설치된 CLI가 모델 지정을 지원하지 않아 구독 AI 기본 모델만 쓸 수 있습니다.'),'settings-technical-line'));
- if(engine.model_selection==='unchecked'){form.append(element('span',t('이 CLI가 모델 지정을 지원하는지는 사용할 때 확인합니다. 미리 확인할 수도 있습니다.'),'settings-technical-line'));form.append(settingsAction(t('모델 지정 지원 확인'),event=>{decisionClearDiscard();const revision=decisionEditorRevision;return busy(event.currentTarget,async()=>{setError('decision-route-feedback','');try{const result=await api('/api/decision-route/capabilities',{engine:engine.id});if(revision===decisionEditorRevision)setFeedback('decision-route-feedback',result.model_override?t('이 CLI는 모델 지정을 지원합니다. 계정에서 쓸 수 있는지는 사용할 때 확인합니다.'):t('이 CLI는 모델 지정을 지원하지 않습니다.'));if(revision===decisionEditorRevision&&!decisionDraftDirty())$('decision-route').dataset.state='';await refresh();}catch(error){if(revision===decisionEditorRevision)setError('decision-route-feedback',error);}});}));}
- const submit=element('button',t('확인 후 사용'),'small');submit.type='submit';form.append(element('span',t('사용 전에 개인 정보가 없는 적격성 검사 질문을 이 구독 계정으로 보냅니다. 통과하지 못하면 지금 경로를 그대로 둡니다.'),'settings-technical-line'),submit);
- form.onsubmit=event=>{event.preventDefault();const policy=(radios.find(radio=>radio.checked)||{}).value||(supported?'fastest_qualified':'engine_default'),body={transport:'subscription_cli',engine:engine.id,model_policy:policy};if(policy==='explicit'){body.model=picker?.model()||'';if(picker?.effort())body.effort=picker.effort();}if(policy==='fastest_qualified'||policy==='lowest_qualified')body.candidates=(candidates?.value||'').trim();return decisionActivate(body,submit);};
- return form;}
-function decisionDirectModelForm(direct){const form=element('form',undefined,'engine-token');const ranked=direct.ranked_models||['gpt-4o-mini'];
- form.append(element('span',t('OpenAI API 판단 모델 (비우면 가장 빠른 적격 모델: {models})',{models:ranked.join(', ')}),'settings-technical-line'));
- const picker=decisionModelPicker('openai',ranked,{},false);form.append(...picker.nodes);
- const submit=element('button',t('확인 후 사용'),'small');submit.type='submit';form.append(element('span',t('사용 전에 개인 정보가 없는 적격성 검사 질문을 보냅니다. 통과하지 못하면 지금 경로를 그대로 둡니다.'),'settings-technical-line'),submit);
- form.onsubmit=event=>{event.preventDefault();const model=picker.model();return decisionActivate(model?{transport:'direct_api',model}:{transport:'direct_api'},submit);};
- return form;}
-// #609: Jev activation sends one probe judgment (not the qualification suite), so its listing says so.
-// Keep the literal in t() form for the catalogue check: t('{count}개 모델이 목록에 있습니다 ({source}). 목록에 있어도 계정에서 쓸 수 있는지는 사용을 누를 때 확인 판단 한 번으로 확인합니다.')
-const JEV_LISTED_TEXT='{count}개 모델이 목록에 있습니다 ({source}). 목록에 있어도 계정에서 쓸 수 있는지는 사용을 누를 때 확인 판단 한 번으로 확인합니다.';
-// #609: Jev's model is chosen from TypeSafe's own list (모델 목록 새로고침, never on page open); saving only stores it.
-function decisionJevModelForm(jev){const form=element('form',undefined,'engine-token');const current=jev.model||'jev-latest';
- form.append(element('span',t('Jev 모델'),'settings-technical-line'));
- const picker=decisionModelPicker('jev',['jev-latest'],{},false,JEV_LISTED_TEXT);picker.input.value=current;form.append(...picker.nodes);
- const submit=element('button',t('모델 저장'),'small');submit.type='submit';form.append(element('span',t('저장만 합니다. 대화 해석에 쓰려면 저장 후 사용을 따로 누르세요.'),'settings-technical-line'),submit);
- form.onsubmit=event=>{event.preventDefault();decisionClearDiscard();const revision=decisionEditorRevision,submittedState=decisionDraftState(form),submittedModel=picker.model()||'jev-latest';return busy(submit,async()=>{setError('decision-route-feedback','');try{await api('/api/decision-route/credential',{transport:'jev',model:submittedModel});if(revision===decisionEditorRevision){setFeedback('decision-route-feedback',t('모델을 저장했습니다. 아직 대화 해석 경로는 바뀌지 않았습니다.'));if(form===$('decision-route').querySelector('form')&&decisionDraftState(form)===submittedState){decisionClearDiscard();decisionChooser='';$('decision-route').dataset.state='';}}await refresh();}catch(error){if(revision===decisionEditorRevision)setError('decision-route-feedback',error);}});};
- return form;}
-function renderDecisionRoute(settings){
- decisionSettings=settings;const route=settings?.decision_route,box=$('decision-route');if(!box||!route)return;
- const fingerprint=JSON.stringify([route,decisionChooser,decisionModelLists]);if(box.dataset.state===fingerprint)return;
- // Explicit actions clear dataset.state; only ordinary polling retains the owner's editor.
- const ordinary=Boolean(box.dataset.state)&&box.dataset.chooser===decisionChooser;
- const retainedForm=ordinary?box.querySelector('form'):null,retainedFeedback=ordinary?$('decision-route-feedback'):null;
+function decisionSaveCredential(body,button,onSaved){
+ if(decisionCredentialPending||decisionActivationPending)return;
+ decisionCredentialPending=true;decisionClearDiscard();const revision=decisionEditorRevision;
+ return busy(button,async()=>{
+  setError('decision-route-feedback','');
+  try{
+   const route=await api('/api/decision-route/credential',body);
+   if(revision===decisionEditorRevision){
+    onSaved();
+    if(route?.active)renderDecisionRoute({...decisionSettings,decision_route:route});
+    const message=body.key===''?t('키를 제거했습니다. 다른 경로로 자동 전환하지 않습니다.'):body.key?t('키를 저장했습니다. 아직 대화 해석 경로는 바뀌지 않았습니다.'):t('모델을 저장했습니다. 아직 대화 해석 경로는 바뀌지 않았습니다.');
+    setFeedback('decision-route-feedback',message);
+   }
+   await refresh();
+  }catch(error){if(revision===decisionEditorRevision)setError('decision-route-feedback',error);}
+  finally{decisionCredentialPending=false;}
+ }).finally(()=>decisionEditor?.sync(decisionSettings.decision_route));
+}
+function decisionKeyForm(transport,config,close){
+ const jev=transport==='jev',form=element('form',undefined,'engine-token'),input=element('input');
+ input.type='password';input.autocomplete='off';input.spellcheck=false;input.dataset.focusKey='decision-key';
+ input.setAttribute('aria-label',jev?t('TypeSafe API 키'):t('OpenAI API 키'));
+ form.append(element('span',jev?t('TypeSafe API 키'):t('OpenAI API 키 (대화 해석 전용)'),'settings-technical-line'),input);
+ const save=element('button',t('키 저장'),'small');save.type='submit';
+ form.append(element('span',t('저장만 합니다. 대화 해석에 쓰려면 저장 후 사용을 따로 누르세요.'),'settings-technical-line'),save);
+ const write=(key,button)=>{
+  const model=jev&&decisionSettings.decision_route.jev?.model;
+  return decisionSaveCredential({transport,key,...(model?{model}:{})},button,()=>{
+   if(input.value===key||!input.value){input.value='';close();}
+  });
+ };
+ if(jev?config.configured:config.has_decision_key)form.append(settingsAction(t('키 제거'),event=>decisionDiscard(()=>{input.value='';return write('',event.currentTarget);},Boolean(input.value)),'destructive'));
+ form.onsubmit=event=>{
+  event.preventDefault();
+  if(!input.value.trim()){setError('decision-route-feedback',t('API 키를 붙여 넣은 뒤 저장하세요.'));input.focus();return;}
+  return write(input.value,save);
+ };
+ form.dataset.initialDraft=decisionDraftState(form);return form;
+}
+
+// Fetch only on a Pinned change or an explicit refresh. Concurrent clicks share the same request.
+const decisionModelLists={},decisionModelRequests=new Set();
+function decisionModelList(routeId){
+ const fetched=decisionModelLists[routeId],stored=decisionSettings?.decision_route?.model_lists?.[routeId];
+ return fetched&&!(stored?.checked_at>fetched.checked_at)?fetched:stored||null;
+}
+async function decisionRefreshModels(routeId){
+ if(decisionModelRequests.has(routeId))return;
+ decisionModelRequests.add(routeId);
+ decisionClearDiscard();const revision=decisionEditorRevision;
+ setError('decision-route-feedback','');setFeedback('decision-route-feedback',t('모델 목록을 가져오는 중… 판단 AI는 바뀌지 않습니다.'));
+ try{
+  decisionModelLists[routeId]=await api('/api/decision-route/models',{route:routeId});
+  if(revision===decisionEditorRevision)setFeedback('decision-route-feedback',t('모델 목록을 가져왔습니다. 목록에 있어도 사용 전에 적격성 검사를 합니다.'));
+  renderDecisionRoute(decisionSettings);
+ }catch(error){if(revision===decisionEditorRevision)setError('decision-route-feedback',error);}
+ finally{decisionModelRequests.delete(routeId);}
+}
+function decisionModelPicker(routeId,onChange,{current,activeModel,effortValue,withEffort=true}={}){
+ const node=element('div',undefined,'engine-token'),model=element('select'),effort=element('select');
+ const levelsBox=element('label',undefined,'decision-choice'),listLabel=element('label',undefined,'decision-choice chooser-option');
+ model.dataset.focusKey='decision-model';model.translate=false;model.setAttribute('aria-label',t('직접 선택할 모델 이름'));
+ effort.dataset.focusKey='decision-effort';effort.setAttribute('aria-label',t('추론 강도'));
+ levelsBox.append(element('span',t('추론 강도')),effort);
+ listLabel.append(element('span',t('모델')),model);
+ const refreshButton=settingsAction(t('모델 목록 새로고침'),event=>busy(event.currentTarget,()=>decisionRefreshModels(routeId)));
+ refreshButton.dataset.focusKey='decision-model-refresh';
+ const controls=element('div',undefined,'settings-inline-confirm');controls.append(listLabel,refreshButton);
+ node.append(controls);
+ let rows=[],efforts={},modelListKey='',levelKey='',selectedEffort=effortValue||'';
+ const syncEffort=()=>{
+  if(!withEffort)return;
+  const listed=rows.find(row=>row.id===model.value)?.efforts;
+  const levels=listed?.length?listed:efforts[model.value]||[],key=JSON.stringify(levels);
+  if(key!==levelKey){
+   const hadFocus=document.activeElement===effort;
+   effort.replaceChildren(decisionOption('',t('기본')),...levels.map(level=>decisionOption(level,level)));
+   selectedEffort=levels.includes(selectedEffort)?selectedEffort:'';effort.value=selectedEffort;
+   if(levels.length){if(!node.contains(levelsBox))node.append(levelsBox);if(hadFocus)effort.focus();}
+   else{levelsBox.remove();if(hadFocus)model.focus();}
+   levelKey=key;
+  }
+ };
+ model.onchange=()=>{syncEffort();onChange();};effort.onchange=()=>{selectedEffort=effort.value;onChange();};
+ return {node,model,effort:()=>node.contains(effort)?effort.value:'',sync(modelEfforts){
+  efforts=modelEfforts||{};
+  rows=(decisionModelList(routeId)?.models||[]).slice().sort((a,b)=>
+   Number(b.recommended??(b.rank!=null))-Number(a.recommended??(a.rank!=null))||(a.rank??Number.MAX_SAFE_INTEGER)-(b.rank??Number.MAX_SAFE_INTEGER));
+  const value=modelListKey?model.value:current||'',extras=[...new Set([current,activeModel,value])].filter(id=>id&&!rows.some(row=>row.id===id));
+  const options=[...rows,...extras.map(id=>({id}))];
+  const key=JSON.stringify(options);
+  if(key!==modelListKey){
+   model.replaceChildren(decisionOption('',t('모델 선택')),...options.map(row=>decisionOption(row.id,(row.recommended??(row.rank!=null))?t('{model} · 추천',{model:row.id}):row.id)));
+   model.value=value;modelListKey=key;
+  }
+  syncEffort();
+ }};
+}
+function decisionPolicyChoice(value,label,checked,change){
+ const wrap=element('label',undefined,'decision-choice chooser-option'),radio=element('input');
+ radio.type='radio';radio.name='decision-model-policy';radio.value=value;radio.checked=checked;
+ radio.dataset.focusKey='decision-policy-'+value;radio.onchange=()=>{if(radio.checked)return change(value);};
+ wrap.append(radio,element('span',label));return wrap;
+}
+function decisionModeForm(route){
+ const editor=element('div'),form=element('form',undefined,'engine-token'),provider=element('select'),label=element('label',undefined,'decision-choice');
+ const details=element('div'),account=element('div'),message=element('p',undefined,'settings-technical-line');
+ const submit=element('button',t('확인 후 사용'),'small');submit.type='submit';submit.dataset.focusKey='decision-submit';
+ const reset=settingsAction(t('현재 설정으로 다시 열기'),()=>decisionDiscard(()=>{decisionEditorRevision++;renderDecisionRoute(decisionSettings,true);}));
+ provider.dataset.focusKey='decision-provider';provider.setAttribute('aria-label',t('판단 AI'));label.append(element('span',t('판단 AI')),provider);
+ form.append(label,details,message,submit);editor.append(form,account,reset);
+ let chosen=decisionCurrentProvider(route),policy='',picker=null,mainAtEdit='',providerKey='',detailsBaseline='',jevSave=null,jevSavedModel='',keyPanel=null,keyToggle=null;
+ const attempted=new Set();
+ const current=()=>decisionSettings.decision_route;
+ const choice=()=>decisionProviders(current()).find(item=>item.id===chosen);
+ const modelRoute=()=>chosen==='follow_main'?mainAtEdit:chosen;
+ const modelMetadata=()=>decisionProviders(current()).find(item=>item.id===modelRoute());
+ const dirtyAccount=()=>[...account.querySelectorAll('form')].some(decisionFormDirty);
+ const syncSubmit=()=>{
+  const selected=choice(),mainChanged=chosen==='follow_main'&&mainAtEdit!==current().main;
+  const unsupported=selected?.model_selection==='unsupported'&&policy!=='engine_default';
+  reset.hidden=!(mainChanged||unsupported);
+  submit.disabled=decisionActivationPending||decisionCredentialPending||!selected?.available||mainChanged||unsupported||
+   (policy==='explicit'&&!picker?.model.value)||(chosen==='jev'&&picker&&picker.model.value!==jevSavedModel);
+  if(mainChanged||unsupported)message.textContent=t('설정 정보가 바뀌어 이 입력을 바로 적용할 수 없습니다. 입력은 보관되며, 현재 설정으로 다시 열 수 있습니다.');
+  else if(chosen==='follow_main'&&!selected?.available)message.textContent=t('기본 AI를 따라갈 수 없습니다: {reason}',{reason:t(current().follow?.reason||'-')});
+  else if(selected?.transport==='direct_api'&&!selected.available&&chosen!=='openai')message.textContent=t('키 필요 — 기본 AI 설정에서 {name} 키를 저장하세요.',{name:selected.name});
+  else message.textContent=decisionFailedSuffix(selected?.check);
+  message.hidden=!message.textContent;
+ };
+ const sync=next=>{
+  const providers=decisionProviders(next),options=providers.map(item=>[item.id,item.option||item.name,!!item.disabled]);
+  if(!providers.some(item=>item.id===chosen))options.push([chosen,chosen,true]);
+  const key=JSON.stringify(options);
+  if(key!==providerKey){provider.replaceChildren(...options.map(([id,name,disabled])=>decisionOption(id,name,disabled)));providerKey=key;}
+   if(provider.value!==chosen)provider.value=chosen;
+  picker?.sync(modelMetadata()?.model_efforts);
+  if(jevSave)jevSave.disabled=!choice()?.available||!picker.model.value||picker.model.value===jevSavedModel;
+  syncSubmit();
+ };
+ const draw=()=>{
+  details.replaceChildren();account.replaceChildren();picker=null;jevSave=null;keyPanel=null;keyToggle=null;
+  const saved=current(),active=saved.active||{},selected=choice(),isCurrent=chosen===decisionCurrentProvider(saved);
+  mainAtEdit=saved.main;policy='';
+  const activeRoute=active.api||active.engine||active.main||(active.transport==='direct_api'?(active.source==='follow'?saved.main:'openai'):active.transport);
+  const activeModel=modelRoute()===activeRoute?active.requested_model:'';
+  if(chosen==='openai'||chosen==='jev'){
+   const jev=chosen==='jev',config=jev?saved.jev||{}:selected||{};
+   const toggle=settingsAction((jev?config.configured:config.has_decision_key)?t('키 변경'):t('전용 키 설정'),()=>{
+    if(keyPanel){decisionDiscard(()=>{keyPanel.remove();keyPanel=null;toggle.focus();},decisionFormDirty(keyPanel));return;}
+    keyPanel=decisionKeyForm(jev?'jev':'direct_api',jev?current().jev||{}:choice()||{},()=>{keyPanel?.remove();keyPanel=null;toggle.focus();});
+    account.append(keyPanel);keyPanel.querySelector('input')?.focus();
+   });
+   toggle.dataset.focusKey='decision-key-toggle';details.append(toggle);keyToggle=toggle;
+  }
+  if(chosen==='jev'&&saved.jev?.configured){
+   jevSavedModel=saved.jev.model||activeModel||'';
+   const modelForm=element('form',undefined,'engine-token');
+   picker=decisionModelPicker('jev',()=>sync(current()),{current:jevSavedModel,activeModel,withEffort:false});
+   jevSave=element('button',t('모델 저장'),'small');jevSave.type='submit';jevSave.dataset.focusKey='decision-jev-save';
+   modelForm.append(picker.node,jevSave);account.append(modelForm);picker.sync();
+   modelForm.dataset.initialDraft=decisionDraftState(modelForm);
+   modelForm.onsubmit=event=>{
+    event.preventDefault();if(jevSave.disabled)return;
+    const model=picker.model.value,submitted=decisionDraftState(modelForm);
+    return decisionSaveCredential({transport:'jev',model},jevSave,()=>{
+     jevSavedModel=model;modelForm.dataset.initialDraft=submitted;syncSubmit();
+    });
+   };
+  }else if(chosen!=='off'&&chosen!=='jev'&&modelMetadata()){
+   const cli=selected?.transport==='subscription_cli',unsupported=selected?.model_selection==='unsupported';
+   const pin=chosen==='follow_main'?saved.follow_pin:(isCurrent&&active.model_policy==='explicit'?{model:active.requested_model,effort:active.effort}:null);
+   policy=unsupported||(cli&&isCurrent&&active.model_policy==='engine_default')?'engine_default':pin?'explicit':'fastest_qualified';
+   const policies=element('fieldset',undefined,'chooser-group'),modelFields=element('div');
+   policies.append(element('legend',t('판단 모델')));
+   picker=decisionModelPicker(modelRoute(),syncSubmit,{current:pin?.model||activeModel,activeModel,effortValue:pin?.effort});
+   const candidates=chosen==='follow_main'?saved.follow?.candidates:selected?.ranked_models;
+   const drawPolicy=()=>{
+    modelFields.replaceChildren();
+    if(policy==='explicit')modelFields.append(picker.node);
+    if(policy==='fastest_qualified'&&candidates?.length)modelFields.append(element('span',t('후보 모델: {models}',{models:candidates.join(', ')}),'settings-technical-line'));
+    sync(current());
+   };
+   const change=value=>{
+    decisionClearDiscard();policy=value;drawPolicy();
+    const id=modelRoute();
+    if(value==='explicit'&&!decisionModelList(id)&&!attempted.has(id)){
+     attempted.add(id);return decisionRefreshModels(id);
+    }
+   };
+   if(!unsupported)policies.append(
+    decisionPolicyChoice('fastest_qualified',t('자동 — Still이 적격성 검사를 통과한 가벼운 모델을 고릅니다'),policy==='fastest_qualified',change),
+    decisionPolicyChoice('explicit',t('직접 고정'),policy==='explicit',change));
+   if(cli&&(selected.model_selection!=='supported'||policy==='engine_default'))
+    policies.append(decisionPolicyChoice('engine_default',t('구독 AI 기본 모델'),policy==='engine_default',change));
+   policies.append(modelFields);details.append(policies);drawPolicy();
+   if(unsupported)details.append(element('span',t('설치된 CLI가 모델 지정을 지원하지 않아 구독 AI 기본 모델만 쓸 수 있습니다.'),'settings-technical-line'));
+   if(cli&&selected.model_selection==='unchecked'){
+    const check=settingsAction(t('모델 지정 지원 확인'),event=>{
+     const revision=decisionEditorRevision;
+     return busy(event.currentTarget,async()=>{
+      try{
+       const result=await api('/api/decision-route/capabilities',{engine:selected.id});
+       if(revision===decisionEditorRevision)setFeedback('decision-route-feedback',result.model_override?t('이 CLI는 모델 지정을 지원합니다. 계정에서 쓸 수 있는지는 사용할 때 확인합니다.'):t('이 CLI는 모델 지정을 지원하지 않습니다.'));
+       await refresh();
+      }catch(error){if(revision===decisionEditorRevision)setError('decision-route-feedback',error);}
+     });
+    });
+    details.append(check);
+   }
+   if(cli&&selected.instruction_files)details.append(element('span',t(selected.instruction_files),'settings-technical-line'));
+  }
+  sync(saved);detailsBaseline=decisionDraftState(details);
+ };
+ provider.onchange=()=>{
+  const next=provider.value;if(next===chosen)return;
+  provider.value=chosen;
+  decisionDiscard(()=>{
+   decisionEditorRevision++;chosen=next;draw();provider.focus();
+   setFeedback('decision-route-feedback','');setFeedback('judgment-feedback','');
+  },dirtyAccount()||decisionDraftState(details)!==detailsBaseline);
+ };
+ form.onsubmit=event=>{
+  event.preventDefault();syncSubmit();if(submit.disabled)return;
+  const selected=choice(),body={transport:selected.transport||chosen};
+  if(selected.transport==='direct_api')body.api=chosen;
+  if(selected.transport==='subscription_cli'){body.engine=chosen;body.model_policy=policy;}
+  if(policy==='explicit'){
+   body.model=picker.model.value;
+   const effort=picker.effort();if(effort)body.effort=effort;
+  }
+  return decisionActivate(body,submit);
+ };
+ draw();form.dataset.initialDraft=decisionDraftState(form);
+ return {node:editor,form,sync(next){
+  const cleanDetails=decisionDraftState(details)===detailsBaseline;
+  const cleanForm=!decisionFormDirty(form);
+  if(chosen==='jev'&&Boolean(picker)!==!!next.jev?.configured&&!dirtyAccount())draw();
+  if(keyToggle)keyToggle.textContent=(chosen==='jev'?next.jev?.configured:choice()?.has_decision_key)?t('키 변경'):t('전용 키 설정');
+  sync(next);
+  if(cleanDetails)detailsBaseline=decisionDraftState(details);
+  if(cleanForm)form.dataset.initialDraft=decisionDraftState(form);
+ }};
+}
+function renderDecisionRoute(settings,reset=false){
+ const route=settings?.decision_route,box=$('decision-route');if(!box||!route)return;
+ decisionSettings=settings;
+ const fingerprint=JSON.stringify([route,decisionModelLists,currentLanguage]);if(!reset&&box.dataset.state===fingerprint)return;
  const focused=rememberFocus(box),activeInput=document.activeElement,caret=activeInput&&typeof activeInput.selectionStart==='number'?[activeInput.selectionStart,activeInput.selectionEnd]:null;
- box.dataset.state=fingerprint;box.dataset.chooser=decisionChooser;box.replaceChildren();
- const heading=element('div',undefined,'settings-section-heading');heading.id='decision-route-heading';heading.append(element('h3',t('따로 지정')),element('p',t('기본 AI와 상관없이 판단 AI를 직접 고릅니다. 여기서 바꿔도 기본 AI는 바뀌지 않습니다.')));box.append(heading);
- const active=route.active||{transport:'none'},transport=active.transport||'none',follow=active.source==='follow',own=follow?'follow':transport,usable=!['none','off'].includes(transport)&&active.available!==false;
- const activeState=usable?[t('대화 해석에 사용 중'),'active']:follow?[t('확인 필요'),'attention']:transport==='none'?[t('설정 안 됨'),'neutral']:transport==='off'?[t('사용 안 함'),'neutral']:[t('확인 필요'),'attention'];
- const activeDescription=follow&&transport==='off'?t('기본 AI를 따라가는 판단 AI를 확인하지 못했습니다. 판단이 필요한 기능은 건너뜁니다.'):transport==='none'?t('쓸 수 있는 대화 해석 경로가 없어 보조 판단을 건너뜁니다.'):transport==='off'?t('보조 판단을 쓰지 않습니다.'):(active.source==='default'?(route.effective?effectiveJudgmentText(route.effective):t('기본값: 저장된 OpenAI 키로 gpt-4o-mini를 씁니다.'))+' ':'')+t('전송 대상: {destination}',{destination:t(active.destination||'-')});
- const direct=route.direct_api||{},methodActions=element('div',undefined,'settings-inline-confirm');
- // The active direct route keeps its key manageable here, since it is not listed again below.
- if(own==='direct_api')methodActions.append(settingsAction(direct.has_decision_key?t('키 변경'):t('전용 키 설정'),()=>openDecisionChooser('direct_api')),settingsAction(t('모델 선택'),()=>openDecisionChooser('direct_api:model')));
- const jev=route.jev||{};if(own==='jev'){methodActions.append(settingsAction(t('키 변경'),()=>openDecisionChooser('jev')),settingsAction(t('모델 선택'),()=>openDecisionChooser('jev:model')));
-  // A saved model differing from the active one is applied only by an explicit, checked 사용 (review P2).
-  if(jev.configured&&(jev.model||'jev-latest')!==(active.requested_model||'jev-latest'))methodActions.append(settingsAction(t('저장한 모델 사용'),event=>decisionActivate({transport:'jev'},event.currentTarget)));}
- if(!['none','off'].includes(transport))methodActions.append(settingsAction(t('끄기'),event=>decisionActivate({transport:'off'},event.currentTarget)));
- const requalify=active.requalification_needed?' '+t('CLI가 바뀌어 자동으로 확인합니다. 통과할 때까지 이전 판단 경로는 사용할 수 없습니다.'):'';
- box.append(settingsRow(t('사용 방식'),decisionActiveTitle(active)+' — '+activeDescription+requalify,activeState[0],activeState[1],methodActions.children.length?methodActions:null,
-  own==='direct_api'&&decisionChooser==='direct_api'?decisionKeyForm('direct_api',false,direct.has_decision_key):own==='direct_api'&&decisionChooser==='direct_api:model'?decisionDirectModelForm(direct):own==='jev'&&decisionChooser==='jev'?decisionKeyForm('jev',true,jev.configured):own==='jev'&&decisionChooser==='jev:model'?decisionJevModelForm(jev):null));
- if(own==='subscription_cli'){
-  // The model policy is changed in place; the active engine is not listed again under 다른 선택지,
-  // so its instruction-file limitation (#624) is shown here.
-  const activeEngine=(route.subscription_cli||[]).find(engine=>engine.id===active.engine),chooserId='cli:'+active.engine;
-  box.append(settingsRow(t('구독 엔진'),t('로그인은 작업 실행과 같은 계정을 쓰지만 도구 없이 판단만 합니다.')+(active.engine==='codex'?' '+t('Codex 판단은 엄격 격리(홈 폴더·저장소 읽기 차단)로 실행합니다.'):'')+(activeEngine&&activeEngine.instruction_files?' '+t(activeEngine.instruction_files):'')+decisionInstructionWarning(active),DECISION_ENGINE_NAMES[active.engine]||active.engine||'-','neutral'));
-  const policyDescription=(active.model_policy==='fastest_qualified'?t('적격성 검사를 통과한 후보 중 응답이 가장 빠른 모델입니다.')+decisionSpeedReason(active.qualification):active.model_policy==='lowest_qualified'?t('적격성 검사를 통과한 가장 저렴한 후보입니다.'):active.model_policy==='explicit'?t('직접 고른 모델입니다.'):t('구독 CLI가 정하는 기본 모델입니다. 개인 CLI 설정은 쓰지 않습니다.'))+(active.requested_model?' '+t('요청 모델: {model}',{model:active.requested_model}):'')+(active.effort?' · '+t('추론 강도: {effort}',{effort:active.effort}):'')+(active.effort_note==='effort-flag-missing'?' '+t('설치된 Claude Code CLI가 --effort를 지원하지 않아 추론 강도를 보내지 않습니다.'):'');
-  box.append(settingsRow(t('판단 모델'),policyDescription,t(DECISION_POLICY_LABEL[active.model_policy]||'구독 AI 기본 모델'),'neutral',activeEngine?settingsAction(t('변경'),()=>openDecisionChooser(chooserId)):null,activeEngine&&decisionChooser===chooserId?decisionPolicyForm(activeEngine):null));}
- const others=element('h4',t('다른 선택지'),'settings-subheading');box.append(others);
- if(own!=='direct_api'){const title=t('OpenAI API · {model}',{model:direct.model||'gpt-4o-mini'}),description=t('전송 대상: {destination}',{destination:direct.destination||'api.openai.com'})+decisionFailedSuffix(direct.check);
-  const actions=element('div',undefined,'settings-inline-confirm');actions.append(settingsAction(direct.has_decision_key?t('키 변경'):direct.configured?t('전용 키 설정'):t('설정'),()=>openDecisionChooser('direct_api')));
-  if(direct.configured)actions.append(settingsAction(t('사용'),event=>decisionActivate({transport:'direct_api'},event.currentTarget)),settingsAction(t('모델 선택'),()=>openDecisionChooser('direct_api:model')));
-  box.append(settingsRow(title,description,direct.configured?t('선택 가능'):t('키 필요'),'neutral',actions,decisionChooser==='direct_api'?decisionKeyForm('direct_api',false,direct.has_decision_key):decisionChooser==='direct_api:model'?decisionDirectModelForm(direct):null));}
- if(own!=='jev'){const title=t('Jev (TypeSafe) · {model}',{model:jev.model||'jev-latest'}),description=t('전송 대상: {destination}',{destination:jev.destination||'api.typesafe.ai'})+' · '+t('한국어 정확도는 적격성 검사로 확인하세요.')+decisionFailedSuffix(jev.check);
-  const actions=element('div',undefined,'settings-inline-confirm');actions.append(settingsAction(jev.configured?t('키 변경'):t('설정'),()=>openDecisionChooser('jev')));if(jev.configured)actions.append(settingsAction(t('사용'),event=>decisionActivate({transport:'jev'},event.currentTarget)),settingsAction(t('모델 선택'),()=>openDecisionChooser('jev:model')));
-  box.append(settingsRow(title,description,jev.configured?t('선택 가능'):t('키 필요'),'neutral',actions,decisionChooser==='jev'?decisionKeyForm('jev',true,jev.configured):decisionChooser==='jev:model'&&jev.configured?decisionJevModelForm(jev):null));}
- for(const engine of route.subscription_cli||[]){if(own==='subscription_cli'&&active.engine===engine.id)continue;
-  const title=t('구독 AI · {engine}',{engine:engine.name}),description=t('전송 대상: {destination}',{destination:t(engine.destination||'-')})+(engine.instruction_files?' '+t(engine.instruction_files):'')+decisionFailedSuffix(engine.check);let state,kind='neutral',action=null;
-  // A CLI whose tool features could not all be turned off (e.g. Codex 0.153.4 keeps `unified_exec` on) is shown
-  // with that reason as needing attention - never silently omitted; a re-check stays available after a CLI update.
-  const toolRefused=engine.tool_surface&&engine.tool_surface!=='allowlisted-features-only';let refusal='';
-  if(engine.isolated_deployment){state=t('지원 안 함');}else if(!engine.installed){state=t('설치 안 됨');}else if(engine.login==='signed-out'){state=t('로그인 안 됨');kind='attention';}
-  else if(toolRefused){state=t('사용할 수 없음');kind='attention';refusal=' '+t('이 CLI의 도구 기능을 모두 끌 수 없어 대화 해석에 쓰지 않습니다.')+(engine.tool_surface_detail?' '+t('켜진 기능: {features}',{features:engine.tool_surface_detail}):'');action=settingsAction(t('다시 확인'),()=>openDecisionChooser('cli:'+engine.id));}
-  else{state=t('선택 가능');action=settingsAction(t('사용'),()=>openDecisionChooser('cli:'+engine.id));}
-  box.append(settingsRow(title,description+refusal,state,kind,action,decisionChooser==='cli:'+engine.id&&action?decisionPolicyForm(engine):null));}
- const feedback=retainedFeedback||element('p',undefined,'error');feedback.id='decision-route-feedback';feedback.setAttribute('role','status');box.append(feedback);
- const lines=[t('역할: 대화 해석(DecisionEngine) — 작업 실행 경로와 별개'),t('경로: {route}',{route:transport}),t('정책: {source}',{source:active.source==='owner'?t('소유자가 선택'):t('기본값')})];
- if(active.engine||active.provider)lines.push(t('엔진/제공자: {engine}',{engine:active.engine||active.provider}));if(active.model_policy)lines.push(t('모델 정책: {policy}',{policy:active.model_policy}));
- lines.push(t('요청 모델: {model}',{model:active.requested_model||t('엔진 기본값')}));if(active.effort)lines.push(t('추론 강도: {effort}',{effort:active.effort}));if(active.strict_profile)lines.push(t('엄격 격리 검증: {version} · {platform}',{version:active.strict_profile.version||'-',platform:active.strict_profile.platform||'-'}));if(active.cli_version)lines.push(t('CLI 버전: {version}',{version:active.cli_version}));
- if(active.qualification)lines.push(t('적격성 검사: {suite} 통과 ({model})',{suite:active.qualification.suite_version,model:active.qualification.model}));else lines.push(t('적격성 검사 모음: {suite}',{suite:route.suite_version||'-'}));
- const option=transport==='subscription_cli'?(route.subscription_cli||[]).find(engine=>engine.id===active.engine):route[transport];if(option?.check){lines.push(decisionCheckText(option.check));lines.push(t('관측 모델: {model}',{model:option.check.observed_model&&option.check.observed_model!=='not reported'?option.check.observed_model:t('보고되지 않음')}));}
- box.append(settingsDisclosure(t('기술 세부 정보'),lines));
- const generatedForm=box.querySelector('form'),contract=decisionEditorContract(settings,decisionChooser);
- if(generatedForm){generatedForm.dataset.initialDraft=decisionDraftState(generatedForm);generatedForm.dataset.contract=contract;}
- if(retainedForm){const changed=retainedForm.dataset.contract!==contract;
-  if(generatedForm&&changed&&!decisionDraftDirty(retainedForm)){const index=[...retainedForm.querySelectorAll('input,select,textarea')].indexOf(activeInput);if(index>=0)generatedForm.querySelectorAll('input,select,textarea')[index]?.focus({preventScroll:true});}
-  else if(generatedForm&&!changed)generatedForm.replaceWith(retainedForm);
-  else{generatedForm?.remove();const unavailable=element('fieldset',undefined,'engine-token');unavailable.disabled=true;unavailable.dataset.retainedDecisionDraft='true';
-   unavailable.append(element('legend',t('입력 보관 중')),element('p',changed?t('설정 정보가 바뀌어 이 입력을 바로 적용할 수 없습니다. 입력은 보관되며, 현재 설정으로 다시 열 수 있습니다.'):t('선택한 설정을 지금 사용할 수 없습니다. 입력은 이 창에 남아 있으며, 다시 사용할 수 있게 되면 이어서 편집할 수 있습니다.'),'field-hint'),retainedForm);box.append(unavailable,settingsAction(t('현재 설정으로 다시 열기'),()=>openDecisionChooser(decisionChooser,false,true)));}
+ const feedback=$('decision-route-feedback')||element('p',undefined,'error');
+ feedback.id='decision-route-feedback';feedback.setAttribute('role','status');
+ const previousEditor=decisionEditor;
+ // Polling keeps draft inputs, including secrets and the selected route, in the existing editor.
+ const editorState=JSON.stringify([decisionCurrentProvider(route),route.main,route.follow_pin,route.follow?.candidates,route.active?.requested_model,
+  route.active?.model_policy,route.active?.effort,route.apis,route.subscription_cli,route.jev,currentLanguage]);
+ if(!previousEditor||reset||(!decisionDraftDirty()&&!decisionActivationPending&&!decisionCredentialPending&&previousEditor.node.dataset.settings!==editorState)){
+  decisionEditor=decisionModeForm(route);
  }
- renderDecisionDiscard();
- if(activeInput?.isConnected){activeInput.focus({preventScroll:true});if(caret)activeInput.setSelectionRange(...caret);if(box.contains(activeInput))activeInput.scrollIntoView({block:'nearest'});}else restoreFocus(box,focused);
+ decisionEditor.node.dataset.settings=editorState;decisionEditor.sync(route);
+ box.dataset.state=fingerprint;
+ renderJudgmentFollow(route);
+ const active=route.active||{},transport=active.transport||'none';
+ const lines=[t('역할: 대화 해석(DecisionEngine) — 작업 실행 경로와 별개'),t('경로: {route}',{route:transport}),t('정책: {source}',{source:active.source==='owner'?t('소유자가 선택'):t('기본값')})];
+ if(active.engine||active.provider)lines.push(t('엔진/제공자: {engine}',{engine:active.engine||active.api||active.provider}));
+ if(active.model_policy)lines.push(t('모델 정책: {policy}',{policy:active.model_policy}));
+ lines.push(t('요청 모델: {model}',{model:active.requested_model||'-'}));
+ if(active.effort)lines.push(t('추론 강도: {effort}',{effort:active.effort}));
+ if(active.effort_note==='effort-flag-missing')lines.push(t('설치된 Claude Code CLI가 --effort를 지원하지 않아 추론 강도를 보내지 않습니다.'));
+ if(active.strict_profile)lines.push(t('엄격 격리 검증: {version} · {platform}',{version:active.strict_profile.version||'-',platform:active.strict_profile.platform||'-'}));
+ if(active.cli_version)lines.push(t('CLI 버전: {version}',{version:active.cli_version}));
+ const warning=decisionInstructionWarning(active);if(warning)lines.push(warning);
+ if(active.qualification)lines.push(t('적격성 검사: {suite} 통과 ({model})',{suite:active.qualification.suite_version,model:active.qualification.model}));
+ else lines.push(t('적격성 검사 모음: {suite}',{suite:route.suite_version||'-'}));
+ const check=active.source==='follow'?route.follow_check:(transport==='direct_api'?route.apis?.find(api=>api.id===(active.api||'openai')):
+  transport==='subscription_cli'?route.subscription_cli?.find(engine=>engine.id===active.engine):route[transport])?.check;
+ if(check){
+  lines.push(decisionCheckText(check),t('관측 모델: {model}',{model:check.observed_model&&check.observed_model!=='not reported'?check.observed_model:t('보고되지 않음')}));
+ }
+ const previousTechnical=box.querySelector('details'),technical=settingsDisclosure(t('기술 세부 정보'),lines);
+ technical.querySelector('summary').dataset.focusKey='decision-technical';technical.open=Boolean(previousTechnical?.open);
+ if(previousEditor===decisionEditor&&previousTechnical)previousTechnical.replaceWith(technical);
+ else{
+  const heading=element('h3',t('판단 AI'),'settings-section-heading');heading.id='decision-route-heading';heading.hidden=true;
+  box.replaceChildren(heading,decisionEditor.node,feedback,technical);renderDecisionDiscard();
+ }
+ if(activeInput?.isConnected){activeInput.focus({preventScroll:true});if(caret)activeInput.setSelectionRange(...caret);}
+ else restoreFocus(box,focused);
 }
 function openMobileDetail(node){if(!matchMedia('(max-width: 620px)').matches)return;node.classList.add('mobile-detail');node.querySelector('.mobile-back')?.focus({preventScroll:true});}
 function closeMobileDetail(node){if(!node||!node.classList.contains('mobile-detail'))return false;node.classList.remove('mobile-detail');node.parentElement?.querySelector('.item-row.selected')?.focus({preventScroll:true});return true;}
