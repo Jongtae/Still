@@ -123,6 +123,69 @@ const checks=[];
 """
 
 
+MAIN_AI_CHOOSER_CHECKS = r"""
+const assert=require('node:assert/strict'),vm=require('node:vm'),fs=require('node:fs');
+const app=fs.readFileSync(process.argv[1],'utf8');
+class E {
+ constructor(tag,text=''){this.tag=tag;this.children=[];this.dataset={};this.text=text;this.value='';this.classList={toggle(){}};}
+ append(...items){this.children.push(...items);}
+ replaceChildren(...items){this.children=[];this.append(...items);}
+ setAttribute(){} focus(){} close(){this.open=false;}
+ get textContent(){return this.text+this.children.map(c=>c.textContent||'').join('');}
+ querySelectorAll(selector){return this.children.flatMap(c=>[...((selector==='button'?c.tag==='button':selector==='input, select'?['input','select'].includes(c.tag):c.tag==='input')?[c]:[]),...c.querySelectorAll(selector)]);}
+}
+const ids=new Map(),get=id=>{if(!ids.has(id))ids.set(id,new E('div'));return ids.get(id);};
+const t=(s,args={})=>s.replace(/\{(\w+)\}/g,(_,k)=>args[k]??'{'+k+'}');
+const calls=[],feedback=[];
+const route={id:'route-fixture',kind:'api',name:'Fixture',model:'fixture-old',model_mode:'pinned',default_model:'fixture-default',effort:'high',key:{saved:true},destination:'fixture.invalid'};
+const ctx={element:(tag,text)=>new E(tag,text),t,$:get,document:{activeElement:null},MAIN_AI_GROUPS:[],
+ aiSettings:{main_ai:{current:route.id,routes:[route]},decision_route:{mode:'follow_main',active:{},model_lists:{}}},
+ aiModelDraft:{},aiInitialModels:{[route.id]:{mode:'pinned',model:'fixture-old',effort:'high'}},
+ aiChoice:route.id,aiInitialChoice:route.id,aiChooserSession:1,aiPending:false,aiModelNode:null,
+ chooserAccountDirty:()=>false,chooserClearDiscard(){},aiFeedback(){},refresh:async()=>{},
+ chooserFeedback:(...args)=>feedback.push(args),agencyText:()=>'',decisionActiveTitle:a=>a.title||'Explicit fixture',
+ mainAiRoutes:settings=>Object.fromEntries(settings.main_ai.routes.map(r=>[r.id,r])),loginSupersedesCheck:()=>false,
+ settingsAction:(text,callback)=>{const b=new E('button',text);b.onclick=callback;return b;},
+ api:async(path,body)=>{calls.push({path,body});if(path.endsWith('/models'))throw Error('fixture list refused');return {judgment:{}};}};
+vm.createContext(ctx);
+const extract=(start,end)=>app.slice(app.indexOf(start),app.indexOf(end,app.indexOf(start)));
+vm.runInContext(extract('function chooserModel(','function renderAiChooser(')+extract('function renderAiChooser(','function openJudgmentChooser(')+extract('function mainAiView(','function judgmentView('),ctx);
+const controls=(field,name)=>field.querySelectorAll('input, select').filter(c=>c.name===name);
+(async()=>{
+ // Rendering never fetches a list (#1051): the pinned model is the only option until a list exists.
+ const failing={...route,id:'route-failing'};ctx.aiSettings.main_ai.routes.push(failing);
+ let field=ctx.chooserModel(failing);await new Promise(setImmediate);
+ assert.equal(calls.length,0,'rendering fetches no model list');
+ let select=controls(field,'main-ai-model')[0];assert.equal(select.tag,'select');assert.equal(select.children.length,1);assert.equal(select.value,'fixture-old');
+ assert.equal(controls(field,'main-ai-effort').length,0);
+ // 목록 새로고침 is the owner's request; a refusal is shown and the pinned model stays.
+ field.children.find(c=>c.tag==='button').onclick();await new Promise(setImmediate);
+ assert.equal(calls.length,1);assert.equal(calls[0].body.route,'route-failing');assert.equal(feedback.at(-1)[0],'fixture list refused');
+ field=ctx.chooserModel(failing);assert.equal(calls.length,1,'a failed lookup is not retried on render');
+ assert.equal(controls(field,'main-ai-model')[0].value,'fixture-old');
+ calls.length=0;feedback.length=0;
+ // A list the judgment panel already fetched is reused.
+ ctx.aiSettings.decision_route.model_lists[route.id]={models:[{id:'fixture-default',label:'Recommended',efforts:['low','high']},{id:'fixture-other',efforts:[]}]};
+ field=ctx.chooserModel(route);select=controls(field,'main-ai-model')[0];assert(select.children.some(o=>o.value==='fixture-old'),'current pin survives list omission');
+ assert.equal(calls.length,0);
+ controls(field,'main-ai-model-mode').find(r=>r.value==='auto').onchange();
+ field=ctx.aiModelNode;assert(field.textContent.includes('자동 (fixture-default)'));
+ let effort=controls(field,'main-ai-effort')[0];assert.deepEqual(effort.children.map(c=>c.value),['','low','high']);effort.value='low';effort.onchange();
+ assert(ctx.mainAiView({...ctx.aiSettings,main_ai:{...ctx.aiSettings.main_ai,routes:[{...route,model_mode:'auto',effort:'low'}]}}).model==='자동 · fixture-default');
+ await ctx.applyAiChoice(new E('button'));
+ const activation=calls.find(c=>c.path==='/api/main-ai/activate');assert.deepEqual(JSON.parse(JSON.stringify(activation.body)),{route:route.id,model_mode:'auto',effort:'low'});
+ ctx.aiPending=false;ctx.renderAiChooser();assert(get('ai-chooser-consequence').textContent.includes('지금 판단 경로를 씁니다.'));
+ ctx.aiSettings.decision_route.mode='explicit';ctx.aiSettings.decision_route.active={title:'Pinned Judgment'};ctx.renderAiChooser();assert(get('ai-chooser-consequence').textContent.includes('따로 지정한 Pinned Judgment'));
+ ctx.aiSettings.decision_route.mode='off';ctx.renderAiChooser();assert(get('ai-chooser-consequence').textContent.includes('사용 안 함으로 그대로'));
+ controls(ctx.aiModelNode,'main-ai-model-mode').find(r=>r.value==='pinned').onchange();
+ select=controls(ctx.aiModelNode,'main-ai-model')[0];select.value='fixture-other';select.onchange();assert.equal(controls(ctx.aiModelNode,'main-ai-effort').length,0);assert.equal(ctx.aiModelDraft[route.id].effort,'');
+ await ctx.applyAiChoice(new E('button'));assert.equal(calls.at(-1).body.model,'fixture-other');assert.equal(calls.at(-1).body.model_mode,'pinned');
+ const isolated=ctx.chooserModel({...route,model_selectable:false});assert.equal(isolated.querySelectorAll('input, select').length,0);
+ console.log('Main AI chooser behavior passed');
+})().catch(error=>{console.error(error);process.exitCode=1;});
+"""
+
+
 class ConnectionRouteUiTests(unittest.TestCase):
     def test_ai_tab_has_peer_preferences_with_dialog_choosers(self):
         # #781: compact peer groups; credential editing remains in accessible dialogs.
@@ -162,6 +225,14 @@ class ConnectionRouteUiTests(unittest.TestCase):
         self.assertIn("if(!contextDraftDirty", app)
         self.assertNotIn("Telegram용 구독 엔진", app)
         self.assertNotIn("테스트한 설정을 현재 사용 모델로 적용했습니다.", app)
+
+    def test_main_ai_model_chooser_behavior(self):
+        node = shutil.which('node')
+        if node is None:
+            self.skipTest('Node is needed for chooser behavior verification')
+        result = subprocess.run([node, '-e', MAIN_AI_CHOOSER_CHECKS, str(WEB / 'app.js')],
+                                capture_output=True, text=True, timeout=20)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
 
     def test_javascript_parses(self):
         node = shutil.which("node")

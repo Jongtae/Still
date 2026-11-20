@@ -207,3 +207,30 @@ def test_free_router_retry_strips_both_reasoning_keys(tmp_path):
     assert any('openai_reasoning' in m and 'reasoning_details' in m for m in histories[1])
     assert not any('openai_reasoning' in m or 'reasoning_details' in m for m in histories[2])
     assert any(m.get('role') == 'tool' for m in histories[2])
+
+
+@pytest.mark.parametrize('provider,endpoint,effort_key', [
+    ('openai', 'https://api.openai.com/v1', 'reasoning'),
+    ('anthropic', 'https://api.anthropic.com', 'output_config'),
+    ('compatible', 'https://openrouter.ai/api/v1', 'reasoning'),
+    ('ollama', 'http://localhost:11434', None),
+])
+@pytest.mark.parametrize('method', ['invoke', 'tool_turn'])
+def test_optional_effort_preserves_existing_wire_body(provider, endpoint, effort_key, method):
+    from personal_agent.providers import validate_model
+    config = {'provider': provider, 'endpoint': endpoint, 'model': 'fixture-model'}
+    reply = (responses_reply({'content': 'ok'}) if provider == 'openai' else
+             {'content': [{'type': 'text', 'text': 'ok'}]} if provider == 'anthropic' else
+             {'message': {'role': 'assistant', 'content': 'ok'}} if provider == 'ollama' else
+             {'choices': [{'message': {'role': 'assistant', 'content': 'ok'}}]})
+    transport = Transport(*[copy.deepcopy(reply) for _ in range(4)])
+    adapter = ModelAdapter(transport)
+    for extra in ({}, {'effort': ''}, {'effort': 'invalid'}, {'effort': 'high'}):
+        args = ({'tools': []} if method == 'tool_turn' else {})
+        getattr(adapter, method)({**config, **extra}, 'fixture-key', [{'role': 'user', 'content': 'hello'}], **args)
+    baseline = transport.calls[0][1]
+    assert transport.calls[1][1] == baseline
+    assert transport.calls[2][1] == baseline
+    expected = {**baseline, **({effort_key: {'effort': 'high'}} if effort_key else {})}
+    assert transport.calls[3][1] == expected
+    assert validate_model({**config, 'effort': 'high'})['effort'] == 'high'

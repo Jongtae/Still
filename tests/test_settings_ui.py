@@ -174,9 +174,11 @@ assert(descendants($('active-ai')).find(node=>node.dataset.disclosure==='technic
  same(calls.pop(),{path:'/api/main-ai/check',body:{}});
  // The chooser opens as a modal dialog with the fixed order, whatever is current.
  ctx.openAiChooser(changeButton);assert(dialog.open,'the chooser is a modal <dialog>');
- const order=()=>descendants($('ai-chooser-list')).filter(node=>node.tag==='input'&&node.type==='radio').map(node=>node.value);
+ const order=()=>descendants($('ai-chooser-list')).filter(node=>node.tag==='input'&&node.type==='radio'&&node.name==='main-ai').map(node=>node.value);
  same(order(),['codex','claude-code','openai','anthropic','openrouter']);
- const radio=id=>descendants($('ai-chooser-list')).find(node=>node.tag==='input'&&node.type==='radio'&&node.value===id);
+ const clearModelLists=()=>vm.runInContext("if(typeof mainAiModelLists!=='undefined')for(const id of Object.keys(mainAiModelLists))delete mainAiModelLists[id]",ctx);
+ const modelMode=mode=>descendants($('ai-chooser-list')).find(node=>node.name==='main-ai-model-mode'&&node.value===mode);
+ const radio=id=>descendants($('ai-chooser-list')).find(node=>node.tag==='input'&&node.type==='radio'&&node.name==='main-ai'&&node.value===id);
  assert(radio('anthropic').checked,'the current Main AI is preselected');
  // A saved key is 저장됨 · date; never an input or a partial value.
  const anthropicRow=descendants($('ai-chooser-list')).find(node=>node.className==='chooser-row'&&node.textContent.includes('Anthropic'));
@@ -189,11 +191,15 @@ assert(descendants($('active-ai')).find(node=>node.dataset.disclosure==='technic
  // Selecting another route never re-sorts; the consequence lists both destinations.
  radio('claude-code').onchange();same(order(),['codex','claude-code','openai','anthropic','openrouter'],'switching the selection does not reorder');
  assert($('ai-chooser-consequence').textContent.includes('기본 AI 전송 대상: Anthropic (Claude Code 구독 계정)'));
- assert($('ai-chooser-consequence').textContent.includes('판단 AI는 별도로 확인합니다'),'follow qualification is asynchronous');
- radio('codex').onchange();assert($('ai-chooser-consequence').textContent.includes('기존 경로나 대체 AI'),'the prior effective judgment can remain while checking');
+ const followConsequence='판단 AI도 기본 AI를 따라 바뀝니다. 새 기본 AI의 계정으로 백그라운드에서 확인하고, 확인되는 동안에는 지금 판단 경로를 씁니다.';
+ assert($('ai-chooser-consequence').textContent.includes(followConsequence),'follow qualification is asynchronous and keeps the current judgment route');
+ radio('codex').onchange();assert($('ai-chooser-consequence').textContent.includes(followConsequence));
+ assert(modelMode('auto').checked);assert($('ai-chooser-list').textContent.includes('자동 (CLI 기본값)'));
+ assert(!descendants($('ai-chooser-list')).some(node=>node.name==='main-ai-model'),'auto offers no model select');
+ assert(!calls.some(call=>call.path==='/api/decision-route/models'),'opening and rendering never fetch model lists');
  // 확인하고 사용: one request; failure stays in the dialog and changes nothing.
  failRoute=true;await ctx.applyAiChoice($('ai-chooser-apply'));
- same(calls.pop(),{path:'/api/main-ai/activate',body:{route:'codex'}});
+ same(calls.pop(),{path:'/api/main-ai/activate',body:{route:'codex',model_mode:'auto',effort:''}});
  assert(dialog.open,'a refused switch keeps the chooser open');assert.equal($('ai-chooser-feedback').textContent,'switch refused');
  failRoute=false;refreshes=0;await ctx.applyAiChoice($('ai-chooser-apply'));
  assert(!dialog.open,'a passed switch closes the chooser');assert.equal(refreshes,1);
@@ -241,13 +247,45 @@ assert(descendants($('active-ai')).find(node=>node.dataset.disclosure==='technic
  assert(descendants($('active-ai')).find(node=>node.tag==='details').textContent.includes('~/.codex/config.toml의 모델은 쓰지 않습니다'),'config mechanics remain available in technical disclosure');
  assert(!groups()[0].textContent.includes('~/.codex/config.toml'),'config mechanics stay off the scan path');
  ctx.openAiChooser(changeButton);
- const workModel=descendants($('ai-chooser-list')).find(node=>node.tag==='input'&&node.name==='main-ai-model');
+ const workModel=descendants($('ai-chooser-list')).find(node=>node.tag==='select'&&node.name==='main-ai-model');
  assert(workModel,'the selected subscription route offers a model field');assert.equal(workModel.value,'gpt-5.6-luna');
  assert(descendants($('ai-chooser-list')).some(node=>node.tag==='option'&&node.value==='gpt-5.6-terra'),'suggestions come from a refreshed list');
- workModel.value='gpt-5.6-terra';workModel.oninput();
+ workModel.value='gpt-5.6-terra';workModel.onchange();
  await ctx.applyAiChoice($('ai-chooser-apply'));
- same(calls.find(call=>call.path==='/api/main-ai/activate'),{path:'/api/main-ai/activate',body:{route:'codex',model:'gpt-5.6-terra'}});
- assert(!calls.some(call=>String(call.path).startsWith('/api/decision-route/models')),'no model list is fetched by rendering or choosing');
+ same(calls.find(call=>call.path==='/api/main-ai/activate'),{path:'/api/main-ai/activate',body:{route:'codex',model_mode:'pinned',effort:'',model:'gpt-5.6-terra'}});
+ assert(!calls.some(call=>String(call.path).startsWith('/api/decision-route/models')),'no model list is fetched by rendering or choosing a cached model');
+ ctx.renderExecutionConnection(settingsFor('codex',{codex:sub('codex',{model_mode:'pinned',model:'gpt-5.6-terra',effort:'high'})}));
+ assert(groups()[0].textContent.includes('gpt-5.6-terra'),'the card shows the pinned model');
+ assert(groups()[0].textContent.includes('추론 강도: high'),'the card shows the configured effort');
+ clearModelLists();
+ // Only an explicit Pinned selection or refresh fetches the list; effort belongs to the selected row.
+ ctx.renderExecutionConnection(settingsFor('codex',{codex:sub('codex',{model_mode:'auto',model:''})},{mode:'explicit'}));
+ ctx.openAiChooser(changeButton);calls.length=0;ctx.renderAiChooser();
+ assert($('ai-chooser-consequence').textContent.includes('판단 AI는 따로 지정한 '+ctx.decisionActiveTitle(settingsFor('codex').decision_route.active)+'을(를) 그대로 씁니다. 기본 AI를 바꿔도 바뀌지 않습니다.'));
+ assert.equal(calls.length,0,'opening and rerendering an uncached route fetch nothing');
+ const listModels=[{id:'gpt-5.6-terra'},{id:'effort-model',efforts:['low','high']}];
+ const originalApi=ctx.api;ctx.api=async(path,body)=>path==='/api/decision-route/models'?(calls.push({path,body}),{models:listModels}):originalApi(path,body);
+ modelMode('pinned').onchange();await new Promise(resolve=>setImmediate(resolve));
+ same(calls,[{path:'/api/decision-route/models',body:{route:'codex'}}],'picking Pinned without a cache fetches once');
+ ctx.renderAiChooser();modelMode('auto').onchange();modelMode('pinned').onchange();
+ assert.equal(calls.length,1,'rerendering and reselecting Pinned reuse the cache');
+ const selectedModel=()=>descendants($('ai-chooser-list')).find(node=>node.name==='main-ai-model');
+ const effortSelect=()=>descendants($('ai-chooser-list')).find(node=>node.name==='main-ai-effort');
+ assert.equal(effortSelect(),undefined,'a model without efforts has no effort select');
+ selectedModel().value='effort-model';selectedModel().onchange();assert(effortSelect());
+ same(effortSelect().children.map(node=>node.value),['','low','high']);
+ effortSelect().value='high';effortSelect().onchange();await ctx.applyAiChoice($('ai-chooser-apply'));
+ same(calls.pop(),{path:'/api/main-ai/activate',body:{route:'codex',model_mode:'pinned',effort:'high',model:'effort-model'}});
+ ctx.openAiChooser(changeButton);modelMode('pinned').onchange();
+ selectedModel().value='effort-model';selectedModel().onchange();selectedModel().value='gpt-5.6-terra';selectedModel().onchange();
+ assert.equal(effortSelect(),undefined,'switching to a model without efforts removes the effort select');
+ await buttonsIn('ai-chooser-list').find(node=>node.textContent==='목록 새로고침').onclick();
+ assert.equal(calls.filter(call=>call.path==='/api/decision-route/models').length,2,'explicit refresh fetches a cached list again');
+ ctx.chooserDismiss();assert.equal($('ai-chooser-discard').hidden,false,'a mode/model draft asks before discard');$('ai-discard-confirm').onclick();
+ ctx.api=originalApi;
+ ctx.renderExecutionConnection(settingsFor('openai',{openai:api('openai',{model_mode:'auto',default_model:'api-default'})}));
+ assert(groups()[0].textContent.includes('자동 · api-default'));ctx.openAiChooser(changeButton);
+ assert($('ai-chooser-list').textContent.includes('자동 (api-default)'));dialog.close();
  ctx.renderExecutionConnection(settingsFor('claude-code',{'claude-code':sub('claude-code',{model:''})}));
  assert($('active-ai').textContent.includes('CLI 기본값'));
  // #679 review P1: the isolated sidecar takes no model - no field, and 확인하고 사용 clears a stored one.
@@ -255,11 +293,12 @@ assert(descendants($('active-ai')).find(node=>node.dataset.disclosure==='technic
  ctx.renderExecutionConnection(settingsFor('codex',{codex:sub('codex',{model:'gpt-5.6-luna',model_selectable:false,model_note:isolatedNote})}));
  assert($('active-ai').textContent.includes(isolatedNote));
  ctx.openAiChooser(changeButton);calls.length=0;
- assert(!descendants($('ai-chooser-list')).some(node=>node.tag==='input'&&node.name==='main-ai-model'),'no model field on an isolated route');
+ assert(!descendants($('ai-chooser-list')).some(node=>node.tag==='select'&&node.name==='main-ai-model'),'no model field on an isolated route');
  await ctx.applyAiChoice($('ai-chooser-apply'));
- same(calls.find(call=>call.path==='/api/main-ai/activate'),{path:'/api/main-ai/activate',body:{route:'codex',model:''}});
+ same(calls.find(call=>call.path==='/api/main-ai/activate'),{path:'/api/main-ai/activate',body:{route:'codex',model_mode:'auto',effort:''}});
+ clearModelLists();
  // #782 compact account/model layout, local drafts and deferred completion isolation.
- settings=settingsFor('codex',{codex:sub('codex',{model:'server-model'}),anthropic:api('anthropic',{key:{saved:true,pending:false}})});
+ settings=settingsFor('codex',{codex:sub('codex',{model_mode:'pinned',model:'server-model'}),anthropic:api('anthropic',{key:{saved:true,pending:false}})},{model_lists:{codex:{models:[{id:'draft-model'}]}}});
  ctx.renderExecutionConnection(settings);ctx.openAiChooser(changeButton);calls.length=0;
  const accounts=()=>descendants($('ai-chooser-list')).filter(node=>node.className==='chooser-account');
  const models=()=>descendants($('ai-chooser-list')).filter(node=>node.name==='main-ai-model');
@@ -267,12 +306,14 @@ assert(descendants($('active-ai')).find(node=>node.dataset.disclosure==='technic
  const confirmDiscard=()=>$('ai-discard-confirm').onclick();
  const keepDiscard=()=>$('ai-discard-keep').onclick();
  assert.equal(models().length,1);assert.equal(model().parentNode.parentNode,$('ai-chooser-list'),'selected model sits below provider groups');
- model().value='draft-model';model().oninput();model().focus();model().setSelectionRange(2,5);const firstModel=model();
- ctx.renderAiChooser();assert.equal(model(),firstModel);assert.equal(document.activeElement,firstModel);assert.equal(firstModel.selectionStart,2);assert.equal(firstModel.selectionEnd,5);
+ assert(modelMode('pinned').checked);assert(model().querySelectorAll('option').some(node=>node.value==='server-model'),'the current model supplements the cached list');
+ model().value='draft-model';model().onchange();model().focus();const firstModel=model();
+ ctx.renderAiChooser();assert.equal(model(),firstModel);assert.equal(document.activeElement,firstModel);
  ctx.chooserPanel('openai');assert.equal(accounts().length,1);const setupGuide=accounts()[0].querySelector('details');assert.equal(setupGuide.open,true);setupGuide.open=false;const password=accounts()[0].querySelector('input[type="password"]');password.value='synthetic-unsaved';password.focus();password.setSelectionRange(3,7);
  ctx.renderAiChooser();assert.equal(accounts()[0].querySelector('details'),setupGuide);assert.equal(setupGuide.open,false,'polling preserves the API guide disclosure');assert.equal(accounts()[0].querySelector('input[type="password"]'),password);assert.equal(document.activeElement,password);assert.equal(password.selectionStart,3);assert.equal(password.selectionEnd,7);
  radio('claude-code').onchange();assert.equal(accounts()[0].querySelector('input[type="password"]'),password,'radio selection preserves independent account draft');
- radio('codex').onchange();assert.equal(model().value,'draft-model','per-route model draft survives switching');
+ assert(modelMode('auto').checked,'the other route keeps its own mode');
+ radio('codex').onchange();assert(modelMode('pinned').checked,'per-route mode survives switching');assert.equal(model().value,'draft-model','per-route model draft survives switching');
  ctx.chooserPanel('anthropic');assert.equal($('ai-chooser-discard').hidden,false);assert.equal(accounts()[0].dataset.route,'openai');keepDiscard();assert.equal(password.value,'synthetic-unsaved');
  ctx.chooserPanel('anthropic');confirmDiscard();assert.equal(accounts().length,1);assert.equal(accounts()[0].dataset.route,'anthropic');assert.equal(vm.runInContext('aiChoice',ctx),'codex','account management never selects a route');
  let cancelled=false;dialog.oncancel({preventDefault(){cancelled=true;}});assert(cancelled);assert(dialog.open);assert.equal($('ai-chooser-discard').hidden,false);keepDiscard();assert(dialog.open);
@@ -289,7 +330,8 @@ assert(descendants($('active-ai')).find(node=>node.dataset.disclosure==='technic
  await tokenForm.onsubmit({preventDefault(){}});same(calls,[{path:'/api/subscription-engines/credential',body:{engine:'claude-code',token:'synthetic-claude-token'}}]);
  assert.equal(vm.runInContext('aiChoice',ctx),'codex');assert($('ai-chooser-feedback').textContent.includes('기본 AI는 아직 바뀌지 않았습니다.'));
  ctx.chooserDismiss();assert(!dialog.open);assert.equal(calls.length,1,'outer cancel never reverses a completed token save');
- settings=settingsFor('codex',{'claude-code':sub('claude-code',{credential:true})});ctx.renderExecutionConnection(settings);ctx.openAiChooser(changeButton);ctx.chooserPanel('claude-code');calls.length=0;
+ clearModelLists();
+ settings=settingsFor('codex',{codex:sub('codex',{model_mode:'pinned',model:'server-model'}),'claude-code':sub('claude-code',{credential:true})},{model_lists:{codex:{models:[{id:'retry-model'}]}}});ctx.renderExecutionConnection(settings);ctx.openAiChooser(changeButton);ctx.chooserPanel('claude-code');calls.length=0;
  accountButton('토큰 제거').onclick();assert.equal(calls.length,0);accountButton('취소').onclick();assert.equal(calls.length,0);accountButton('토큰 제거').onclick();await accountButton('토큰 제거 확인').onclick({currentTarget:accountButton('토큰 제거 확인')});
  same(calls,[{path:'/api/subscription-engines/credential',body:{engine:'claude-code',token:''}}]);
  dialog.close();ctx.openAiChooser(changeButton);calls.length=0;
@@ -297,14 +339,14 @@ assert(descendants($('active-ai')).find(node=>node.dataset.disclosure==='technic
  // Resolve a dismissed request after a fresh dialog has been opened.
  gate=deferred();const oldRequest=ctx.applyAiChoice($('ai-chooser-apply'));await ctx.applyAiChoice($('ai-chooser-apply'));assert.equal(calls.length,1);assert.equal($('ai-chooser-cancel').textContent,'닫기');
  ctx.chooserDismiss();assert(!dialog.open);ctx.openAiChooser(changeButton);await ctx.applyAiChoice($('ai-chooser-apply'));assert.equal(calls.length,1,'global pending guard survives dialog reopen');
- assert.equal($('ai-chooser-apply').disabled,true);const reopenedModel=model();gate.resolve({judgment:{state:'queued'}});await oldRequest;gate=null;
+ assert.equal($('ai-chooser-apply').disabled,true);const reopenedModel=model();assert(reopenedModel,'pending completion preserves a real model select');gate.resolve({judgment:{state:'queued'}});await oldRequest;gate=null;
  assert(dialog.open,'late success never closes the new dialog');assert($('ai-chooser-feedback').textContent.includes('판단 AI는 백그라운드에서 확인합니다.'),'reopened dialog settles pending notice with observed completion');assert.equal(model(),reopenedModel);assert.equal($('ai-chooser-apply').disabled,false);assert.equal(vm.runInContext('aiChoice',ctx),'codex');
  // Reject a dismissed request without replacing the newer model draft; settle the old pending notice.
  gate=deferred();const failingRequest=ctx.applyAiChoice($('ai-chooser-apply'));ctx.chooserDismiss();ctx.openAiChooser(changeButton);ctx.chooserFeedback('new dialog feedback');const newerModel=model();
  gate.reject(new Error('old request refusal'));await failingRequest;gate=null;
  assert(dialog.open);assert.equal(model(),newerModel);assert.equal($('ai-chooser-feedback').textContent,'old request refusal');assert.equal($('ai-chooser-apply').disabled,false);
  // An in-session rejection keeps the edited model and shows an actionable failure.
- model().value='retry-model';model().oninput();gate=deferred();const currentRequest=ctx.applyAiChoice($('ai-chooser-apply'));gate.reject(new Error('current request refusal'));await currentRequest;gate=null;
+ model().value='retry-model';model().onchange();gate=deferred();const currentRequest=ctx.applyAiChoice($('ai-chooser-apply'));gate.reject(new Error('current request refusal'));await currentRequest;gate=null;
  assert(dialog.open);assert.equal(model().value,'retry-model');assert.equal($('ai-chooser-feedback').textContent,'current request refusal');assert.equal($('ai-chooser-apply').disabled,false);
  // External credential completion refreshes a clean account panel, while protecting local secret drafts.
  dialog.close();settings=settingsFor('codex');ctx.renderExecutionConnection(settings);ctx.openAiChooser(changeButton);calls.length=0;

@@ -37,11 +37,11 @@ SUBSCRIPTION_ROUTES = ('codex', 'claude-code')
 #: (owner decision 2026-09-26); an existing Ollama config still renders.
 API_ROUTES = {
     'openai': {'name': 'OpenAI', 'provider': 'openai', 'endpoint': 'https://api.openai.com/v1',
-               'model': 'gpt-4o-mini', 'destination': 'api.openai.com'},
+               'model': 'gpt-6.2-sol', 'destination': 'api.openai.com'},
     'anthropic': {'name': 'Anthropic', 'provider': 'anthropic', 'endpoint': 'https://api.anthropic.com',
                   'model': 'claude-opus-5-5', 'destination': 'api.anthropic.com'},
     'openrouter': {'name': 'OpenRouter', 'provider': 'compatible', 'endpoint': 'https://openrouter.ai/api/v1',
-                   'model': 'openrouter/free', 'destination': 'openrouter.ai'},
+                   'model': 'openrouter/auto', 'destination': 'openrouter.ai'},
 }
 #: The chooser order.  Fixed: switching never re-sorts it (AC2).
 CHOOSER_ORDER = (*SUBSCRIPTION_ROUTES, *API_ROUTES)
@@ -56,6 +56,7 @@ CHECKS = 'main_ai_checks'
 #: HOME), so a model set in `~/.codex/config.toml` never reaches Work; this is
 #: the owner's explicit choice instead, passed as the CLI's `--model`.
 SUBSCRIPTION_MODELS = 'subscription_engine_models'
+MAIN_AI_CHOICES = 'main_ai_model_choices'
 #: Owner-visible note for the Codex model row.
 CODEX_CONFIG_NOTE = (msg('main_ai.agentos_isolates_your_personal_codex_settings'))
 #: The isolated sidecar deployment has a closed request contract (prompt,
@@ -182,6 +183,29 @@ class MainAiRoutes:
         model = rows.get(route_id) if isinstance(rows, dict) else None
         return model if valid_model_id(model) else ''
 
+    def _choice(self, route_id):
+        rows = self.store.config(MAIN_AI_CHOICES, {})
+        row = rows.get(route_id, {}) if isinstance(rows, dict) else {}
+        if row:
+            return dict(row)
+        if route_id in SUBSCRIPTION_ROUTES:
+            pinned = bool(self.subscription_model(route_id))
+        else:
+            config = self.store.config('model', {}) or {}
+            pinned = api_route_of(config) == route_id and config.get('model') != API_ROUTES[route_id]['model']
+        return {'mode': 'pinned' if pinned else 'auto', 'effort': ''}
+
+    def subscription_effort(self, route_id):
+        from .decision_adapters import valid_effort
+        effort = self._choice(route_id).get('effort', '')
+        return effort if valid_effort(effort) else ''
+
+    def _save_choice(self, route_id, mode, effort):
+        with self.service.lock:
+            rows = dict(self.store.config(MAIN_AI_CHOICES, {}) or {})
+            rows[route_id] = {'mode': mode, 'effort': effort}
+            self.store.put(MAIN_AI_CHOICES, rows)
+
     def _record_check(self, route_id, record):
         with self.service.lock:
             rows = self._checks()
@@ -260,6 +284,7 @@ class MainAiRoutes:
         routes = []
         for route_id in CHOOSER_ORDER:
             check = checks.get(route_id)
+            choice = self._choice(route_id)
             if route_id in SUBSCRIPTION_ROUTES:
                 engine = engine_row = engines.get(route_id) or {}
                 login = engine.get('login') or {'state': 'unchecked'}
@@ -275,6 +300,7 @@ class MainAiRoutes:
                                # Shown even when isolated, so a refused Work names it;
                                # 확인하고 사용 there clears it.
                                'model': self.subscription_model(route_id),
+                               'model_mode': choice['mode'], 'default_model': '', 'effort': choice['effort'],
                                'model_selectable': not isolated,
                                'model_note': ISOLATED_MODEL_NOTE if isolated
                                else CODEX_CONFIG_NOTE if route_id == 'codex' else '',
@@ -285,7 +311,8 @@ class MainAiRoutes:
             active_key = current == route_id and saved and \
                 self.store.secret(key_slot(route_id)) == (self.store.secret('model_key') or '')
             routes.append({'id': route_id, 'kind': 'api', 'name': preset['name'], 'destination': preset['destination'],
-                           'model': model.get('model') if current == route_id else preset['model'],
+                           'model': model.get('model') if current == route_id else (checks.get(route_id, {}).get('config') or {}).get('model', preset['model']),
+                           'model_mode': choice['mode'], 'default_model': preset['model'], 'effort': choice['effort'],
                            'key': {'saved': saved, 'saved_at': (meta.get(route_id) or {}).get('saved_at') if saved else None,
                                    # A replaced key of the current route is used only after 확인하고 사용.
                                    'pending': bool(current == route_id and saved and not active_key)},
@@ -319,11 +346,40 @@ class MainAiRoutes:
             route_id = body.get('route') if isinstance(body, dict) else None
             if route_id not in CHOOSER_ORDER:
                 raise MainAiError('사용할 기본 AI를 선택하세요.')
+            # #1051: Auto (the route's default model) or Pinned, and an effort.
+            # Checked before anything changes.  A field the body leaves out keeps
+            # the saved value, so `/ai <route>` alone never clears a choice.
+            from .decision_adapters import valid_effort, valid_model_id
+            unchanged = ' 현재 기본 AI와 판단 AI는 그대로입니다.'
+            saved = self._choice(route_id)
+            model = body.get('model')
+            if isinstance(model, str):
+                model = model.strip()
+            mode = body.get('model_mode')
+            isolated = route_id in SUBSCRIPTION_ROUTES and bool(getattr(self.service, 'isolated_engine_adapter', None))
+            effort = body.get('effort') if 'effort' in body else ('' if isolated else saved.get('effort', ''))
+            if 'model_mode' in body and mode not in ('auto', 'pinned'):
+                raise MainAiError('모델 방식은 자동 또는 고정 중에서 고르세요.' + unchanged)
+            if not isinstance(effort, str) or (effort and not valid_effort(effort)):
+                raise MainAiError('추론 수준을 목록에서 고르세요.' + unchanged)
+            if mode == 'pinned' and not valid_model_id(model):
+                raise MainAiError('고정할 모델을 목록에서 고르세요.' + unchanged)
+            if model and not valid_model_id(model):
+                raise MainAiError('모델 이름 형식을 확인하세요.' + unchanged)
+            if isolated and (mode == 'pinned' or model or effort):
+                raise MainAiError(ISOLATED_MODEL_NOTE + unchanged)
+            if mode == 'auto':
+                model = '' if route_id in SUBSCRIPTION_ROUTES else API_ROUTES[route_id]['model']
             self.migrate()
             if route_id in SUBSCRIPTION_ROUTES:
-                self._activate_subscription(route_id, body.get('model'))
+                # None keeps the saved model (an old body without one).
+                self._activate_subscription(route_id, model)
+                mode = mode or ('pinned' if self.subscription_model(route_id) else 'auto')
             else:
-                self._activate_api(route_id, body.get('model'))
+                self._activate_api(route_id, model, effort)
+                mode = mode or ('pinned' if self.store.config('model', {}).get('model') != API_ROUTES[route_id]['model']
+                                else 'auto')
+            self._save_choice(route_id, mode, effort)
             judgment = self.service.decision_routes.follow_main_switched(route_id)
             return {'main_ai': self.status(), 'decision_route': self.service.decision_routes.status(),
                     'judgment': judgment}
@@ -358,7 +414,7 @@ class MainAiRoutes:
                 self.store.put(SUBSCRIPTION_MODELS, rows)
         self._record_check(route_id, {'state': 'ok'})
 
-    def _activate_api(self, route_id, model_name):
+    def _activate_api(self, route_id, model_name, effort=''):
         preset = API_ROUTES[route_id]
         key = self.store.secret(key_slot(route_id)) or ''
         if not key:
@@ -370,7 +426,7 @@ class MainAiRoutes:
             model_name = current.get('model') if api_route_of(current) == route_id else preset['model']
         try:
             config = validate_model({'provider': preset['provider'], 'endpoint': preset['endpoint'],
-                                     'model': model_name.strip()})
+                                     'model': model_name.strip(), 'effort': effort})
         except ValueError as exc:
             raise MainAiError(str(exc)) from None
         record = self.service.probe_model(config, key)
