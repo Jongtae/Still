@@ -246,7 +246,7 @@ class FastestQualifiedServiceTests(ServiceFixture):
 
             def __call__(self, url, body, headers=None, timeout=60):
                 purpose, facts = parse_prompt(body['input'][-1]['content'])
-                if (body.get('model') == 'gpt-4o-mini' and facts.get('owner_message') == '그거 저장해'
+                if (body.get('model') == 'gpt-6-luna' and facts.get('owner_message') == '그거 저장해'
                         and facts.get('previous_reply') and not self.failed):
                     self.failed = True
                     raise ProviderError('timed out', status=504)
@@ -255,7 +255,7 @@ class FastestQualifiedServiceTests(ServiceFixture):
         service.decision_routes.timer = lambda: 0.0
         service.save_decision_route_credential({'transport': 'direct_api', 'key': OPENAI_KEY})
         status = service.activate_decision_route({'transport': 'direct_api'})
-        self.assertEqual(status['active']['requested_model'], 'gpt-6-luna')
+        self.assertEqual(status['active']['requested_model'], 'gpt-6.1-terra')
         compared = {row['model']: row for row in status['active']['qualification']['compared']}
-        self.assertFalse(compared['gpt-4o-mini']['qualified'])
-        self.assertEqual(compared['gpt-4o-mini']['failed_case'], 'reference-to-previous-result')
+        self.assertFalse(compared['gpt-6-luna']['qualified'])
+        self.assertEqual(compared['gpt-6-luna']['failed_case'], 'reference-to-previous-result')

@@ -103,7 +103,7 @@ class QualifiedFallback(ServiceFixture):
                 self.routes.queue_qualification('openai')
                 result = {'qualified': True, 'suite_version': SUITE_VERSION, 'score': 1.0}
                 with mock.patch.object(self.routes, '_first_qualified',
-                                       return_value=('requalified-model', result, [])):
+                                       return_value=('gpt-6-luna', result, [])):
                     self.assertTrue(service.run_due_qualification())
             return reply
 
@@ -165,7 +165,7 @@ class QualifiedFallback(ServiceFixture):
         self.assertEqual(self.routes.status()['effective']['state'], 'checking')
         self.assertIn('Claude Code', service.main_ai.command(''))
         result = {'qualified': True, 'suite_version': SUITE_VERSION, 'score': 1.0}
-        model = 'qualified-follow-model'
+        model = 'gpt-6-luna'
         with mock.patch.object(self.routes, '_first_qualified', return_value=(model, result, [])):
             self.assertTrue(service.run_due_qualification())
         self.assertEqual(self.routes.status()['effective']['state'], 'active')

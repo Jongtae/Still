@@ -1,4 +1,4 @@
-"""DECISION-ROUTE-01 / #580 (and the #506 route-choice rows): Settings › AI › 대화 해석.
+"""Judgment AI mode controls (#1050) and technical evidence in Settings.
 
 Evidence class: DOM behaviour of the shipped renderer in a Node VM with
 synthetic settings read models and a recording API stub.  No server, model,
@@ -14,7 +14,7 @@ ROOT = Path(__file__).parents[1] / "src" / "personal_agent" / "web"
 HTML = (ROOT / "index.html").read_text(encoding="utf-8")
 APP = (ROOT / "app.js").read_text(encoding="utf-8")
 
-DOM_CHECKS = r"""
+DOM_SETUP = r"""
 const assert=require('node:assert/strict'),fs=require('node:fs'),vm=require('node:vm');
 const app=fs.readFileSync(process.argv[1],'utf8'),ids=new Map();
 function matches(node,selector){
@@ -47,382 +47,80 @@ class Element {
  querySelector(selector){return this.querySelectorAll(selector)[0]||null;}
 }
 function descendants(node){return node.children.flatMap(child=>typeof child==='string'?[]:[child,...descendants(child)]);}
-const root=new Element('section');root.id='decision-route';root._root=true;
 const $=id=>ids.get(id),document={activeElement:null,getElementById:$,createElement:tag=>new Element(tag)};
+const dialog=new Element('dialog');dialog.id='judgment-chooser';dialog._root=true;
+for(const [tag,id] of [['div','judgment-follow'],['p','judgment-feedback'],['section','decision-route'],['button','judgment-chooser-close']]){
+ const node=new Element(tag);node.id=id;dialog.append(node);
+}
+const opener=new Element('button');opener._root=true;
 const part=(start,end)=>app.slice(app.indexOf(start),app.indexOf(end));
 const source=part('const LANGUAGES=','function normalizeEndpoint(')+part('const DECISION_ROLE=','function traceWindow(')+
- part('function element(','function setError(')+part('function openJudgmentChooser(','const ENGINE_LOGIN_TEXT=')+part('const DECISION_TRANSPORT_LABEL=','function openMobileDetail(');
-const calls=[];let refreshes=0,failNext=null,gate=null,refreshSettings=null;
-const deferred=()=>{let resolve,reject;const promise=new Promise((yes,no)=>{resolve=yes;reject=no;});return{promise,resolve,reject};};
+ part('function element(','function setError(')+part('function openJudgmentChooser(','const ENGINE_LOGIN_TEXT=')+
+ part('const DECISION_TRANSPORT_LABEL=','function openMobileDetail(');
+const calls=[],modelReplies={};let responder=null,refreshes=0;
+const deferred=()=>{let resolve;const promise=new Promise(yes=>{resolve=yes;});return {promise,resolve};};
 const ctx={document,$,console,safeTime:()=>'T',
- api:async(path,body)=>{calls.push({path,body});if(gate)return gate.promise;if(failNext){const error=failNext;failNext=null;throw error;}
-  if(path.startsWith('/api/decision-route/models'))return {route:'codex',source:'codex debug models --bundled',models:[{id:'gpt-5.6-luna',efforts:['low','medium'],rank:1,label:'목록에 있음(검증 전)'},{id:'gpt-5.5',efforts:['low'],rank:null,label:'목록에 있음(검증 전)'}]};
-  return {model_override:true};},
- refresh:async()=>{refreshes++;if(refreshSettings)ctx.renderDecisionRoute(refreshSettings);},busy:async(button,fn)=>fn(),
+ api:async(path,body)=>{
+  calls.push({path,body});
+  if(responder)return responder(path,body);
+  if(path.endsWith('/models'))return {route:body.route,source:'fixture',models:modelReplies[body.route]||[]};
+  return {};
+ },
+ refresh:async()=>{refreshes++;},busy:async(button,fn)=>fn(),
  setError:(id,error)=>{$(id).textContent=error?.message||String(error||'');},setFeedback:(id,text)=>{$(id).textContent=text||'';}};
 vm.createContext(ctx);vm.runInContext(source,ctx);vm.runInContext("setLanguage('ko')",ctx);
-const box=()=>$('decision-route'),all=()=>descendants(box());
-// Older route assertions explicitly discard between fixtures; dedicated dirty-flow cases below use the public default.
-const switchEditor=id=>ctx.openDecisionChooser(id,true);
-const rows=()=>all().filter(node=>node.className==='settings-row');
-const rowTitled=title=>rows().find(row=>descendants(row).some(node=>node.className==='settings-row-title'&&node.textContent===title));
-const stateOf=row=>descendants(row).find(node=>node.className.startsWith('settings-state'));
-const button=(row,label)=>descendants(row).find(node=>node.tag==='button'&&node.textContent===label);
-const engines=(selection='unchecked')=>[
- {id:'codex',name:'Codex',installed:true,login:'signed-in',model_selection:selection,destination:'OpenAI (Codex 구독 계정)',isolated_deployment:false,
-  ranked_models:['gpt-5.6-luna','gpt-5.6-terra'],model_efforts:{'gpt-5.6-luna':['low','medium'],'gpt-5.6-terra':['low']}},
- {id:'claude-code',name:'Claude Code',installed:false,login:'unchecked',model_selection:'unchecked',destination:'Anthropic (Claude Code 구독 계정)',isolated_deployment:false}];
-const base=(active,extra={})=>({decision_route:{active,suite_version:'decision-qualification/1',
- direct_api:{configured:true,model:'gpt-4o-mini',destination:'api.openai.com'},jev:{configured:false,model:'jev-latest',destination:'api.typesafe.ai'},
- subscription_cli:engines(extra.selection),...extra.route}});
-(async()=>{
- // Default: the #417 default route, role-labelled, never "현재 사용 중".
- ctx.renderDecisionRoute(base({transport:'direct_api',source:'default',requested_model:'gpt-4o-mini',destination:'api.openai.com'}));
- assert.equal(calls.length,0,'rendering calls nothing');
- assert(box().textContent.includes('대화 해석'));
- const method=rowTitled('사용 방식');assert.equal(stateOf(method).textContent,'대화 해석에 사용 중');assert(stateOf(method).className.endsWith('active'));
- assert(method.textContent.includes('OpenAI API · gpt-4o-mini'));assert(method.textContent.includes('전송 대상: api.openai.com'));
- assert(!box().textContent.includes('현재 사용 중'),'the decision route is never presented as the current Work AI');
- assert(box().textContent.includes('여기서 바꿔도 기본 AI는 바뀌지 않습니다'),'the role boundary is stated');
- const jevRow=rowTitled('Jev (TypeSafe) · jev-latest');assert.equal(stateOf(jevRow).textContent,'키 필요');assert(jevRow.textContent.includes('api.typesafe.ai'));
- assert.equal(stateOf(rowTitled('구독 AI · Codex')).textContent,'선택 가능','configured-but-inactive is distinct from active');
- assert.equal(stateOf(rowTitled('구독 AI · Claude Code')).textContent,'설치 안 됨');
- assert(!rowTitled('OpenAI API · gpt-4o-mini'),'the active option is not listed again as another choice');
- const first=box().children[1];ctx.renderDecisionRoute(base({transport:'direct_api',source:'default',requested_model:'gpt-4o-mini',destination:'api.openai.com'}));
- assert.equal(box().children[1],first,'unchanged polling keeps the nodes (and focus)');
- // Saving a Jev key is a separate action from using it.
- await button(jevRow,'설정').onclick({currentTarget:button(jevRow,'설정')});
- const keyForm=descendants(rowTitled('Jev (TypeSafe) · jev-latest')).find(node=>node.tag==='form');assert(keyForm,'the key form opens in place');
- const [keyInput]=descendants(keyForm).filter(node=>node.tag==='input');assert.equal(keyInput.type,'password');keyInput.value='ts-key';
- await keyForm.onsubmit({preventDefault(){}});
- assert.deepEqual(JSON.parse(JSON.stringify(calls)),[{path:'/api/decision-route/credential',body:{transport:'jev',key:'ts-key',model:'jev-latest'}}]);
- assert(!calls.some(call=>call.path==='/api/decision-route/activate'),'saving never activates');
- assert($('decision-route-feedback').textContent.includes('아직 대화 해석 경로는 바뀌지 않았습니다'));
- // #472: the default is the fastest qualified model (#679 had the cheapest; ranked list prefilled), even before
- // the model flag was checked (activation checks it); the engine default is offered but never preselected.
- calls.length=0;box().dataset.state='';ctx.renderDecisionRoute(base({transport:'direct_api',source:'default',destination:'api.openai.com'}));
- let codex=rowTitled('구독 AI · Codex');await button(codex,'사용').onclick({currentTarget:button(codex,'사용')});
- let form=descendants(rowTitled('구독 AI · Codex')).find(node=>node.tag==='form');
- let radios=descendants(form).filter(node=>node.tag==='input'&&node.type==='radio');
- assert.deepEqual(radios.map(node=>node.value),['fastest_qualified','lowest_qualified','explicit','engine_default']);
- assert.equal(radios.find(node=>node.checked).value,'fastest_qualified','engine_default (Opus for Claude Code) is not preselected');
- assert(descendants(form).some(node=>node.tag==='button'&&node.textContent==='모델 지정 지원 확인'));
- assert(form.textContent.includes('모델 목록은 새로고침을 눌렀을 때만 가져옵니다.'));
- assert(!calls.some(call=>call.path.startsWith('/api/decision-route/models')),'no model list on render');
- await form.onsubmit({preventDefault(){}});
- assert.deepEqual(JSON.parse(JSON.stringify(calls.at(-1))),{path:'/api/decision-route/activate',body:{transport:'subscription_cli',engine:'codex',model_policy:'fastest_qualified',candidates:'gpt-5.6-luna, gpt-5.6-terra'}});
- // 모델 목록 새로고침 is the only thing that lists models; entries are labelled as unverified.
- codex=rowTitled('구독 AI · Codex');await button(codex,'사용').onclick({currentTarget:button(codex,'사용')});
- form=descendants(rowTitled('구독 AI · Codex')).find(node=>node.tag==='form');
- const refreshModels=descendants(form).find(node=>node.tag==='button'&&node.textContent==='모델 목록 새로고침');
- await refreshModels.onclick({currentTarget:refreshModels});
- assert.deepEqual(JSON.parse(JSON.stringify(calls.at(-1))),{path:'/api/decision-route/models',body:{route:'codex'}},'a POST (review P2-2)');
- form=descendants(rowTitled('구독 AI · Codex')).find(node=>node.tag==='form');
- const options=descendants(form).filter(node=>node.tag==='option'&&node.value.startsWith('gpt'));
- assert(options.some(node=>node.textContent==='gpt-5.6-luna · 목록에 있음(검증 전)'),'a listed model is not called verified');
- assert(form.textContent.includes('2개 모델이 목록에 있습니다 (codex debug models --bundled)'));
- radios=descendants(form).filter(node=>node.tag==='input'&&node.type==='radio');radios.forEach(node=>{node.checked=node.value==='explicit';});
- const modelInput=descendants(form).find(node=>node.tag==='input'&&node.type==='text'&&node.attrs['aria-label']==='직접 선택할 모델 이름');
- modelInput.value='gpt-5.6-luna';modelInput.oninput();
- const effortSelect=descendants(form).find(node=>node.tag==='select');
- assert.deepEqual(descendants(effortSelect).map(node=>node.value),['','low','medium'],'only the efforts that model supports');
- effortSelect.value='medium';failNext=new Error('모델을 확인하지 못했습니다. 현재 대화 해석 경로는 그대로 유지됩니다.');
- await form.onsubmit({preventDefault(){}});
- assert.deepEqual(JSON.parse(JSON.stringify(calls.at(-1).body)),{transport:'subscription_cli',engine:'codex',model_policy:'explicit',model:'gpt-5.6-luna',effort:'medium'});
- assert($('decision-route-feedback').textContent.includes('그대로 유지'),'a failed qualification keeps the previous route and says why');
- modelInput.value='haiku';modelInput.oninput();assert(effortSelect.disabled,'no effort choice where the model has none');
- switchEditor('');
- // Unsupported: still only the engine default, with the limitation stated.
- box().dataset.state='';ctx.renderDecisionRoute(base({transport:'direct_api',source:'default',destination:'api.openai.com'},{selection:'unsupported'}));
- codex=rowTitled('구독 AI · Codex');await button(codex,'사용').onclick({currentTarget:button(codex,'사용')});
- form=descendants(rowTitled('구독 AI · Codex')).find(node=>node.tag==='form');
- assert.deepEqual(descendants(form).filter(node=>node.type==='radio').map(node=>node.value),['engine_default']);
- assert(form.textContent.includes('모델 지정을 지원하지 않아'));
- // Supported: all four policies; lowest_qualified sends the owner's ordered candidates.
- switchEditor('');box().dataset.state='';ctx.renderDecisionRoute(base({transport:'direct_api',source:'default',destination:'api.openai.com'},{selection:'supported'}));
- codex=rowTitled('구독 AI · Codex');await button(codex,'사용').onclick({currentTarget:button(codex,'사용')});
- form=descendants(rowTitled('구독 AI · Codex')).find(node=>node.tag==='form');
- const inputs=descendants(form).filter(node=>node.tag==='input');
- assert.deepEqual(inputs.filter(node=>node.type==='radio').map(node=>node.value),['fastest_qualified','lowest_qualified','explicit','engine_default']);
- inputs.find(node=>node.value==='fastest_qualified').checked=false;inputs.find(node=>node.value==='engine_default').checked=false;inputs.find(node=>node.value==='lowest_qualified').checked=true;
- inputs.filter(node=>node.type==='text')[0].value=' tiny, small ';
- failNext=new Error('후보 모델 중 적격성 검사를 통과한 모델이 없습니다. 현재 대화 해석 경로는 그대로 유지됩니다.');const before=refreshes;
- await form.onsubmit({preventDefault(){}});
- assert.deepEqual(JSON.parse(JSON.stringify(calls.at(-1).body)),{transport:'subscription_cli',engine:'codex',model_policy:'lowest_qualified',candidates:'tiny, small'});
- assert.equal(refreshes,before,'a refused switch does not refresh into a new route');
- assert($('decision-route-feedback').textContent.includes('그대로 유지'));
- assert.equal(stateOf(rowTitled('사용 방식')).textContent,'대화 해석에 사용 중','the previous route is still shown as active');
- // An owner-selected subscription route: engine, policy, requested vs observed model.
- box().dataset.state='';switchEditor('');
- ctx.renderDecisionRoute(base({transport:'subscription_cli',source:'owner',engine:'codex',model_policy:'lowest_qualified',requested_model:'small',available:true,
-  destination:'OpenAI (Codex 구독 계정)',cli_version:'codex-cli 0.153.4',qualification:{suite_version:'decision-qualification/1',model:'small'}},
-  {selection:'supported',route:{subscription_cli:engines('supported').map(e=>e.id==='codex'?{...e,check:{state:'active',observed_model:'not reported',checked_at:1}}:e)}}));
- assert.equal(stateOf(rowTitled('구독 엔진')).textContent,'Codex');
- const policyRow=rowTitled('판단 모델');assert.equal(stateOf(policyRow).textContent,'자동 · 가장 저렴한 적격 모델');
- assert(policyRow.textContent.includes('요청 모델: small'),'the requested model is named, not presented as observed');
- assert(!rowTitled('구독 AI · Codex'),'the active engine is not listed again as another choice');
- assert(rowTitled('구독 AI · Claude Code'));
- assert(rowTitled('사용 방식').textContent.includes('OpenAI (Codex 구독 계정)'));
- const change=button(policyRow,'변경');await change.onclick({currentTarget:change});
- const policyForm=descendants(rowTitled('판단 모델')).find(node=>node.tag==='form');
- assert.deepEqual(descendants(policyForm).filter(node=>node.type==='radio').map(node=>node.value),['fastest_qualified','lowest_qualified','explicit','engine_default'],'the policy is changed in place');
- switchEditor('cli:codex');
- assert(rowTitled('OpenAI API · gpt-4o-mini'),'the direct API becomes another choice');
- const details=all().find(node=>node.tag==='details').textContent;
- for(const line of ['역할: 대화 해석(DecisionEngine) — 작업 실행 경로와 별개','경로: subscription_cli','모델 정책: lowest_qualified','요청 모델: small','관측 모델: 보고되지 않음','적격성 검사: decision-qualification/1 통과 (small)','CLI 버전: codex-cli 0.153.4'])
-  assert(details.includes(line),line);
- // Needs attention and failed checks stay visible; nothing is silently switched.
- box().dataset.state='';
- ctx.renderDecisionRoute(base({transport:'jev',source:'owner',requested_model:'jev-latest',available:false,destination:'api.typesafe.ai'},
-  {route:{jev:{configured:false,model:'jev-latest',destination:'api.typesafe.ai',check:{state:'failed',failure:'auth',checked_at:1}}}}));
- assert.equal(stateOf(rowTitled('사용 방식')).textContent,'확인 필요');
- box().dataset.state='';
- ctx.renderDecisionRoute(base({transport:'direct_api',source:'owner',destination:'api.openai.com',available:true},
-  {route:{jev:{configured:true,model:'jev-latest',destination:'api.typesafe.ai',check:{state:'failed',failure:'auth',checked_at:1}}}}));
- assert(rowTitled('Jev (TypeSafe) · jev-latest').textContent.includes('마지막 확인: 실패 · 로그인 또는 인증 실패'));
- assert.equal(stateOf(rowTitled('Jev (TypeSafe) · jev-latest')).textContent,'선택 가능');
- // An active direct route keeps its decision-only key manageable (rotate / remove).
- box().dataset.state='';calls.length=0;
- ctx.renderDecisionRoute(base({transport:'direct_api',source:'owner',destination:'api.openai.com',available:true},
-  {route:{direct_api:{configured:true,has_decision_key:true,model:'gpt-4o-mini',destination:'api.openai.com'}}}));
- const methodRow=rowTitled('사용 방식'),changeKey=button(methodRow,'키 변경');assert(changeKey,'the active direct key can be changed');
- await changeKey.onclick({currentTarget:changeKey});
- const remove=descendants(rowTitled('사용 방식')).find(node=>node.tag==='button'&&node.textContent==='키 제거');assert(remove,'a saved key can be removed');
- assert(remove.className.includes('destructive'));
- await remove.onclick({currentTarget:remove});
- assert.deepEqual(JSON.parse(JSON.stringify(calls.at(-1))),{path:'/api/decision-route/credential',body:{transport:'direct_api',key:''}});
- assert(!calls.some(call=>call.path==='/api/decision-route/activate'));
- // A changed CLI binary is shown as needing a re-check, not as in use.
- box().dataset.state='';switchEditor('');
- ctx.renderDecisionRoute(base({transport:'subscription_cli',source:'owner',engine:'codex',model_policy:'explicit',requested_model:'small',available:false,requalification_needed:true,destination:'OpenAI (Codex 구독 계정)'}));
- assert.equal(stateOf(rowTitled('사용 방식')).textContent,'확인 필요');assert(rowTitled('사용 방식').textContent.includes('CLI가 바뀌어 자동으로 확인합니다'));
- // A CLI refused for its tool surface is a visible needs-attention state with the reason, not an absence.
- box().dataset.state='';switchEditor('');
- ctx.renderDecisionRoute(base({transport:'direct_api',source:'owner',destination:'api.openai.com',available:true},
-  {route:{subscription_cli:engines('supported').map(e=>e.id==='codex'?{...e,tool_surface:'tool-features-enabled',tool_surface_detail:'unified_exec'}:e)}}));
- const refused=rowTitled('구독 AI · Codex');assert(refused,'the refused engine is still listed');
- assert.equal(stateOf(refused).textContent,'사용할 수 없음');assert(stateOf(refused).className.endsWith('attention'));
- assert(refused.textContent.includes('도구 기능을 모두 끌 수 없어')&&refused.textContent.includes('unified_exec'),'the reason is named');
- assert(button(refused,'다시 확인'),'a re-check stays available after a CLI update');assert(!button(refused,'사용'));
- // #679: the direct API model is chosen from the (refreshed) list or typed, and qualified before use.
- box().dataset.state='';switchEditor('');calls.length=0;
- ctx.renderDecisionRoute(base({transport:'jev',source:'owner',requested_model:'jev-latest',available:true,destination:'api.typesafe.ai'},
-  {route:{direct_api:{configured:true,model:'gpt-4o-mini',destination:'api.openai.com',ranked_models:['gpt-4o-mini','gpt-6-luna']}}}));
- const openai=rowTitled('OpenAI API · gpt-4o-mini');await button(openai,'모델 선택').onclick({currentTarget:button(openai,'모델 선택')});
- const directForm=descendants(rowTitled('OpenAI API · gpt-4o-mini')).find(node=>node.tag==='form');
- assert(directForm.textContent.includes('가장 빠른 적격 모델: gpt-4o-mini, gpt-6-luna'),'the fastest-qualified default and its candidates are named (#472)');
- assert(!descendants(directForm).some(node=>node.tag==='select'),'no effort choice for the API route');
- descendants(directForm).find(node=>node.tag==='input'&&node.type==='text').value='gpt-6-luna';
- await directForm.onsubmit({preventDefault(){}});
- assert.deepEqual(JSON.parse(JSON.stringify(calls.at(-1))),{path:'/api/decision-route/activate',body:{transport:'direct_api',model:'gpt-6-luna'}});
- // #679: the #417 default says it is a fallback and why, instead of reading as "follow Main AI".
- box().dataset.state='';switchEditor('');
- ctx.renderDecisionRoute(base({transport:'direct_api',source:'default',requested_model:'gpt-4o-mini',destination:'api.openai.com',available:true},
-  {route:{effective:{state:'fallback',template:'구독 판단을 쓸 수 없어 OpenAI API({model})를 쓰는 중: {reason}',params:{model:'gpt-4o-mini'},
-   reason_template:'기본 AI({main})를 따르는 구독 판단을 아직 확인하지 않았습니다. 확인을 누르면 가장 저렴한 모델부터 검증합니다.',reason_params:{main:'Codex'},destination:'api.openai.com'}}}));
- assert(rowTitled('사용 방식').textContent.includes('구독 판단을 쓸 수 없어 OpenAI API(gpt-4o-mini)를 쓰는 중: 기본 AI(Codex)를 따르는 구독 판단을 아직 확인하지 않았습니다.'));
- // An active strict Codex route states the profile, effort and a non-empty instruction file (size only).
- box().dataset.state='';
- ctx.renderDecisionRoute(base({transport:'subscription_cli',source:'owner',engine:'codex',model_policy:'lowest_qualified',requested_model:'gpt-5.6-luna',effort:'low',available:true,
-  destination:'OpenAI (Codex 구독 계정)',strict_profile:{version:'0.153.4',platform:'darwin'},instruction_files_present:[{file:'AGENTS.md',bytes:120}]}));
- assert(rowTitled('구독 엔진').textContent.includes('엄격 격리'));assert(rowTitled('구독 엔진').textContent.includes('AGENTS.md (120 B)'));
- assert(rowTitled('판단 모델').textContent.includes('추론 강도: low'));
- assert(all().find(node=>node.tag==='details').textContent.includes('엄격 격리 검증: 0.153.4 · darwin'));
- // Off is an explicit owner choice.
- box().dataset.state='';
- ctx.renderDecisionRoute(base({transport:'direct_api',source:'owner',destination:'api.openai.com',available:true},
-  {route:{jev:{configured:true,model:'jev-latest',destination:'api.typesafe.ai',check:{state:'failed',failure:'auth',checked_at:1}}}}));
- const off=button(rowTitled('사용 방식'),'끄기');await off.onclick({currentTarget:off});
- assert.deepEqual(JSON.parse(JSON.stringify(calls.at(-1))),{path:'/api/decision-route/activate',body:{transport:'off'}});
- // #609: Jev's model comes from TypeSafe's own list on explicit refresh; saving it never activates, and an active
- // Jev route applies a differing saved model only through an explicit, checked 사용.
- box().dataset.state='';switchEditor('');calls.length=0;
- const jevActive=(saved)=>base({transport:'jev',source:'owner',requested_model:'jev-latest',available:true,destination:'api.typesafe.ai'},
-  {route:{jev:{configured:true,model:saved,destination:'api.typesafe.ai'}}});
- ctx.renderDecisionRoute(jevActive('jev-latest'));
- assert(!button(rowTitled('사용 방식'),'저장한 모델 사용'),'nothing to apply while the saved model is the active one');
- assert.equal(calls.length,0,'rendering calls nothing');
- box().dataset.state='';ctx.renderDecisionRoute(jevActive('jev-1.13.0'));
- const applySaved=button(rowTitled('사용 방식'),'저장한 모델 사용');assert(applySaved,'a differing saved model can be applied');
- await applySaved.onclick({currentTarget:applySaved});
- assert.deepEqual(JSON.parse(JSON.stringify(calls.at(-1))),{path:'/api/decision-route/activate',body:{transport:'jev'}});
- calls.length=0;const pick=button(rowTitled('사용 방식'),'모델 선택');await pick.onclick({currentTarget:pick});
- const jevForm=descendants(rowTitled('사용 방식')).find(node=>node.tag==='form');assert(jevForm,'the Jev model form opens in place');
- assert(jevForm.textContent.includes('모델 목록은 새로고침을 눌렀을 때만 가져옵니다.'));
- const jevModel=descendants(jevForm).find(node=>node.tag==='input'&&node.type==='text');assert.equal(jevModel.value,'jev-1.13.0');
- const refreshJev=button(jevForm,'모델 목록 새로고침');await refreshJev.onclick({currentTarget:refreshJev});
- assert.deepEqual(JSON.parse(JSON.stringify(calls.at(-1))),{path:'/api/decision-route/models',body:{route:'jev'}});
- const jevForm2=descendants(rowTitled('사용 방식')).find(node=>node.tag==='form');
- assert(jevForm2.textContent.includes('확인 판단 한 번으로'),'Jev activation is a probe, not the qualification suite');
- descendants(jevForm2).find(node=>node.tag==='input'&&node.type==='text').value='jev-1.12.0';calls.length=0;
- await jevForm2.onsubmit({preventDefault(){}});
- assert.deepEqual(JSON.parse(JSON.stringify(calls)),[{path:'/api/decision-route/credential',body:{transport:'jev',model:'jev-1.12.0'}}],'saving a model never activates');
- assert($('decision-route-feedback').textContent.includes('아직 대화 해석 경로는 바뀌지 않았습니다'));
- // #806 review: another tab's saved model rebases a clean editor but cannot overwrite a dirty draft.
- switchEditor('');box().dataset.state='';ctx.renderDecisionRoute(jevActive('jev-before'));switchEditor('jev:model');
- const cleanJev=box().querySelector('form'),cleanJevInput=cleanJev.querySelector('input');cleanJevInput.focus();calls.length=0;
- ctx.renderDecisionRoute(jevActive('jev-from-other-tab'));
- const freshJev=box().querySelector('form'),freshJevInput=freshJev.querySelector('input');
- assert.notEqual(freshJev,cleanJev);assert.equal(freshJevInput.value,'jev-from-other-tab');assert.equal(document.activeElement,freshJevInput,'clean rebase retains focus');
- freshJevInput.value='unsaved-owner-choice';freshJevInput.setSelectionRange(2,5);
- ctx.renderDecisionRoute(jevActive('jev-later-tab'));
- assert.equal(box().querySelector('form'),freshJev);assert.equal(freshJevInput.value,'unsaved-owner-choice');assert.equal(freshJev.parentNode.tag,'fieldset');assert.equal(freshJev.parentNode.disabled,true);assert.equal(calls.length,0,'polling never saves a stale or draft model');
- // #784: changed polling refreshes the observed summary without replacing the active editor.
- switchEditor('');box().dataset.state='';calls.length=0;
- let polling=base({transport:'direct_api',source:'owner',requested_model:'server-before',destination:'api.openai.com',available:true},{selection:'supported'});
- ctx.renderDecisionRoute(polling);switchEditor('cli:codex');
- const pollForm=box().querySelector('form'),pollInputs=descendants(pollForm).filter(node=>node.tag==='input');
- const pollRadios=pollInputs.filter(node=>node.type==='radio');pollRadios.forEach(node=>node.checked=node.value==='explicit');
- const pollCandidates=pollInputs.find(node=>node.type==='text'&&node.attrs['aria-label'].startsWith('후보 모델'));
- const pollModel=pollInputs.find(node=>node.attrs['aria-label']==='직접 선택할 모델 이름');
- pollCandidates.value='custom-small, custom-next';pollModel.value='gpt-5.6-luna';pollModel.oninput();
- const pollEffort=descendants(pollForm).find(node=>node.tag==='select');pollEffort.value='medium';pollModel.focus();pollModel.setSelectionRange(2,7);
- const pollFeedback=$('decision-route-feedback');ctx.setError('decision-route-feedback',new Error('synthetic editable error'));
- polling=JSON.parse(JSON.stringify(polling));polling.decision_route.active.requested_model='server-after';polling.decision_route.qualification={state:'running',progress:1};
- ctx.renderDecisionRoute(polling);
- assert.equal(box().querySelector('form'),pollForm,'ordinary changed polling keeps the same policy form');
- assert.equal(pollCandidates.value,'custom-small, custom-next');assert.equal(pollRadios.find(node=>node.checked).value,'explicit');assert.equal(pollModel.value,'gpt-5.6-luna');assert.equal(pollEffort.value,'medium');
- assert.equal(document.activeElement,pollModel);assert.equal(pollModel.selectionStart,2);assert.equal(pollModel.selectionEnd,7);assert.equal($('decision-route-feedback').textContent,'synthetic editable error');
- assert(rowTitled('사용 방식').textContent.includes('server-after'),'the observed summary still updates while preserving the editor');
- assert.equal(calls.length,0);
- const unavailable=JSON.parse(JSON.stringify(polling));unavailable.decision_route.subscription_cli=[];ctx.renderDecisionRoute(unavailable);
- assert.equal(box().querySelector('form'),pollForm,'unavailable route retains the existing draft');assert.equal(pollForm.parentNode.tag,'fieldset');assert.equal(pollForm.parentNode.disabled,true,'unavailable editor cannot submit');assert(pollForm.parentNode.textContent.includes('입력은 보관'));
- ctx.renderDecisionRoute(polling);assert.equal(box().querySelector('form'),pollForm);assert.notEqual(pollForm.parentNode.tag,'fieldset','a restored route moves the form out of the disabled wrapper');assert.equal(pollModel.value,'gpt-5.6-luna');assert.equal(pollCandidates.value,'custom-small, custom-next');
- // Password and its adjacent model draft survive independent qualification updates too.
- switchEditor('jev');const pollSecretForm=box().querySelector('form');assert.notEqual(pollSecretForm,pollForm,'an explicit chooser switch rebuilds the editor');
- const pollSecret=descendants(pollSecretForm).find(node=>node.type==='password'),pollSecretModel=descendants(pollSecretForm).find(node=>node.type==='text');
- pollSecret.value='synthetic-polling-secret';pollSecretModel.value='jev-owner-draft';pollSecret.focus();pollSecret.setSelectionRange(3,9);ctx.setError('decision-route-feedback',new Error('synthetic credential error'));
- polling=JSON.parse(JSON.stringify(polling));polling.decision_route.qualification={state:'running',progress:2};ctx.renderDecisionRoute(polling);
- assert.equal(box().querySelector('form'),pollSecretForm);assert.equal(pollSecret.value,'synthetic-polling-secret');assert.equal(pollSecretModel.value,'jev-owner-draft');assert.equal(document.activeElement,pollSecret);assert.equal(pollSecret.selectionStart,3);assert.equal(pollSecret.selectionEnd,9);assert.equal($('decision-route-feedback').textContent,'synthetic credential error');
- assert.equal(calls.length,0,'polling sends no credential or model request');
- // Existing explicit invalidation (save/apply/list refresh) may rebuild from current state.
- box().dataset.state='';ctx.renderDecisionRoute(polling);assert.notEqual(box().querySelector('form'),pollSecretForm);assert.equal(box().querySelector('form').querySelector('input').value,'');
- // #784: late activation cannot clear a newly opened modal/editor or admit a duplicate request.
- for(const id of ['judgment-chooser','judgment-follow','judgment-feedback','active-ai']){const node=new Element('div');node.id=id;node._root=true;}
- ctx.aiSettings=polling;ctx.openJudgmentChooser();switchEditor('cli:codex');
- calls.length=0;gate=deferred();const activationGate=gate;
- const activation=ctx.decisionActivate({transport:'subscription_cli',engine:'codex',model_policy:'explicit',model:'submitted'},new Element('button'));
- $('judgment-chooser').close();ctx.openJudgmentChooser();switchEditor('jev');
- const reopenedForm=box().querySelector('form'),reopenedSecret=reopenedForm.querySelector('input[type="password"]');
- reopenedSecret.value='new-modal-secret';reopenedSecret.focus();reopenedSecret.setSelectionRange(2,5);ctx.setError('decision-route-feedback','new modal feedback');
- await ctx.decisionActivate({transport:'off'},new Element('button'));assert.equal(calls.length,1,'activation is guarded across close/reopen');
- refreshSettings=JSON.parse(JSON.stringify(polling));refreshSettings.decision_route.active.requested_model='new-server-result';
- activationGate.resolve({});await activation;gate=null;
- assert.equal(box().querySelector('form'),reopenedForm);assert.equal(reopenedSecret.value,'new-modal-secret');assert.equal(document.activeElement,reopenedSecret);assert.equal(reopenedSecret.selectionStart,2);assert.equal(reopenedSecret.selectionEnd,5);assert.equal($('decision-route-feedback').textContent,'new modal feedback');assert(rowTitled('사용 방식').textContent.includes('new-server-result'));
- // A late refusal likewise leaves newer feedback intact and releases the operation guard.
- gate=deferred();const refusedGate=gate;const lateRefused=ctx.decisionActivate({transport:'off'},new Element('button'));
- switchEditor('cli:codex');ctx.setError('decision-route-feedback','new editor error');refusedGate.reject(new Error('old activation failure'));await lateRefused;gate=null;
- assert.equal($('decision-route-feedback').textContent,'new editor error');
- const countAfterRefusal=calls.length;await ctx.decisionActivate({transport:'off'},new Element('button'));assert.equal(calls.length,countAfterRefusal+1,'finally releases the activation guard');
- // Accepted credential save clears only its submitted input, preserving a newer editor through real refresh.
- switchEditor('jev');const submittedForm=box().querySelector('form'),submittedSecret=submittedForm.querySelector('input[type="password"]');submittedSecret.value='submitted-secret';
- gate=deferred();const credentialGate=gate;const credentialSave=submittedForm.onsubmit({preventDefault(){}});
- switchEditor('cli:codex');const newPolicy=box().querySelector('form'),newModel=newPolicy.querySelector('input[aria-label="직접 선택할 모델 이름"]');newModel.value='retained-owner-model';ctx.setError('decision-route-feedback','new policy feedback');
- refreshSettings=JSON.parse(JSON.stringify(refreshSettings));refreshSettings.decision_route.jev.configured=true;
- credentialGate.resolve({});await credentialSave;gate=null;
- assert.equal(submittedSecret.value,'');assert.equal(box().querySelector('form'),newPolicy);assert.equal(newModel.value,'retained-owner-model');assert.equal($('decision-route-feedback').textContent,'new policy feedback');
- // The model list is cached globally, but an old completion never rebuilds the current secret editor.
- const listButton=button(newPolicy,'모델 목록 새로고침');gate=deferred();const modelGate=gate;const modelRefresh=listButton.onclick({currentTarget:listButton});
- switchEditor('jev');const newSecretForm=box().querySelector('form'),newSecret=newSecretForm.querySelector('input[type="password"]');newSecret.value='model-refresh-secret';ctx.setError('decision-route-feedback','new secret feedback');
- modelGate.resolve({route:'codex',source:'synthetic latest catalog',models:[{id:'new-listed-model'}]});await modelRefresh;gate=null;
- assert.equal(box().querySelector('form'),newSecretForm);assert.equal(newSecret.value,'model-refresh-secret');assert.equal($('decision-route-feedback').textContent,'new secret feedback');assert.equal(ctx.decisionModelList('codex').models[0].id,'new-listed-model');
- // Model-only credential saves have the same editor identity fence.
- switchEditor('jev:model');const savedModelForm=box().querySelector('form');savedModelForm.querySelector('input[type="text"]').value='jev-submitted-model';
- gate=deferred();const savedModelGate=gate;const savedModelRequest=savedModelForm.onsubmit({preventDefault(){}});
- switchEditor('direct_api');const afterModelForm=box().querySelector('form'),afterModelSecret=afterModelForm.querySelector('input[type="password"]');afterModelSecret.value='new-api-secret';ctx.setError('decision-route-feedback','new API feedback');
- savedModelGate.resolve({});await savedModelRequest;gate=null;assert.equal(box().querySelector('form'),afterModelForm);assert.equal(afterModelSecret.value,'new-api-secret');assert.equal($('decision-route-feedback').textContent,'new API feedback');
- // A failed old credential request leaves its submitted value and the newer error untouched.
- gate=deferred();const failedCredentialGate=gate;const failedCredential=afterModelForm.onsubmit({preventDefault(){}});
- switchEditor('jev');const afterFailureForm=box().querySelector('form');ctx.setError('decision-route-feedback','new credential editor error');
- failedCredentialGate.reject(new Error('old credential refused'));await failedCredential;gate=null;assert.equal(afterModelSecret.value,'new-api-secret');assert.equal(box().querySelector('form'),afterFailureForm);assert.equal($('decision-route-feedback').textContent,'new credential editor error');
- // Following the main AI uses the same operation guard and session fence.
- ctx.aiSettings=base({transport:'direct_api',requested_model:'explicit'}, {route:{mode:'explicit',follow:{available:true,model:'light',destination:'example.invalid'}}});
- ctx.renderJudgmentFollow();gate=deferred();const followGate=gate,followButton=button($('judgment-follow'),'따라가기 사용');const followRequest=followButton.onclick({currentTarget:followButton});
- switchEditor('cli:codex');const afterFollowForm=box().querySelector('form');ctx.setError('judgment-feedback','new follow feedback');ctx.setError('decision-route-feedback','new draft feedback');
- const pendingFollowCalls=calls.length;await ctx.decisionActivate({transport:'off'},new Element('button'));assert.equal(calls.length,pendingFollowCalls);
- followGate.resolve({});await followRequest;gate=null;assert.equal(box().querySelector('form'),afterFollowForm);assert.equal($('judgment-feedback').textContent,'new follow feedback');assert.equal($('decision-route-feedback').textContent,'new draft feedback');
- refreshSettings=null;
- // #784: actual dirty editor survives close/reopen; switching requires one keep/discard choice.
- const draftSettings=base({transport:'direct_api',requested_model:'stable-main'}, {selection:'supported'});
- switchEditor('');box().dataset.state='';ctx.renderDecisionRoute(draftSettings);ctx.aiSettings=draftSettings;ctx.openJudgmentChooser();ctx.openDecisionChooser('jev');
- const retainedDraft=box().querySelector('form'),retainedPassword=retainedDraft.querySelector('input[type="password"]');retainedPassword.value='draft-stays-in-dom';retainedPassword.setSelectionRange(2,6);
- $('judgment-chooser').close();ctx.openJudgmentChooser();assert.equal(box().querySelector('form'),retainedDraft);assert.equal(retainedPassword.value,'draft-stays-in-dom');assert.equal(retainedPassword.selectionStart,2);assert.equal(retainedPassword.selectionEnd,6);
- const beforeDiscardRequests=calls.length;ctx.openDecisionChooser('cli:codex');assert.equal(box().querySelector('form'),retainedDraft);assert.equal(box().querySelectorAll('[id="decision-discard"]').length,1);
- const keepDraft=button($('decision-discard'),'계속 편집');keepDraft.onclick();assert.equal(box().querySelector('form'),retainedDraft);assert.equal(retainedPassword.value,'draft-stays-in-dom');assert.equal(box().querySelectorAll('[id="decision-discard"]').length,0);
- ctx.openDecisionChooser('direct_api');ctx.openDecisionChooser('cli:codex');assert.equal(box().querySelectorAll('[id="decision-discard"]').length,1,'one inline decision replaces the previous destination');
- button($('decision-discard'),'변경 사항 버리기').onclick();const changedEditor=box().querySelector('form');assert.notEqual(changedEditor,retainedDraft);assert.equal(changedEditor.querySelector('input').type,'radio');assert.equal(calls.length,beforeDiscardRequests,'local discard never changes credentials or active route');
- // A supported-to-unsupported capability update retains the exact draft but disables its old controls.
- const originalCapabilityForm=changedEditor,capabilityModel=changedEditor.querySelector('input[aria-label="직접 선택할 모델 이름"]');capabilityModel.value='draft-for-original-capability';
- const unsupportedSettings=JSON.parse(JSON.stringify(draftSettings));unsupportedSettings.decision_route.subscription_cli[0].model_selection='unsupported';ctx.renderDecisionRoute(unsupportedSettings);
- assert.equal(box().querySelector('form'),originalCapabilityForm);assert.equal(originalCapabilityForm.parentNode.tag,'fieldset');assert.equal(originalCapabilityForm.parentNode.disabled,true);assert.equal(capabilityModel.value,'draft-for-original-capability');assert(originalCapabilityForm.parentNode.textContent.includes('설정 정보가 바뀌어'));
- // An unchanged poll stays disabled; restoration of the original contract re-enables the same draft.
- ctx.renderDecisionRoute(unsupportedSettings);assert.equal(originalCapabilityForm.parentNode.disabled,true);ctx.renderDecisionRoute(draftSettings);assert.equal(box().querySelector('form'),originalCapabilityForm);assert.notEqual(originalCapabilityForm.parentNode.tag,'fieldset');
- ctx.renderDecisionRoute(unsupportedSettings);const reopenCapability=button(box(),'현재 설정으로 다시 열기');reopenCapability.onclick();assert.equal(box().querySelector('form'),originalCapabilityForm);button($('decision-discard'),'계속 편집').onclick();assert.equal(originalCapabilityForm.parentNode.disabled,true);
- button(box(),'현재 설정으로 다시 열기').onclick();button($('decision-discard'),'변경 사항 버리기').onclick();const refreshedCapabilityForm=box().querySelector('form');assert.notEqual(refreshedCapabilityForm,originalCapabilityForm);assert.notEqual(refreshedCapabilityForm.parentNode.tag,'fieldset');assert.equal(refreshedCapabilityForm.querySelectorAll('input[type="radio"]').length,1);assert.equal(refreshedCapabilityForm.querySelector('input[type="radio"]').value,'engine_default');assert.equal(refreshedCapabilityForm.querySelector('input[type="text"]'),null);assert.equal(calls.length,beforeDiscardRequests);
- // Completion clears a discard prompt opened against the submitted editor, not a later editor.
- const pendingForm=box().querySelector('form');pendingForm.querySelector('input').checked=false;
- gate=deferred();const sameEditorGate=gate,sameEditorApply=pendingForm.onsubmit({preventDefault(){}});
- ctx.openDecisionChooser('jev');assert(box().querySelector('[id="decision-discard"]'));
- refreshSettings=unsupportedSettings;sameEditorGate.resolve({});await sameEditorApply;gate=null;refreshSettings=null;
- assert.equal(box().querySelector('[id="decision-discard"]'),null,'accepted same-editor apply removes its obsolete discard prompt');
- // Reopening keeps the same DOM input, so a late save must not clear a newer value on that input.
- switchEditor('jev');const reopenedSaveForm=box().querySelector('form'),reopenedSaveInput=reopenedSaveForm.querySelector('input[type="password"]');reopenedSaveInput.value='submitted-before-reopen';
- gate=deferred();const reopenSaveGate=gate,reopenSaveRequest=reopenedSaveForm.onsubmit({preventDefault(){}});
- const recordedSave=calls.at(-1);assert.equal(recordedSave.body.key,'submitted-before-reopen');
- $('judgment-chooser').close();ctx.aiSettings=unsupportedSettings;ctx.openJudgmentChooser();assert.equal(box().querySelector('form'),reopenedSaveForm);
- reopenedSaveInput.value='typed-after-reopen';ctx.setError('decision-route-feedback','new session feedback');refreshSettings=unsupportedSettings;
- reopenSaveGate.resolve({});await reopenSaveRequest;gate=null;refreshSettings=null;
- assert.equal(box().querySelector('form'),reopenedSaveForm);assert.equal(reopenedSaveInput.value,'typed-after-reopen');assert.equal($('decision-route-feedback').textContent,'new session feedback');assert.equal(recordedSave.body.key,'submitted-before-reopen','only the captured value was sent');
- // Editing during the same pending request also leaves the new draft in place.
- gate=deferred();const editedSaveGate=gate,editedSaveRequest=reopenedSaveForm.onsubmit({preventDefault(){}});reopenedSaveInput.value='typed-during-save';
- editedSaveGate.resolve({});await editedSaveRequest;gate=null;assert.equal(box().querySelector('form'),reopenedSaveForm);assert.equal(reopenedSaveInput.value,'typed-during-save');
- // A newer adjacent model draft is not erased merely because the key text is unchanged.
- gate=deferred();const adjacentModelGate=gate,adjacentModelRequest=reopenedSaveForm.onsubmit({preventDefault(){}});reopenedSaveForm.querySelector('input[type="text"]').value='model-edited-during-save';
- adjacentModelGate.resolve({});await adjacentModelRequest;gate=null;assert.equal(box().querySelector('form'),reopenedSaveForm);assert.equal(reopenedSaveInput.value,'typed-during-save');assert.equal(reopenedSaveForm.querySelector('input[type="text"]').value,'model-edited-during-save');
- // Retained drafts still protect a browser reload when the Judgment dialog itself is closed.
- for(const id of ['ai-chooser','root-path-input']){const node=new Element('div');node.id=id;node.value='';node.open=false;node._root=true;}
- let unloadHandler;ctx.window={addEventListener:(name,handler)=>{if(name==='beforeunload')unloadHandler=handler;}};ctx.chooserDraftDirty=()=>false;ctx.searchDraftDirty=()=>false;ctx.workspaceDraft=null;ctx.telegramDraftOpen=false;
- vm.runInContext(app.split('\n').find(line=>line.startsWith("window.addEventListener('beforeunload'")),ctx);
- $('judgment-chooser').close();let unloadPrevented=false;const dirtyUnload={preventDefault(){unloadPrevented=true;}};unloadHandler(dirtyUnload);assert(unloadPrevented);assert.equal(dirtyUnload.returnValue,'');
- ctx.openJudgmentChooser();ctx.openDecisionChooser('cli:codex');button($('decision-discard'),'변경 사항 버리기').onclick();$('judgment-chooser').close();unloadPrevented=false;unloadHandler({preventDefault(){unloadPrevented=true;}});assert.equal(unloadPrevented,false,'an unchanged clean editor does not warn');
- // Same-session model-list completion retains custom policy/model/caret and updates capability availability.
- switchEditor('');const asyncSettings=base({transport:'direct_api',requested_model:'before-async'}, {route:{jev:{configured:true,model:'jev-latest',destination:'api.typesafe.ai'}}});box().dataset.state='';ctx.renderDecisionRoute(asyncSettings);switchEditor('cli:codex');
- const dirtyCatalogForm=box().querySelector('form'),dirtyCatalogInput=dirtyCatalogForm.querySelector('input[aria-label="직접 선택할 모델 이름"]');dirtyCatalogInput.value='custom-before-catalog';dirtyCatalogInput.focus();dirtyCatalogInput.setSelectionRange(2,8);
- gate=deferred();const dirtyCatalogGate=gate,dirtyCatalogButton=button(dirtyCatalogForm,'모델 목록 새로고침'),dirtyCatalogRequest=dirtyCatalogButton.onclick({currentTarget:dirtyCatalogButton});
- dirtyCatalogGate.resolve({route:'codex',source:'updated synthetic catalog',models:[{id:'catalog-after-draft',efforts:['low']}]});await dirtyCatalogRequest;gate=null;
- assert.equal(box().querySelector('form'),dirtyCatalogForm);assert.equal(dirtyCatalogInput.value,'custom-before-catalog');assert.equal(dirtyCatalogInput.selectionStart,2);assert.equal(dirtyCatalogInput.selectionEnd,8);assert.equal(dirtyCatalogForm.parentNode.disabled,true,'changed cached catalogue is part of render and capability fingerprints');assert.equal(ctx.decisionModelList('codex').models[0].id,'catalog-after-draft');
- // A capability check can update the current contract without discarding an already dirty custom model.
- switchEditor('');box().dataset.state='';ctx.renderDecisionRoute(asyncSettings);switchEditor('cli:codex');const dirtyCapabilityForm=box().querySelector('form'),dirtyCapabilityInput=dirtyCapabilityForm.querySelector('input[aria-label="직접 선택할 모델 이름"]');dirtyCapabilityInput.value='custom-capability-draft';
- gate=deferred();const dirtyCapabilityGate=gate,dirtyCapabilityButton=button(dirtyCapabilityForm,'모델 지정 지원 확인'),dirtyCapabilityRequest=dirtyCapabilityButton.onclick({currentTarget:dirtyCapabilityButton});
- refreshSettings=JSON.parse(JSON.stringify(asyncSettings));refreshSettings.decision_route.subscription_cli[0].model_selection='supported';dirtyCapabilityGate.resolve({model_override:true});await dirtyCapabilityRequest;gate=null;refreshSettings=null;
- assert.equal(box().querySelector('form'),dirtyCapabilityForm);assert.equal(dirtyCapabilityInput.value,'custom-capability-draft');assert.equal(dirtyCapabilityForm.parentNode.disabled,true);assert($('decision-route-feedback').textContent.includes('지정을 지원합니다'));
- // Model-only save sends the snapshot while retaining model text edited during the same request.
- switchEditor('jev:model');const sameSessionModelForm=box().querySelector('form'),sameSessionModel=sameSessionModelForm.querySelector('input[type="text"]');sameSessionModel.value='jev-submitted';
- gate=deferred();const sameSessionModelGate=gate,sameSessionModelRequest=sameSessionModelForm.onsubmit({preventDefault(){}});const sameSessionModelCall=calls.at(-1);sameSessionModel.value='jev-next-draft';
- refreshSettings=JSON.parse(JSON.stringify(asyncSettings));refreshSettings.decision_route.jev.model='jev-submitted';sameSessionModelGate.resolve({});await sameSessionModelRequest;gate=null;refreshSettings=null;
- assert.equal(sameSessionModelCall.body.model,'jev-submitted');assert.equal(box().querySelector('form'),sameSessionModelForm);assert.equal(sameSessionModel.value,'jev-next-draft');assert($('decision-route-feedback').textContent.includes('모델을 저장했습니다'));
- // Activation likewise preserves edits made to the submitted model while reporting actual server success.
- switchEditor('cli:codex');const sameSessionActivationForm=box().querySelector('form'),sameSessionActivationModel=sameSessionActivationForm.querySelector('input[aria-label="직접 선택할 모델 이름"]');for(const radio of sameSessionActivationForm.querySelectorAll('input[type="radio"]'))radio.checked=radio.value==='explicit';sameSessionActivationModel.value='submitted-activation-model';
- gate=deferred();const sameSessionActivationGate=gate,sameSessionActivationRequest=sameSessionActivationForm.onsubmit({preventDefault(){}}),sameSessionActivationCall=calls.at(-1);sameSessionActivationModel.value='activation-next-draft';
- refreshSettings=JSON.parse(JSON.stringify(asyncSettings));refreshSettings.decision_route.active={transport:'subscription_cli',engine:'codex',model_policy:'explicit',requested_model:'submitted-activation-model'};sameSessionActivationGate.resolve({});await sameSessionActivationRequest;gate=null;refreshSettings=null;
- assert.equal(sameSessionActivationCall.body.model,'submitted-activation-model');assert.equal(box().querySelector('form'),sameSessionActivationForm);assert.equal(sameSessionActivationModel.value,'activation-next-draft');assert(box().textContent.includes('요청 모델: submitted-activation-model'));assert($('decision-route-feedback').textContent.includes('경로를 바꿨습니다'));
- // Follow-main success also leaves an independent unsaved model editor intact in the same dialog.
- ctx.aiSettings={...asyncSettings,decision_route:{...asyncSettings.decision_route,mode:'explicit',follow:{available:true,model:'light',destination:'example.invalid'}}};ctx.renderJudgmentFollow();
- gate=deferred();const dirtyFollowGate=gate,dirtyFollowButton=button($('judgment-follow'),'따라가기 사용'),dirtyFollowRequest=dirtyFollowButton.onclick({currentTarget:dirtyFollowButton});
- refreshSettings=ctx.aiSettings;dirtyFollowGate.resolve({});await dirtyFollowRequest;gate=null;refreshSettings=null;assert.equal(box().querySelector('form'),sameSessionActivationForm);assert.equal(sameSessionActivationModel.value,'activation-next-draft');
- // Technical provenance (#559): route/policy/requested/observed are separate facts.
- const facts=Object.fromEntries(ctx.decisionFacts({purpose:'conversation-followup',outcome:'decided',route:'subscription_cli',engine:'codex',model_policy:'explicit',requested_model:'small',observed_model:'not reported',elapsed_seconds:1.5},{relation:{kind:'retry',work_id:'w0'}}));
- assert.equal(facts['판단 경로'],'subscription_cli / codex');assert.equal(facts['모델 정책'],'explicit');assert.equal(facts['요청 모델'],'small');assert.equal(facts['관측 모델'],'보고되지 않음');
- assert.equal(facts['역할'],'대화 해석');assert.equal(facts['기록된 관계'],'retry → w0');
- const legacy=Object.fromEntries(ctx.decisionFacts({purpose:'p',outcome:'decided',model:'gpt-4o-mini',observed_model:'gpt-4o-mini-2024-07-18'},{}));
- assert(legacy['요청 모델']==='gpt-4o-mini'&&legacy['관측 모델']==='gpt-4o-mini-2024-07-18'&&legacy['판단 경로']==='direct_api');
- assert(!('기록된 관계' in legacy),'only a follow-up judgment has a recorded relation');
- // #794: the model's reported confidence is shown, labelled as uncalibrated; absent when not reported.
- const confident=Object.fromEntries(ctx.decisionFacts({purpose:'p',outcome:'decided',confidence:0.874},{}));
- assert.equal(confident['확신도'],'87% · 모델이 보고한 값, 보정되지 않음');assert(!('확신도' in legacy),'no confidence row without a reported value');
- console.log('decision route DOM checks passed');
-})().catch(error=>{console.error(error);process.exit(1);});
+const box=$('decision-route');
+const fixtures=(overrides={})=>({
+ mode:'follow_main',main:'openai',active:{source:'follow',transport:'direct_api',available:true,requested_model:'light'},
+ follow:{available:true,model:'light',candidates:['light','backup'],destination:'api.example.invalid'},
+ direct_api:{configured:false},
+ apis:[
+  {id:'openai',name:'OpenAI API',configured:true,ranked_models:['light','backup'],model_efforts:{light:['low','medium']}},
+  {id:'anthropic',name:'Anthropic API',configured:false,ranked_models:['haiku']},
+  {id:'openrouter',name:'OpenRouter',configured:true,ranked_models:['openai/light']}
+ ],
+ jev:{configured:false,model:'jev-latest'},
+ subscription_cli:[
+  {id:'codex',name:'Codex',installed:true,login:'signed-in',model_selection:'unchecked',ranked_models:['small'],model_efforts:{small:['low']}},
+  {id:'claude-code',name:'Claude Code',installed:false,login:'unchecked',model_selection:'unchecked'}
+ ],...overrides
+});
+const render=(decision_route,reset=true)=>ctx.renderDecisionRoute({decision_route},reset);
+const form=()=>box.querySelector('form');
+const find=(selector)=>box.querySelector(selector);
+const provider=()=>find('select[aria-label="판단 AI"]');
+const model=()=>find('select[aria-label="직접 선택할 모델 이름"]');
+const effort=()=>find('select[aria-label="추론 강도"]');
+const submitButton=()=>form().querySelector('button[type="submit"]');
+const submit=()=>form().onsubmit({preventDefault(){}});
+const button=(label,root=box)=>descendants(root).find(node=>node.tag==='button'&&node.textContent===label);
+const click=(label,root=box)=>{const target=button(label,root);assert(target,label);return target.onclick({currentTarget:target});};
+const select=(control,value)=>{control.value=value;return control.onchange();};
+const choosePolicy=value=>{
+ const radios=form().querySelectorAll('input[type="radio"]'),chosen=radios.find(node=>node.value===value);
+ assert(chosen,value);for(const radio of radios)radio.checked=radio===chosen;
+ return chosen.onchange();
+};
+const lastCall=(path,body)=>assert.deepEqual(JSON.parse(JSON.stringify(calls.at(-1))),{path:'/api/decision-route/'+path,body});
+const options=select=>select.children.map(option=>option.value);
+const listed=[
+ {id:'full',rank:null,efforts:[],recommended:false},
+ {id:'other-light',rank:1,efforts:['low'],recommended:true},
+ {id:'light',rank:0,efforts:['low','medium'],recommended:true}
+];
 """
+
+
+def run_dom(script):
+    node = shutil.which("node")
+    if node is None:
+        pytest.skip("Node is required for DOM checks")
+    result = subprocess.run(
+        [node, "-e", DOM_SETUP + "\n(async()=>{\n" + script + "\n})().catch(error=>{console.error(error);process.exit(1);});",
+         str(ROOT / "app.js")],
+        capture_output=True, text=True, timeout=20,
+    )
+    assert result.returncode == 0, result.stderr + result.stdout
 
 
 def test_decision_route_section_is_a_separate_role_in_the_ai_settings():
@@ -430,99 +128,286 @@ def test_decision_route_section_is_a_separate_role_in_the_ai_settings():
     ai = HTML[HTML.index('id="settings-ai"'):HTML.index('id="settings-files"')]
     assert 'id="decision-route"' in ai
     assert "renderDecisionRoute(settings)" in APP
-    # The decision UI only talks to its own endpoints, never the Work route switch.
     block = APP[APP.index("const DECISION_TRANSPORT_LABEL="):APP.index("function openMobileDetail(")]
     assert "/api/ai-route" not in block and "/api/subscription-engines/connect" not in block
     assert "/api/decision-route/activate" in block and "/api/decision-route/credential" in block
 
 
-def test_decision_route_renderer_behaviour():
-    node = shutil.which("node")
-    if node is None:
-        return
-    result = subprocess.run([node, "-e", DOM_CHECKS, str(ROOT / "app.js")], capture_output=True, text=True, timeout=20)
-    assert result.returncode == 0, result.stderr + result.stdout
-    assert "decision route DOM checks passed" in result.stdout
+def test_provider_select_tracks_saved_mode_and_api_key_state():
+    run_dom(r"""
+render(fixtures());ctx.openJudgmentChooser(opener);
+assert.equal(document.activeElement,provider());
+assert.deepEqual(options(provider()),['follow_main','openai','anthropic','openrouter','jev','codex','claude-code','off']);
+assert.equal(provider().value,'follow_main');
+assert.equal(provider().children[2].textContent,'Anthropic API · 키 필요');
+assert.equal(provider().children[2].disabled,false);
+assert.equal(provider().children[6].textContent,'Claude Code · 설치 안 됨');
+assert.equal(provider().children[6].disabled,true);
+assert.equal(box.querySelectorAll('select').length,1);
+assert(box.textContent.includes('후보 모델: light, backup'));
+assert.equal(calls.length,0,'rendering and opening never fetch models');
+select(provider(),'anthropic');
+assert.equal(provider().value,'anthropic','the select shows the chosen provider');
+assert(box.textContent.includes('키 필요 — 기본 AI 설정에서 Anthropic API 키를 저장하세요.'));
+assert.equal(submitButton().disabled,true);
+assert(!find('input[type="password"]'));
+
+const route=fixtures({mode:'explicit',active:{transport:'direct_api',api:'anthropic',provider:'anthropic',source:'owner',requested_model:'haiku',effort:'low',model_policy:'explicit'},
+ effective:{text:'effective Anthropic judgment'}});
+route.apis[1].configured=true;
+render(route);
+assert.equal(provider().value,'anthropic');
+assert.equal(provider().children[2].textContent,'Anthropic API');
+assert.equal(submitButton().disabled,false,'apis configured is authoritative even when direct_api is false');
+assert(!box.textContent.includes('키 필요 —'));
+assert($('judgment-follow').textContent.includes('사용 방식Anthropic API · haiku · 추론 강도: low'));
+assert($('judgment-follow').textContent.includes('effective Anthropic judgment'));
+assert.deepEqual(options(model()),['','haiku'],'an active pin remains available without a stored list');
+assert(!effort());
+render(fixtures({mode:'explicit',active:{transport:'direct_api',source:'owner',requested_model:'legacy'}}));
+assert.equal(provider().value,'openai');
+assert($('judgment-follow').textContent.includes('OpenAI API · legacy'));
+render(fixtures({mode:'off',active:{transport:'off',source:'owner'}}));
+assert.equal(provider().value,'off');
+assert.equal(box.querySelectorAll('input[type="radio"]').length,0);
+await submit();lastCall('activate',{transport:'off'});
+""")
 
 
-@pytest.mark.parametrize("scenario", ["qualified", "candidate"])
-def test_judgment_follow_distinguishes_qualified_route_from_first_candidate(scenario):
-    node = shutil.which("node")
-    if node is None:
-        pytest.skip("Node is required for DOM checks")
-    # Reuse the DOM/VM setup without running the long editor interaction suite.
-    script = DOM_CHECKS.split("(async()=>{", 1)[0] + r"""
-const followBox=new Element('div');followBox.id='judgment-follow';
-const follow={available:true,model:'first-ranked-model',destination:'candidate.example.invalid'};
-const render=active=>{
- ctx.aiSettings={decision_route:{mode:'follow_main',active,follow}};
- ctx.renderJudgmentFollow();return $('judgment-follow').textContent;
-};
-if(process.argv[2]==='qualified'){
- const active={source:'follow',available:true,transport:'subscription_cli',requested_model:'qualified-model',destination:'qualified.example.invalid'};
- const text=render(active);
- assert(text.includes('qualified-model'),'the qualified route supplies the model in use');
- assert(!text.includes('first-ranked-model'),'the first candidate is not the qualified model');
- assert(text.includes('을(를) 씁니다.'),'a qualified follow route is in use');
- assert(text.includes('전송 대상: qualified.example.invalid'));
- assert(!text.includes('candidate.example.invalid'),'the active destination takes precedence');
- assert(render({...active,destination:undefined}).includes('전송 대상: candidate.example.invalid'),'missing active destination falls back to the preview');
-}else{
- for(const active of [undefined,{transport:'none'},{source:'follow',available:false},
-   {source:'owner',available:true,requested_model:'explicit-model'},
-   {source:'default',available:true,requested_model:'default-model'}]){
-  const text=render(active);
-  assert(text.includes('first-ranked-model'),'unqualified follow shows the first candidate');
-  assert(!text.includes('을(를) 씁니다.'),'a candidate must not be described as in use');
-  assert(text.includes('부터 확인해 사용합니다.'),'the model will be checked first');
-  assert(text.includes('전송 대상: candidate.example.invalid'));
- }
- follow.available=false;follow.reason='synthetic unavailable reason';
- assert(render({transport:'none'}).includes('기본 AI를 따라갈 수 없습니다: synthetic unavailable reason'));
-}
-assert.equal(calls.length,0,'rendering makes no API requests');
-"""
-    result = subprocess.run(
-        [node, "-e", script, str(ROOT / "app.js"), scenario],
-        capture_output=True, text=True, timeout=20,
-    )
-    assert result.returncode == 0, result.stderr + result.stdout
+def test_follow_auto_and_pin_use_current_main_catalogue_and_effort():
+    run_dom(r"""
+const route=fixtures({main:'anthropic'});
+modelReplies.anthropic=listed;
+render(route);
+await submit();lastCall('activate',{transport:'follow_main'});
+assert($('judgment-feedback').textContent.includes('백그라운드에서 시작했습니다'));
+assert(!model()&&!effort());
+await choosePolicy('explicit');lastCall('models',{route:'anthropic'});
+assert.equal(model().tag,'select');
+assert(!find('datalist')&&!find('input[type="text"]'));
+assert.deepEqual(options(model()),['','light','other-light','full']);
+assert.equal(model().children[1].textContent,'light · 추천');
+assert.equal(model().children[2].textContent,'other-light · 추천');
+assert.equal(model().children[3].textContent,'full');
+assert.deepEqual(options(effort()),['','low','medium']);
+assert.equal(effort().children[0].textContent,'기본');
+select(model(),'full');assert(!effort());
+select(model(),'light');select(effort(),'medium');
+await submit();lastCall('activate',{transport:'follow_main',model:'light',effort:'medium'});
+await choosePolicy('fastest_qualified');assert(!effort()&&!model());
+await submit();lastCall('activate',{transport:'follow_main'});
+await choosePolicy('explicit');
+assert.equal(calls.filter(call=>call.path.endsWith('/models')).length,1);
+await click('모델 목록 새로고침');lastCall('models',{route:'anthropic'});
+assert.equal(calls.filter(call=>call.path.endsWith('/models')).length,2);
+
+render({...route,follow_pin:{model:'unlisted-pin',effort:'low'},follow:{...route.follow,pinned:true},
+ active:{...route.active,requested_model:'unlisted-pin',effort:'low',model_policy:'explicit'}});
+assert.equal(model().value,'unlisted-pin');
+assert($('judgment-follow').textContent.includes('기본 AI 따라가기 · unlisted-pin (고정)'));
+assert(!effort(),'unsupported effort is not exposed for an unlisted model');
+""")
 
 
-def test_settings_names_the_fastest_qualified_model_and_why():
-    """#472: the follow row names the chosen model, its measured speed and what it beat."""
-    node = shutil.which("node")
-    if node is None:
-        pytest.skip("Node is required for DOM checks")
-    script = DOM_CHECKS.split("(async()=>{", 1)[0] + r"""
-const followBox=new Element('div');followBox.id='judgment-follow';
-for(const id of ['judgment-feedback','active-ai'])if(!$(id))new Element('p').id=id;
-const follow={available:true,model:'gpt-5.6-luna',model_policy:'fastest_qualified',candidates:['gpt-5.6-luna','gpt-5.6-terra'],destination:'OpenAI (Codex 구독 계정)'};
-const render=active=>{ctx.aiSettings={decision_route:{mode:'follow_main',active,follow}};ctx.renderJudgmentFollow();return $('judgment-follow').textContent;};
-(async()=>{
-const active={source:'follow',available:true,transport:'subscription_cli',model_policy:'fastest_qualified',requested_model:'gpt-5.6-luna',
- qualification:{model:'gpt-5.6-luna',p50_seconds:3.214,p95_seconds:4.9,pass_rate:0.923,
-  compared:[{model:'gpt-5.6-luna',qualified:true,p50_seconds:3.214},{model:'gpt-5.6-terra',qualified:true,p50_seconds:11.2},{model:'gpt-6-luna',qualified:false,failed_case:'reference-to-previous-result'}]}};
-let text=render(active);
-assert(text.includes('적격성 검사를 통과한 가장 빠른 모델 gpt-5.6-luna을(를) 씁니다.'),text);
-assert(text.includes('응답 시간 중앙값 3.2초, 95% 4.9초.'),text);
-assert(text.includes('비교한 후보: gpt-5.6-terra 11.2초, gpt-6-luna 검사 미통과'),text);
-text=render(undefined);
-assert(text.includes('후보 gpt-5.6-luna, gpt-5.6-terra을(를) 모두 확인해 가장 빠른 적격 모델을 씁니다.'),text);
-assert(!text.includes('을(를) 씁니다. 응답'),'no measured speed before a qualification');
-text=render({...active,qualification:{model:'gpt-5.6-luna'}});
-assert(!text.includes('중앙값'),'a record without a measurement claims no speed');
-assert(!$('judgment-follow').textContent.includes('다시 확인'),'a route under the current policy offers no re-check');
-// A follow row qualified by #679 cheapest-first: the owner can re-check it; nothing runs by itself.
-text=render({source:'follow',available:true,transport:'subscription_cli',model_policy:'lowest_qualified',requested_model:'gpt-5.6-terra'});
-assert(text.includes('이전 방식(처음 통과한 가장 저렴한 모델)'),text);
-const recheck=descendants($('judgment-follow')).find(node=>node.tag==='button'&&node.textContent==='다시 확인');
-assert(recheck,'the outdated follow row offers 다시 확인');
-calls.length=0;await recheck.onclick({currentTarget:recheck});
-assert.deepEqual(JSON.parse(JSON.stringify(calls.at(-1))),{path:'/api/decision-route/activate',body:{transport:'follow_main'}});
-console.log('fastest judgment DOM checks passed');
-})().catch(error=>{console.error(error);process.exit(1);});
-"""
-    result = subprocess.run([node, "-e", script, str(ROOT / "app.js")], capture_output=True, text=True, timeout=20)
-    assert result.returncode == 0, result.stderr + result.stdout
-    assert "fastest judgment DOM checks passed" in result.stdout
+def test_configured_anthropic_submits_pin_and_optional_effort():
+    run_dom(r"""
+const route=fixtures({
+ model_lists:{anthropic:{source:'saved',models:[{id:'haiku',rank:0,recommended:true,efforts:['low']},{id:'opus',efforts:[]}]}},
+ active:{transport:'off'},mode:'off'
+});
+route.apis[1].configured=true;
+route.apis[1].model_efforts={opus:['high']};
+render(route);select(provider(),'anthropic');
+await choosePolicy('explicit');assert.equal(calls.length,0,'a saved list does not need an automatic refresh');
+assert(submitButton().disabled,'pick a model before submitting a pin');
+select(model(),'haiku');assert(effort());assert.equal(effort().value,'');
+await submit();lastCall('activate',{transport:'direct_api',api:'anthropic',model:'haiku'});
+select(model(),'opus');assert.deepEqual(options(effort()),['','high']);
+select(effort(),'high');await submit();lastCall('activate',{transport:'direct_api',api:'anthropic',model:'opus',effort:'high'});
+await choosePolicy('fastest_qualified');await submit();lastCall('activate',{transport:'direct_api',api:'anthropic'});
+""")
+
+
+def test_cli_restrictions_and_engine_default_policy():
+    run_dom(r"""
+const route=fixtures();
+route.subscription_cli[1].installed=true;
+route.subscription_cli[1].login='signed-out';
+render(route);assert(provider().children[6].disabled);
+assert(provider().children[6].textContent.includes('로그인 안 됨'));
+route.subscription_cli[1].isolated_deployment=true;
+render(route);assert(provider().children[6].textContent.includes('지원 안 함'));
+route.subscription_cli[1].isolated_deployment=false;
+route.subscription_cli[1].login='signed-in';
+route.subscription_cli[1].tool_surface='refused';route.subscription_cli[1].tool_surface_detail='feature';
+render(route);assert(provider().children[6].disabled);
+assert(provider().children[6].textContent.includes('켜진 기능: feature'));
+
+select(provider(),'codex');
+assert.deepEqual(form().querySelectorAll('input[type="radio"]').map(node=>node.value),['fastest_qualified','explicit','engine_default']);
+await submit();lastCall('activate',{transport:'subscription_cli',engine:'codex',model_policy:'fastest_qualified'});
+await choosePolicy('engine_default');await submit();
+lastCall('activate',{transport:'subscription_cli',engine:'codex',model_policy:'engine_default'});
+modelReplies.codex=[{id:'small',rank:0}];
+await choosePolicy('explicit');lastCall('models',{route:'codex'});
+select(model(),'small');select(effort(),'low');await submit();
+lastCall('activate',{transport:'subscription_cli',engine:'codex',model_policy:'explicit',model:'small',effort:'low'});
+route.subscription_cli[0].model_selection='unsupported';
+render(route);select(provider(),'codex');
+assert.deepEqual(form().querySelectorAll('input[type="radio"]').map(node=>node.value),['engine_default']);
+await submit();lastCall('activate',{transport:'subscription_cli',engine:'codex',model_policy:'engine_default'});
+""")
+
+
+def test_openai_and_jev_credentials_and_jev_model_selector():
+    run_dom(r"""
+const route=fixtures({mode:'off',active:{transport:'off'}});
+route.apis[0].configured=false;
+route.direct_api.configured=true;
+render(route);select(provider(),'openai');
+assert(submitButton().disabled,'legacy direct_api state cannot enable activation');
+click('전용 키 설정');const key=find('input[type="password"]');
+key.value='synthetic';
+const changed=structuredClone(route);
+Object.assign(changed.apis[0],{has_decision_key:true,configured:true});
+responder=()=>changed;
+await key.parentNode.onsubmit({preventDefault(){}});
+lastCall('credential',{transport:'direct_api',key:'synthetic'});
+assert.equal(provider().value,'openai');assert(!submitButton().disabled);
+assert(!find('input[type="password"]'));assert(button('키 변경'));
+responder=null;
+
+select(provider(),'jev');click('전용 키 설정');
+const jevKey=find('input[type="password"]');jevKey.value='synthetic';
+const withJev=structuredClone(changed);withJev.jev.configured=true;
+responder=()=>withJev;
+await jevKey.parentNode.onsubmit({preventDefault(){}});
+lastCall('credential',{transport:'jev',key:'synthetic',model:'jev-latest'});
+assert(model(),'saving the key exposes the TypeSafe picker without resetting the provider');
+assert.equal(model().value,'jev-latest');
+assert(!effort());assert(!find('input[type="text"]'));
+responder=null;modelReplies.jev=[{id:'jev-listed'}];
+await click('모델 목록 새로고침');lastCall('models',{route:'jev'});
+select(model(),'jev-listed');assert(submitButton().disabled,'saving the choice and activating Jev are separate');
+const jevModelForm=box.querySelectorAll('form').find(form=>form.contains(model()));
+await jevModelForm.onsubmit({preventDefault(){}});
+lastCall('credential',{transport:'jev',model:'jev-listed'});
+await submit();lastCall('activate',{transport:'jev'});
+""")
+
+
+def test_model_and_key_drafts_keep_focus_and_survive_polling():
+    run_dom(r"""
+const route=fixtures({model_lists:{openai:{source:'saved',models:listed}}});
+render(route);ctx.openJudgmentChooser(opener);
+await choosePolicy('explicit');select(model(),'other-light');
+const draft=model();draft.focus();
+const listing=deferred();responder=()=>listing.promise;
+const refresh=click('모델 목록 새로고침');
+render({...route,effective:{text:'updated during polling'}},false);
+assert.equal(model(),draft);assert.equal(document.activeElement,draft);
+listing.resolve({route:'openai',source:'fresh',models:[{id:'new-recommended',recommended:true,efforts:['low']}]});
+await refresh;responder=null;
+assert.equal(model(),draft);assert.equal(model().value,'other-light');
+assert(options(model()).includes('new-recommended'));
+assert.equal(document.activeElement,draft);
+assert($('judgment-follow').textContent.includes('updated during polling'));
+
+select(provider(),'openai');assert.equal(provider().value,'follow_main');
+assert($('decision-discard').textContent.includes('변경 사항 버리기'));
+click('계속 편집',$('decision-discard'));assert.equal(model().value,'other-light');
+select(provider(),'openai');click('변경 사항 버리기',$('decision-discard'));assert.equal(provider().value,'openai');
+click('전용 키 설정');const secret=find('input[type="password"]');
+secret.value='draft-key';secret.focus();secret.setSelectionRange(2,5);
+render({...route,effective:{text:'polled again'}},false);
+assert.equal(find('input[type="password"]'),secret);
+assert.equal(document.activeElement,secret);assert.equal(secret.selectionStart,2);assert.equal(secret.selectionEnd,5);
+$('judgment-chooser-close').onclick();assert(dialog.open);
+click('변경 사항 버리기',$('decision-discard'));
+assert(!dialog.open);assert.equal(document.activeElement,opener);
+assert(!ctx.decisionDraftDirty());assert.equal(provider().value,'follow_main');
+""")
+
+
+def test_changed_follow_main_retains_draft_and_requires_reopening():
+    run_dom(r"""
+const route=fixtures({model_lists:{openai:{models:listed}}});
+render(route);await choosePolicy('explicit');select(model(),'other-light');
+const draft=model();
+const next={...route,main:'anthropic'};
+render(next,false);
+assert.equal(model(),draft);assert(submitButton().disabled);
+assert(box.textContent.includes('설정 정보가 바뀌어'));
+await submit();assert.equal(calls.length,0);
+click('현재 설정으로 다시 열기');click('변경 사항 버리기',$('decision-discard'));
+assert(!model());assert(!submitButton().disabled);
+await choosePolicy('explicit');lastCall('models',{route:'anthropic'});
+""")
+
+
+def test_pinned_model_list_auto_fetch_retries_only_on_explicit_refresh():
+    run_dom(r"""
+const route=fixtures({main:'claude-code',follow:{available:true,candidates:['haiku']}});
+render(route);ctx.openJudgmentChooser(opener);
+responder=()=>{throw new Error('model list temporarily unavailable');};
+await choosePolicy('explicit');lastCall('models',{route:'claude-code'});
+assert($('decision-route-feedback').textContent.includes('temporarily unavailable'));
+await choosePolicy('fastest_qualified');await choosePolicy('explicit');
+assert.equal(calls.length,1);
+responder=null;modelReplies['claude-code']=[{id:'haiku',rank:0}];
+await click('모델 목록 새로고침');lastCall('models',{route:'claude-code'});
+assert(options(model()).includes('haiku'));
+""")
+
+
+def test_failed_activation_and_same_session_edits_keep_the_draft():
+    run_dom(r"""
+const route=fixtures({model_lists:{openai:{models:listed}}});
+render(route);await choosePolicy('explicit');
+responder=()=>{throw new Error('synthetic refused choice');};
+await submit();
+assert.equal(refreshes,0);assert($('judgment-feedback').textContent.includes('synthetic refused choice'));
+assert.equal(model().value,'light');
+
+const activation=deferred();responder=()=>activation.promise;
+const request=submit();lastCall('activate',{transport:'follow_main',model:'light'});
+select(model(),'other-light');
+activation.resolve({...route,follow_pin:{model:'light'}});
+await request;
+assert.equal(model().value,'other-light');
+assert(ctx.decisionDraftDirty());assert($('judgment-feedback').textContent.includes('백그라운드에서 시작했습니다'));
+""")
+
+
+def test_qualified_model_speed_and_technical_provenance():
+    run_dom(r"""
+const route=fixtures({
+ active:{source:'follow',available:true,transport:'subscription_cli',model_policy:'fastest_qualified',requested_model:'qualified-model',
+  destination:'qualified.example.invalid',qualification:{model:'qualified-model',p50_seconds:3.214,p95_seconds:4.9,
+   compared:[{model:'qualified-model',qualified:true,p50_seconds:3.214},{model:'backup',qualified:true,p50_seconds:11.2},{model:'failed',qualified:false}]}},
+ effective:{text:'Qualified model is active'}
+});
+render(route);
+let text=$('judgment-follow').textContent;
+assert(text.includes('기본 AI 따라가기 · qualified-model'));
+assert(!text.includes('light'));
+assert(text.includes('Qualified model is active'));
+assert(text.includes('qualified.example.invalid'));
+assert(text.includes('응답 시간 중앙값 3.2초, 95% 4.9초.'));
+assert(text.includes('비교한 후보: backup 11.2초, failed 검사 미통과'));
+render(fixtures({active:{transport:'none'},effective:{text:'Qualification pending'}}));
+text=$('judgment-follow').textContent;
+assert(text.includes('Qualification pending'));
+assert(!text.includes('light')&&!text.includes('중앙값'));
+assert(box.textContent.includes('후보 모델: light, backup'));
+assert.equal(calls.length,0);
+
+const facts=Object.fromEntries(ctx.decisionFacts({purpose:'conversation-followup',outcome:'decided',route:'subscription_cli',engine:'codex',model_policy:'explicit',requested_model:'small',observed_model:'not reported',elapsed_seconds:1.5},{relation:{kind:'retry',work_id:'w0'}}));
+assert.equal(facts['판단 경로'],'subscription_cli / codex');assert.equal(facts['모델 정책'],'explicit');assert.equal(facts['요청 모델'],'small');assert.equal(facts['관측 모델'],'보고되지 않음');
+assert.equal(facts['역할'],'대화 해석');assert.equal(facts['기록된 관계'],'retry → w0');
+const legacy=Object.fromEntries(ctx.decisionFacts({purpose:'p',outcome:'decided',model:'requested',observed_model:'observed'},{}));
+assert.equal(legacy['요청 모델'],'requested');assert.equal(legacy['관측 모델'],'observed');assert.equal(legacy['판단 경로'],'direct_api');
+assert(!('기록된 관계' in legacy));
+const confident=Object.fromEntries(ctx.decisionFacts({purpose:'p',outcome:'decided',confidence:0.874},{}));
+assert.equal(confident['확신도'],'87% · 모델이 보고한 값, 보정되지 않음');assert(!('확신도' in legacy));
+""")

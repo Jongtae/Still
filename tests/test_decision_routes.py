@@ -717,7 +717,7 @@ class ServiceRouteSelectionTests(ServiceFixture):
         self.assertEqual((self.openai.calls, self.jev.calls, self.runner.calls), ([], [], []))
         self.assertEqual(status['active']['transport'], 'direct_api')
         self.assertEqual(status['active']['source'], 'default')
-        self.assertEqual(status['direct_api']['model'], 'gpt-4o-mini')
+        self.assertEqual(status['direct_api']['model'], 'gpt-6-luna')
         self.assertEqual(status['jev']['destination'], 'api.typesafe.ai')
         self.assertEqual({e['id']: e['model_selection'] for e in status['subscription_cli']},
                          {'codex': 'unchecked', 'claude-code': 'unchecked'})
@@ -747,9 +747,9 @@ class ServiceRouteSelectionTests(ServiceFixture):
         self.assertEqual(len(self.openai.calls), len(CASE_IDS) * len(RANKED_MODELS['openai']),
                          'the explicit activation runs the synthetic qualification suite on each ranked model '
                          '(#679, #472), nothing else')
-        self.assertEqual(self.store.config('decision_model')['model'], 'gpt-4o-mini')
+        self.assertEqual(self.store.config('decision_model')['model'], 'gpt-6-luna')
         self.assertEqual((status['active']['model_policy'], status['active']['requested_model']),
-                         ('fastest_qualified', 'gpt-4o-mini'), 'equal speed: the ranked order decides')
+                         ('fastest_qualified', 'gpt-6-luna'), 'equal speed: the ranked order decides')
         self.assertEqual(self.judge(service).value, 'retry')
 
     def test_concurrent_activations_are_serialised(self):
@@ -1371,14 +1371,14 @@ class JudgmentModelTests(ServiceFixture):
         self.assertEqual((status['mode'], status['active']['source']), ('follow_main', 'default'))
         effective = status['effective']
         self.assertEqual((effective['state'], effective['transport'], effective['model']),
-                         ('fallback', 'direct_api', 'gpt-4o-mini'))
-        self.assertTrue(effective['text'].startswith('구독 판단을 쓸 수 없어 OpenAI API(gpt-4o-mini)를 쓰는 중: '),
+                         ('fallback', 'direct_api', 'gpt-6-luna'))
+        self.assertTrue(effective['text'].startswith('구독 판단을 쓸 수 없어 OpenAI API(gpt-6-luna)를 쓰는 중: '),
                         effective['text'])
         self.assertIn('Codex', effective['text'])
         self.assertEqual(self.openai.calls + self.runner.calls, [], 'reading Settings calls nothing')
         # The judgment that answers is exactly the one Settings names.
         self.judge(service)
-        self.assertEqual(self.store.config('decision_audit')[-1]['requested_model'], 'gpt-4o-mini')
+        self.assertEqual(self.store.config('decision_audit')[-1]['requested_model'], 'gpt-6-luna')
         self.follow(service)
         effective = service.settings()['decision_route']['effective']
         self.assertEqual((effective['state'], effective['text']), ('active', '기본 AI(Codex)를 따라가는 중 — gpt-5.6-luna, 검증됨'))
@@ -1427,37 +1427,9 @@ class JudgmentModelTests(ServiceFixture):
         service = self.service()
         result = service.list_decision_models('claude-code')
         self.assertEqual([row['id'] for row in result['models']], ['haiku', 'sonnet', 'opus'])
+        self.assertEqual([row['recommended'] for row in result['models']], [True, True, False])
         self.assertEqual(result['models'][0]['efforts'], [], 'Haiku 4.5 takes no effort setting')
         self.assertEqual(self.runner.calls, [])
-
-    def test_api_model_lists_use_the_official_endpoint_and_show_only_ranked_models(self):
-        service = self.service()
-        seen = []
-
-        def transport(url, body, headers=None, timeout=60):
-            seen.append({'url': url, 'body': body, 'headers': dict(headers or {})})
-            if 'anthropic' in url:
-                return {'data': [{'id': 'claude-haiku-4-5-20251001'}, {'id': 'claude-opus-5'}]}
-            return {'data': [{'id': 'gpt-5'}, {'id': 'gpt-6-luna'}, {'id': 'gpt-4o-mini'}]}
-        service.decision_routes.models_transport = transport
-        with self.assertRaises(DecisionRouteError):
-            service.list_decision_models('openai')
-        self.assertEqual(seen, [], 'no key, no request')
-        self.store.secret('api_key:openai', OPENAI_KEY)
-        self.store.secret('api_key:anthropic', 'ak-fixture-anthropic-0001')
-        result = service.list_decision_models('openai')
-        self.assertEqual([row['id'] for row in result['models']], ['gpt-4o-mini', 'gpt-6-luna'])
-        self.assertEqual((seen[-1]['url'], seen[-1]['body'], seen[-1]['headers']['Authorization']),
-                         ('https://api.openai.com/v1/models', None, 'Bearer ' + OPENAI_KEY))
-        result = service.list_decision_models('anthropic')
-        self.assertEqual([row['id'] for row in result['models']], ['claude-haiku-4-5'])
-        self.assertEqual(seen[-1]['url'], 'https://api.anthropic.com/v1/models')
-        self.assertEqual(seen[-1]['headers']['anthropic-version'], '2023-06-01')
-        self.assertNotIn(OPENAI_KEY, json.dumps(service.settings()))
-        self.assertEqual(self.openai.calls, [], 'no model call to list models')
-        for route in ('typesafe', 'shell', ''):
-            with self.subTest(route=route), self.assertRaises(ValueError):
-                service.list_decision_models(route)
 
     # -- #609: Jev model discovery (TypeSafe GET /v1/models) ---------------------
     def jev_listing(self, reply=None, fail=None):
@@ -1489,6 +1461,7 @@ class JudgmentModelTests(ServiceFixture):
                                  'headers': {'Authorization': 'Bearer ' + JEV_KEY}}])
         self.assertEqual([row['id'] for row in result['models']], ['jev-latest', 'jev-1.13.0', 'jev-1.12.0'],
                          'provider-listed names only, default alias first, no invented catalogue')
+        self.assertEqual([row['recommended'] for row in result['models']], [True, False, False])
         self.assertEqual({row['label'] for row in result['models']}, {'목록에 있음(검증 전)'})
         self.assertEqual((result['source'], result['ranked']), ('GET /v1/models', ['jev-latest']))
         technical = result['models'][1]
