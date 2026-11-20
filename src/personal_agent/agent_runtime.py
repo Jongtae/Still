@@ -483,6 +483,11 @@ ENTRUSTED_LINE_ARGUMENTS={
  'expected_version':'For revise: the version you read (list, read or open). A newer version wins and is shown to you.',
  'version':'For undo: the version to undo (the current one).',
  'account_every_days':'How often the line gives an account of itself (default 7): 1-12 days, or whole weeks up to 84 days.',
+ # #1058: a run used this field as its progress log, so every run sent the owner a plan-change notice.
+ 'open_matters':('For open or revise: what later runs must still do, wait for or avoid, and a recorded end with its reason; '
+                 'at most 1000 characters, in plain words. It is the line\'s plan, not a log: what a run observed or did '
+                 '(figures, prices, times checked) goes in that run\'s own answer, whose start later runs receive. Change it only '
+                 'when what later runs should do changes; a run\'s change is shown to the owner with its before and after.'),
 }
 #: #774 step 2: ask the owner, in the paired Telegram chat, for a current position.
 ASK_LOCATION_DESCRIPTION=('Ask the owner through their paired Telegram chat to share their current location for this request. Use it only when the answer depends on where the owner is now and the current context does not already hold a fresh position. '
