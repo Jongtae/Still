@@ -119,9 +119,12 @@ RANKED_MODELS = {
     # Anthropic API.  Source, checked 2026-11-20: Anthropic's current model
     # table (Claude Haiku 5.5, $0.10/$0.50 per MTok up to 100K-token prompts,
     # the cheapest current model).  Haiku 4.5 stays as the fallback for a key
-    # whose model list does not include Haiku 5.5 (#1047).
-    'anthropic': ('claude-haiku-5-5', 'claude-haiku-4-5'),
-    'openrouter': ('openai/gpt-6-luna', 'anthropic/claude-haiku-5-5'),
+    # whose model list does not include Haiku 5.5 (#1047).  Sonnet 5.5
+    # ($2/$10 per MTok) is the next tier, as Claude Code's list has sonnet
+    # after haiku, so a key whose Haiku models fail the suite still gets a
+    # qualified judgment model instead of none (#1067).
+    'anthropic': ('claude-haiku-5-5', 'claude-haiku-4-5', 'claude-sonnet-5-5'),
+    'openrouter': ('openai/gpt-6-luna', 'anthropic/claude-haiku-5-5', 'anthropic/claude-sonnet-5-5'),
 }
 # OpenAI's model list has no capability fields. Use the documented levels.
 # https://developers.openai.com/api/docs/models
@@ -418,6 +421,7 @@ class DecisionRoutes:
         self.spawn = spawn or _spawn_thread
         #: The running job's checkpoint (progress + cancellation), or None.
         self._checkpoint = None
+        self._candidate_position = {}  # #1067: which candidate of how many a running check is on
         #: Whether the running job may still commit (checked under service.lock), or None.
         self._job_live = None
         #: True while a background job (not an explicit activation) holds
@@ -945,8 +949,10 @@ class DecisionRoutes:
 
     def _job_checkpoint(self, job, model, case_id, index):
         """Record progress; stop when the owner cancelled or a newer switch replaced the job."""
+        # #1067: which candidate of how many, so a later candidate's cases never read as the chosen model's.
         row = self._update_job(job['option'], job['id'],
-                               step={'model': model, 'case': case_id, 'index': index + 1, 'cases': len(CASE_IDS)})
+                               step={'model': model, 'case': case_id, 'index': index + 1, 'cases': len(CASE_IDS),
+                                     **self._candidate_position})
         if row is None or row.get('state') == JOB_CANCELLING or not self._job_current(row):
             raise QualificationCancelled()
 
@@ -1210,10 +1216,12 @@ class DecisionRoutes:
         tried, passed = [], []
         # #685: a background job records progress and can stop between cases.
         job_checkpoint = self._checkpoint
-        for model in candidates:
+        for position, model in enumerate(candidates, 1):
             seen = []  # content-free records of the qualification calls, for observed identity only
             engine = make_engine(model, seen.append)
             starts = {}  # case id -> index of its first call in ``seen``
+
+            self._candidate_position = {'candidate': position, 'candidates': len(candidates)}
 
             def checkpoint(case_id, index, model=model, seen=seen, starts=starts):
                 starts[case_id] = len(seen)
@@ -1490,13 +1498,21 @@ class DecisionRoutes:
                         msg('decision_routes.qualified_fallback'), **self._fallback_params(active))
         if job.get('state') in JOB_OPEN:
             step = job.get('step') or {}
+            # #1067: a multi-candidate step goes out as its template and values too,
+            # so the page translates the template before filling it in.
+            progress_template = (msg('decision_routes.check_progress_candidate')
+                                 if job['state'] == JOB_RUNNING and step.get('model') and (step.get('candidates') or 1) > 1
+                                 else '')
+            progress_params = {key: step.get(key) for key in ('candidate', 'candidates', 'model', 'index', 'cases')}
             progress = (msg('decision_routes.cancelling') if job['state'] == JOB_CANCELLING
+                        else progress_template.format(**progress_params) if progress_template
                         else f'{step.get("model")} {step.get("index")}/{step.get("cases")}'
                         if job['state'] == JOB_RUNNING and step.get('model') else msg('state.queued'))
-            if active.get('available'):
-                return said('checking', msg('decision_routes.checking_keep_route'),
-                            progress=progress)
-            return said('checking', msg('decision_routes.checking_skip'), progress=progress)
+            template = msg('decision_routes.checking_keep_route' if active.get('available') else 'decision_routes.checking_skip')
+            result = said('checking', template, progress=progress)
+            if progress_template:
+                result.update(progress_template=progress_template, progress_params=progress_params)
+            return result
         job_reason = None
         if job.get('state') in (JOB_FAILED, JOB_CANCELLED) and not (
                 active.get('source') == 'follow' and active.get('available') and route.get('main') == main):

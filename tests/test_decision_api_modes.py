@@ -2,7 +2,7 @@
 import json
 from urllib.parse import parse_qs, urlsplit
 
-from personal_agent.decision_routes import DecisionRouteError
+from personal_agent.decision_routes import DecisionRouteError, RANKED_MODELS
 from test_decision_qualification_jobs import JobFixture
 from test_main_ai_routes import Transport
 
@@ -169,7 +169,8 @@ class ApiModeTests(JobFixture):
                     qualified = {turn['model']: turn.get('effort') for turn in self.turns}
                     self.assertEqual(qualified[model], effort)
                     if policy == 'fastest_qualified':
-                        self.assertEqual(len(qualified), 2)
+                        # Auto measures every ranked candidate (#1067: Anthropic and OpenRouter add Sonnet 5.5).
+                        self.assertEqual(set(qualified), set(RANKED_MODELS[api]))
                         if api == 'anthropic':
                             self.assertIsNone(qualified['claude-haiku-4-5'])
                     self.assertEqual(self.judge(service).value, 'retry')

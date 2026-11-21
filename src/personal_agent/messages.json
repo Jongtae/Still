@@ -8764,6 +8764,12 @@
   "ja": "判断 AI を確認中（{progress}）— 通過するまで現在の判断ルートを使用します。",
   "zh": "正在检查判断 AI（{progress}）— 通过前继续使用当前判断路径。"
  },
+ "decision_routes.check_progress_candidate": {
+  "ko": "후보 {candidate}/{candidates} {model}, 검사 {index}/{cases}",
+  "en": "candidate {candidate} of {candidates}, {model}: case {index} of {cases}",
+  "ja": "候補 {candidate}/{candidates} {model}、検査 {index}/{cases}",
+  "zh": "候选 {candidate}/{candidates} {model}，检查 {index}/{cases}"
+ },
  "decision_routes.checking_skip": {
   "ko": "판단 AI를 확인하는 중({progress}) — 끝날 때까지 판단이 필요한 기능은 건너뛰어요. 다른 경로로 자동 전환하지 않아요.",
   "en": "Checking Judgment AI ({progress}) — skipping features that need judgment until it finishes. No automatic switch to another route.",
