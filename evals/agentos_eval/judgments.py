@@ -279,6 +279,20 @@ def _call(case, cases, judgments, engine, policy, keep_text, *, delivery=None):
                                  ('succeeded', 'partial', 'failed', 'unknown'),
                                  s.decision_qualification._PROJECTION_QUESTION)
         return {'value': policy.selection(decision), 'outcome': decision.outcome}
+    if (role in ('followup_relation', 'answers_open_question')
+            and 'works' in inspect.signature(judgments.followup_relation).parameters):
+        # #1087: one judgment chooses among the chat's recent Works and the relation together; a case
+        # gives one Work.  An answer to what an earlier reply asked is any relation to that Work.
+        if role == 'answers_open_question':
+            work = {'request': inputs['earlier_request'], 'reply': inputs['earlier_reply'], 'status': 'succeeded'}
+        else:
+            work = {'intent': inputs['previous_intent'], 'status': inputs['previous_status'],
+                    'request': inputs.get('previous_request', ''), 'reply': inputs.get('previous_reply', ''),
+                    'request_at': inputs.get('previous_request_at', ''), 'reply_at': inputs.get('previous_reply_at', '')}
+        result = judgments.followup_relation(inputs['utterance'], [work])
+        if role == 'answers_open_question':
+            return {'outcome': result.outcome}
+        return {'outcome': result.outcome, 'value': result.value}
     if role == 'parked_work_withdrawn':
         result = judgments.parked_work_withdrawn(inputs['utterance'], ('google-gmail-read',))
     else:

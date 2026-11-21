@@ -48,7 +48,12 @@ def answers(case):
         return [{**e, 'rest': '', 'parts': []}]
     if role == 'connector_effect' and e.get('value') == 'mutate':
         return [{'choice': 'irreversible'}]
-    if role in ('followup_relation', 'connector_effect', 'status_projection'):
+    if role == 'followup_relation':
+        # #1087: one choice names the relation and the Work (a case gives one, w1).
+        return [{'choice': d.NO_CANDIDATE if e.get('abstain') or e.get('outcome') == 'no' else e['value'] + ' w1'}]
+    if role == 'answers_open_question':
+        return [{'choice': 'reference w1' if e['outcome'] == 'yes' else d.NO_CANDIDATE}]
+    if role in ('connector_effect', 'status_projection'):
         return [{'choice': d.NO_CANDIDATE if e.get('abstain') or e.get('outcome') == 'no' else e['value']}]
     return [{'answer': e['outcome'] == 'yes', 'gap': 'PRIVATE GAP', 'note': 'PRIVATE NOTE',
              'retry_warranted': e['outcome'] != 'yes'}]
@@ -126,7 +131,7 @@ class JudgmentTests(unittest.TestCase):
         plan = j.plan(self.cases)
         self.assertEqual(plan['cases'], len(self.cases['cases']) + len(s.decision_qualification.CASES))
         self.assertEqual(plan['max_calls'], plan['cases'] + 4)
-        self.assertEqual(plan['roles']['qualification-suite']['cases'], 11)
+        self.assertEqual(plan['roles']['qualification-suite']['cases'], len(s.decision_qualification.CASES))
         for mutate in [lambda r: r.update(extra=True), lambda r: r['cases'][0].update(extra=True),
                        lambda r: r['cases'][0].update(role='invented'), lambda r: r['cases'][0].update(lang='fr'),
                        lambda r: r['cases'][0].update(**{'class': 'other'}),
@@ -781,7 +786,8 @@ class RequalificationTests(ServiceFixture):
     def test_shipped_update_job_requalifies_relocated_store_and_counts_calls(self):
         service = self.stale_service()
         start = self.model_calls()
-        cap = j.CallCap(12)
+        suite = len(s.decision_qualification.CASES)
+        cap = j.CallCap(suite + 1)
         result = j.requalify_route(service, cap)
         self.assertEqual(result['state'], 'passed')
         self.assertTrue(result['available'])
@@ -790,12 +796,12 @@ class RequalificationTests(ServiceFixture):
         self.assertEqual(self.model_calls() - start, result['calls'])
         report = j.report([], {}, j.effective_runtime(service))
         report['requalification'] = result
-        self.assertIn('Model calls: 11 (requalification: 11)', j.markdown(report))
+        self.assertIn(f'Model calls: {suite} (requalification: {suite})', j.markdown(report))
         cases = subset(j.load_cases(), 'projection-failed')
         rows = j.run(cases, service.decision_judge, service.decision_engine,
                      roles=['qualification-suite'], cap=cap, scope=service.work_decision_scope)
         self.assertEqual(sum(len(r['calls']) for r in rows), 1)
-        self.assertEqual(cap.used, 12)
+        self.assertEqual(cap.used, suite + 1)
         self.assertTrue(cap.refused)
         self.assertEqual(j.requalify_route(service, cap), dict(attempted=False, calls=0))
 

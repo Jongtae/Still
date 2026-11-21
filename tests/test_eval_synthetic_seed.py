@@ -145,8 +145,8 @@ def test_dry_run_calls_nothing(tmp_path, monkeypatch, capsys, options, policy, t
     plan = json.loads(capsys.readouterr().out)
     assert plan['activate']['model_policy'] == policy
     assert plan['activate']['transport'] == 'subscription_cli'
-    assert plan['suite_calls'] == len(judgments.still().decision_qualification.CASES) == 11
-    assert plan['max_calls_per_candidate'] == 11 * trials
+    assert plan['suite_calls'] == len(judgments.still().decision_qualification.CASES) == 12
+    assert plan['max_calls_per_candidate'] == 12 * trials
     factory.assert_not_called()
     build.assert_not_called()
     assert not out.exists()

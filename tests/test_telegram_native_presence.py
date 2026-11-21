@@ -155,7 +155,8 @@ class NativePresenceTestCase(unittest.TestCase):
     def relation_engine(self, mapping):
         def choose(context, candidates, question):
             if context.purpose == 'conversation-followup':
-                return SelectionDecision(OUTCOME_DECIDED, mapping.get(context.facts.get('owner_message'), 'none-of-these'),
+                text = context.facts.get('owner_message')
+                return SelectionDecision(OUTCOME_DECIDED, mapping[text] + ' w1' if text in mapping else 'none-of-these',
                                          candidates, fixture_confidence())
             return SelectionDecision(OUTCOME_DECIDED, 'none-of-these', candidates, fixture_confidence())
         return FixtureDecisionEngine(choose=choose)
@@ -217,8 +218,10 @@ class JudgmentReactionTests(NativePresenceTestCase):
 
         def choose(context, candidates, question):
             self.judgment_calls.append((context, tuple(candidates), question, self.service.current_work_id))
-            return SelectionDecision(OUTCOME_DECIDED, choices.get(context.purpose, 'none-of-these'),
-                                     tuple(candidates), fixture_confidence())
+            choice = choices.get(context.purpose, 'none-of-these')
+            if context.purpose == 'conversation-followup' and choice != 'none-of-these':
+                choice += ' w1'  # #1087: the relation to the latest Work
+            return SelectionDecision(OUTCOME_DECIDED, choice, tuple(candidates), fixture_confidence())
 
         self.service.decision_judge = ConversationJudgments(FixtureDecisionEngine(choose=choose),
                                                             redactor=self.service.redact_judgment_text)
@@ -1111,8 +1114,10 @@ class StartLatencyTests(NativePresenceTestCase):
                 block.wait(5)
             self.judgment_log.append((context.purpose, start, time.monotonic(),
                                       self.service.current_work_id, dict(context.facts)))
-            return SelectionDecision(OUTCOME_DECIDED, choices.get(context.purpose, 'none-of-these'),
-                                     tuple(candidates), fixture_confidence())
+            choice = choices.get(context.purpose, 'none-of-these')
+            if context.purpose == 'conversation-followup' and choice != 'none-of-these':
+                choice += ' w1'  # #1087: the relation to the latest Work
+            return SelectionDecision(OUTCOME_DECIDED, choice, tuple(candidates), fixture_confidence())
 
         self.service.use_decision_engine(FixtureDecisionEngine(choose=choose))
 

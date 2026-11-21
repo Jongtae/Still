@@ -639,6 +639,10 @@ FOLLOWUP_RELATIONS = (FOLLOWUP_RETRY, FOLLOWUP_REFERENCE, FOLLOWUP_CANCEL, FOLLO
 FOLLOWUP_QUESTION = prompt('followup_relation')
 #: The bound on each earlier text the follow-up judgment reads (#173 slice B).
 FOLLOWUP_EARLIER_CHARS = 600
+#: #1087: how many recent Works of the chat the follow-up judgment chooses among (the focused Work,
+#: when it is from elsewhere, is the fifth).  A bound, like the disentanglement window.
+FOLLOWUP_RECENT_WORKS = 4
+FOLLOWUP_MAX_WORKS = FOLLOWUP_RECENT_WORKS + 1
 
 #: #173 slice B: replaces the particle/filler-stripping ``preparations.same_goal``.
 SAME_PREPARATION_GOAL_PROPOSITION = prompt('same_preparation_goal')
@@ -646,8 +650,6 @@ SAME_PREPARATION_GOAL_PROPOSITION = prompt('same_preparation_goal')
 DECLINED_PREPARATION_PROPOSITION = prompt('declined_preparation')
 #: #999: a message that arrives while an earlier request is still being worked on.
 STEER_PROPOSITION = prompt('steers_running_work')
-#: #1519: an answer to a question the assistant asked before another request came in between.
-OPEN_QUESTION_PROPOSITION = prompt('answers_open_question')
 WITHDRAWAL_PROPOSITION = prompt('parked_work_withdrawn')
 #: OWNER-ACT-01 (#172, owner decision 2026-10-21, revising #22 option A): one judgment reads each owner
 #: act - a typed message or a reaction, and the message it replies to or reacts on - against every
@@ -698,11 +700,13 @@ REJUDGED_YES, REJUDGED_NO, REJUDGED_DENIED_AGAIN, REJUDGED_UNAVAILABLE, REJUDGED
 class Judgment:
     """One bounded judgment reduced by policy.  It informs routing; it never authorizes."""
 
-    __slots__ = ('outcome', 'value', 'source', 'note', 'retry_warranted', 'refused', 'record_check')
+    __slots__ = ('outcome', 'value', 'source', 'note', 'retry_warranted', 'refused', 'record_check', 'work')
 
     def __init__(self, outcome, value=None, source='policy', note=None, retry_warranted=None, refused=None,
-                 record_check=None):
+                 record_check=None, work=None):
         self.outcome, self.value, self.source = outcome, value, source
+        #: #1087: the follow-up judgment's chosen candidate (an index into the Works it was given).
+        self.work = work
         #: #674: when the outcome judgment reported a call Still recorded as done as not done:
         #: ``{'contradicted': [ids], 'rejudged': REJUDGED_*}``; None otherwise.
         self.record_check = record_check
@@ -801,20 +805,6 @@ class ConversationJudgments:
         return Judgment(JUDGMENT_UNAVAILABLE if verdict == 'unknown' else verdict,
                         source=decision.confidence.provider or decision.outcome)
 
-    def answers_open_question(self, earlier_request, earlier_reply, utterance):
-        """Does ``utterance`` answer what an earlier reply asked, across an interleaved exchange (#1519)?
-
-        Unavailable or unknown links nothing; the message runs as before.
-        """
-        context = self._context('open-question-answer',
-                                {'earlier_owner_message': earlier_request, 'earlier_reply': earlier_reply,
-                                 'owner_message': utterance},
-                                uncut=('owner_message', 'earlier_reply'))
-        decision = self.engine.judge(context, OPEN_QUESTION_PROPOSITION)
-        verdict = self.policy.binary(decision)
-        return Judgment(JUDGMENT_UNAVAILABLE if verdict == 'unknown' else verdict,
-                        source=decision.confidence.provider or decision.outcome)
-
     def owner_act_answer(self, act, items, target='', work_id=None):
         """``{item, answer, rest, parts}``: which open item one owner act answers, and how (#172), or None.
 
@@ -905,35 +895,54 @@ class ConversationJudgments:
             return Judgment(JUDGMENT_NO, source=decision.confidence.provider or decision.outcome)
         return Judgment(JUDGMENT_UNAVAILABLE, source=decision.outcome)
 
-    def followup_relation(self, utterance, previous_intent, previous_status, *, previous_request='',
-                          previous_reply='', previous_request_at='', previous_reply_at='', awaiting_owner=()):
-        """Classify one short turn against one focused Work, read in its context.
+    def followup_relation(self, utterance, works, *, awaiting_owner=()):
+        """Which recent Work one short turn continues, and how, read in context (#1087).
 
-        RULES-OUT-01 (#173 slice B): no correction or continuation word list
-        decides this any more, so the judgment is given what the owner would
-        have in mind: the focused Work's request and reply (each bounded to
-        ``FOLLOWUP_EARLIER_CHARS`` and redacted like every fact: stored
-        secrets and credential shapes removed), when each was
-        made, and the kinds of what still waits for the owner (no content).
+        ``works`` are the candidates, most recent first: dicts with ``request``,
+        ``reply``, ``status``, ``request_at``, ``reply_at`` and optionally
+        ``intent`` and ``linked_to`` (the label of the candidate it was linked
+        to).  As in reply-to-link conversation disentanglement, the judgment
+        picks the turn's parent among the last few Works of the chat and the
+        relation to it together, or none-of-these.  Before #1087 it read one
+        focused Work, so a message about a topic two turns back in an
+        interleaved chat could only be none-of-these, and an extra
+        open-question judgment patched one shape of that (#1519).
+
+        Each request and reply is bounded to ``FOLLOWUP_EARLIER_CHARS`` and
+        redacted like every fact; ``awaiting_owner`` gives kinds only.  On yes,
+        ``value`` is the relation and ``work`` the chosen candidate's index.
         The selected relation still passes deterministic execution gates later.
         """
         def bounded(text):
             text = str(text or '')
             return text if len(text) <= FOLLOWUP_EARLIER_CHARS else text[:FOLLOWUP_EARLIER_CHARS - 1] + '…'
-        context = self._context('conversation-followup', {
-            'owner_message': utterance,
-            'previous_intent': previous_intent or '',
-            'previous_status': previous_status or '',
-            'previous_owner_message': bounded(previous_request),
-            'previous_reply': bounded(previous_reply),
-            'previous_request_at': previous_request_at or 'unknown',
-            'previous_reply_at': previous_reply_at or 'unknown',
-            'awaiting_owner': ', '.join(sorted(set(awaiting_owner))) or 'nothing',
-        })
-        decision = self.engine.choose(context, FOLLOWUP_RELATIONS, FOLLOWUP_QUESTION)
+        works = tuple(works)[:FOLLOWUP_MAX_WORKS]
+        if not works:
+            return Judgment(JUDGMENT_NO, source='policy')
+        facts = {'owner_message': utterance,
+                 'awaiting_owner': ', '.join(sorted(set(awaiting_owner))) or 'nothing'}
+        texts = []
+        for number, work in enumerate(works, 1):
+            label = f'w{number}'
+            facts.update({
+                f'{label}_status': work.get('status') or '',
+                f'{label}_intent': work.get('intent') or '',
+                f'{label}_owner_message': bounded(work.get('request')),
+                f'{label}_owner_message_at': work.get('request_at') or 'unknown',
+                f'{label}_reply': bounded(work.get('reply')),
+                f'{label}_reply_at': work.get('reply_at') or 'unknown',
+                f'{label}_linked_to': work.get('linked_to') or 'none',
+            })
+            texts += [f'{label}_owner_message', f'{label}_reply']
+        candidates = tuple(f'{relation} w{number}' for number in range(1, len(works) + 1)
+                           for relation in FOLLOWUP_RELATIONS)
+        # The caller bounded each text; their sum widens the bound rather than cutting one.
+        context = self._context('conversation-followup', facts, uncut=tuple(texts))
+        decision = self.engine.choose(context, candidates, FOLLOWUP_QUESTION)
         choice = self.policy.selection(decision)
         if choice is not None:
-            return Judgment(JUDGMENT_YES, value=choice,
+            relation, label = choice.split(' ')
+            return Judgment(JUDGMENT_YES, value=relation, work=int(label[1:]) - 1,
                             source=decision.confidence.provider or decision.outcome)
         if self.policy.confident_selection(decision):
             return Judgment(JUDGMENT_NO, source=decision.confidence.provider or decision.outcome)
