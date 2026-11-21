@@ -371,7 +371,7 @@ class SubscriptionCliTests(Temp):
         # synthetic, not a claimed live model response from the recording.
         diagnostics = [line for line in raw.split('\n') if line and
                        json.loads(line).get('item', {}).get('type') == 'error']
-        for choice, passed, outcome in (('reference', True, 'yes'), (NO_CANDIDATE, False, 'no')):
+        for choice, passed, outcome in (('reference w1', True, 'yes'), (NO_CANDIDATE, False, 'no')):
             with self.subTest(choice=choice):
                 events = [*diagnostics, json.dumps({'type': 'item.completed', 'item': {
                     'id': 'answer', 'type': 'agent_message', 'text': json.dumps({'choice': choice, 'confidence': 0.9})}}),
