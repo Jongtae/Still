@@ -99,6 +99,7 @@ CONFIRMING_EFFECTS = ('mutate', 'payment')
 
 #: #1082: how long a navigate answer waits for the page's presentation read; past it the values are null.
 PRESENTATION_READ_SECONDS = 1.0
+PRESENTATION_READ_MARGIN = 0.2
 PRESENTATION_FIELDS = ('navigator_language', 'intl_locale', 'intl_timezone')
 PRESENTATION_SCRIPT = """
 const options = Intl.DateTimeFormat().resolvedOptions();
@@ -1756,7 +1757,13 @@ class Worker:
             return
         layout = self.layout
         answered = False
-        expires = time.monotonic() + PRESENTATION_READ_SECONDS
+        # The read never costs a page that loaded in time its answer: it ends before the op's own deadline.
+        now = time.monotonic()
+        deadline = getattr(self, 'expiry', {}).get(ident) or getattr(self, 'action_deadline', None)
+        budget = PRESENTATION_READ_SECONDS
+        if deadline is not None:
+            budget = min(budget, deadline - now - PRESENTATION_READ_MARGIN)
+        expires = now + budget
 
         def finish(value=None, error=None):
             nonlocal answered
@@ -1771,7 +1778,9 @@ class Worker:
                 observed[name] = field if isinstance(field, str) and field else None
             self.reply(ident, url=url, layout=layout, presentation_observed=observed)
 
-        self.AppHelper.callLater(PRESENTATION_READ_SECONDS, finish)
+        if budget <= 0:
+            return finish()
+        self.AppHelper.callLater(budget, finish)
         try:
             self.run(PRESENTATION_SCRIPT, {}, finish, view=view)
         except Exception:

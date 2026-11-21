@@ -5,6 +5,7 @@ handling for WebKit).  The real engines are covered by ``WebKitIntegrationTests`
 """
 import io
 import json
+import time
 from unittest import mock
 
 import pytest
@@ -222,3 +223,38 @@ def test_observation_script_overrides_nothing_in_the_page():
     for forbidden in ('defineProperty', 'Intl.DateTimeFormat =', 'Date =', 'navigator.language =', '__proto__'):
         assert forbidden not in script
     assert 'navigator.language' in script and 'resolvedOptions' in script
+
+
+def test_a_read_that_would_outlast_the_deadline_never_turns_a_loaded_page_into_a_timeout(monkeypatch):
+    worker = make_worker('ja-JP')
+    command(worker, 'navigate', url='https://public.test/')
+    hung = []
+    monkeypatch.setattr(worker, 'run', lambda body, arguments, done, **kwargs: hung.append(done))
+    worker.expiry[7] = time.monotonic() + 0.1   # the page loads with less time left than the read margin
+    reply = land(worker)
+    assert reply['ok'] is True and reply['url'] == 'https://public.test/'
+    assert reply['presentation_observed'] == {'navigator_language': None, 'intl_locale': None, 'intl_timezone': None}
+    for done in hung:   # a late read never answers twice
+        done(dict(OBSERVED), None)
+    assert [m for m in worker.messages if m.get('id') == 7] == [reply]
+
+
+def test_a_hung_read_waits_only_while_the_deadline_allows(monkeypatch):
+    worker = make_worker('ja-JP')
+    command(worker, 'navigate', url='https://public.test/')
+    hung = []
+    monkeypatch.setattr(worker, 'run', lambda body, arguments, done, **kwargs: hung.append(done))
+    later = []
+    monkeypatch.setattr(worker.AppHelper, 'callLater', lambda seconds, fn: later.append((seconds, fn)))
+    worker.expiry[7] = time.monotonic() + 0.7
+    worker.page.url = 'https://public.test/'
+    worker.frame_navigated(worker.main_target, {'id': worker.main_target.main_frame, 'loaderId': 'loader',
+                                               'url': worker.page.url})
+    worker.loaded(worker.main_target, {'frameId': worker.main_target.main_frame, 'loaderId': 'loader'})
+    assert hung and not [m for m in worker.messages if m.get('id') == 7], 'the read is still running'
+    seconds, fire = later[-1]
+    assert 0 < seconds <= 0.5 + 0.01, seconds
+    fire()
+    replies = [m for m in worker.messages if m.get('id') == 7]
+    assert len(replies) == 1 and replies[0]['ok'] is True
+    assert replies[0]['presentation_observed']['navigator_language'] is None
