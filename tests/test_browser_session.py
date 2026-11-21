@@ -1616,7 +1616,9 @@ class LoopTests(unittest.TestCase):
         for n in range(5):
             caps._keep_browser_page({'url': f'{ORIGIN}/p{n}', 'title': '', 'text': f'page {n}'})
         caps._keep_browser_page({'url': f'{ORIGIN}/p2', 'title': '', 'text': 'page 2 again'})
-        self.assertEqual([text for _u, _t, text in caps.take_browser_pages()], ['page 2 again', 'page 4', 'page 3'])
+        # #767: bounded by characters, not by count; a revisited page moves to the newest place.
+        self.assertEqual([text for _u, _t, text in caps.take_browser_pages()],
+                         ['page 2 again', 'page 4', 'page 3', 'page 1', 'page 0'])
 
     def test_login_required_keeps_the_turn_from_claiming_success(self):
         script = Script({'tool_calls': [call('1', 'browser_open', url=ORIGIN + '/login', effect='navigate')]},

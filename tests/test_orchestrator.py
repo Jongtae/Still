@@ -1091,8 +1091,10 @@ class ObservationsWithPages(unittest.TestCase):
         lines = [f'- browser_click: step {n} ' + 'x' * 200 for n in range(80)]
         text = observations_with_pages(lines, [('https://s.test/cart', 'Cart', 'y' * 20000), ('https://s.test/a', 'A', 'z' * 900)])
         self.assertLessEqual(len(text), OBSERVATION_CHARS)
-        self.assertGreaterEqual(text.count('y'), PAGE_TEXT_FLOOR_CHARS - 200)
-        self.assertNotIn('zzz', text, 'the newest page takes the room first')
+        # #767: the room is split fairly, so the earlier short page is kept whole beside the long
+        # newest one, and page text together still keeps the floor.
+        self.assertIn('z' * 900, text, 'an earlier page is not crowded out by the newest')
+        self.assertGreaterEqual(text.count('y') + text.count('z'), PAGE_TEXT_FLOOR_CHARS - 200)
         self.assertIn('step 79', text, 'the latest step lines are kept, the oldest cut')
         self.assertNotIn('step 0 ', text)
 

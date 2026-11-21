@@ -64,8 +64,11 @@ CONNECTOR_PERMISSION_DEFINITION=schema('connector_permission',
 #: (``browser_session``).  ``effect`` is the model's declared class; the
 #: deterministic guard there never depends on it.
 #: #953 (BROWSE-09): ``browser_sign_in`` asks the owner for a sign-in directly, without a sign-in page.
-#: #1282: how many distinct pages (by URL) one attempt keeps for its goal judgment.
-BROWSER_PAGES_KEPT=3
+#: #1282, #767: how much page text, code output and read results one attempt keeps in memory for its
+#: goal judgment, in characters, oldest dropped first.  A count (three) let the newest results push
+#: every earlier one out, so a reply resting on an earlier read was judged unsupported.  The judgment
+#: itself reads at most ``orchestrator.OBSERVATION_CHARS`` of it, split fairly.
+ATTEMPT_RESULT_CHARS=48000
 BROWSER_ACTIONS=frozenset({'browser_open','browser_read','browser_find','browser_click','browser_type','browser_sign_in'})
 #: DRIVE-CONNECT-01 (#1172): read-only search and read of the owner's Google Drive.
 DRIVE_ACTIONS=frozenset({'drive_search','drive_read'})
@@ -3899,12 +3902,17 @@ class Capabilities:
   with self.store.db() as db:
    return effect_mutation_refusal(db,self.store,self.job_id,effect_target(TARGET_PAGE,host,(host,)))
  def _keep_browser_page(self,result):
-  """Remember a browser result's mediated page text for this attempt's goal judgment (#1282); memory only."""
+  """Remember a browser result's mediated page text for this attempt's goal judgment (#1282); memory only.
+
+  The attempt keeps at most ``ATTEMPT_RESULT_CHARS`` across every kept result (#767), oldest dropped first.
+  """
   if not isinstance(result,dict) or not isinstance(result.get('text'),str) or not result['text'].strip():return
   url=str(result.get('url') or '')
   self._browser_pages.pop(url,None)
-  self._browser_pages[url]=(str(result.get('title') or ''),result['text'])
-  while len(self._browser_pages)>BROWSER_PAGES_KEPT:self._browser_pages.pop(next(iter(self._browser_pages)))
+  self._browser_pages[url]=(str(result.get('title') or ''),result['text'][:ATTEMPT_RESULT_CHARS])
+  # #767: bounded by characters, never by count; the newest result is always kept.
+  while len(self._browser_pages)>1 and sum(len(text) for _title,text in self._browser_pages.values())>ATTEMPT_RESULT_CHARS:
+   self._browser_pages.pop(next(iter(self._browser_pages)))
  def keep_read_result(self,name,arguments,result):
   """Remember what an effect-free read returned for this attempt's goal judgment (#1466); memory only.
 
@@ -4646,7 +4654,9 @@ class Capabilities:
     if getattr(exc,'executed',None) is False:not_executed(error)
     raise error from None
    self.evidence.append({'tool':name,'result':result})
-   if result.get('provenance', {}).get('effect')=='read' and effect_receipt_note(self.store,self.job_id):
+   # #767: what a read returned joins this attempt's judgment, as a relayed owner-state read does,
+   # whether or not the Work has an effect receipt (#1000 needs it there; a plain read needs it too).
+   if result.get('provenance', {}).get('effect')=='read':
     self.keep_read_result(name,args,result)
    return self._from_private('owner-api',result)
   if name in CODE_ACTIONS:
