@@ -334,6 +334,21 @@ def cmd_p1_report(args):
     print(markdown)
 
 
+def cmd_progress_forms(args):
+    from . import progress_forms
+    arms = {}
+    for value in args.arm:
+        label, separator, path = value.partition('=')
+        if not separator or not label or not path or label in arms:
+            raise SystemExit('--arm must be a unique label=<records.json>')
+        arms[label] = path
+    try:
+        result, _ = progress_forms.run(args.baseline, arms)
+    except (ValueError, OSError) as exc:
+        raise SystemExit(str(exc)) from exc
+    print(progress_forms.render_markdown(result))
+
+
 def cmd_judgments(args):
     from . import judgments
     if args.action == 'plan':
@@ -544,6 +559,9 @@ def main(argv=None):
             regression.add_argument('--plans',type=Path,required=True,help='plans recording (.json or .json.gz)')
             regression.add_argument('--held-plan',action='store_true',
                 help='hold each recorded plan fixed while the current product recomputes inventories and the gate')
+    forms = sub.add_parser('progress-forms', help='compare progress-update forms from recorded runs; no model call (#1036)')
+    forms.add_argument('--baseline', required=True, help='label of the arm the others are compared with')
+    forms.add_argument('--arm', action='append', required=True, help='label=<records.json>, one per reporting-rule arm')
     judgments = sub.add_parser('judgments', help='measure shipped judgments (#42)')
     actions = judgments.add_subparsers(dest='action', required=True)
     from .judgments import DEFAULT_CASES
@@ -601,7 +619,7 @@ def main(argv=None):
         command(args)
         return 0
     handler = {'snapshot': cmd_snapshot, 'scenarios': cmd_scenarios, 'sweep': cmd_sweep, 'report': cmd_report,
-               'p1-report': cmd_p1_report, 'budget': cmd_budget, 'judgments': cmd_judgments, 'continuity': cmd_continuity,
+               'p1-report': cmd_p1_report, 'budget': cmd_budget, 'judgments': cmd_judgments, 'progress-forms': cmd_progress_forms, 'continuity': cmd_continuity,
                'coverage': cmd_coverage, 'recall': cmd_recall}[args.command]
     return handler(args) or 0
 

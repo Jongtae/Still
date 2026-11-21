@@ -62,9 +62,16 @@ RUBRIC = {
                    'report, a formal request) takes its field\'s form and usual detail; text written for someone '
                    'else takes that reader\'s register and manners; what is said to the owner stays in plain '
                    'words, with field terms explained, and shows no raw data or system names.',
+    # #1036: one update in a series (BLUF / SITREP order, exception-based reporting; #1035's rules).
+    'progress_update': 'Reads as one update in a series: the conclusion for the owner\'s goal first, then what changed '
+                       'since the last update (a line when nothing did); leaves out what the owner already has; keeps '
+                       'any interpretation inside what was observed; names a source only where it changed, failed or '
+                       'decides something; states an unchecked point or standing caveat only when it changes what the '
+                       'owner would do; says a failure or a stall plainly and claims no progress, success or reason '
+                       'that was not observed.',
 }
 #: Dimensions judged only when a scenario names them.
-OPT_IN_RUBRIC = ('conversational', 'reader_form')
+OPT_IN_RUBRIC = ('conversational', 'reader_form', 'progress_update')
 #: The dimensions a scenario is judged on when it names none.
 DEFAULT_RUBRIC = tuple(name for name in RUBRIC if name not in OPT_IN_RUBRIC)
 #: ``web`` sends each turn to ``/api/chat``; ``telegram`` through the eval's Bot API stand-in.
