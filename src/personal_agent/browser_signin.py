@@ -14,6 +14,7 @@ from .browser_session import ascii_host, login_window_url, page_reference, regis
 from .browser_jar import unexpired
 from .messages import msg
 from .providers import ProviderError
+from .quickstart_store import copy_read_checkpoint_context
 from urllib.parse import urlsplit
 import hashlib
 import hmac
@@ -247,6 +248,7 @@ class BrowserSignin:
         with service.lock:
             with service.store.db() as db:
                 db.execute('BEGIN IMMEDIATE')
+                service.store.require_read_checkpoint_writer(db)
                 found=db.execute('SELECT value FROM config WHERE key=?',(BROWSER_REQUESTS_KEY,)).fetchone()
                 rows=json.loads(found['value']) if found else {}
                 rows=rows if isinstance(rows,dict) else {}
@@ -578,10 +580,11 @@ class BrowserSignin:
         service._put_browser_login(work_id,{**row,'state':'opening','window':None,'offered_at':now,
                                          'deadline':now+BROWSER_LOGIN_SECONDS})
         with service.lock:window_url=service._browser_login_window_url(work_id,row)
+        context=copy_read_checkpoint_context()
         try:
             opened=service.browser_profile.open_for_login(
                 window_url,seconds=BROWSER_LOGIN_SECONDS,work_id=work_id,
-                on_opened=lambda window,landed=None:service._browser_login_opened(work_id,nonce,window,landed),
+                on_opened=lambda window,landed=None:context.run(service._browser_login_opened,work_id,nonce,window,landed),
                 on_closed=lambda window,reason,saved:service._browser_login_window_closed(work_id,nonce,window))
         except (ValueError,OSError):
             opened={'state':'failed'}

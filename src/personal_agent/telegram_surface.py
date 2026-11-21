@@ -526,8 +526,10 @@ class TelegramSurface(ConversationSurface):
             return
         markup=service.task_card_markup(job['id'],state)
         try:
+            with service.store.db() as db:
+                service.store.require_read_checkpoint_writer(db,terminal=ws.is_terminal(state))
             service.telegram.edit_message_text(card['chat_id'],card['message_id'],
-                                            service.task_card_text(job['message'],state),markup)
+                                               service.task_card_text(job['message'],state),markup)
             service.store.save_task_card(job['id'],card['chat_id'],card['message_id'],state)
         except ProviderError:
             pass

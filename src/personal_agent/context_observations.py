@@ -398,6 +398,7 @@ class ContextObservations:
         request_id = str(uuid.uuid4())
         with self.store.db() as db:
             db.execute('BEGIN IMMEDIATE')
+            self.store.require_read_checkpoint_writer(db)
             epoch = self.settings(db)['epoch']
             db.execute("UPDATE context_location_requests SET state='superseded' WHERE state='pending' AND chat_id=? "
                        'AND generation=?', (chat_id, generation))

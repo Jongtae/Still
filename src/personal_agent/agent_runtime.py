@@ -1,5 +1,6 @@
 """Capability registry and a provider-independent, bounded native tool loop."""
 
+from .quickstart_store import copy_read_checkpoint_context
 from . import work_status as ws
 from .messages import msg
 import hashlib
@@ -4969,7 +4970,9 @@ class Capabilities:
    self.written_private.append(content);self.written_labels.add('personal-space');self.private_provenance.add('personal-space')
    import hashlib
    note_id=hashlib.sha256((self.job_id+content).encode()).hexdigest()
-   with self.store.db() as db:db.execute('INSERT OR IGNORE INTO notes VALUES (?,?,?)',(note_id,content,time.time()))
+   with self.store.db() as db:
+    self.store.require_read_checkpoint_writer(db)
+    db.execute('INSERT OR IGNORE INTO notes VALUES (?,?,?)',(note_id,content,time.time()))
    return {'saved':True,'id':note_id,'content':content}
   if name=='save_memory':
    from .owner_model import normalized as _normalized, owner_stated_fact
@@ -6575,7 +6578,7 @@ class ReadOverlap:
   try:
    for call_id,name,args,_action in members:
     held=[]
-    self.started[call_id]=(pool.submit(run,name,args,held),held,name,args)
+    self.started[call_id]=(pool.submit(copy_read_checkpoint_context().run,run,name,args,held),held,name,args)
   finally:pool.shutdown(wait=False)
 
  def result(self,call_id,name,args):

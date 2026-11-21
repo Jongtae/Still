@@ -4,6 +4,7 @@ from . import work_status as ws
 from .messages import msg
 from .memory_terms import ELIGIBLE_SQL, cleared_meta
 from contextlib import contextmanager, nullcontext
+from contextvars import ContextVar, copy_context
 from functools import cached_property
 import datetime
 import fcntl
@@ -40,6 +41,17 @@ READ_RESULT_EXCERPT_CHARS = 4000
 READ_RESULTS_PER_WORK = 24
 READ_RESULT_RETENTION_SECONDS = 30 * 86400
 _ANY_READ_RESULT_EPOCH = object()
+_READ_CHECKPOINT_WRITER = ContextVar('read_checkpoint_writer', default=None)
+
+
+def copy_read_checkpoint_context():
+    """Capture the current run's epoch before dispatching work to another thread."""
+    fence = _READ_CHECKPOINT_WRITER.get()
+    if fence is None or not callable(fence[2]):
+        return copy_context()
+    store, work_id, epoch, terminal = fence
+    with store.read_checkpoint_writer(work_id, epoch(), terminal=terminal):
+        return copy_context()
 
 
 def fts_prefix_expression(query):
@@ -104,28 +116,7 @@ class _StoreConnection(sqlite3.Connection):
     statement failed before it ran, so preparing it again is what SQLite would have done.
     """
 
-    def _admit_checkpoint_write(self, sql):
-        # A run's indirect Evidence/projection writers use this same boundary.
-        # Hold the write lock while checking the epoch so recovery cannot fence
-        # it before the write. Once admitted, a transaction may turn terminal.
-        command = sql.lstrip().split(None, 1)
-        if not self.in_transaction:
-            self.read_checkpoint_admitted = None
-        if not command or command[0].upper() not in ('INSERT', 'UPDATE', 'DELETE', 'REPLACE'):
-            return
-        guard = getattr(getattr(self, 'read_checkpoint_writer_scope', None), 'guard', None)
-        if guard is None or guard is self.read_checkpoint_admitted:
-            return
-        if not self.in_transaction:
-            super().execute('BEGIN IMMEDIATE')
-        if not guard(self):
-            from .agent_runtime import LedgerSuperseded
-            raise LedgerSuperseded('superseded read checkpoint writer')
-        if self.in_transaction:
-            self.read_checkpoint_admitted = guard
-
     def execute(self, sql, parameters=(), /):
-        self._admit_checkpoint_write(sql)
         for attempt in range(VTABLE_RECONNECT_ATTEMPTS):
             try:
                 return super().execute(sql, parameters)
@@ -133,10 +124,6 @@ class _StoreConnection(sqlite3.Connection):
                 if not str(error).startswith('vtable constructor failed') or attempt+1==VTABLE_RECONNECT_ATTEMPTS:
                     raise
                 time.sleep(0.005*(attempt+1))
-
-    def executemany(self, sql, parameters, /):
-        self._admit_checkpoint_write(sql)
-        return super().executemany(sql, parameters)
 
 
 #: #407: the transcript row of a plan preview the owner read before the worker ran (``messages.delivery_projection``).
@@ -557,29 +544,39 @@ class QuickStore:
                 raise
             db.execute('COMMIT')
 
-    @cached_property
-    def _checkpoint_writer(self):
-        return threading.local()
-
     @contextmanager
     def read_checkpoint_writer(self, work_id, epoch, *, terminal=False):
         """Bind indirect writers to the run, never to the latest epoch in the store."""
-        previous = getattr(self._checkpoint_writer, 'guard', None)
-        def guard(db):
-            value = epoch() if callable(epoch) else epoch
-            return self.read_checkpoint_can_settle(work_id, value, db=db, terminal=terminal)
-        self._checkpoint_writer.guard = guard
+        previous = _READ_CHECKPOINT_WRITER.set((self, work_id, epoch, terminal))
         try:
             yield
         finally:
-            self._checkpoint_writer.guard = previous
+            _READ_CHECKPOINT_WRITER.reset(previous)
+
+    def read_checkpoint_writer_bound(self, work_id=None):
+        fence = _READ_CHECKPOINT_WRITER.get()
+        return fence is not None and fence[0] is self and (work_id is None or fence[1] == work_id)
+
+    def require_read_checkpoint_writer(self, db, *, terminal=False):
+        """Admit this publication under the bound epoch while holding its write lock.
+
+        A caller that supplies an open transaction must already hold the write lock.
+        """
+        fence = _READ_CHECKPOINT_WRITER.get()
+        if fence is None or fence[0] is not self:
+            return
+        _, work_id, epoch, tail = fence
+        if not db.in_transaction:
+            db.execute('BEGIN IMMEDIATE')
+        if not self.read_checkpoint_can_settle(work_id, epoch() if callable(epoch) else epoch,
+                                               db=db, terminal=terminal or tail):
+            from .agent_runtime import LedgerSuperseded
+            raise LedgerSuperseded('superseded read checkpoint writer')
 
     @contextmanager
     def db(self):
         conn = sqlite3.connect(self.path, timeout=10, factory=_StoreConnection)
         conn.row_factory = sqlite3.Row
-        conn.read_checkpoint_writer_scope = self._checkpoint_writer
-        conn.read_checkpoint_admitted = None
         conn.create_function(
             'unicode_search_key', 1,
             lambda value: unicodedata.normalize('NFKC', str(value or '')).casefold(),
@@ -674,6 +671,7 @@ class QuickStore:
         if db is None:
             with self.db() as connection:
                 return self.put(key, value, db=connection)
+        self.require_read_checkpoint_writer(db)
         db.execute('INSERT INTO config VALUES (?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value',(key,json.dumps(value)))
 
     def append_config_list(self, key, item, limit, *, db=None):
@@ -989,6 +987,7 @@ class QuickStore:
         That attempt's reply answers them, so the #308 S1 finish guard does not run them again.
         """
         with self.db() as db:
+            self.require_read_checkpoint_writer(db)
             db.execute('UPDATE work_steers SET delivered_at=? WHERE job_id=? AND answered_at IS NULL',(at,job_id))
 
     def steer_delivered(self, source_job_id, db=None):
@@ -1021,6 +1020,7 @@ class QuickStore:
             with self.db() as conn:
                 conn.execute('BEGIN IMMEDIATE')
                 return self.claim_unanswered_steers(job_id,since,db=conn)
+        self.require_read_checkpoint_writer(db)
         if not self.unanswered_steers(job_id,since,db=db):return []
         db.execute('UPDATE work_steers SET delivered_at=? WHERE job_id=? AND answered_at IS NULL AND (delivered_at IS NULL OR delivered_at<?)',
                    (max(time.time(),since),job_id,since))
@@ -1342,6 +1342,7 @@ class QuickStore:
         work_key=self._work_binding(work_id) if work_id is not None else None
         with self.db() as db:
             db.execute('BEGIN IMMEDIATE')
+            self.require_read_checkpoint_writer(db)
             row=self._save_memory(db,memory_key,content,owner_key,work_key,corrected=corrected is True,
                                   invalidates=invalidates,valid_until=valid_until,origin=origin,source_works=source_works,
                                   basis=basis,evidence=evidence,evidence_message=evidence_message,
@@ -1380,6 +1381,7 @@ class QuickStore:
         detail = self._outside_content_detail(source)
         with self.db() as db:
             db.execute('BEGIN IMMEDIATE')
+            self.require_read_checkpoint_writer(db)
             self._insert_intake_source(db, work_id, detail, time.time())
 
     @staticmethod
@@ -1445,6 +1447,7 @@ class QuickStore:
         owner_key,work_key=self._memory_binding(owner_id),self._work_binding(work_id)
         candidate_id=str(uuid.uuid4());digest=self.memory_digest(memory_key,content)
         with self.db() as db:
+            self.require_read_checkpoint_writer(db)
             db.execute('INSERT INTO memory_candidates(id,job_id,memory_key,content,created,state,owner_key,work_key,content_digest,source) VALUES (?,?,?,?,?,?,?,?,?,?)',
                        (candidate_id,None,memory_key,content,time.time(),'pending',owner_key,work_key,digest,json.dumps(source) if source else None))
         return {'id':candidate_id,'memory_key':memory_key,'content':content,'content_digest':digest,'state':'pending','saved':False}
@@ -1850,6 +1853,7 @@ class QuickStore:
         token_hash=self._exact_memory_token_lookup(approval_token)
         with self.db() as db:
             db.execute('BEGIN IMMEDIATE')
+            self.require_read_checkpoint_writer(db)
             candidate=db.execute('SELECT * FROM memory_candidates WHERE id=? AND owner_key=? AND work_key=?',(candidate_id,owner_key,work_key)).fetchone()
             if not candidate or candidate['content_digest']!=content_digest:raise ValueError('기억 후보를 다시 확인하세요.')
             approval=self._exact_approval(db,token_hash,owner_id,work_id,'accept-candidate',candidate_id,
@@ -1933,6 +1937,7 @@ class QuickStore:
         token_hash=self._exact_memory_token_lookup(approval_token)
         with self.db() as db:
             db.execute('BEGIN IMMEDIATE')
+            self.require_read_checkpoint_writer(db)
             approval=self._exact_approval(db,token_hash,owner_id,work_id,self.BROWSER_STEP_ACTION,target_digest,
                                           action,page_digest,step_digest,observed)
             if approval['state']=='consumed':raise ValueError('이미 사용한 승인입니다.')
@@ -1944,6 +1949,7 @@ class QuickStore:
         owner_key=self._memory_binding(owner_id);work_key=self._work_binding(work_id)
         with self.db() as db:
             db.execute('BEGIN IMMEDIATE')
+            self.require_read_checkpoint_writer(db)
             row=db.execute('SELECT * FROM memory_candidates WHERE id=? AND owner_key=? AND work_key=?',
                            (candidate_id,owner_key,work_key)).fetchone()
             if not row or not hmac.compare_digest(str(row['content_digest']),str(content_digest)):raise ValueError('기억 후보를 다시 확인하세요.')
@@ -1963,6 +1969,7 @@ class QuickStore:
         token_hash=self._exact_memory_token_lookup(approval_token)
         with self.db() as db:
             db.execute('BEGIN IMMEDIATE')
+            self.require_read_checkpoint_writer(db)
             approval=self._exact_approval(db,token_hash,owner_id,work_id,'correct-memory',memory_id,memory_key,current_digest,replacement_digest,observed)
             if approval['state']=='consumed':
                 result=self._memory_row(db.execute('SELECT * FROM memories WHERE id=?',(approval['result_id'],)).fetchone())
@@ -2028,6 +2035,7 @@ class QuickStore:
         owner_key=self._memory_binding(owner_id)
         with self.db() as db:
             db.execute('BEGIN IMMEDIATE')
+            self.require_read_checkpoint_writer(db)
             row=db.execute("SELECT * FROM memories WHERE id=? AND owner_key=? AND state='current'",(memory_id,owner_key)).fetchone()
             if not row or not hmac.compare_digest(str(row['content_digest']),content_digest):raise ValueError('되돌릴 기억을 다시 확인하세요.')
             db.execute("UPDATE memories SET state='retracted',retrieval_terms=NULL,retrieval_terms_meta=? WHERE id=? AND owner_key=?",
@@ -2213,6 +2221,7 @@ class QuickStore:
     def _delete_memory_chain(self, owner_key, memory_id):
         with self.db() as db:
             db.execute('BEGIN IMMEDIATE')
+            self.require_read_checkpoint_writer(db)
             current=db.execute("SELECT id,supersedes,memory_key FROM memories WHERE id=? AND owner_key=? AND state='current'",(memory_id,owner_key)).fetchone()
             if not current:return {'deleted':False,'id':memory_id,'kind':'memory','deleted_memory_count':0,'deleted_candidate_count':0,'deleted_approval_count':0,'retained_private_copies':'unknown_outside_store','external_archives_affected':False}
             memory_ids=[];cursor=current
@@ -2536,12 +2545,13 @@ class QuickStore:
     def put_turn_provenance(self, job_id, record):
         """Keep the redacted execution record of one Work (#570); newest 50 only."""
         with self.db() as db:
+            self.require_read_checkpoint_writer(db)
             db.execute('INSERT INTO turn_provenance VALUES (?,?,?) ON CONFLICT(job_id) DO UPDATE SET record=excluded.record,created=excluded.created',
                        (job_id,json.dumps(record,ensure_ascii=False),time.time()))
             db.execute('DELETE FROM turn_provenance WHERE job_id NOT IN (SELECT job_id FROM turn_provenance ORDER BY created DESC LIMIT ?)',
                        (self.TURN_PROVENANCE_KEEP,))
 
-    def merge_turn_provenance(self, job_id, fields, combine=None, db=None):
+    def merge_turn_provenance(self, job_id, fields, combine=None, db=None, *, terminal=False):
         """Merge ``fields`` into one Work's record in a single transaction (Codex review on #259: two writers
         - the early plan's thread and the worker turn - never drop each other's fields).
 
@@ -2549,7 +2559,8 @@ class QuickStore:
         if db is None:
             with self.db() as conn:
                 conn.execute('BEGIN IMMEDIATE')
-                return self.merge_turn_provenance(job_id, fields, combine, db=conn)
+                return self.merge_turn_provenance(job_id, fields, combine, db=conn, terminal=terminal)
+        self.require_read_checkpoint_writer(db, terminal=terminal)
         row=db.execute('SELECT record FROM turn_provenance WHERE job_id=?',(job_id,)).fetchone()
         current=json.loads(row['record']) if row else {}
         record={**current,**(combine(current,fields) if combine else fields)}
@@ -2573,6 +2584,7 @@ class QuickStore:
         bridge, #605 R9) cannot lose rows.  A runaway Work keeps its newest 200.
         """
         with self.db() as db:
+            self.require_read_checkpoint_writer(db)
             db.execute('INSERT INTO work_decisions(job_id,record,created) VALUES (?,?,?)',
                        (job_id,json.dumps(record,ensure_ascii=False),time.time()))
             db.execute('DELETE FROM work_decisions WHERE job_id=? AND id NOT IN '
@@ -2699,10 +2711,11 @@ class QuickStore:
         with (self.db() if db is None else nullcontext(db)) as conn:
             if not conn.in_transaction:
                 conn.execute('BEGIN IMMEDIATE')
-            if epoch is not None and getattr(self._checkpoint_writer, 'guard', None) is not None:
+            if epoch is not None and self.read_checkpoint_writer_bound():
                 ledger = self._read_checkpoint_ledger(conn, job_id)
                 if not ledger or ledger['epoch'] != epoch:
                     return None
+            self.require_read_checkpoint_writer(conn)
             job = conn.execute(
                 f"SELECT request_key FROM jobs WHERE id=? AND NOT EXISTS ("
                 f"SELECT 1 FROM messages WHERE job_id=jobs.id AND id IN ({FORGOTTEN_MESSAGE_IDS}))",

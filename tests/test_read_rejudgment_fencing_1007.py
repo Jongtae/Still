@@ -1,21 +1,25 @@
 """Model-free races at the read judgment and terminal publication boundaries (#1007)."""
 from concurrent.futures import ThreadPoolExecutor
-from contextlib import ExitStack, contextmanager
+from contextlib import contextmanager
 from dataclasses import dataclass
 import json
 import sqlite3
 from threading import Event
+import time
 from unittest import mock
 
 import pytest
 
-from personal_agent.agent_runtime import (Capabilities, WORK_MODEL_TURNS, WORK_STOP_KEY, WORK_TOOL_ATTEMPTS, LedgerSuperseded,
+from personal_agent.agent_runtime import (Capabilities, ReadOverlap, WORK_MODEL_TURNS, WORK_STOP_KEY, WORK_TOOL_ATTEMPTS, LedgerSuperseded,
                                           WorkBudget, WorkLedger, run_agent)
 from personal_agent.conversation_handoff import Judgment
 from personal_agent.decision import RoutedDecisionEngine
 from personal_agent.quickstart_service import AgentService, WORK_SOURCES_KEY
-from personal_agent.quickstart_store import QuickStore
+from personal_agent.quickstart_store import QuickStore, _StoreConnection
 from personal_agent.orchestrator import Catalogue, REACHED
+from personal_agent.owner_forget import OwnerForget
+from personal_agent.procedures import ProcedureLibrary
+from personal_agent.telegram_presence import RECEIVED_CANDIDATES
 from personal_agent.work_execution import WorkRun
 from personal_agent import work_download as reads
 from test_agency_loop import goal_engine
@@ -102,13 +106,13 @@ def test_built_state_must_match_at_both_transactions(case, kind, when):
     assert not rows
 
 
-def orchestration(case, work=None):
+def orchestration(case, work=None, *, budget=None):
     worker = {'id': 'fixture', 'available': True, 'default_model': '', 'models': [],
               'name': 'Fixture', 'kind': 'api', 'tools': [], 'default': True,
               'cost': '', 'latency': '', 'native_search': False, 'browser': False}
     catalogue = Catalogue([worker], {}, 'fixture')
     with mock.patch('personal_agent.quickstart_service.worker_catalogue', return_value=catalogue):
-        return case.service.work_orchestration(work or case.work, case.work['message'], [], {}, case.budget)
+        return case.service.work_orchestration(work or case.work, case.work['message'], [], {}, budget or case.budget)
 
 
 def test_plan_binds_state_before_building_owner_corrections(case):
@@ -549,22 +553,7 @@ def test_late_indirect_writers_and_orchestration_event_keep_the_old_epoch(case):
         assert not db.execute("SELECT 1 FROM tool_events WHERE status='late' OR tool='response_timing'").fetchone()
 
 
-def test_checkpoint_guard_uses_the_scope_at_execute_time(case):
-    _, budget = case.restart()
-    with case.store.db() as db:
-        db.execute('BEGIN IMMEDIATE')
-        with case.store.read_checkpoint_writer(case.id, case.budget.ledger.epoch):
-            with pytest.raises(LedgerSuperseded):
-                db.execute('INSERT INTO tool_events(job_id) VALUES (?)', (case.id,))
-    with ExitStack() as connection:
-        with case.store.read_checkpoint_writer(case.id, case.budget.ledger.epoch):
-            db = connection.enter_context(case.store.db())
-        db.execute('INSERT INTO tool_events(job_id) VALUES (?)', (case.id,))
-        with case.store.read_checkpoint_writer(case.id, budget.ledger.epoch):
-            db.execute('INSERT INTO tool_events(job_id) VALUES (?)', (case.id,))
-
-
-def test_implicit_checkpoint_write_holds_the_lock_during_admission(case, monkeypatch):
+def test_explicit_checkpoint_write_holds_the_lock_during_admission(case, monkeypatch):
     case.store.put('fenced_value', 'original')
     recovery = QuickStore(case.store.root)
     recovery_db = recovery.db
@@ -602,18 +591,287 @@ def test_implicit_checkpoint_write_holds_the_lock_during_admission(case, monkeyp
     assert case.store.config('fenced_value') == 'admitted'
 
 
-def test_checkpoint_guard_leaves_cte_reads_and_autocommit_transaction_free(case):
+def test_checkpoint_scope_leaves_cte_reads_and_unfenced_autocommit_transaction_free(case):
+    assert not hasattr(_StoreConnection, '_admit_checkpoint_write')
     case.restart()
     with case.store.read_checkpoint_writer(case.id, case.budget.ledger.epoch), case.store.db() as db:
         assert db.execute('WITH answer AS (SELECT 42) SELECT * FROM answer').fetchone()[0] == 42
         assert not db.in_transaction
-        db.autocommit = True
-        with pytest.raises(LedgerSuperseded):
-            db.execute('INSERT INTO tool_events(job_id) VALUES (?)', (case.id,))
     with case.store.db() as db:
         db.autocommit = True
-        db.execute('INSERT INTO tool_events(job_id) VALUES (?)', (case.id,))
+        case.store.put('unfenced', 42, db=db)
         assert not db.in_transaction
+    assert case.store.config('unfenced') == 42
+
+
+@pytest.mark.parametrize('point, query, raises', [
+    ('put', "SELECT value FROM config WHERE key='publication'", True),
+    ('intake', 'SELECT detail FROM work_intake_sources', True),
+    ('sources', f"SELECT value FROM config WHERE key='{WORK_SOURCES_KEY}'", False),
+    ('turn', 'SELECT record FROM turn_provenance', False),
+    ('replace_turn', 'SELECT record FROM turn_provenance', True),
+    ('decision', 'SELECT record FROM work_decisions', True),
+    ('stage', "SELECT detail FROM tool_events WHERE tool='response_timing'", False),
+    ('read_result', 'SELECT excerpt FROM work_read_results', True),
+    ('memory', 'SELECT content FROM memories', True),
+    ('memory_candidate', 'SELECT content FROM memory_candidates', True),
+    ('card', 'SELECT state FROM telegram_task_cards', True),
+    ('notification', 'SELECT state FROM telegram_notifications', True),
+    ('decision_audit', "SELECT value FROM config WHERE key='decision_audit'", True),
+    ('document_source', "SELECT value FROM config WHERE key='file_workspace_document_jobs'", True),
+    ('procedure', 'SELECT source FROM procedure_versions', True),
+    ('owner_forget', 'SELECT state FROM memories', True),
+    ('location_request', 'SELECT state FROM context_location_requests', True),
+    ('continuity_reply', 'SELECT response,delivery FROM jobs', True),
+    ('projection', "SELECT content FROM messages WHERE role='assistant'", True),
+    ('orchestration', "SELECT detail FROM tool_events WHERE status='test-publication'", False),
+    ('preparation_create', 'SELECT id,state FROM preparations', True),
+    ('preparation_cancel', 'SELECT id,state FROM preparations', True),
+])
+def test_explicit_commit_points_refuse_stale_writes_and_admit_current(case, point, query, raises):
+    store, service, work_id = case.store, case.service, case.id
+
+    if point == 'owner_forget':
+        memory = store.save_memory('fixture.key', 'observed', work_id=work_id)
+    preparation = lambda goal, created_from: service.preparations.create(
+        kind='prepare', goal=goal, due_at=time.time() + 3600, timezone='Asia/Seoul', recurrence=None,
+        channel='web', created_from=created_from, state='scheduled')
+    if point == 'preparation_cancel':
+        scheduled = preparation('Existing preparation.', None)
+
+    def publish(budget):
+        writes = {
+            'put': lambda: store.put('publication', 'observed'),
+            'intake': lambda: store.mark_outside_content(work_id, {'category': 'fixture', 'operation': 'read'}),
+            'sources': lambda: service.record_work_sources(work_id, {'fixture'}),
+            'turn': lambda: service.record_turn_provenance(work_id, status='observed'),
+            'replace_turn': lambda: store.put_turn_provenance(work_id, {'status': 'observed'}),
+            'decision': lambda: service.record_decision({'purpose': 'observed'}),
+            'stage': lambda: service.record_stage(work_id, 'observed', case.now[0]),
+            'read_result': lambda: store.record_read_result(work_id, tool='read_file', text='observed',
+                                                           source_kind='outside'),
+            'memory': lambda: store.save_memory('fixture.key', 'observed', work_id=work_id),
+            'memory_candidate': lambda: store.save_memory_candidate(work_id, 'fixture.key', 'observed'),
+            'card': lambda: store.save_task_card(work_id, 42, 123, 'partial'),
+            'notification': lambda: store.queue_notification(work_id, 42, 'g', 'context_approval_needed'),
+            'decision_audit': lambda: service.record_decision({'purpose': 'observed'}),
+            'document_source': lambda: service.record_file_workspace_document_job(work_id),
+            'procedure': lambda: ProcedureLibrary(store).propose(work_id, 'fixture', 'def read(): pass', []),
+            'owner_forget': lambda: OwnerForget(store).forget('local-owner', f"memory:{memory['id']}"),
+            'location_request': lambda: service.context_observations.open_location_request(work_id, 42, 'g'),
+            'continuity_reply': lambda: service.complete_continuity_turn(case.work, 'observed'),
+            'projection': lambda: service.record_conversation_notice('observed', job=case.work),
+            'orchestration': lambda: orchestration(case, budget=budget).record('test-publication', {'seen': True}),
+            'preparation_create': lambda: preparation('Observed preparation.', work_id),
+            'preparation_cancel': lambda: service.preparations.cancel(scheduled['id']),
+        }
+        with service.work_decision_scope(work_id, budget):
+            writes[point]()
+
+    def rows():
+        with store.db() as db:
+            return [tuple(row) for row in db.execute(query)]
+
+    _, current = case.restart()
+    before = rows()
+    if raises:
+        with pytest.raises(LedgerSuperseded):
+            publish(case.budget)
+    else:
+        publish(case.budget)
+    assert rows() == before
+    publish(current)
+    assert rows() != before
+
+
+@pytest.mark.parametrize('point', ['preview', 'update', 'terminal_card', 'card_delete', 'location', 'reaction'])
+def test_projection_checks_epoch_without_holding_write_lock_during_transport(case, point, monkeypatch):
+    service, store, work_id = case.service, case.store, case.id
+    store.put('telegram', {'enabled': True, 'generation': 'g', 'user_id': 42})
+    with store.db() as db:
+        db.execute("UPDATE jobs SET channel='telegram:g',chat_id=42 WHERE id=?", (work_id,))
+        if point == 'update':
+            db.execute(
+                "INSERT INTO messages(role,content,channel,created,job_id,delivery_projection) VALUES (?,?,?,?,?,?)",
+                ('assistant', 'earlier preview', 'telegram:g', case.now[0], work_id, 'preview'),
+            )
+    def transport(*args, **kwargs):
+        # An independent writer can get the lock while the surface is waiting.
+        with store.db() as db:
+            db.execute('PRAGMA busy_timeout=0')
+            db.execute('BEGIN IMMEDIATE')
+        if point == 'card_delete':
+            assert store.task_card(work_id)['state'] == 'deleting'
+        return True
+
+    send = mock.Mock(side_effect=transport)
+    monkeypatch.setattr(service.telegram, 'send_message', send)
+    monkeypatch.setattr(service.telegram, 'edit_message_text', send)
+    monkeypatch.setattr(service.telegram, 'delete_message', send)
+    job, current = case.restart()
+    if point == 'preview':
+        orch = mock.Mock()
+        attempt = mock.Mock(number=1, preview={'understanding': 'Current preview.'})
+        publish = lambda: service.show_plan_preview(job, orch, attempt)
+    elif point == 'update':
+        update = service.owner_updater(job)
+        assert update is not None
+        publish = lambda: update('Current update.')
+    elif point == 'terminal_card':
+        store.save_task_card(work_id, 42, 123, 'queued')
+        run = make_run(case, job, current, 'current')
+        service._finish_work(run)
+        service._settle_work_judgments(run)
+        publish = lambda: service.update_task_card(job, 'succeeded')
+    elif point == 'card_delete':
+        store.save_task_card(work_id, 42, 123, 'queued')
+        publish = lambda: service.update_task_card(job, 'running')
+    elif point == 'location':
+        publish = lambda: service.request_current_location(work_id, 'Please share your position.')
+    else:
+        state = mock.Mock(reaction=None)
+        emoji = next(iter(RECEIVED_CANDIDATES))
+        service.presence[work_id] = state
+        monkeypatch.setattr(service.decision_judge, 'turn_reaction', lambda *_: emoji)
+        monkeypatch.setattr(service, '_presence_anchor', lambda _: (mock.Mock(), 123))
+        monkeypatch.setattr(service, '_presence_call', send)
+        publish = lambda: service._react_chosen(job, state)
+
+    with store.read_checkpoint_writer(work_id, case.budget.ledger.epoch):
+        if point == 'preview':
+            assert publish() is False
+        else:
+            with pytest.raises(LedgerSuperseded):
+                publish()
+    send.assert_not_called()
+    with store.read_checkpoint_writer(work_id, current.ledger.epoch):
+        publish()
+    send.assert_called_once()
+    if point == 'terminal_card':
+        assert store.task_card(work_id)['state'] == 'succeeded'
+    elif point == 'card_delete':
+        assert store.task_card(work_id) is None
+    elif point == 'location':
+        assert store.config(service.LOCATION_KEYBOARD_KEY) == {'chat_id': 42}
+    elif point == 'reaction':
+        assert state.reaction == emoji
+    else:
+        with store.db() as db:
+            assert db.execute('SELECT count(*) FROM messages WHERE job_id=? AND delivery_projection=?',
+                              (work_id, point)).fetchone()[0] == 1
+
+
+def test_preview_send_can_overlap_recovery_but_its_projection_is_fenced(case, monkeypatch):
+    service, store, work_id = case.service, case.store, case.id
+    store.put('telegram', {'enabled': True, 'generation': 'g', 'user_id': 42})
+    with store.db() as db:
+        db.execute("UPDATE jobs SET channel='telegram:g',chat_id=42 WHERE id=?", (work_id,))
+
+    def send_during_restart(*args, **kwargs):
+        # Simulate recovery independently of the publishing run's context.
+        with ThreadPoolExecutor(1) as pool:
+            pool.submit(case.restart).result(5)
+
+    send = mock.Mock(side_effect=send_during_restart)
+    monkeypatch.setattr(service.telegram, 'send_message', send)
+    orch = mock.Mock()
+    attempt = mock.Mock(number=1, preview={'understanding': 'Late preview.'})
+    with store.read_checkpoint_writer(work_id, case.budget.ledger.epoch):
+        assert service.show_plan_preview(store.job(work_id), orch, attempt) is False
+    send.assert_called_once()
+    orch.preview_shown.assert_not_called()
+    assert not store.shown_preview(work_id)
+    assert not store.read_checkpoint_can_settle(work_id, case.budget.ledger.epoch)
+
+
+@pytest.mark.parametrize('dispatch', ['early_judgment', 'overlapped_read'])
+def test_child_publication_keeps_epoch_captured_at_dispatch(case, dispatch, monkeypatch):
+    entered, release = Event(), Event()
+
+    def write(*args):
+        entered.set()
+        assert release.wait(10)
+        case.store.put('child_publication', 'observed')
+
+    # Leave budget binding to the dispatch context, so this also catches a child
+    # that silently fell back to an unfenced publication.
+    epoch = [case.budget.ledger.epoch]
+    with case.store.read_checkpoint_writer(case.id, lambda: epoch[0]):
+        if dispatch == 'early_judgment':
+            future = case.service.start_early_judgment(case.id, write)
+            result = lambda: future.result(10)
+        else:
+            caps = Capabilities(case.store, None, {}, None, case.id, lambda *_: None, budget=case.budget)
+            overlap = ReadOverlap(caps, {})
+            calls = [('one', 'read_file', {}, 'read_file'), ('two', 'read_file', {}, 'read_file')]
+            monkeypatch.setattr(overlap, 'group', lambda *_: calls)
+            monkeypatch.setattr(overlap, 'covered', lambda *_: True)
+            monkeypatch.setattr(caps, 'execute', write)
+            overlap.start([], 0, {}, None)
+            result = lambda: overlap.result('one', 'read_file', {})
+    try:
+        assert entered.wait(10)
+        _, current = case.restart()
+        epoch[0] = current.ledger.epoch
+    finally:
+        release.set()
+    with pytest.raises(LedgerSuperseded):
+        result()
+    if dispatch == 'overlapped_read':
+        with pytest.raises(LedgerSuperseded):
+            overlap.result('two', 'read_file', {})
+        overlap.settle()
+    assert case.store.config('child_publication') is None
+    with case.service.work_decision_scope(case.id, current):
+        write()
+    assert case.store.config('child_publication') == 'observed'
+
+
+def test_bridge_read_thread_cannot_append_late_evidence(case, monkeypatch):
+    from personal_agent import mcp_bridge
+
+    entered, release = Event(), Event()
+
+    def read(*args):
+        entered.set()
+        assert release.wait(10)
+        return []
+
+    monkeypatch.setattr(mcp_bridge.AgentOSMcpTools, 'call', read)
+
+    def serve_request(handle, _concurrent):
+        with ThreadPoolExecutor(1) as pool:
+            result = pool.submit(handle, 'tools/call', {'name': 'list_notes', 'arguments': {}})
+            try:
+                assert entered.wait(10)
+                case.restart()
+            finally:
+                release.set()
+            result.result(10)
+
+    def succeeded():
+        with case.store.db() as db:
+            return db.execute("SELECT count(*) FROM tool_events WHERE tool='list_notes' AND status='succeeded'").fetchone()[0]
+
+    monkeypatch.setattr(mcp_bridge, '_serve_stdio', serve_request)
+    mcp_bridge.serve(case.store.root, case.id)
+    assert succeeded() == 0
+
+    monkeypatch.setattr(mcp_bridge, '_serve_stdio',
+                        lambda handle, _: handle('tools/call', {'name': 'list_notes', 'arguments': {}}))
+    mcp_bridge.serve(case.store.root, case.id)
+    assert succeeded() == 1
+
+
+def test_ledger_attaches_and_spends_under_an_unopened_publication_fence(case):
+    _, current = case.restart()
+    with case.store.read_checkpoint_writer(case.id, None):
+        ledger = WorkLedger(case.store, case.id, existing_only=True, wall=lambda: case.now[0])
+        assert ledger.opened is None
+        assert ledger.epoch == current.ledger.epoch
+        assert ledger.spend(WORK_TOOL_ATTEMPTS)
+        assert case.budget.ledger.refusal(WORK_TOOL_ATTEMPTS) == 'superseded'
+    assert current.ledger.counts()['attempts'] == 1
 
 
 def test_effective_folder_grant_is_rechecked_even_when_config_is_unchanged(case, tmp_path):

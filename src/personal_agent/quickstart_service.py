@@ -15,7 +15,7 @@ import threading
 from pathlib import Path
 import time
 import uuid
-from contextlib import ExitStack, contextmanager
+from contextlib import ExitStack, contextmanager, nullcontext
 from types import SimpleNamespace
 import hashlib
 from urllib.parse import urlsplit
@@ -28,11 +28,11 @@ from .work_execution import PROCEED, REDELEGATED, WorkRun
 from .agent_runtime import (Capabilities, ToolError, not_run, cut_to_fit, run_agent, AGENTS, STEER_EVENT, steer_note, evidence_summary, turn_context, render_turn_prompt, attachment_facts,
                             MEMORY_OWNER, context_sections, ENGINE_UNMEDIATED, OWNER_CONVERSATION, lookup_sources, WORK_SOURCES_KEY, WORK_SOURCES_LIMIT, base_label,
                             history_provenance, WorkBudget, PresentationBudget, WORK_TOOL_ATTEMPTS, WORK_DEADLINE_SECONDS, EFFECT_FREE_READS, explicit_search_query, outcome_from_events,
-                            WORK_STOP_KEY, WORK_STOPPED, work_stop_requested, WorkLedger, WORK_LEDGER_KEY, goal_summary, work_source_records,
+                            WORK_STOP_KEY, WORK_STOPPED, work_stop_requested, LedgerSuperseded, WorkLedger, WORK_LEDGER_KEY, goal_summary, work_source_records,
                             backfill_work_sources, recorded_private_sources, NOTES_SUMMARY_COMMANDS, WORK_SOURCES_BACKFILL_KEY, WORK_SOURCES_BACKFILL_VERSION,
                             progress_step, OWNER_LOCAL_ACTIONS)
 from .plugins import PluginRegistry
-from .quickstart_store import INTERIM_PROJECTIONS, PREVIEW_PROJECTION, UPDATE_PROJECTION, QuickStore, owner_words_work
+from .quickstart_store import INTERIM_PROJECTIONS, PREVIEW_PROJECTION, UPDATE_PROJECTION, QuickStore, copy_read_checkpoint_context, owner_words_work
 from .providers import NOT_REPORTED, ModelAdapter, ProviderError, request_json, validate_model
 from .decision import DEFAULT_DECISION_PROVIDER, OUTCOME_DECIDED, RoutedDecisionEngine
 from .decision_routes import ROUTE_NAMES, DecisionRoutes
@@ -1147,6 +1147,7 @@ class AgentService:
         to the paired conversation surface when the Work came from it (best effort, #213).
         """
         with self.store.db() as db:
+            self.store.require_read_checkpoint_writer(db)
             db.execute('INSERT INTO messages(role,content,channel,created,workspace_id) VALUES (?,?,?,?,?)',
                        ('assistant',text,job['channel'],time.time(),job.get('workspace_id')))
         surface=self.surface_of(job)
@@ -2679,7 +2680,7 @@ class AgentService:
         # secrets' values, then the credential shapes (``redact_known_secrets`` ends with them).
         return self._redact_known_secrets(str(text or ''))[:60000]
 
-    def record_turn_provenance(self, job_id, *, db=None, **fields):
+    def record_turn_provenance(self, job_id, *, db=None, terminal=False, **fields):
         """Keep what this Work actually sent and what the worker reported.
 
         Redacted before persistence, bounded, local only; shown in developer
@@ -2721,7 +2722,7 @@ class AgentService:
                                          for text in fields['stream_errors'][:3]]
             # One transaction merges the fields into the stored record, so concurrent writers keep each other's.
             self.store.merge_turn_provenance(job_id,{**{k:v for k,v in fields.items() if v is not None},'recorded_at':time.time()},
-                                             combine=self._combine_turn_record,db=db)
+                                             combine=self._combine_turn_record,db=db,terminal=terminal)
         except Exception:
             LOG.warning('turn provenance could not be recorded job=%s',job_id)
 
@@ -2970,8 +2971,11 @@ class AgentService:
         self._work_local.budget=budget
         try:
             ledger=getattr(budget,'ledger',None)
-            with self.store.read_checkpoint_writer(work_id,ledger.epoch if ledger is not None else None):
+            if ledger is None and self.store.read_checkpoint_writer_bound(work_id):
                 yield
+            else:
+                with self.store.read_checkpoint_writer(work_id,ledger.epoch if ledger is not None else None):
+                    yield
         finally:
             self.current_work_id=previous_work
             self._work_local.budget=previous_budget
@@ -3005,10 +3009,12 @@ class AgentService:
                 try:future.set_result(call(*args,**kwargs))
                 except BaseException as exc:future.set_exception(exc)
 
-        try:self.early_judgment_spawn(run)
+        context=copy_read_checkpoint_context()
+        target=lambda:context.run(run)
+        try:self.early_judgment_spawn(target)
         except Exception as exc:
             LOG.info('early judgment runs in line: %s',type(exc).__name__)
-            run()
+            target()
         return future
 
     @staticmethod
@@ -3048,7 +3054,7 @@ class AgentService:
                                                  checkpoint_snapshot=self.read_checkpoint_snapshot)
         self.intent_classifier=IntentClassifier(judge=self.decision_judge)
 
-    def record_stage(self, job_id, stage, since, db=None, **extra):
+    def record_stage(self, job_id, stage, since, db=None, *, terminal=False, **extra):
         """Record how long one stage of a Work took, from observed clock readings only (#1232).
 
         ``since`` is the wall-clock reading the stage is measured from.  Nothing
@@ -3060,9 +3066,9 @@ class AgentService:
             detail=json.dumps({'stage':stage,'ms':max(0,int((now-since)*1000)),**extra},ensure_ascii=False)
             row=(job_id,'response_timing','recorded',detail,now)
             sql='INSERT INTO tool_events(job_id,tool,status,detail,created) VALUES (?,?,?,?,?)'
-            if db is not None:db.execute(sql,row)
-            else:
-                with self.store.db() as conn:conn.execute(sql,row)
+            with (self.store.db() if db is None else nullcontext(db)) as conn:
+                self.store.require_read_checkpoint_writer(conn,terminal=terminal)
+                conn.execute(sql,row)
         except Exception as exc:
             LOG.info('response timing not recorded: %s',type(exc).__name__)
 
@@ -3536,6 +3542,7 @@ class AgentService:
                 conn.execute('BEGIN IMMEDIATE')
                 return self.record_continuity(job_id,previous_id,relation,executed=executed,reason=reason,
                                               source_work_id=source_work_id,db=conn,link_kind=link_kind)
+        self.store.require_read_checkpoint_writer(db)
         stored=link_kind or relation
         self.store.link_work_relation(job_id,previous_id,stored,db=db)
         db.execute('INSERT INTO tool_events(job_id,tool,status,detail,created) VALUES (?,?,?,?,?)',
@@ -3556,6 +3563,7 @@ class AgentService:
                         and row.get('owner')==self.settings_owner(previous)]
                 if drafts:
                     with self.store.db() as db:
+                        self.store.require_read_checkpoint_writer(db)
                         changed=db.execute("UPDATE jobs SET status='cancelled',error=?,delivery='cancelled' "
                                            f"WHERE id=? AND status IN {ws.sql_in(ws.QUEUED_CONNECTION)}",
                                            (msg('quickstart_service.cancelled_followup'),work_id)).rowcount
@@ -3571,6 +3579,7 @@ class AgentService:
                 return bool(cancelled),msg('quickstart_service.cancelled_connection')
         if previous.get('status')=='queued':
             with self.store.db() as db:
+                self.store.require_read_checkpoint_writer(db)
                 changed=db.execute("UPDATE jobs SET status='cancelled',error=?,delivery='cancelled' WHERE id=? AND status='queued'",
                                    (msg('quickstart_service.cancelled_followup'),work_id)).rowcount
             if changed:
@@ -3609,13 +3618,19 @@ class AgentService:
         # Pilot boundary 1: a stored secret never reaches the chat or the transcript.
         text=self._redact_known_secrets(preview_text(preview))
         try:
-            self.telegram.send_message(job['chat_id'],ai_text(text),reply_to=self.telegram_turns.source(job['id']))
+            reply_to=self.telegram_turns.source(job['id'])
+            with self.store.db() as db:
+                self.store.require_read_checkpoint_writer(db)
+            self.telegram.send_message(job['chat_id'],ai_text(text),reply_to=reply_to)
+            with self.store.db() as db:
+                self.store.require_read_checkpoint_writer(db)
+                db.execute('INSERT INTO messages(role,content,channel,created,workspace_id,job_id,delivery_projection) VALUES (?,?,?,?,?,?,?)',
+                           ('assistant',text,job['channel'],time.time(),job.get('workspace_id'),job['id'],PREVIEW_PROJECTION))
+        except LedgerSuperseded:
+            return False
         except Exception as exc:  # presentation never fails or delays the Work
             LOG.info('plan preview not sent job=%s kind=%s',job['id'],type(exc).__name__)
             return False
-        with self.store.db() as db:
-            db.execute('INSERT INTO messages(role,content,channel,created,workspace_id,job_id,delivery_projection) VALUES (?,?,?,?,?,?,?)',
-                       ('assistant',text,job['channel'],time.time(),job.get('workspace_id'),job['id'],PREVIEW_PROJECTION))
         orchestration.preview_shown(attempt,text)
         return True
 
@@ -3635,13 +3650,14 @@ class AgentService:
             return None
         def tell(text):
             with self.store.db() as db:
+                self.store.require_read_checkpoint_writer(db)
                 sent=db.execute("SELECT COUNT(*) AS n FROM messages WHERE job_id=? AND delivery_projection=?",
                                 (job['id'],UPDATE_PROJECTION)).fetchone()['n']
-            if sent>=self.OWNER_UPDATES_PER_WORK:
-                raise ToolError('이번 요청에서는 이미 충분히 알렸어요. 남은 내용은 답에 담아 주세요.','owner_update_limit')
-            cfg=self.store.config('telegram',{})
-            if not cfg.get('enabled') or job.get('chat_id')!=cfg.get('user_id'):
-                raise ToolError('지금은 대화로 메시지를 보낼 수 없어요. 답에 담아 주세요.','owner_update_unavailable')
+                if sent>=self.OWNER_UPDATES_PER_WORK:
+                    raise ToolError('이번 요청에서는 이미 충분히 알렸어요. 남은 내용은 답에 담아 주세요.','owner_update_limit')
+                cfg=self.store.config('telegram',{},db=db)
+                if not cfg.get('enabled') or job.get('chat_id')!=cfg.get('user_id'):
+                    raise ToolError('지금은 대화로 메시지를 보낼 수 없어요. 답에 담아 주세요.','owner_update_unavailable')
             # Pilot boundary 1: a stored secret never reaches the chat or the transcript.
             text=self._redact_known_secrets(text)
             try:
@@ -3649,6 +3665,7 @@ class AgentService:
             except ProviderError:
                 raise ToolError('메시지를 보내지 못했어요. 답에 담아 주세요.','owner_update_not_sent') from None
             with self.store.db() as db:
+                self.store.require_read_checkpoint_writer(db)
                 db.execute('INSERT INTO messages(role,content,channel,created,workspace_id,job_id,delivery_projection) VALUES (?,?,?,?,?,?,?)',
                            ('assistant',text,job['channel'],time.time(),job.get('workspace_id'),job['id'],UPDATE_PROJECTION))
             return True
@@ -3674,6 +3691,7 @@ class AgentService:
             return False
         question=self._redact_known_secrets(attempt.ask_location)
         with self.store.db() as db:
+            self.store.require_read_checkpoint_writer(db)
             db.execute('INSERT INTO tool_events(job_id,tool,status,detail,created) VALUES (?,?,?,?,?)',
                        (job['id'],'ask_location','succeeded',
                         json.dumps({'scope':'orchestrator','evidence':{'requested':True,'channel':'telegram'}}),time.time()))
@@ -3681,7 +3699,7 @@ class AgentService:
                        ('assistant',question,job['channel'],time.time(),job.get('workspace_id'),job['id']))
             db.execute("UPDATE jobs SET status='succeeded',response=?,error=NULL,provider='builtin',model='orchestration',"
                        "delivery='none' WHERE id=?",(question,job['id']))
-            self.record_stage(job['id'],'finished',claimed_at,db=db,
+            self.record_stage(job['id'],'finished',claimed_at,db=db,terminal=True,
                               total_ms=int((time.time()-(job.get('created') or claimed_at))*1000))
         self.update_task_card(job,'succeeded')
         # The owner's answer is awaited: 👀 is cleared as for any reply awaiting the owner (#835).
@@ -3694,6 +3712,7 @@ class AgentService:
         # Still-authored continuity text read from no private store (#605).
         self.record_work_sources(job['id'],{OWNER_CONVERSATION})
         with self.store.db() as db:
+            self.store.require_read_checkpoint_writer(db)
             db.execute('INSERT INTO messages(role,content,channel,created,workspace_id,job_id,delivery_projection) VALUES (?,?,?,?,?,?,?)',
                        ('assistant',response,job['channel'],time.time(),job.get('workspace_id'),job['id'],'system'))
             db.execute("UPDATE jobs SET status='succeeded',response=?,error=NULL,provider='builtin',model='continuity',delivery=? WHERE id=?",
@@ -4286,11 +4305,13 @@ class AgentService:
         if not self.context_inbox().list():
             return False
         with self.store.db() as db:
+            self.store.require_read_checkpoint_writer(db)
             db.execute("UPDATE jobs SET status='awaiting_context',response=NULL,error=NULL,delivery='none' WHERE id=?",
                        (job['id'],))
         if self.offer_telegram_context_choices(job['id'],job['chat_id'],channel.split(':',1)[1]):
             return True
         with self.store.db() as db:
+            self.store.require_read_checkpoint_writer(db)
             db.execute("UPDATE jobs SET status='running' WHERE id=? AND status='awaiting_context'",(job['id'],))
         return False
 
@@ -4673,6 +4694,10 @@ class AgentService:
         messages read the same sources.  A failed write leaves the Work
         unrecorded, which later Works treat as restrictive.
         """
+        try:
+            self.store.require_read_checkpoint_writer(db)
+        except LedgerSuperseded:
+            return
         labels=tuple(labels)
         for label in labels:
             # Generic private labels also describe our own write receipts. Only
@@ -4799,6 +4824,7 @@ class AgentService:
             with self.store.db() as conn:
                 conn.execute('BEGIN IMMEDIATE')
                 return self.record_file_workspace_document_job(job_id,db=conn)
+        self.store.require_read_checkpoint_writer(db)
         rows=self.store.config('file_workspace_document_jobs',[],db=db)
         rows=rows if isinstance(rows,list) else []
         # #182 review: insertion order kept and this Work appended last, so pruning drops the oldest, never it.
@@ -5216,6 +5242,7 @@ class AgentService:
 
     def _record_connection_wait(self, db, job, guidance):
         db.execute('BEGIN IMMEDIATE')
+        self.store.require_read_checkpoint_writer(db)
         previous=db.execute('SELECT status FROM jobs WHERE id=?',(job['id'],)).fetchone()
         now=time.time()
         message=db.execute('INSERT INTO messages(role,content,channel,created,workspace_id,job_id) VALUES (?,?,?,?,?,?)',
@@ -5688,12 +5715,16 @@ class AgentService:
                       for row,message,flag in zip(earlier_rows,selected,linked_turns)]
         earlier=earlier_rows
         previous_route=self.previous_work_route(job,rows)
+        ledger=getattr(budget,'ledger',None)
+        epoch=ledger.epoch if ledger is not None else None
         def event(status,detail):
             with self.store.db() as db:
-                db.execute('BEGIN IMMEDIATE')
-                ledger=getattr(budget,'ledger',None)
-                if ledger is not None and not self.store.read_checkpoint_can_settle(job['id'],ledger.epoch,db=db):
-                    return
+                if ledger is not None:
+                    db.execute('BEGIN IMMEDIATE')
+                    if not self.store.read_checkpoint_can_settle(job['id'],epoch,db=db):return
+                else:
+                    try:self.store.require_read_checkpoint_writer(db)
+                    except LedgerSuperseded:return
                 db.execute('INSERT INTO tool_events(job_id,tool,status,detail,created) VALUES (?,?,?,?,?)',
                            (job['id'],ORCHESTRATION_EVENT,status,json.dumps(detail,ensure_ascii=False),time.time()))
         state=(lambda:self.store.config(self.ORCHESTRATION_STATE,{}),lambda value:self.store.put(self.ORCHESTRATION_STATE,value))
@@ -6727,10 +6758,12 @@ class AgentService:
                 except Exception as exc:  # presentation only
                     LOG.info('telegram turn reaction skipped: %s',type(exc).__name__)
 
-        try:self.turn_reaction_spawn(judge_and_apply)
+        context=copy_read_checkpoint_context()
+        target=lambda:context.run(judge_and_apply)
+        try:self.turn_reaction_spawn(target)
         except Exception as exc:
             LOG.info('telegram turn reaction dispatch runs in line: %s',type(exc).__name__)
-            judge_and_apply()
+            target()
 
     def _react_chosen(self, job, state):
         """Replace the 👀 by the Judgment AI's choice for this message (#858, #969).
@@ -6752,6 +6785,8 @@ class AgentService:
             if not current or current['status']!='running' or self.presence.get(job['id']) is not state:return
             surface,source=self._presence_anchor(job)
             if surface is None or not surface.capabilities.reactions:return
+            with self.store.db() as db:
+                self.store.require_read_checkpoint_writer(db)
             if self._presence_call(surface,PRESENCE_REACT,job['chat_id'],source,emoji):
                 state.reaction=emoji
 
@@ -7311,6 +7346,7 @@ class AgentService:
             if job is not None:channel=job['channel']
         if db is None:
             with self.store.db() as db:return self.record_conversation_notice(text,job=job,db=db,channel=channel)
+        self.store.require_read_checkpoint_writer(db)
         return db.execute('INSERT INTO messages(role,content,channel,created,job_id) VALUES (?,?,?,?,?)',
                           ('assistant',text,channel,time.time(),job['id'] if job else None)).lastrowid
 
@@ -7743,6 +7779,7 @@ class AgentService:
         receipt=(authorization or {}).get('receipt')
         if receipt is None:return
         with self.store.db() as db:
+            self.store.require_read_checkpoint_writer(db)
             db.execute("UPDATE tool_events SET status='not_run' WHERE id=? AND job_id=? AND tool='payment_autonomy' "
                        "AND status='authorized'",(receipt,job['id']))
 
@@ -8719,6 +8756,7 @@ class AgentService:
                 detail['evidence'].update(decision='deny',effect='none')
             with self.store.db() as db:
                 db.execute('BEGIN IMMEDIATE')
+                self.store.require_read_checkpoint_writer(db)
                 allow=allow and self._connector_authority_current(job,target,binding,effect,operation)
                 if allow and autonomy:
                     try:allow=bool(self._authorize_payment_autonomy(job,binding,label,ticket=autonomy,dispatch=True,db=db))
@@ -8729,6 +8767,7 @@ class AgentService:
         else:
             # Permission is not an effect: only the worker stream proves a call.
             with self.store.db() as db:
+                self.store.require_read_checkpoint_writer(db)
                 db.execute('INSERT INTO tool_events(job_id,tool,status,detail,created) VALUES (?,?,?,?,?)',
                            (job['id'],'connector_permission','allowed' if allow else 'denied',json.dumps(detail,ensure_ascii=False),time.time()))
         if allow and autonomy:
@@ -8736,6 +8775,7 @@ class AgentService:
             # Delivery may wait on a remote conversation. Recheck immediately before CLI dispatch.
             with self.store.db() as db:
                 db.execute('BEGIN IMMEDIATE')
+                self.store.require_read_checkpoint_writer(db)
                 try:allow=bool(self._authorize_payment_autonomy(job,binding,label,ticket=autonomy,db=db))
                 except ToolError:allow=False
                 allow=allow and self._connector_authority_current(job,target,binding,effect,operation)
@@ -8746,6 +8786,7 @@ class AgentService:
         if allow and write_ticket:
             with self.store.db() as db:
                 db.execute('BEGIN IMMEDIATE')
+                self.store.require_read_checkpoint_writer(db)
                 try:self.self_set_write_check(job,write_ticket,db=db)
                 except ToolError:
                     allow=False
@@ -8873,6 +8914,7 @@ class AgentService:
             return []
         with self.store.db() as db:
             db.execute('BEGIN IMMEDIATE')
+            self.store.require_read_checkpoint_writer(db)
             decisions=self._connector_decisions(db,job_id,engine)
             start=db.execute("SELECT MAX(id) FROM tool_events WHERE job_id=? AND tool='subscription_engine' AND status='running'",(job_id,)).fetchone()[0] or 0
             observed=[json.loads(row['detail']) for row in db.execute("SELECT detail FROM tool_events WHERE job_id=? AND tool='connector_read' AND id>?",(job_id,start))]
@@ -8937,6 +8979,7 @@ class AgentService:
                 if outcome=='failed' and record['state']=='active':evidence['trust_rung']=record['rung']
             if evidence.get('trust_record_unavailable') or evidence.get('trust_rung'):
                 with self.store.db() as db:
+                    self.store.require_read_checkpoint_writer(db)
                     db.execute('UPDATE tool_events SET detail=? WHERE id=?',(json.dumps(detail,ensure_ascii=False),event_id))
         return undecided
 
@@ -9521,12 +9564,14 @@ class AgentService:
         if with_answer:
             self.store.put(self.LOCATION_OFFER_PREFIX+job_id,{'request_id':request_id,'label':button_label or ''})
             return request_id
+        with self.store.db() as db:
+            self.store.require_read_checkpoint_writer(db)
         try:
             self.telegram.send_message(cfg['user_id'],prompt.strip(),markup)
         except ProviderError:
             self.context_observations.cancel_location_request(request_id)
             raise
-        # #992: the keyboard stays reopenable until removed; the next answer after the request ends removes it.
+        # #992: the next answer removes the keyboard after the request ends.
         self.store.put(self.LOCATION_KEYBOARD_KEY,{'chat_id':cfg['user_id']})
         return request_id
 
@@ -10020,6 +10065,7 @@ class AgentService:
         events=self._steer_events(steered['id'])
         text=STEER_SECOND_PASS_TEXT if 'continued' in events and 'continuation_failed' not in events else STEER_FOLDED_TEXT
         with self.store.db() as db:
+            self.store.require_read_checkpoint_writer(db)
             db.execute("UPDATE jobs SET status='succeeded',response=?,delivery='none' WHERE id=?",(text,job['id']))
         self.presence.pop(job['id'],None)
         surface,source=self._presence_anchor(job)

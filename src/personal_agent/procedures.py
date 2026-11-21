@@ -169,6 +169,7 @@ class ProcedureLibrary:
         row_id = str(uuid.uuid4())
         with self.store.db() as db:
             db.execute('BEGIN IMMEDIATE')
+            self.store.require_read_checkpoint_writer(db)
             db.execute("DELETE FROM procedure_versions WHERE state=? AND created<?", (CANDIDATE, now - CANDIDATE_SECONDS))
             db.execute("DELETE FROM procedure_versions WHERE state=? AND slot=? AND work_id=?", (CANDIDATE, slot, work_id))
             db.execute('INSERT INTO procedure_versions(id,slot,version,state,source,digest,functions_json,work_id,created) '
@@ -182,6 +183,7 @@ class ProcedureLibrary:
             return
         with self.store.db() as db:
             db.execute('BEGIN IMMEDIATE')
+            self.store.require_read_checkpoint_writer(db)
             found = db.execute('SELECT stats_json FROM procedure_versions WHERE id=?', (row_id,)).fetchone()
             if found is None:
                 return
@@ -209,6 +211,7 @@ class ProcedureLibrary:
         saved = []
         with self.store.db() as db:
             db.execute('BEGIN IMMEDIATE')
+            self.store.require_read_checkpoint_writer(db)
             candidates = [self._row(row) for row in db.execute(
                 "SELECT * FROM procedure_versions WHERE state=? AND work_id=? ORDER BY created", (CANDIDATE, work_id))]
             origin = continued_work(db, work_id)

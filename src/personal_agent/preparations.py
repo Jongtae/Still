@@ -1478,6 +1478,7 @@ class Preparations:
             return None
         with self.store.db() as db:
             db.execute('BEGIN IMMEDIATE')
+            self.store.require_read_checkpoint_writer(db)
             carried = db.execute('SELECT detail FROM tool_events WHERE job_id=? AND tool=? AND status=? ORDER BY id LIMIT 1',
                                  (job['id'], SCHEDULED_BUDGET_KEY, 'unchecked-slots')).fetchone()
             if carried:
@@ -1621,6 +1622,7 @@ class Preparations:
         owns_transaction = db is None
         with (self.store.db() if owns_transaction else nullcontext(db)) as db:
             if owns_transaction:db.execute('BEGIN IMMEDIATE')
+            self.store.require_read_checkpoint_writer(db)
             if resume_offer:
                 brief = self._admit_line_resume(db, line_id, due_at, now)
             if piece_of is not None:
@@ -1764,6 +1766,7 @@ class Preparations:
     def decline_line_resume(self, preparation_id, offer_digest):
         with self.store.db() as db:
             db.execute('BEGIN IMMEDIATE')
+            self.store.require_read_checkpoint_writer(db)
             row = self._editable(db, preparation_id, (STATE_PROPOSED,))
             self._exact_line_resume(row, offer_digest)
             self.cancel(preparation_id, db=db)
@@ -1799,6 +1802,7 @@ class Preparations:
         with (self.store.db() if owns_transaction else nullcontext(db)) as db:
             if owns_transaction:
                 db.execute('BEGIN IMMEDIATE')
+                self.store.require_read_checkpoint_writer(db)
             row = db.execute('SELECT * FROM preparations WHERE id=?', (preparation_id,)).fetchone()
             if row and row['origin'] == ORIGIN_LINE_RESUME:
                 # Build at the existing #659 transaction boundary: the owner act must activate both
@@ -1838,6 +1842,7 @@ class Preparations:
         with (self.store.db() if owns_transaction else nullcontext(db)) as db:
             if owns_transaction:
                 db.execute('BEGIN IMMEDIATE')
+                self.store.require_read_checkpoint_writer(db)
             current = db.execute('SELECT updated_at FROM preparations WHERE id=?', (preparation_id,)).fetchone()
             # The cancellation's undo binding stays distinct even with an unchanged clock.
             revision = max(now, math.nextafter(current['updated_at'], math.inf)) if current else now
@@ -1921,6 +1926,7 @@ class Preparations:
                                                sort_keys=True).encode()).hexdigest()
         with self.store.db() as db:
             db.execute('BEGIN IMMEDIATE')
+            self.store.require_read_checkpoint_writer(db)
             row = db.execute('SELECT * FROM preparations WHERE id=?', (preparation_id,)).fetchone()
             job = db.execute('SELECT * FROM jobs WHERE id=?', (work_id,)).fetchone()
             if (not self.owns_running(row, job) or row['self_change_undone']
@@ -2072,6 +2078,7 @@ class Preparations:
         """
         with self.store.db() as db:
             db.execute('BEGIN IMMEDIATE')
+            self.store.require_read_checkpoint_writer(db)
             row = db.execute('SELECT * FROM preparations WHERE id=?', (preparation_id,)).fetchone()
             job = db.execute('SELECT id,request_key FROM jobs WHERE id=?', (work_id,)).fetchone() if work_id else None
             if self.owns_running(row, job):
@@ -2099,6 +2106,7 @@ class Preparations:
         """Resume at a future slot, never catch up missed slots (#575)."""
         with self.store.db() as db:
             db.execute('BEGIN IMMEDIATE')
+            self.store.require_read_checkpoint_writer(db)
             row = db.execute('SELECT * FROM preparations WHERE id=?', (preparation_id,)).fetchone()
             if row and self.self_undoable(dict(row), 'pause'):
                 return self._undo_self_change(db, row)
@@ -2109,6 +2117,7 @@ class Preparations:
         # Owner-only restore also reapplies the audited bounds after a self-narrow.
         with self.store.db() as db:
             db.execute('BEGIN IMMEDIATE')
+            self.store.require_read_checkpoint_writer(db)
             row = db.execute('SELECT * FROM preparations WHERE id=?', (preparation_id,)).fetchone()
             if row and (cancelled_at is None or row['updated_at'] == cancelled_at) and any(
                     self.self_undoable(dict(row), operation) for operation in SELF_CHANGE_OPERATIONS):
@@ -2119,6 +2128,7 @@ class Preparations:
         now = self.clock()
         with self.store.db() as db:
             db.execute('BEGIN IMMEDIATE')
+            self.store.require_read_checkpoint_writer(db)
             row = self._editable(db, preparation_id, (state,))
             if row['origin'] == ORIGIN_LINE_RESUME and row['accepted_by'] is None:
                 raise PreparationRefusal('invalid_state')
@@ -2176,6 +2186,7 @@ class Preparations:
         now = self.clock()
         with self.store.db() as db:
             db.execute('BEGIN IMMEDIATE')
+            self.store.require_read_checkpoint_writer(db)
             row = self._editable(db, preparation_id, states)
             updates = self.preview_edit(row, changes, now, db=db)
             if expected_max_runs is not None and updates.get('max_runs') != expected_max_runs:
@@ -2319,6 +2330,7 @@ class Preparations:
         """Remove the row.  Its past Works and their Evidence stay."""
         with self.store.db() as db:
             db.execute('BEGIN IMMEDIATE')
+            self.store.require_read_checkpoint_writer(db)
             row = db.execute('SELECT state,line_id,origin,created_from,piece_of FROM preparations WHERE id=?',
                              (preparation_id,)).fetchone()
             if row is None:
@@ -2391,6 +2403,7 @@ class Preparations:
         """
         with self.store.db() as db:
             db.execute('BEGIN IMMEDIATE')
+            self.store.require_read_checkpoint_writer(db)
             row = db.execute('SELECT * FROM preparations WHERE id=? AND state=? AND due_at<=?',
                              (preparation_id, STATE_SCHEDULED, now)).fetchone()
             following = row and next_due(row['due_at'], row['timezone'], row['recurrence'], now, row['rule_start'], row['run_count'])
@@ -2432,6 +2445,7 @@ class Preparations:
             return False
         with self.store.db() as db:
             db.execute('BEGIN IMMEDIATE')
+            self.store.require_read_checkpoint_writer(db)
             if db.execute('SELECT 1 FROM tool_events WHERE job_id=? AND tool=? LIMIT 1',
                           (work_id, OFFERED_EVENT_TOOL)).fetchone():
                 return False
@@ -2458,6 +2472,7 @@ class Preparations:
         """
         with self.store.db() as db:
             db.execute('BEGIN IMMEDIATE')
+            self.store.require_read_checkpoint_writer(db)
             db.execute(f'UPDATE preparations SET state=?,updated_at=? WHERE {self._LAPSED_ONE_OFF}',
                        (STATE_EXPIRED, now, STATE_PROPOSED, ORIGIN_DREAM, now))
             anchor = db.execute('SELECT created_from FROM preparations WHERE origin=? AND state=? AND offered_at IS NULL '
@@ -2479,6 +2494,7 @@ class Preparations:
         """A held dream never catches up a missed slot when delivery/upkeep releases it."""
         with self.store.db() as db:
             db.execute('BEGIN IMMEDIATE')
+            self.store.require_read_checkpoint_writer(db)
             current = db.execute('SELECT * FROM preparations WHERE id=? AND state=?',
                                  (row['id'], STATE_SCHEDULED)).fetchone()
             if not current:
@@ -2693,6 +2709,7 @@ class Preparations:
         with (self.store.db() if owns_transaction else nullcontext(db)) as db:
             if owns_transaction:
                 db.execute('BEGIN IMMEDIATE')
+                self.store.require_read_checkpoint_writer(db)
             if wake:
                 existing = db.execute('SELECT id FROM jobs WHERE request_key=?', (key,)).fetchone()
                 if existing:
@@ -2902,6 +2919,7 @@ class Preparations:
                                       promised=REASON_WINDOW_CLOSED if closed_early else promised)
         with self.store.db() as db:
             db.execute('BEGIN IMMEDIATE')
+            self.store.require_read_checkpoint_writer(db)
             current = db.execute('SELECT * FROM preparations WHERE id=?', (row['id'],)).fetchone()
             if (not current or current['state'] != STATE_RUNNING
                     or current['last_run_job_id'] != row['last_run_job_id']):
@@ -2984,6 +3002,7 @@ class Preparations:
         if db is None:
             with self.store.db() as db:
                 db.execute('BEGIN IMMEDIATE')
+                self.store.require_read_checkpoint_writer(db)
                 return self.record_notified(work_id, digest_, text, now, db=db)
         job = db.execute('SELECT * FROM jobs WHERE id=?', (work_id,)).fetchone()
         job = dict(job) if job else None

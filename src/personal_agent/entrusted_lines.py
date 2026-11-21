@@ -221,6 +221,7 @@ class EntrustedLines:
         line_id = uuid.uuid4().hex[:16]
         with self.store.db() as db:
             db.execute('BEGIN IMMEDIATE')
+            self.store.require_read_checkpoint_writer(db)
             count = db.execute('SELECT count(DISTINCT slot) FROM procedure_versions WHERE slot LIKE ? AND state=?',
                                (SLOT_PREFIX + '%', CURRENT)).fetchone()[0]
             if count >= MAX_LINES:
@@ -252,6 +253,7 @@ class EntrustedLines:
         source = encode(brief)
         with self.store.db() as db:
             db.execute('BEGIN IMMEDIATE')
+            self.store.require_read_checkpoint_writer(db)
             for row in db.execute('SELECT * FROM procedure_versions WHERE slot LIKE ? AND version=1 AND state IN (?,?)',
                                   (SLOT_PREFIX+'%', CURRENT, KEPT)):
                 if json.loads(row['stats_json'] or '{}').get('stand_key') == stats['stand_key']:
@@ -273,6 +275,7 @@ class EntrustedLines:
         owns_transaction = db is None
         with (self.store.db() if owns_transaction else nullcontext(db)) as db:
             if owns_transaction:db.execute('BEGIN IMMEDIATE')
+            self.store.require_read_checkpoint_writer(db)
             before = self.current(line_id, db)
             if before is None:
                 raise LineRefusal('line_not_found')

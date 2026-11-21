@@ -134,6 +134,7 @@ class OwnerForget:
         """``forget`` inside the caller's open transaction; ``operation`` is ``forget``, ``delete`` or ``migrate``."""
         if operation not in ('forget', 'delete', MIGRATE):
             raise ValueError('forget operation')
+        self.store.require_read_checkpoint_writer(db)
         kind, item_id = self.parse(ref)
         owner_key = self.store._memory_binding(owner_id)
         now = self.clock()
@@ -356,6 +357,7 @@ class OwnerForget:
         now = self.clock()
         with self.store.db() as db:
             db.execute('BEGIN IMMEDIATE')
+            self.store.require_read_checkpoint_writer(db)
             receipt = db.execute('SELECT * FROM owner_state_receipts WHERE id=? AND owner_key=?',
                                  (str(receipt_id or ''), owner_key)).fetchone()
             if receipt is None or receipt['operation'] not in UNDOABLE_OPERATIONS:
@@ -397,6 +399,7 @@ class OwnerForget:
         now = self.clock()
         with self.store.db() as db:
             db.execute('BEGIN IMMEDIATE')
+            self.store.require_read_checkpoint_writer(db)
             receipt = db.execute('SELECT * FROM owner_state_receipts WHERE id=? AND owner_key=?',
                                  (str(receipt_id or ''), owner_key)).fetchone()
             if receipt is None or receipt['operation'] not in UNDOABLE_OPERATIONS:

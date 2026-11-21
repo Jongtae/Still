@@ -16,7 +16,10 @@ A CLI's vendor-native tools and an isolated sidecar's served list are
 
 import hashlib
 import json
+from functools import partial
 import threading
+
+from .quickstart_store import copy_read_checkpoint_context
 
 
 TOOLS_KEEP = 40
@@ -165,6 +168,6 @@ def record_served(store, job_id, definitions, representation):
             store.merge_turn_provenance(job_id, {}, combine=lambda current, _fields: served_entry(current, identity) or current)
         except Exception:
             pass
-    worker = threading.Thread(target=write, name='record-served-tools')
+    worker = threading.Thread(target=partial(copy_read_checkpoint_context().run, write), name='record-served-tools')
     worker.start()
     return worker

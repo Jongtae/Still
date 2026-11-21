@@ -1,7 +1,7 @@
 """Scoped local file workspace: references stay read-only; results are new files."""
 from .messages import msg
 from pathlib import Path
-from contextlib import contextmanager
+from contextlib import contextmanager, nullcontext
 import fcntl, hashlib, json, os, re, sqlite3, stat, time, unicodedata, uuid
 from .document_reader import MAX_FILE_BYTES, read as read_document, supported as supported_document
 from . import folder_grants
@@ -243,7 +243,9 @@ class FileWorkspace:
         for record in pending:
             if deadline is not None and time.monotonic()>deadline: break
             if record.get('workspace_id')!=active_id:
-                with self.store.db() as db: db.execute("UPDATE file_workspace_results SET state='detached' WHERE id=?",(record['id'],))
+                with self.store.db() as db:
+                    self.store.require_read_checkpoint_writer(db)
+                    db.execute("UPDATE file_workspace_results SET state='detached' WHERE id=?",(record['id'],))
                 continue
             try:
                 published=self._result_path(record['path'])
@@ -251,11 +253,14 @@ class FileWorkspace:
                           and hashlib.sha256(published.read_bytes()).hexdigest()==record['content_hash'])
             except (OSError,ValueError): complete=False
             with self.store.db() as db:
+                self.store.require_read_checkpoint_writer(db)
                 if complete: db.execute("UPDATE file_workspace_results SET state='current' WHERE id=? AND state='pending'",(record['id'],))
                 else: db.execute("DELETE FROM file_workspace_results WHERE id=? AND state='pending'",(record['id'],))
 
     def _mark_current(self, record):
-        with self.store.db() as db: db.execute("UPDATE file_workspace_results SET state='current' WHERE id=? AND state='pending'",(record['id'],))
+        with self.store.db() as db:
+            self.store.require_read_checkpoint_writer(db)
+            db.execute("UPDATE file_workspace_results SET state='current' WHERE id=? AND state='pending'",(record['id'],))
 
     def save(self, request_id, title, content, sources):
         with self._publication_lock():
@@ -271,6 +276,7 @@ class FileWorkspace:
         body=content.rstrip()+'\n\n---\nSources:\n'+''.join(f'- {source["path"]} @ {source["version"]}\n' for source in sources)
         with self.store.db() as db:
             self._ensure_results_table(db); db.execute('BEGIN IMMEDIATE')
+            self.store.require_read_checkpoint_writer(db)
             old=db.execute('SELECT * FROM file_workspace_results WHERE request_id=?',(request_id,)).fetchone()
             if old:return dict(old)
             suffix=1
@@ -285,7 +291,12 @@ class FileWorkspace:
             temporary.write_text(body,encoding='utf-8')
             while True:
                 try:
-                    os.link(temporary,target); published=True; temporary.unlink(); break
+                    with (self.store.db() if self.store.read_checkpoint_writer_bound() else nullcontext()) as db:
+                        if db is not None:self.store.require_read_checkpoint_writer(db)
+                        os.link(temporary,target)
+                        published=True
+                    temporary.unlink()
+                    break
                 except FileExistsError:
                     temporary.unlink(missing_ok=True)
                     with self.store.db() as db: db.execute("DELETE FROM file_workspace_results WHERE id=? AND state='pending'",(record['id'],))
@@ -363,7 +374,9 @@ class FileWorkspace:
             if deadline is not None and time.monotonic()>deadline:
                 self.stopped_early=True; break
             if record.get('workspace_id')!=self._workspace_id():
-                with self.store.db() as db: db.execute("UPDATE file_workspace_results SET state='detached' WHERE id=?",(record['id'],))
+                with self.store.db() as db:
+                    self.store.require_read_checkpoint_writer(db)
+                    db.execute("UPDATE file_workspace_results SET state='detached' WHERE id=?",(record['id'],))
                 continue
             fresh=self._fresh(record,deadline)
             if fresh is self.UNCHECKED:
@@ -372,7 +385,9 @@ class FileWorkspace:
             if fresh==self.UNAVAILABLE:
                 # A cited reference folder is unusable now: left as it is, and the search is incomplete.
                 self.stopped_early=True; continue
-            with self.store.db() as db: db.execute('UPDATE file_workspace_results SET state=? WHERE id=?',('current' if fresh else 'stale',record['id']))
+            with self.store.db() as db:
+                self.store.require_read_checkpoint_writer(db)
+                db.execute('UPDATE file_workspace_results SET state=? WHERE id=?',('current' if fresh else 'stale',record['id']))
             if not fresh: continue
             try:
                 published=self._result_path(record['path'])
@@ -384,7 +399,9 @@ class FileWorkspace:
                 content=raw.decode('utf-8')
             except (OSError,UnicodeError,ValueError):
                 # #182 review: deleted, unreadable, oversized or edited: not a current result any more.
-                with self.store.db() as db: db.execute("UPDATE file_workspace_results SET state='stale' WHERE id=?",(record['id'],))
+                with self.store.db() as db:
+                    self.store.require_read_checkpoint_writer(db)
+                    db.execute("UPDATE file_workspace_results SET state='stale' WHERE id=?",(record['id'],))
                 continue
             if latest or needle is None or needle in search_key(record['path']+'\n'+content): results.append({'id':record['id'],'path':record['path'],'content':content,'sources':json.loads(record['sources'])})
             if latest and results: break
@@ -414,7 +431,9 @@ class FileWorkspace:
             if fresh is self.UNCHECKED or fresh==self.UNAVAILABLE: return self.UNKNOWN
             ok=fresh is True
         if not ok:
-            with self.store.db() as db: db.execute("UPDATE file_workspace_results SET state='stale' WHERE id=?",(record['id'],))
+            with self.store.db() as db:
+                self.store.require_read_checkpoint_writer(db)
+                db.execute("UPDATE file_workspace_results SET state='stale' WHERE id=?",(record['id'],))
         return ok
 
     def result_for(self, request_id):
@@ -430,7 +449,9 @@ class FileWorkspace:
         active_id=self.active().get('workspace_id')
         # Only a usable, different result folder detaches it; an unavailable one (an unmounted drive) leaves it.
         if record and record.get('state')=='current' and active_id and record.get('workspace_id')!=active_id:
-            with self.store.db() as db: db.execute("UPDATE file_workspace_results SET state='detached' WHERE id=?",(record['id'],))
+            with self.store.db() as db:
+                self.store.require_read_checkpoint_writer(db)
+                db.execute("UPDATE file_workspace_results SET state='detached' WHERE id=?",(record['id'],))
             record['state']='detached'
         return record
 
