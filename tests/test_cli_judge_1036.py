@@ -73,6 +73,7 @@ def test_an_unanswered_judgment_is_a_judge_error_not_a_score():
 
 
 def test_arms_are_instruction_text_for_progress_cases_only():
+    pytest.importorskip('inspect_ai')
     from agentos_eval import task
     assert task.arm_prefix('') == '' and task.arm_prefix('current') == ''
     assert task.arm_prefix('bluf') and task.arm_prefix('exception')
