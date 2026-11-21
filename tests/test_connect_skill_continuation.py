@@ -48,7 +48,9 @@ class SkillContinuation(_Case):
         original = self.service.skill_binding()
         before = original.refs()
         draft = self.propose()
-        self.assertEqual(self.github.urls, [], 'pin already exact; no acquisition before owner confirmation')
+        self.assertEqual(self.github.urls, [f'https://codeload.github.com/{UPSTREAM}/tar.gz/{COMMIT}'],
+                         'the exact commit is inspected for the approval preview')
+        self.assertFalse(self.library.installed(), 'installation waits for owner confirmation')
         self.assertTrue(draft['continues_work'])
         self.assertIn('원래 작업', draft['note'])
         self.confirm(draft)
