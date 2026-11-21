@@ -74,7 +74,12 @@ class McpContinuation(_Case):
         draft = self.propose()
         self.assertEqual(self.calls, [])
         self.assertFalse(owner_mcp.confirmed(self.store, 'claude-code'))
-        self.assertIn(PUBLIC['url'], draft['summary'])
+        row = self.settings._drafts()[draft['draft_id']]
+        summary, exact = self.settings.confirmation_text([row], folded=True).split('<blockquote expandable>')
+        self.assertIn(PUBLIC['name'], summary)
+        for value in (PUBLIC['url'], PUBLIC['source'], PUBLIC['publisher'], PUBLIC['licence'], *PUBLIC['required_tools']):
+            self.assertNotIn(value, summary)
+            self.assertIn(value, exact)
         self.confirm(draft)
         self.assertEqual(self.calls, ['register', 'observe'])
         self.assertEqual(self.store.job(self.job['id'])['status'], 'queued')
@@ -873,16 +878,17 @@ class McpContinuation(_Case):
         self.job = self.store.job(self.store.enqueue('Connect and summarize the record', 'phone', 'telegram:gen-1', CHAT))
         data = {**PUBLIC, 'url': 'https://service.example/' + 'a' * 900,
                 'source': 'https://publisher.example/' + 'b' * 900}
-        draft = self.propose(value=json.dumps(data))
+        self.propose(value=json.dumps(data))
         self.service.queue_settings_confirmation(self.job)
         self.assertTrue(self.service.deliver_notification())
         sent = [body for method, body in self.telegram if method == 'sendMessage']
-        self.assertGreater(len(sent), 1)
-        combined = ''.join(body['text'].split('\n', 1)[1] for body in sent)
-        self.assertIn(data['url'], combined)
-        self.assertIn(data['source'], combined)
-        self.assertTrue(sent[-1].get('reply_markup'))
-        self.assertFalse(any(body.get('reply_markup') for body in sent[:-1]))
+        self.assertEqual(len(sent), 1)
+        self.assertEqual(sent[0]['parse_mode'], 'HTML')
+        summary, exact = sent[0]['text'].split('<blockquote expandable>')
+        for value in (data['url'], data['source']):
+            self.assertNotIn(value, summary)
+            self.assertIn(value, exact)
+        self.assertTrue(sent[0].get('reply_markup'))
         self.assertFalse(self.calls)
 
     def test_tampered_setup_or_changed_owner_before_confirmation_runs_nothing(self):

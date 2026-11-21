@@ -1160,7 +1160,10 @@ class BrowserSession:
                 if exc.code != 'approval_required':
                     raise
                 return self._cancelled_submit(getattr(exc, 'cancelled_form', None), description, depth + 1)
-        self._refuse(binding, description + cancelled_note(record))
+        self._refuse(binding, f'{description} · {CANCELLED_NOTE}', msg(
+            'browser.click_preview', url=login_window_url(record.get('page')),
+            target=form_identity(record), state=record.get('state') or '',
+            actions=login_window_url(record.get('action'))))
 
     def _settle(self):
         """Let a page that renders its content after load finish rendering, bounded (#709).
@@ -1499,7 +1502,7 @@ class BrowserSession:
             raise ValueError('effect는 read, navigate, mutate, payment 중 하나여야 합니다.')
         return effect
 
-    def _guard(self, binding, description, required, *, autonomy=True):
+    def _guard(self, binding, description, required, *, autonomy=True, exact=''):
         """Refuse a guarded step unless an exact owner approval is consumed now.
 
         ``required`` is Still's own classification of the target, or the
@@ -1517,16 +1520,23 @@ class BrowserSession:
         if self.approvals.consume(binding):
             return True
         mode = getattr(self.approvals, 'payment_autonomy', None)
-        ticket = mode(binding, description) if required and autonomy and callable(mode) else None
+        full_description = f'{description}\n{exact}' if exact else description
+        ticket = mode(binding, full_description) if required and autonomy and callable(mode) else None
         if ticket:
-            self._autonomy_payment = (binding, description, ticket)
+            self._autonomy_payment = (binding, full_description, ticket)
             return True
         if required:
-            self._refuse(binding, description)
+            self._refuse(binding, description, exact)
         return False
 
 
-    def _refuse(self, binding, description):
+    def _refuse(self, binding, description, exact=''):
+        if exact:
+            from .code_run import APPROVAL_EXACT_LABEL
+            # Page text can contain line breaks. Keep it inside the summary line,
+            # where it cannot supply the delimiter for the exact values.
+            summary = ' '.join(description.splitlines())
+            description = f'{summary}\n\n{APPROVAL_EXACT_LABEL} {exact}'
         try:
             self.approvals.request(binding, description)
         except Exception:
@@ -1851,7 +1861,8 @@ class BrowserSession:
                 return self._follow_link(element, snapshot)
             raise effect_fence_error(refusal)
         key = target_key(element)
-        state, description = self._click_preview(snapshot, element)
+        state, summary, exact = self._click_preview(snapshot, element)
+        description = f'{summary}\n{exact}'
         # #758: a control whose name commits a purchase needs approval whatever form it
         # is in (a stored payment method or a fetch charge leaves no card field to see).
         # #619: this deterministic floor, the payment form and the worker's ``payment``
@@ -1884,7 +1895,7 @@ class BrowserSession:
                         current_element.get('submit_guarded')):
                     raise ToolError(TARGET_TEXT, 'target_unavailable')
                 snapshot, element = current, current_element
-            approved = False if write_ticket else self._guard(binding, description, required)
+            approved = False if write_ticket else self._guard(binding, summary, required, exact=exact)
             self._spend_step()   # #620: a press held for approval, or on a missing target, spends nothing
         except Exception:
             if write_ticket:self.approvals.self_set_write_release(write_ticket)
@@ -1894,7 +1905,7 @@ class BrowserSession:
         try:
             answer = self._input(lambda timeout: self._driver().click(element['index'], timeout, approved=approved,
                                                                       confirm_ok=confirm_ok, effect=effect),
-                                 description, write_ticket=write_ticket)
+                                 summary, write_ticket=write_ticket)
         except ToolError as exc:
             if write_ticket:self.approvals.self_set_write_finished(write_ticket,observed=False,held=bool(getattr(self,'_self_set_submit',None)))
             raise self._named_cover(self._observed(exc, approved), snapshot) from None
@@ -1931,7 +1942,7 @@ class BrowserSession:
         """Readable input and binding share one source, before secret redaction (#744)."""
         state = self._state_of(snapshot, element)
         name = str(element.get('name') or element.get('role') or '')
-        description = f"'{name}' 버튼 누르기"
+        description = msg('browser.click_summary', name=name)
         if element.get('commit'):
             matched, context = element.get('detail') or ('', '')
             matched, context = scrub(matched)[0], scrub(context)[0]
@@ -1950,9 +1961,8 @@ class BrowserSession:
                            ensure_ascii=False, sort_keys=True, indent=2)
         actions = '\n'.join(f'{form}: {login_window_url(action)}' for form, action in
                             snapshot.get('_form_actions', {}).items() if form in forms)
-        return exact, msg('browser.click_preview', description=description,
-                          url=snapshot.get('_window_url') or snapshot['_page'],
-                          target=target_key(element), state=state, actions=actions)
+        return exact, description, msg('browser.click_preview', url=snapshot.get('_window_url') or snapshot['_page'],
+                                       target=target_key(element), state=state, actions=actions)
 
     def _with_dialogs(self, page, answer):
         """#936: a page's own alert/confirm/prompt during the step, mediated like page text."""

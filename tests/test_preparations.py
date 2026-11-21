@@ -967,7 +967,7 @@ class AcceptanceTests(_Case):
         status = self.service.preparation_request({'operation': 'accept', 'id': row['id']})
         [listed] = status['preparations']
         self.assertEqual((listed['state'], listed['accepted_by'], listed['recurrence']), ('scheduled', 'owner-settings', 'daily'))
-        self.assertIn('Asia/Seoul', listed['due_local'])
+        self.assertEqual(listed['due_local'], datetime.fromtimestamp(row['due_at'], SEOUL).strftime('%Y-%m-%d %H:%M (%a)'))
         with self.assertRaises(ValueError):
             self.service.preparation_request({'operation': 'accept', 'id': row['id']})
         self.service.preparation_request({'operation': 'cancel', 'id': row['id']})
@@ -1733,7 +1733,7 @@ class WatchAcceptanceTests(_WatchCase):
         listed = self.service.preparations_status()['preparations'][0]
         self.assertEqual((listed['every_minutes'], listed['max_runs'], listed['run_count'], listed['delivery']),
                          (10, 6, 0, 'when_needed'))
-        self.assertIn('Asia/Seoul', listed['until_local'])
+        self.assertEqual(listed['until_local'], datetime.fromtimestamp(row['until_at'], SEOUL).strftime('%Y-%m-%d %H:%M (%a)'))
 
     def test_the_model_is_told_its_last_check_and_until_is_inclusive(self):
         """#404/#701: a check at the until time runs (RFC 5545 UNTIL); the result names the real last check."""
@@ -2525,14 +2525,15 @@ class ScheduleTextTests(unittest.TestCase):
                                 for render in (prep.proposal_text, prep.proposal_html):
                                     self.assertNotRegex(translate(render([offered], 0, home_zone), lang), '[가-힣]')
 
-    def test_localized_dates_keep_row_time_and_zone_note(self):
-        # #689: calendar fields use the row's zone, independent of process locale.
+    def test_localized_dates_use_the_home_zone_when_known(self):
         for lang, date in (('ko', '10월 28일(수)'), ('en', 'Wed, 10/28'),
                            ('ja', '10月28日(水)'), ('zh', '10月28日（周三）')):
             with self.subTest(lang=lang):
                 self.assertEqual(prep.schedule_text(self.row(kind='reminder'), 'Asia/Seoul', lang), date + ' 18:35')
                 foreign = prep.schedule_text(self.row(kind='reminder', timezone='Europe/Paris'), 'Asia/Seoul', lang)
-                self.assertEqual(foreign, date + ' 10:35 (Europe/Paris)')
+                self.assertEqual(foreign, date + ' 18:35')
+                unknown = prep.schedule_text(self.row(kind='reminder', timezone='Europe/Paris'), None, lang)
+                self.assertEqual(unknown, date + ' 10:35 (Europe/Paris)')
 
     def test_settings_edit_summary_translates_nested_schedules(self):
         # #689: Settings' actual composer keeps both nested schedule lines translatable.
@@ -2575,8 +2576,11 @@ class ScheduleTextTests(unittest.TestCase):
         self.assertIn('19:57까지', prep.schedule_text(self.window(5, (19, 57), 16), 'Asia/Seoul'),
                       'an end between slots is named as said, never moved')
 
-    def test_a_window_past_midnight_names_its_last_day_and_a_foreign_zone_is_named(self):
-        self.assertEqual(prep.schedule_text(self.window(120, (0, 40), None), 'Europe/Paris'),
+    def test_a_window_uses_the_dates_of_the_zone_it_displays(self):
+        row = self.window(120, (0, 40), None)
+        self.assertEqual(prep.schedule_text(row, 'Europe/Paris'),
+                         '10월 28일(수) 10:35부터 16:40까지, 2시간마다 최대 4번 · 알릴 일이 있을 때만 알려요')
+        self.assertEqual(prep.schedule_text(row),
                          '10월 28일(수) 18:35부터 10월 29일(목) 00:40까지 (Asia/Seoul), 2시간마다 최대 4번 · 알릴 일이 있을 때만 알려요')
 
     def test_one_run_repetitions_and_delivery(self):
@@ -3119,6 +3123,19 @@ class RecurrenceRuleTests(unittest.TestCase):
         self.assertIn('매주', text)
         self.assertIn('31일', prep.rule_text('RRULE:FREQ=MONTHLY;BYMONTHDAY=31'))
         self.assertIn('2026-12-31까지', prep.rule_text('RRULE:FREQ=DAILY;UNTIL=20261231'))
+        for lang in ('ko', 'en', 'ja', 'zh'):
+            # A repeating rule keeps its own zone (its days are that zone's), named when it is not home;
+            # its UNTIL is written in that zone, never in UTC.
+            for until, rule_end in (('20261231T160000Z', '2026-12-31 11:00'),
+                                    ('20261231T160000', '2026-12-31 16:00'),
+                                    ('20261231', '2026-12-31')):
+                with self.subTest(lang=lang, until=until):
+                    foreign = {**row, 'timezone': 'America/New_York', 'recurrence': f'RRULE:FREQ=DAILY;UNTIL={until}'}
+                    shown = prep.schedule_text(foreign, 'Asia/Seoul', lang)
+                    self.assertIn(rule_end, shown)
+                    self.assertNotIn('UTC', shown)
+                    self.assertIn('America/New_York', shown)
+        self.assertIn('2026-12-31 16:00 UTC', prep.rule_text('RRULE:FREQ=DAILY;UNTIL=20261231T160000Z'))
 
     def test_rule_start_column_migration_preserves_legacy_row(self):
         row = self.make('daily')
