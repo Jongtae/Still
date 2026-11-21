@@ -6719,6 +6719,12 @@
   "ja": "http(s) 以外のアプリのアドレスは開けません。ウェブのアドレスを使ってください。",
   "zh": "无法打开非 http(s) 的应用地址。请使用网页地址。"
  },
+ "browser.presentation_fixed": {
+  "ko": "이 작업은 이미 로캘 {locale}, 시간대 {timezone}으로 페이지를 열도록 정해졌어요. 작업 내내 이 설정을 유지하므로 이번 페이지는 열지 않았어요. locale과 timezone을 빼고 열거나 새 요청으로 다시 요청해 주세요.",
+  "en": "This Work already opens pages in locale {locale}, time zone {timezone}. These settings stay fixed for the whole Work, so the page was not opened. Open it without locale or timezone, or ask in a new request.",
+  "ja": "この作業では、ロケール {locale}、タイムゾーン {timezone} でページを開く設定がすでに決まっています。作業中はこの設定が固定されるため、ページを開きませんでした。locale と timezone を省いて開くか、新しい依頼で開くように頼んでください。",
+  "zh": "此工作已设定使用语言区域 {locale} 和时区 {timezone} 打开页面。这些设置在整个工作期间保持固定，因此未打开此页面。请省略 locale 和 timezone 后再打开，或发起新的请求。"
+ },
  "browser.app_link_not_followed": {
   "ko": "페이지가 앱 링크를 열려고 했지만 Still은 따라가지 않았어요. 현재 페이지를 반환해요. 나중에 읽으면 사이트의 웹 대체 페이지가 표시될 수 있어요.",
   "en": "The page tried to open an app link; Still did not follow it. This is the current page. A later read may show the site’s web fallback.",

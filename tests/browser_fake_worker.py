@@ -13,6 +13,9 @@ import sys
 import time
 
 LOG = sys.argv[1]
+#: #1082: the shared worker contract's launch flags, ``--locale`` and ``--timezone``; omitted = today's behaviour.
+FLAGS = dict(zip(sys.argv[2::2], sys.argv[3::2]))
+LOCALE, TIMEZONE = FLAGS.get('--locale'), FLAGS.get('--timezone')
 cookies = []
 page = {'url': 'about:blank'}
 layout = 'mobile'
@@ -33,7 +36,16 @@ if os.environ.get('AGENTOS_FAKE_WORKER_MODE') == 'unavailable':
     emit({'event': 'unavailable', 'error': 'webkit_failed'})
     sys.exit(2)
 sys.stderr.write('library noise that must never reach a log\n')
-emit({'event': 'ready', 'pid': os.getpid()})
+if LOCALE or TIMEZONE:
+    with open(LOG, 'a', encoding='utf-8') as handle:
+        handle.write(json.dumps({'op': 'start', 'argv': sys.argv[2:]}) + '\n')
+    # --fake-tz unsupported: as macOS WebKit, a requested time zone is listed, never applied.
+    tz_unsupported = FLAGS.get('--fake-tz') == 'unsupported'
+    emit({'event': 'ready', 'pid': os.getpid(),
+          'presentation': {'locale': LOCALE, 'timezone': None if tz_unsupported else TIMEZONE,
+                           'unsupported': ['timezone'] if tz_unsupported and TIMEZONE else []}})
+else:
+    emit({'event': 'ready', 'pid': os.getpid()})
 for line in sys.stdin:
     command = json.loads(line)
     ident, op = command.get('id'), command.get('op')
@@ -66,7 +78,13 @@ for line in sys.stdin:
             emit({'id': ident, 'ok': False, 'error': 'timeout'})
             continue
         page['url'] = url
-        emit({'id': ident, 'ok': True, 'url': url, 'layout': layout})
+        reply = {'id': ident, 'ok': True, 'url': url, 'layout': layout}
+        if LOCALE or TIMEZONE:
+            reply['presentation_observed'] = {
+                'navigator_language': LOCALE or 'en-US', 'intl_locale': LOCALE or 'en-US',
+                'intl_timezone': 'Asia/Seoul' if FLAGS.get('--fake-tz') == 'unsupported'
+                else (TIMEZONE or 'Asia/Seoul')}
+        emit(reply)
     elif op == 'snapshot':
         emit({'id': ident, 'ok': True, 'page': {'url': page['url'], 'title': 't', 'forms': [],
                                                  'text': 'landed page' if page['url'].endswith(('/landed', '/opened')) else 'x',
