@@ -50,6 +50,10 @@ license = {text = "AGPL-3.0-only"}
 # for it). The `linux-browser` extra, which the installer adds on glibc Linux
 # only (Playwright publishes no musl wheel); its wheel bundles Playwright's Node
 # driver; adds greenlet (MIT/PSF) and pyee (MIT). Never runs `playwright install`.
+# portable-memory: #38 the Portable Memory reference SDK (MIT, MacPaw; 0.3.0 at
+# f341f07 reviewed; format 1.1.0). Pure Python, zero runtime dependencies. Owns the
+# .mem bundle (canonical JSONL, CHECKSUMS, manifest, tombstone-first import);
+# memory_interchange maps Still's rows behind its store seam. No network.
 # secretstorage: #34 the jar/API/OAuth key in the Linux desktop keyring through
 # the freedesktop Secret Service (BSD-3-Clause, mitya57; 3.5.0 reviewed). Linux
 # only; pure Python over jeepney (MIT, pure-Python D-Bus).
@@ -58,7 +62,7 @@ dependencies = ["python-dateutil>=2.9,<3", "pypdf>=5.0", "python-docx>=1.1", "op
                 "cryptography>=42.0,<49; sys_platform == 'darwin' and platform_machine == 'x86_64'",
                 "pyobjc-framework-WebKit>=12.2,<13; sys_platform == 'darwin'", "publicsuffixlist>=1.0.2,<2", "PyYAML>=6.0.1,<7",
                 "pydantic>=2.11,<3", "httpx2>=2.13.1,<3", "slack_sdk>=3.45.0,<4",
-                "rich>=15.0.0,<16", "prompt_toolkit>=3.0.53,<4",
+                "rich>=15.0.0,<16", "prompt_toolkit>=3.0.53,<4", "portable-memory==0.3.0",
                 "secretstorage>=3.5,<4; sys_platform == 'linux'"]
 
 [project.optional-dependencies]
