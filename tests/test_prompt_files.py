@@ -303,6 +303,20 @@ class ConsolidatedPromptTests(unittest.TestCase):
             self.assertNotIn('해요체', description)
             self.assertNotIn('friendly', description)
 
+    def test_voice_carries_the_progress_update_form_and_leaves_the_owner_in_charge_of_it(self):
+        """#1036: conclusion first, then only what changed, evidence only when it decides; the owner's
+        voice preference for progress updates comes first. Generic wording, no site or domain."""
+        from personal_agent.agent_runtime import CORE_INSTRUCTIONS
+        voice = prompt_files.prompt('voice')
+        [line] = [item for item in voice.splitlines() if item.startswith('- A progress update')]
+        for phrase in ("the form the owner's voice preference names", 'lead with the conclusion',
+                       'only what changed since the last update', 'evidence only when it decides something',
+                       'Do not repeat what an earlier update already said', 'say so in one line'):
+            self.assertIn(phrase, line)
+        self.assertIn(line, CORE_INSTRUCTIONS)
+        self.assertIn('progress updates', prompt_files.prompt('voice_calibration'))
+        self.assertNotRegex(line, r'(?i)weather|delivery|price|stock|mail|flight')
+
     def test_planner_lens_frames_content_without_assigning_a_voice(self):
         from personal_agent.orchestrator import QUESTION
         [lens] = [line for line in QUESTION.splitlines() if line.startswith('- brief.lens')]
