@@ -254,7 +254,7 @@ def parse_args(argv=None):
     parser.add_argument('--profile', default='default')
     parser.add_argument('--chromium', required=True)
     parser.add_argument('--test-allow-origin', action='append', default=[])
-    return parser.parse_args(argv)
+    return shared.parse_worker_args(parser, argv)
 
 
 def user_agent_for(layout, version):
@@ -488,8 +488,10 @@ class _View:
 
 class Worker(shared.Worker):
     """Reuse the protocol/approval/read state machine; override engine operations."""
-    def __init__(self, profile, emit, playwright, chromium, allowed_origins=()):
+    def __init__(self, profile, emit, playwright, chromium, allowed_origins=(), locale=None, timezone=None):
         self.profile, self.emit = profile, emit
+        self.locale, self.timezone = locale, timezone
+        self.unsupported_presentation = ()
         self.allowed_origins = frozenset(allowed_origins)
         self.provider_sign_in_policy = {}
         self.authorizations, self.authorization_count = [], 0
@@ -524,13 +526,18 @@ class Worker(shared.Worker):
         self.browser = playwright.chromium.launch(executable_path=chromium, headless=False,
                                                   chromium_sandbox=True, args=list(LAUNCH_ARGS))
         self.version = self.browser.version
+        presentation_options = {}
+        if locale is not None:
+            presentation_options['locale'] = locale
+        if timezone is not None:
+            presentation_options['timezone_id'] = timezone
         self.context = self.browser.new_context(
             accept_downloads=False, service_workers='block', permissions=[],
             viewport={'width': int(shared.MOBILE_SIZE[0]), 'height': int(shared.MOBILE_SIZE[1])},
             # #34: WKWebView parity: a phone-sized window lays pages out at its own width, so no mobile
             # viewport semantics (a page without a viewport tag would get a 980px layout instead).
             user_agent=user_agent_for('mobile', self.version), is_mobile=False, has_touch=False,
-            device_scale_factor=1)
+            device_scale_factor=1, **presentation_options)
         self.context.on('page', self.page_created)
         # #34: a popup's first request, before this worker's CDP session on it exists (``route_popup``).
         self.context.route('**/*', self.route_popup)
@@ -1303,15 +1310,19 @@ class Worker(shared.Worker):
         self.navigation_events.clear()
         if ident in self.pending:
             if outcome == 'load':
-                self.reply(ident, url=frame['url'], layout=self.layout)
+                self.reply_navigation(ident, frame['url'])
             else:
                 self.fail(ident, outcome)
 
     def emulate(self, target):
         mobile = self.layout == 'mobile'
         width, height = self.viewport_size['width'], self.viewport_size['height']
-        target.post('Emulation.setUserAgentOverride', {'userAgent': user_agent_for(self.layout, self.version),
-                                                      'platform': 'Linux armv8l' if mobile else 'Linux x86_64'})
+        override = {'userAgent': user_agent_for(self.layout, self.version),
+                    'platform': 'Linux armv8l' if mobile else 'Linux x86_64'}
+        # CDP replaces the whole override, including Playwright's Accept-Language.
+        if self.locale is not None:
+            override['acceptLanguage'] = self.locale
+        target.post('Emulation.setUserAgentOverride', override)
         if target.kind != 'page':
             return  # OOPIF metrics inherit the top-level frame; CDP forbids overriding them.
         # Disabled touch exposes navigator.maxTouchPoints=0. Do not pass 0 as
@@ -1358,7 +1369,7 @@ class Worker(shared.Worker):
                 # A same-document navigation (only the fragment changed) loads nothing and fires no load
                 # event; CDP answers it without a loaderId (Codex review on #640).
                 self.navigation = None
-                self.reply(ident, url=url, layout=self.layout)
+                self.reply_navigation(ident, url)
             else:
                 self.navigation = (ident, result['loaderId'])
                 self.finish_navigation()
@@ -1827,6 +1838,9 @@ def _playwright_factory():
 def main(argv=None):
     args = parse_args(argv)
     emit = shared.make_emit(sys.stdout)
+    if not shared.valid_presentation(args.locale, args.timezone):
+        emit({'event': 'unavailable', 'error': 'bad_presentation'})
+        return 2
     # Third-party diagnostics can never corrupt the protocol stream.
     with contextlib.redirect_stdout(sys.stderr):
         return _main(args, emit)
@@ -1848,13 +1862,14 @@ def _main(args, emit):
     ready = False
     try:
         with factory() as playwright:
-            worker = Worker(args.profile, emit, playwright, args.chromium, args.test_allow_origin)
+            worker = Worker(args.profile, emit, playwright, args.chromium, args.test_allow_origin,
+                            locale=args.locale, timezone=args.timezone)
             deadline = time.monotonic() + shared.WARM_SECONDS
             while not worker.main_target.ready and time.monotonic() < deadline and not worker.fatal:
                 worker.page.wait_for_timeout(10)
             if not worker.main_target.ready or worker.fatal:
                 raise RuntimeError('initialization failed')
-            emit({'event': 'ready', 'profile': args.profile, 'pid': os.getpid()})
+            emit({'event': 'ready', 'profile': args.profile, 'pid': os.getpid(), 'presentation': worker.presentation()})
             ready = True
             commands = queue.SimpleQueue()
 
