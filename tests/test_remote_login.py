@@ -761,6 +761,10 @@ assert.equal(JSON.parse(probe()).regions.length, 1);
         worker.view.loadRequest_ = mock.Mock(return_value=object())
         worker.view.URL = lambda: type('URL', (), {'absoluteString': lambda self: 'https://shop.test/deep'})()
         worker.deadline = lambda ident, timeout, **kwargs: worker.pending.update({ident: True})
+        # #1082: the navigate answer carries what the page reported after load.
+        worker.AppHelper = mock.Mock()
+        worker.run = lambda body, arguments, done, **kwargs: done(
+            {'navigator_language': 'en-US', 'intl_locale': 'en-US', 'intl_timezone': 'Asia/Seoul'}, None)
         return worker, window
 
     def test_navigate_switches_layout_before_loading_and_reports_it_on_finish(self):
@@ -774,7 +778,9 @@ assert.equal(JSON.parse(probe()).regions.length, 1);
         worker.view.loadRequest_.side_effect = load
         worker.op_navigate(1, {'url': 'https://shop.test/deep', 'layout': 'desktop'}, 5)
         worker.navigation_finished(worker.navigation[1])
-        self.assertEqual(worker.replies, [{'id': 1, 'ok': True, 'url': 'https://shop.test/deep', 'layout': 'desktop'}])
+        self.assertEqual(worker.replies, [{'id': 1, 'ok': True, 'url': 'https://shop.test/deep', 'layout': 'desktop',
+                                           'presentation_observed': {'navigator_language': 'en-US', 'intl_locale': 'en-US',
+                                                                     'intl_timezone': 'Asia/Seoul'}}])
         worker.view.loadRequest_.side_effect = None
         worker.op_navigate(2, {'url': 'https://shop.test/deep', 'layout': 'mobile'}, 5)
         self.assertEqual(self.content(window), browser_worker.MOBILE_SIZE)
