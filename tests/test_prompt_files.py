@@ -268,6 +268,17 @@ class ConsolidatedPromptTests(unittest.TestCase):
             with self.subTest(boundary=boundary):
                 self.assertIn(boundary, guidance)
 
+    def test_calibration_covers_progress_form_adjusting_and_stop_adjusting_without_word_maps(self):
+        guidance = prompt_files.prompt('voice_calibration')
+        for need in ('progress updates', '200 characters', 'Adjusting your voice', 'stop adjusting',
+                     'never adjust silently', 'one line'):
+            with self.subTest(need=need):
+                self.assertIn(need.lower(), guidance.lower())
+        # No owner reaction wording is listed as a trigger map: reactions are read in context.
+        self.assertIn('in any wording', guidance)
+        # A prompt writer that fixes a register defers to the owner's preference.
+        self.assertIn("voice preference when one holds", prompt_files.prompt('planner_preview'))
+
     def test_every_worker_route_and_its_status_generation_share_one_voice(self):
         from personal_agent.agent_runtime import (DEFINITIONS, action_definitions, context_sections,
                                                   render_turn_prompt, turn_context)
