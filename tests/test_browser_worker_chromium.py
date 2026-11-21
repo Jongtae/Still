@@ -12,6 +12,8 @@ from personal_agent import browser_worker as shared
 from personal_agent import browser_worker_chromium as chromium
 
 _native_relinquish_keyboard_focus = chromium.relinquish_keyboard_focus
+#: #1082: a navigate answer whose presentation read returned nothing.
+UNREAD = {'navigator_language': None, 'intl_locale': None, 'intl_timezone': None}
 
 
 class FakeCDP:
@@ -824,7 +826,8 @@ def test_main_emits_one_ready_and_processes_pipe_commands_on_main_thread(capsys)
          mock.patch.object(FakeCDP, 'send', send):
         assert chromium.main(['--profile', 'owner', '--chromium', '/pinned/chrome']) == 0
     rows = [json.loads(line) for line in stream.getvalue().splitlines()]
-    assert rows[0] == {'event': 'ready', 'profile': 'owner', 'pid': chromium.os.getpid()}
+    assert rows[0] == {'event': 'ready', 'profile': 'owner', 'pid': chromium.os.getpid(),
+                       'presentation': {'locale': None, 'timezone': None, 'unsupported': []}}
     assert rows[1:] == [{'id': 1, 'ok': True, 'visible': False, 'navigations': 0,
                         'authorizations': [], 'authorization_count': 0}, {'id': 2, 'ok': True}]
     assert called_threads and set(called_threads) == {owner_thread}
@@ -1821,7 +1824,8 @@ def test_old_document_load_cannot_answer_new_navigation(worker, defer_response):
     navigation_load(target, 'new', 'https://redirect.test/final')
     for respond in browser.held_responses:
         respond()
-    assert worker.messages == [{'id': 41, 'ok': True, 'url': 'https://redirect.test/final', 'layout': 'mobile'}]
+    assert worker.messages == [{'id': 41, 'ok': True, 'url': 'https://redirect.test/final', 'layout': 'mobile',
+                                 'presentation_observed': UNREAD}]
 
 
 @pytest.mark.parametrize('defer_response', [False, True])
@@ -1856,7 +1860,8 @@ def test_matching_load_waits_for_matching_committed_document(worker):
     assert worker.messages == []
     target.receive({'method': 'Page.frameNavigated', 'params': {'frame': {
         'id': target.main_frame, 'loaderId': 'new', 'url': 'https://new.test/'}}})
-    assert worker.messages[-1] == {'id': 41, 'ok': True, 'url': 'https://new.test/', 'layout': 'mobile'}
+    assert worker.messages[-1] == {'id': 41, 'ok': True, 'url': 'https://new.test/', 'layout': 'mobile',
+                                   'presentation_observed': UNREAD}
 
 
 class FakeX11:

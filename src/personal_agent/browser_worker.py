@@ -77,6 +77,7 @@ import math
 import os
 import platform
 import plistlib
+import re
 import socket
 import sys
 import threading
@@ -95,6 +96,18 @@ DIALOG_RECORDS = 5
 DIALOG_TEXT_LIMIT = 200
 #: #174: the declared step effects under which a page's own non-payment confirmation is accepted.
 CONFIRMING_EFFECTS = ('mutate', 'payment')
+
+#: #1082: how long a navigate answer waits for the page's presentation read; past it the values are null.
+PRESENTATION_READ_SECONDS = 1.0
+PRESENTATION_FIELDS = ('navigator_language', 'intl_locale', 'intl_timezone')
+PRESENTATION_SCRIPT = """
+const options = Intl.DateTimeFormat().resolvedOptions();
+return JSON.stringify({
+    navigator_language: navigator.language,
+    intl_locale: options.locale,
+    intl_timezone: options.timeZone,
+});
+"""
 
 #: ``index`` is an element's position in ``document.querySelectorAll(SELECTOR)``.
 SELECTOR = ('a[href], button, input, select, textarea, summary, [role="button"], [role="link"], [role="textbox"], '
@@ -1492,13 +1505,15 @@ def site_of(domain, sites):
 class Worker:
     """The main-thread state: one hidden window, one web view, one in-memory store."""
 
-    def __init__(self, profile, emit, allowed_origins=()):
+    def __init__(self, profile, emit, allowed_origins=(), locale=None, unsupported_presentation=()):
         import AppKit
         import Foundation
         import WebKit
         from PyObjCTools import AppHelper
         self.AppKit, self.Foundation, self.WebKit, self.AppHelper = AppKit, Foundation, WebKit, AppHelper
         self.profile, self.emit = profile, emit
+        self.locale, self.timezone = locale, None
+        self.unsupported_presentation = tuple(unsupported_presentation)
         self.allowed_origins = frozenset(allowed_origins)
         self.provider_sign_in_policy = {}
         self.pending = {}          # op id -> True while the op has not answered
@@ -1733,6 +1748,35 @@ class Worker:
         window.orderBack_(None)
 
     # -- plumbing ------------------------------------------------------------
+    def presentation(self):
+        return {'locale': self.locale, 'timezone': self.timezone, 'unsupported': list(self.unsupported_presentation)}
+
+    def reply_navigation(self, ident, url, view=None):
+        if ident not in self.pending:
+            return
+        layout = self.layout
+        answered = False
+        expires = time.monotonic() + PRESENTATION_READ_SECONDS
+
+        def finish(value=None, error=None):
+            nonlocal answered
+            if answered or ident not in self.pending:
+                return
+            answered = True
+            if error is not None or not isinstance(value, dict) or time.monotonic() >= expires:
+                value = {}
+            observed = {}
+            for name in PRESENTATION_FIELDS:
+                field = value.get(name)
+                observed[name] = field if isinstance(field, str) and field else None
+            self.reply(ident, url=url, layout=layout, presentation_observed=observed)
+
+        self.AppHelper.callLater(PRESENTATION_READ_SECONDS, finish)
+        try:
+            self.run(PRESENTATION_SCRIPT, {}, finish, view=view)
+        except Exception:
+            finish()
+
     def reply(self, ident, ok=True, **fields):
         self.pending.pop(ident, None)
         self.emit({'id': ident, 'ok': ok, **fields})
@@ -2243,7 +2287,8 @@ class Worker:
             return self.fail(ident, navigation_error_code(error))
         def answer():
             view = getattr(self, 'navigation_view', self.view)
-            self.reply(ident, url=str(view.URL().absoluteString()) if view.URL() else '', layout=self.layout)
+            url = view.URL()
+            self.reply_navigation(ident, str(url.absoluteString()) if url else '', view=view)
         if getattr(self, 'work_popup', None):
             return self.settle(ident, answer)
         answer()
@@ -3723,17 +3768,67 @@ def make_emit(stream):
     return emit
 
 
+def parse_worker_args(parser, argv):
+    parser.add_argument('--locale')
+    parser.add_argument('--timezone')
+    argv = list(sys.argv[1:] if argv is None else argv)
+    # Treat a single-dash value such as "-ja" as a value so it reaches the
+    # presentation validator instead of becoming an argparse option error.
+    for index in range(len(argv) - 2, -1, -1):
+        flag, value = argv[index:index + 2]
+        if flag in ('--locale', '--timezone') and value.startswith('-') and not value.startswith('--'):
+            argv[index:index + 2] = [f'{flag}={value}']
+    return parser.parse_args(argv)
+
+
+def valid_presentation(locale, timezone):
+    """Validate launch option syntax. Engine support is checked separately."""
+    for value, pattern in (
+        (locale, r'[A-Za-z]{2,8}(?:-[A-Za-z0-9]{1,8})*'),
+        (timezone, r'[A-Za-z][A-Za-z0-9_+\-]*(?:/[A-Za-z0-9_+\-]+)*'),
+    ):
+        if value is not None and (len(value) > 64 or re.fullmatch(pattern, value) is None):
+            return False
+    return True
+
+
+def set_apple_languages(locale):
+    """Set the worker's process-local language preference before AppKit and WebKit start."""
+    try:
+        import Foundation
+        defaults = Foundation.NSUserDefaults.standardUserDefaults()
+        domain_name = Foundation.NSArgumentDomain
+        domain = dict(defaults.volatileDomainForName_(domain_name) or {})
+        domain['AppleLanguages'] = [locale]
+        defaults.setVolatileDomain_forName_(domain, domain_name)
+    except Exception:
+        return False
+    return True
+
+
 def main(argv=None):
     parser = argparse.ArgumentParser(prog='personal_agent.browser_worker')
     parser.add_argument('--profile', default='default')
     # Test-only: an exact fixture origin (host:port) the destination policy
     # allows.  Only a test constructor passes it; no config or environment does.
     parser.add_argument('--test-allow-origin', action='append', default=[])
-    args = parser.parse_args(argv)
+    args = parse_worker_args(parser, argv)
     emit = make_emit(sys.stdout)
+    if not valid_presentation(args.locale, args.timezone):
+        emit({'event': 'unavailable', 'error': 'bad_presentation'})
+        return 2
     if sys.platform != 'darwin':
         emit({'event': 'unavailable', 'error': 'unsupported_platform'})
         return 2
+    locale = None
+    unsupported = []
+    if args.locale is not None:
+        if set_apple_languages(args.locale):
+            locale = args.locale
+        else:
+            unsupported.append('locale')
+    if args.timezone is not None:
+        unsupported.append('timezone')  # The worker's time zone does not reach WebContent.
     try:
         from PyObjCTools import AppHelper
     except ImportError:
@@ -3743,7 +3838,8 @@ def main(argv=None):
 
     def setup():
         try:
-            worker = Worker(args.profile, emit, allowed_origins=args.test_allow_origin)
+            worker = Worker(args.profile, emit, allowed_origins=args.test_allow_origin,
+                            locale=locale, unsupported_presentation=unsupported)
         except Exception:
             emit({'event': 'unavailable', 'error': 'webkit_failed'})
             AppHelper.stopEventLoop()
@@ -3753,7 +3849,7 @@ def main(argv=None):
             if 'worker' in state:
                 return
             state['worker'] = worker
-            emit({'event': 'ready', 'profile': args.profile, 'pid': os.getpid()})
+            emit({'event': 'ready', 'profile': args.profile, 'pid': os.getpid(), 'presentation': worker.presentation()})
         try:
             worker.warm(ready)
         except Exception:

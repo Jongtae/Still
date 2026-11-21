@@ -51,6 +51,10 @@ ROOT = Path(__file__).resolve().parents[1]
 FAKE_WORKER = Path(__file__).resolve().with_name('browser_fake_worker.py')
 
 
+#: #1082: a navigate answer whose presentation read returned nothing.
+UNREAD = {'navigator_language': None, 'intl_locale': None, 'intl_timezone': None}
+
+
 def cookie(domain, name='sid', value='v', expires=None):
     return {'name': name, 'value': value, 'domain': domain, 'path': '/', 'expires': expires, 'secure': False,
             'http_only': True, 'same_site': None}
@@ -1009,7 +1013,8 @@ class OwnerPopupReturnTests(unittest.TestCase):
         replies = []
         self.worker.reply = lambda ident, **fields: replies.append((ident, fields))
         settled.pop()()
-        self.assertEqual(replies, [(7, {'url': 'https://site.test/document', 'layout': 'mobile'})])
+        self.assertEqual(replies, [(7, {'url': 'https://site.test/document', 'layout': 'mobile',
+                                       'presentation_observed': UNREAD})])
         self.worker.fail = lambda *args, **kwargs: None
         old.events.clear()
         view.events.clear()
@@ -1050,7 +1055,8 @@ class OwnerPopupReturnTests(unittest.TestCase):
                     self.assertEqual(failures, [(7, self.bw.navigation_error_code(error))])
                 else:
                     self.delegate.webView_didFinishNavigation_(view, promoted_navigation)
-                    self.assertEqual(replies, [(7, {'url': 'https://site.test/document', 'layout': 'desktop'})])
+                    self.assertEqual(replies, [(7, {'url': 'https://site.test/document', 'layout': 'desktop',
+                                       'presentation_observed': UNREAD})])
                 self.assertIsNone(self.worker.navigation)
 
     def test_read_hold_cancels_candidate_at_policy_answer_or_commit(self):
@@ -2282,6 +2288,14 @@ class SessionFixtureHandler(FixtureHandler):
     def do_GET(self):
         path = urlsplit(self.path).path
         value = self.server.cookie_value
+        if path == '/presentation':
+            # #1082: what the request carried and what page JavaScript sees, for the presentation tests.
+            getattr(self.server, 'accept_languages', []).append(self.headers.get('Accept-Language'))
+            return self._send('''<html><head><title>presentation</title></head><body><p id="r">wait</p><script>
+              document.getElementById('r').textContent = 'page ' + JSON.stringify({language: navigator.language,
+                locale: Intl.DateTimeFormat().resolvedOptions().locale,
+                zone: Intl.DateTimeFormat().resolvedOptions().timeZone});
+              </script></body></html>''')
         if path == '/phone-layout':
             mode = 'mobile' if 'iPhone' in self.headers.get('User-Agent', '') else 'desktop'
             return self._send(f'<html><head><title>{mode}</title><meta name="viewport" content="width=device-width"></head><body>{mode}</body></html>')
@@ -2722,6 +2736,115 @@ class WebKitIntegrationTests(unittest.TestCase):
 
     def session(self, work_id):
         return bs.BrowserSession(self.profile.driver_factory(work_id), work_id=work_id, approvals=Approvals(), allowed_origins_for_tests=(self.fixture,))
+
+    def presentation_worker(self, *flags):
+        """#1082: the real worker started with presentation ``flags``; returns (send, ready event)."""
+        if LINUX:
+            from personal_agent import chromium_runtime
+            command = bs.chromium_worker_command('p', chromium_runtime.ensure(self.tools), (self.fixture,))
+        else:
+            command = [sys.executable, '-P', '-m', 'personal_agent.browser_worker', '--profile', 'p',
+                       '--test-allow-origin', self.fixture]
+        proc = subprocess.Popen(command + list(flags), stdin=subprocess.PIPE, stdout=subprocess.PIPE,
+                                stderr=subprocess.DEVNULL, text=True, encoding='utf-8', bufsize=1, cwd=self.tmp.name,
+                                env=bs.worker_environment())
+
+        def stop():
+            try:
+                proc.stdin.close()
+            except OSError:
+                pass
+            try:
+                proc.wait(timeout=10)
+            except subprocess.TimeoutExpired:
+                proc.kill()
+                proc.wait()
+        self.addCleanup(stop)
+        ids = iter(range(1, 1000))
+
+        def read(predicate, seconds=60):
+            deadline = time.monotonic() + seconds
+            while time.monotonic() < deadline:
+                line = proc.stdout.readline()
+                if not line:
+                    break
+                try:
+                    message = json.loads(line)
+                except ValueError:
+                    continue
+                if predicate(message):
+                    return message
+            self.fail('the worker did not answer')
+
+        ready = read(lambda m: m.get('event') in ('ready', 'unavailable'))
+
+        def send(op, **fields):
+            ident = next(ids)
+            proc.stdin.write(json.dumps({'id': ident, 'op': op, 'timeout': 30, **fields}) + '\n')
+            proc.stdin.flush()
+            return read(lambda m: m.get('id') == ident)
+        return send, ready
+
+    def page_values(self, send):
+        page = send('snapshot')['page']
+        text = page['text'] if isinstance(page, dict) else str(page)
+        start = text.index('page {')
+        return json.loads(text[start + len('page '):text.index('}', start) + 1])
+
+    def test_presentation_defaults_are_unchanged_when_nothing_is_requested(self):
+        """#1082: no flags: the ready event reports nothing set and the page sees the host's own values."""
+        self.server.accept_languages = []
+        send, ready = self.presentation_worker()
+        self.assertEqual(ready.get('event'), 'ready', ready)
+        self.assertEqual(ready['presentation'], {'locale': None, 'timezone': None, 'unsupported': []})
+        reply = send('navigate', url=self.origin + '/presentation')
+        self.assertTrue(reply['ok'], reply)
+        observed = reply['presentation_observed']
+        self.assertEqual(set(observed), {'navigator_language', 'intl_locale', 'intl_timezone'})
+        values = self.page_values(send)
+        self.assertEqual(observed['navigator_language'], values['language'])
+        self.assertEqual(observed['intl_timezone'], values['zone'])
+
+    def test_a_requested_locale_reaches_the_request_header_and_page_javascript(self):
+        """#1082: ``--locale ja-JP``: Accept-Language and ``navigator.language`` are Japanese."""
+        self.server.accept_languages = []
+        send, ready = self.presentation_worker('--locale', 'ja-JP', '--timezone', 'America/New_York')
+        self.assertEqual(ready.get('event'), 'ready', ready)
+        presentation = ready['presentation']
+        self.assertEqual(presentation['locale'], 'ja-JP')
+        reply = send('navigate', url=self.origin + '/presentation')
+        self.assertTrue(reply['ok'], reply)
+        header = self.server.accept_languages[-1] or ''
+        self.assertTrue(header.lower().startswith('ja'), header)
+        values = self.page_values(send)
+        self.assertTrue(values['language'].lower().startswith('ja'), values)
+        observed = reply['presentation_observed']
+        self.assertEqual(observed['navigator_language'], values['language'])
+        self.assertEqual(observed['intl_locale'], values['locale'])
+        self.assertEqual(observed['intl_timezone'], values['zone'], 'the report is what the page saw')
+        if LINUX:
+            self.assertEqual(presentation['timezone'], 'America/New_York')
+            self.assertEqual(presentation['unsupported'], [])
+            self.assertEqual(values['zone'], 'America/New_York')
+            # A layout change re-applies the user agent override; the language must survive it.
+            reply = send('navigate', url=self.origin + '/presentation?again', layout='desktop')
+            self.assertTrue(reply['ok'], reply)
+            self.assertTrue((self.server.accept_languages[-1] or '').lower().startswith('ja'),
+                            self.server.accept_languages)
+            self.assertTrue(self.page_values(send)['language'].lower().startswith('ja'))
+        else:
+            # macOS WebKit cannot set the time zone: it is reported, never faked in the page.
+            self.assertIsNone(presentation['timezone'])
+            self.assertEqual(presentation['unsupported'], ['timezone'])
+            host_zone = self.presentation_host_zone()
+            self.assertEqual(values['zone'], host_zone)
+
+    def presentation_host_zone(self):
+        """The time zone a bare page on this host sees (the worker started without flags)."""
+        send, ready = self.presentation_worker()
+        self.assertEqual(ready.get('event'), 'ready', ready)
+        send('navigate', url=self.origin + '/presentation')
+        return self.page_values(send)['zone']
 
     def test_a_non_payment_page_confirm_is_accepted_whatever_the_declared_effect(self):
         """#619: a non-payment question is accepted after a step declared navigate as after mutate."""
