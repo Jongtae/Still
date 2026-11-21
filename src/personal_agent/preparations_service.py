@@ -256,6 +256,9 @@ class PreparationsService:
             # pays (``SELF_SET``) and cannot schedule in turn, so one misled plan run stays bounded.
             planning=self.day_plan_run(job) and self.day_plan_on()
             resume_offer=args.get('resume_line') is True
+            # #961: every prepare is a card with the AI's one-line summary; refused before anything is scheduled.
+            if args.get('kind')==prep.KIND_PREPARE and not ' '.join(str(args.get('offer') or '').split()):
+                raise not_run(ToolError(str(prep.PreparationRefusal('offer_required')),'offer_required'))
             if resume_offer and not planning:
                 raise not_run(ToolError(UNATTENDED_APPROVAL_TEXT,'unattended_run'))
             steers=service.owner_steer_words(job)

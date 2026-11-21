@@ -384,6 +384,8 @@ REFUSALS = {
     'invalid_kind': 'kind는 reminder(정해진 때에 이 문장을 알려 주기) 또는 prepare(정해진 때에 이 목표를 미리 처리해 두기)입니다.',
     # #617: the detail (empty, or over the kind's limit) is the whole reason; no contradictory prefix.
     'invalid_goal': '',
+    'offer_required': ('a prepare needs offer: one plain line the owner reads to accept it (what you will have ready and when), '
+                       'and a short title. Nothing was scheduled; call again with offer.'),
     'invalid_offer': (f'title은 {TITLE_MAX_CHARS}자 이내의 짧은 이름, offer는 {OFFER_MAX_LINES}줄·'
                       f'{OFFER_MAX_CHARS}자 이내로 적어 주세요.'),
     'invalid_due': 'due는 RFC3339 시각입니다(예: 2026-09-28T09:00:00+09:00). 오프셋이 없으면 timezone이 필요합니다.',

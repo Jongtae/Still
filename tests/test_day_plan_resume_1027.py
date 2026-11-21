@@ -259,7 +259,7 @@ class ResumeOffers(Mode, _Plan, OwnerActCase):
         self.tick()
         [root] = self.runs(row['id'])
         child = self.service.preparation_scheduler(root, '')({
-            'kind': 'prepare', 'goal': '이어서 확인', 'due': self.due_iso(600)})
+            'offer': '이전 작업을 이어서 결과를 준비해요.', 'kind': 'prepare', 'goal': '이어서 확인', 'due': self.due_iso(600)})
         self.assertEqual(child['accepted_by'], prep.ACCEPTED_LINE_PIECE_OWNER)
         # #1044: each run pays its own amount; a piece never resends its line run's exact request (#1020).
         for amount, run in enumerate((root, self.start_piece(child['preparation_id'])), start=10):

@@ -118,7 +118,8 @@ class LineTraceTests(_LineCase):
 
     def replace_preparation(self, args):
         request = dict(kind='prepare', goal=args['goal'], due=self.due_iso(args.get('due_in_hours', 1) * 3600),
-                       recurrence='daily', delivery='keep', replaces=self.row_id)
+                       recurrence='daily', delivery='keep', replaces=self.row_id,
+                       offer='Keeps the preparation current.')
         if 'window_hours' in args:
             # The cap probe is a single long window, so it must not trip the
             # unrelated same-local-day restriction on recurring windows.

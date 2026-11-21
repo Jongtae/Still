@@ -586,7 +586,7 @@ class TestLineHandoff(_PieceCase):
         due = self.due_iso(600)
         self.script = [
             {'tool_calls': [call('open','api_request',**OPEN)]},
-            {'tool_calls': [call('next','schedule_preparation',kind='prepare',due=due,
+            {'tool_calls': [call('next','schedule_preparation',offer='다음 단계의 결과를 정리해 드려요.', kind='prepare',due=due,
                                  goal='Finish the pending change and verify the final record.')]},
             finish('partial','open','next',summary='First change observed. The next step is scheduled.',status='partial'),
         ]

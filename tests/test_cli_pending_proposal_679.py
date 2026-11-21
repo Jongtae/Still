@@ -95,7 +95,7 @@ class ProposalRoutes(_Case):
         self.service.use_decision_engine(engine(preparation=False))
 
     def arguments(self):
-        return {'kind': 'prepare', 'goal': GOAL, 'due': self.due_iso(1800), 'recurrence': 'daily', 'delivery': 'send'}
+        return {'offer': '매일 결과를 정리해 보내 드려요.', 'kind': 'prepare', 'goal': GOAL, 'due': self.due_iso(1800), 'recurrence': 'daily', 'delivery': 'send'}
 
     def direct(self, owner_typed=False):
         """``owner_typed`` False (#717): a Work the owner did not type, where the call only proposes."""

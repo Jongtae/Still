@@ -187,7 +187,7 @@ class ServiceScopeTests(unittest.TestCase):
 
     def schedule(self, job):
         return self.service.preparation_scheduler(job, job['message'])({
-            'kind': 'prepare', 'goal': 'Read material and prepare a summary',
+            'offer': '내일 읽을거리 요약을 준비해요.', 'kind': 'prepare', 'goal': 'Read material and prepare a summary',
             'due': '2027-01-16T12:00:00+00:00', 'timezone': 'UTC', 'delivery': 'when_needed'})
 
     def scoped(self, job, budget, call, *, threaded=True, scope=True):
@@ -228,7 +228,7 @@ class ServiceScopeTests(unittest.TestCase):
                              if scope else None)
         self.addCleanup(relay.close)
         on_thread(lambda: RelayClient(relay.address).call('schedule_preparation', {
-            'kind': 'prepare', 'goal': 'Read material and prepare a summary',
+            'offer': '내일 읽을거리 요약을 준비해요.', 'kind': 'prepare', 'goal': 'Read material and prepare a summary',
             'due': '2027-01-16T12:00:00+00:00', 'timezone': 'UTC', 'delivery': 'when_needed'}))
 
     def test_real_relay_records_and_spends(self):

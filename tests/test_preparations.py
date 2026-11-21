@@ -718,7 +718,7 @@ class DeclinedOfferTests(_Case):
     """#582: the worker may offer a preparation; one the owner declined is not offered again."""
 
     def offer(self, goal='아침 요약 준비', text='오늘 아침 요약해줘', owner_typed=True):
-        self.script = [{'content': None, 'tool_calls': [call('1', 'schedule_preparation', kind='prepare', goal=goal,
+        self.script = [{'content': None, 'tool_calls': [call('1', 'schedule_preparation', offer='예약한 시각에 결과를 정리해 드려요.', kind='prepare', goal=goal,
                                                              due=self.due_iso(86400), recurrence='weekdays', delivery='send')]},
                        {'content': '요약했어요. 평일 아침마다 준비해 둘게요.'}]
         work = self.receive(text, owner_typed=owner_typed)
@@ -895,7 +895,7 @@ class DeclinedOfferTests(_Case):
 class AcceptanceTests(_Case):
     def propose(self, text='점심 메뉴 추천해줘', owner_typed=True):
         """``owner_typed`` False (#717): a Work the owner did not type, where the preparation only waits for a yes."""
-        self.script = [{'content': None, 'tool_calls': [call('1', 'schedule_preparation', kind='prepare', goal='점심 후보 준비',
+        self.script = [{'content': None, 'tool_calls': [call('1', 'schedule_preparation', offer='예약한 시각에 결과를 정리해 드려요.', kind='prepare', goal='점심 후보 준비',
                                                              due=self.due_iso(1800), recurrence='daily', delivery='send')]},
                        {'content': '매일 점심 후보를 준비해 둘까요? 수락하면 예약합니다.'}]
         work = self.receive(text, owner_typed=owner_typed)
@@ -979,7 +979,7 @@ class AcceptanceTests(_Case):
         self.now += 120
         self.tick()
         before = len(self.judge.asked)
-        self.script = [{'content': None, 'tool_calls': [call('1', 'schedule_preparation', kind='prepare', goal='점심 후보',
+        self.script = [{'content': None, 'tool_calls': [call('1', 'schedule_preparation', offer='예약한 시각에 결과를 정리해 드려요.', kind='prepare', goal='점심 후보',
                                                              due=self.due_iso(86400))]}, {'content': '제안했습니다.'}]
         self.assertTrue(self.service.run_one())
         # #619 (owner decision 2026-11-03): a scheduled run leaves nothing waiting for the owner, so it
@@ -1194,7 +1194,7 @@ class PreparationScopeTests(_Case):
     UNRELATED = '어제 병원 검사 결과 이야기 UNRELATED-MARK'
 
     def origin_then_unrelated(self):
-        self.script = [{'content': None, 'tool_calls': [call('1', 'schedule_preparation', kind='prepare', goal='점심 후보 3곳 준비',
+        self.script = [{'content': None, 'tool_calls': [call('1', 'schedule_preparation', offer='예약한 시각에 결과를 정리해 드려요.', kind='prepare', goal='점심 후보 3곳 준비',
                                                              due=self.due_iso(600), recurrence='daily')]},
                        finish('f', '1', summary='매일 준비할게요.')]
         origin = self.web_turn(self.ORIGIN, owner_typed=True)
@@ -1702,7 +1702,7 @@ class WatchAcceptanceTests(_WatchCase):
     def propose_watch(self, preparation, owner_typed=True):
         self.judge = watch_engine([], preparation=preparation)
         self.service.use_decision_engine(self.judge)
-        self.script = [{'content': None, 'tool_calls': [call('1', 'schedule_preparation', kind='prepare',
+        self.script = [{'content': None, 'tool_calls': [call('1', 'schedule_preparation', offer='예약한 시각에 결과를 정리해 드려요.', kind='prepare',
                                                              goal='출발 시각을 앞당겨야 하는지 확인', due=self.due_iso(600),
                                                              every_minutes='10', until=self.due_iso(600 + 7200), max_runs='6',
                                                              delivery='when_needed')]},
@@ -1743,7 +1743,7 @@ class WatchAcceptanceTests(_WatchCase):
         self.service.use_decision_engine(self.judge)
         due = self.now + 600
         for until, expected in ((due + 3600, due + 3600), (due + 3540, due + 3000), (due + 3660, due + 3600)):
-            self.script = [{'content': None, 'tool_calls': [call('1', 'schedule_preparation', kind='prepare', goal=f'확인 {until}',
+            self.script = [{'content': None, 'tool_calls': [call('1', 'schedule_preparation', offer='예약한 시각에 결과를 정리해 드려요.', kind='prepare', goal=f'확인 {until}',
                                                                  due=self.due_iso(600), every_minutes='10',
                                                                  until=datetime.fromtimestamp(until, SEOUL).isoformat(),
                                                                  delivery='when_needed')]},
@@ -1756,7 +1756,7 @@ class WatchAcceptanceTests(_WatchCase):
         """#846: the guidance's default cadence (every_minutes ~420 with until) is within the validated window."""
         self.judge = watch_engine([], preparation=False)
         self.service.use_decision_engine(self.judge)
-        self.script = [{'content': None, 'tool_calls': [call('1', 'schedule_preparation', kind='prepare',
+        self.script = [{'content': None, 'tool_calls': [call('1', 'schedule_preparation', offer='예약한 시각에 결과를 정리해 드려요.', kind='prepare',
                                                              goal='바뀌었는지 확인', due=self.due_iso(600),
                                                              every_minutes='420', until=self.due_iso(600 + 20 * 3600),
                                                              delivery='when_needed')]},
@@ -1848,10 +1848,10 @@ class WatchAcceptanceTests(_WatchCase):
         self.judge = watch_engine([], preparation=True)
         self.service.use_decision_engine(self.judge)
         self.script = [{'content': None, 'tool_calls': [
-            call('1', 'schedule_preparation', kind='prepare', goal='확인', due=self.due_iso(600), every_minutes='1',
+            call('1', 'schedule_preparation', offer='예약한 시각에 결과를 정리해 드려요.', kind='prepare', goal='확인', due=self.due_iso(600), every_minutes='1',
                  until=self.due_iso(1200)),
             call('2', 'schedule_preparation', kind='reminder', goal='확인', due=self.due_iso(600), delivery='when_needed'),
-            call('3', 'schedule_preparation', kind='prepare', goal='확인', due=self.due_iso(600), recurrence='daily',
+            call('3', 'schedule_preparation', offer='예약한 시각에 결과를 정리해 드려요.', kind='prepare', goal='확인', due=self.due_iso(600), recurrence='daily',
                  every_minutes='10', until=self.due_iso(24 * 3600 + 1200))]}, {'content': '예약하지 못했습니다.'}]
         self.receive('확인해줘')
         results = [m['content'] for m in self.model_calls[-1]['messages'] if m['role'] == 'tool']
@@ -1885,7 +1885,7 @@ class WatchAcceptanceTests(_WatchCase):
         long_secret = 'sensitive-window-' + 'a' * 200
         self.store.secret('telegram_token', long_secret)
         with self.assertRaises(ToolError) as long_error:
-            scheduler({'kind': 'prepare', 'goal': 'private goal', 'due': self.due_iso(600),
+            scheduler({'offer': '예약한 시각에 결과를 정리해 드려요.', 'kind': 'prepare', 'goal': 'private goal', 'due': self.due_iso(600),
                        'every_minutes': '10', 'until': long_secret})
         self.assertNotIn(long_secret[:100], str(long_error.exception), 'redact before truncating diagnostics')
 
@@ -1896,18 +1896,18 @@ class WatchAcceptanceTests(_WatchCase):
         self.judge = watch_engine([], preparation=False, same_goals={f'10월 4일까지 {goal} 알려 주세요': True})
         self.service.use_decision_engine(self.judge)
         self.script = [{'content': None, 'tool_calls': [
-            call('window-bad', 'schedule_preparation', kind='prepare', goal=goal, due=self.due_iso(600),
+            call('window-bad', 'schedule_preparation', offer='예약한 시각에 결과를 정리해 드려요.', kind='prepare', goal=goal, due=self.due_iso(600),
                  every_minutes='1', until=self.due_iso(600 + 7200), delivery='when_needed')]}]
         # Keep all five fan-out counterexamples, in one worker turn, so the
         # cumulative request budget leaves room to observe the finish refusal.
         self.script.append({'content': None, 'tool_calls': [
-                call(f'daily-{index}', 'schedule_preparation', kind='prepare',
+                call(f'daily-{index}', 'schedule_preparation', offer='예약한 시각에 결과를 정리해 드려요.', kind='prepare',
                      goal=f'10월 4일까지 {goal} 알려 주세요',
                      due=self.due_iso(600 + index * 86400), recurrence='daily', delivery='when_needed')
                 for index in range(5)]})
         self.script.extend([
             {'content': None, 'tool_calls': [
-                call('window-corrected', 'schedule_preparation', kind='prepare', goal=goal,
+                call('window-corrected', 'schedule_preparation', offer='예약한 시각에 결과를 정리해 드려요.', kind='prepare', goal=goal,
                      due=self.due_iso(600), every_minutes='420', until=self.due_iso(600 + 4 * 86400),
                      delivery='when_needed')]},
             finish('finish-watch', 'window-corrected', summary='반복 확인을 제안했습니다.')
@@ -1948,7 +1948,7 @@ class WatchAcceptanceTests(_WatchCase):
         job={'id':job_id,'message':'가격 변동을 확인해줘'}
         scheduler=restarted.preparation_scheduler(job,job['message'])
         with self.assertRaises(ToolError) as caught:
-            scheduler({'kind':'prepare','goal':'10월 4일까지 가격 변동을 확인해 주세요',
+            scheduler({'offer': '예약한 시각에 결과를 정리해 드려요.', 'kind':'prepare','goal':'10월 4일까지 가격 변동을 확인해 주세요',
                        'due':self.due_iso(600),'recurrence':'daily','delivery':'when_needed'})
         self.assertEqual(caught.exception.code,'window_retry_required')
         self.assertEqual(self.rows(),[])
@@ -1996,7 +1996,7 @@ class WatchAcceptanceTests(_WatchCase):
         self.service.use_decision_engine(self.judge)
         self.script = [
             {'content': None, 'tool_calls': [
-                call('window-bad', 'schedule_preparation', kind='prepare', goal='가격 변동 확인',
+                call('window-bad', 'schedule_preparation', offer='예약한 시각에 결과를 정리해 드려요.', kind='prepare', goal='가격 변동 확인',
                      due=self.due_iso(600), every_minutes='1', until=self.due_iso(600 + 7200),
                      delivery='when_needed')]},
             {'content': None, 'tool_calls': [
@@ -2253,7 +2253,7 @@ class CrossWorkProposalTests(_Case):
     def schedule(self, work, message, owner_typed=None):
         job = {'id': work, 'message': message, 'owner_typed': owner_typed}
         return self.service.preparation_scheduler(job, message)(
-            {'kind': 'prepare', 'goal': '매일 아침 일정 정리', 'due': self.due_iso(600), 'recurrence': 'daily'})
+            {'offer': '예약한 시각에 결과를 정리해 드려요.', 'kind': 'prepare', 'goal': '매일 아침 일정 정리', 'due': self.due_iso(600), 'recurrence': 'daily'})
 
     def test_the_tool_result_says_the_proposal_already_existed(self):
         self.judge = engine(preparation=False)
@@ -2294,13 +2294,13 @@ class CrossWorkProposalTests(_Case):
             with self.subTest(name):
                 job = {'id': f'work-{name}', 'message': '매일 아침 일정 정리 예약해 줘', **extra}
                 result = self.service.preparation_scheduler(job, job['message'])(
-                    {'kind': 'prepare', 'goal': f'아침 일정 정리 {index}', 'due': self.due_iso(600), 'recurrence': 'daily'})
+                    {'offer': '예약한 시각에 결과를 정리해 드려요.', 'kind': 'prepare', 'goal': f'아침 일정 정리 {index}', 'due': self.due_iso(600), 'recurrence': 'daily'})
                 self.assertEqual((result['state'], result['requires_owner_acceptance']), (prep.STATE_PROPOSED, True))
                 self.assertIsNone(self.service.preparations.get(result['preparation_id'])['accepted_by'])
         self.assertFalse([item for item in self.judge.asked if item[1].purpose == 'explicit-preparation-request'])
         typed = {'id': 'work-typed', 'message': '매일 아침 일정 정리 예약해 줘', 'owner_typed': 1}
         result = self.service.preparation_scheduler(typed, 'a run prompt that is not the owner message')(
-            {'kind': 'prepare', 'goal': '아침 일정 정리 typed', 'due': self.due_iso(600), 'recurrence': 'daily'})
+            {'offer': '예약한 시각에 결과를 정리해 드려요.', 'kind': 'prepare', 'goal': '아침 일정 정리 typed', 'due': self.due_iso(600), 'recurrence': 'daily'})
         self.assertEqual((result['state'], result['accepted_by']), (prep.STATE_SCHEDULED, prep.ACCEPTED_OWNER_REQUEST))
         [asked] = [item[1] for item in self.judge.asked if item[1].purpose == 'explicit-preparation-request']
         self.assertEqual(asked.facts['owner_message'], typed['message'], 'the judgment reads the owner message, not the prompt')
@@ -2319,14 +2319,14 @@ class CrossWorkProposalTests(_Case):
                 with self.store.db() as db:
                     db.execute('UPDATE jobs SET related_job_id=?,relation_kind=? WHERE id=?', (earlier, relation, work))
                 result = self.service.preparation_scheduler(job, '매일 아침 일정 정리해 줘')(
-                    {'kind': 'prepare', 'goal': f'아침 일정 정리 again {index}', 'due': self.due_iso(600), 'recurrence': 'daily'})
+                    {'offer': '예약한 시각에 결과를 정리해 드려요.', 'kind': 'prepare', 'goal': f'아침 일정 정리 again {index}', 'due': self.due_iso(600), 'recurrence': 'daily'})
                 self.assertEqual(result['state'], state)
                 self.assertEqual(self.service.owner_typed_work(job), relation != 'retry')
 
     def watch(self, work, goal, owner_typed=1, **extra):
         job = {'id': work, 'message': '감시 대상을 바꿔서 계속 봐 줘', 'owner_typed': owner_typed}
         return self.service.preparation_scheduler(job, job['message'])(
-            {'kind': 'prepare', 'goal': goal, 'due': self.due_iso(600), 'every_minutes': '30',
+            {'offer': '예약한 시각에 결과를 정리해 드려요.', 'kind': 'prepare', 'goal': goal, 'due': self.due_iso(600), 'every_minutes': '30',
              'until': self.due_iso(7200), 'delivery': 'when_needed', **extra})
 
     def test_a_long_brief_is_scheduled_whole(self):
@@ -2397,7 +2397,7 @@ class CrossWorkProposalTests(_Case):
         scheduler = self.service.preparation_scheduler(job, job['message'])
         for kind, limit in (('reminder', prep.GOAL_MAX_CHARS), ('prepare', prep.BRIEF_MAX_CHARS)):
             with self.assertRaises(ToolError) as caught:
-                scheduler({'kind': kind, 'goal': '가' * (limit + 1), 'due': self.due_iso(600)})
+                scheduler({**({'offer': '예약한 시각에 결과를 정리해 드려요.'} if kind == 'prepare' else {}), 'kind': kind, 'goal': '가' * (limit + 1), 'due': self.due_iso(600)})
             self.assertEqual(caught.exception.code, 'invalid_goal')
             self.assertIn(f'kind {kind}의 goal은 {limit}자 이내', str(caught.exception))
             self.assertIn('줄여서 한 번 다시 호출', str(caught.exception))
@@ -2410,7 +2410,7 @@ class ValidationRefusalTests(_Case):
     def test_live_validation_refusals_allow_redelegation(self):
         work = self.store.enqueue('준비해 줘', 'validation-786')
         schedule = self.service.preparation_scheduler(self.store.job(work), '')
-        valid = {'kind': 'prepare', 'goal': '조건 확인', 'due': self.due_iso(600)}
+        valid = {'offer': '예약한 시각에 결과를 정리해 드려요.', 'kind': 'prepare', 'goal': '조건 확인', 'due': self.due_iso(600)}
         with patch.object(self.service.preparations, 'create') as create:
             for index, (args, code) in enumerate((({**valid, 'goal': ''}, 'invalid_goal'),
                                                    ({**valid, 'every_minutes': 1, 'until': self.due_iso(7200)}, 'invalid_window'))):
@@ -2434,7 +2434,7 @@ class ValidationRefusalTests(_Case):
     def test_capacity_refusal_before_insert_is_not_run(self):
         with patch.object(prep, 'MAX_ACTIVE', 0), self.assertRaises(ToolError) as caught:
             self.service.preparation_scheduler({'id': 'work-1', 'message': '준비'}, '')(
-                {'kind': 'prepare', 'goal': '조건 확인', 'due': self.due_iso(600)})
+                {'offer': '예약한 시각에 결과를 정리해 드려요.', 'kind': 'prepare', 'goal': '조건 확인', 'due': self.due_iso(600)})
         self.assertEqual(caught.exception.code, 'too_many')
         self.assertIs(caught.exception.ran, False)
         self.assertEqual(self.rows(), [])
@@ -2449,7 +2449,7 @@ class ValidationRefusalTests(_Case):
         with patch.object(self.service.preparations, 'create', side_effect=written_then_refused):
             with self.assertRaises(ToolError) as caught:
                 self.service.preparation_scheduler({'id': 'work-1', 'message': '준비'}, '')(
-                    {'kind': 'prepare', 'goal': '조건 확인', 'due': self.due_iso(600)})
+                    {'offer': '예약한 시각에 결과를 정리해 드려요.', 'kind': 'prepare', 'goal': '조건 확인', 'due': self.due_iso(600)})
         self.assertEqual(len(self.rows()), 1)
         observation = _error_observation(caught.exception, True, 'schedule_preparation')
         self.assertNotIn('ran', observation)

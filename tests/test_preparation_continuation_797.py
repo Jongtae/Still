@@ -44,7 +44,7 @@ class PreparationContinuationTests(_Case):
             self.assertIn('정기 현황 보고를 예약해 줘', messages)
             self.assertIn(answer, messages)
             return {'content': None, 'tool_calls': [
-                call('schedule', 'schedule_preparation', kind='prepare', goal='정기 현황 보고',
+                call('schedule', 'schedule_preparation', offer='정해진 때에 현황을 정리해 드려요.', kind='prepare', goal='정기 현황 보고',
                      due=self.due_iso(43200 - 30), recurrence='daily'),
             ]}
 
