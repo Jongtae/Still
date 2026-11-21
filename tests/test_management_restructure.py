@@ -147,13 +147,15 @@ const tasks=[
  {id:'approve',title:'reply',status:'partial',status_kind:'finished',waiting_for_owner:true,started_at:20},
  {id:'effect',title:'event',status:'unknown',status_kind:'finished',started_at:30},
  {id:'delivery',title:'answer',status:'succeeded',status_kind:'finished',delivery:'unknown',started_at:40},
- {id:'running',title:'busy',status:'running',status_kind:'active',delivery:'unknown',started_at:50}];
+ {id:'running',title:'busy',status:'running',status_kind:'active',delivery:'unknown',started_at:50},
+ {id:'stopped',title:'cut off',status:'interrupted',status_kind:'finished',delivery:'sent',started_at:60}];
 ctx.renderTaskAttention(tasks);
 assert.equal(section.hidden,false);
-assert.deepEqual(list.children.map(row=>[row.title,row.state,row.kind]),[['answer','전달 여부 알 수 없음','unknown'],['event','외부 결과 불확실','unknown'],['reply','승인 대기','attention'],['calendar','연결 대기','attention']],'newest first; an active Work is listed only for a real wait');
+assert.deepEqual(list.children.map(row=>[row.title,row.state,row.kind]),[['cut off','중단됨','unknown'],['answer','전달 여부 알 수 없음','unknown'],['event','외부 결과 불확실','unknown'],['reply','승인 대기','attention'],['calendar','연결 대기','attention']],'newest first; an active Work is listed only for a real wait');
 for(const row of list.children){assert.equal(row.actions.length,1,'one action per row');assert.equal(row.actions[0].label,'요청 보기','it opens the request; nothing is retried here');}
-assert.match(list.children[1].description,/자동으로 다시 실행하지 않습니다/,'an unknown external result is never offered a re-run');
-list.children[1].actions[0].onClick();
+assert.match(list.children[2].description,/자동으로 다시 실행하지 않습니다/,'an unknown external result is never offered a re-run');
+assert.match(list.children[0].description,/자동으로 다시 실행하지 않습니다/,'an interrupted Work is never offered a re-run');
+list.children[2].actions[0].onClick();
 assert.deepEqual(JSON.parse(JSON.stringify(calls)),[['navigate','tasks','',{taskTab:'recent'}],['focus','effect']],'the row opens the original request in the trace');
 const rebuilt=list.rebuilt;ctx.renderTaskAttention(tasks);assert.equal(list.rebuilt,rebuilt,'polling with unchanged state keeps the rows and focus');
 ctx.renderTaskAttention(Array.from({length:7},(_,i)=>({id:'u'+i,title:'t'+i,status:'unknown',status_kind:'finished',started_at:i})));

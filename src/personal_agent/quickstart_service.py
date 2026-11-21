@@ -3803,7 +3803,8 @@ class AgentService:
         model=self.store.config('model', {})
         model_ready=self.model_ready(model, self.store.config('model_test'))
         subscription=self.subscription_engine_status()['selected']
-        recovery=self.store.recovery_summary()
+        # #1073: only Works the Activity view lists, so the attention state names rows the owner can open.
+        recovery=self.store.recovery_summary(recent=True)
         active=sum(1 for job in self.store.jobs() if ws.is_active(job['status']))
         if any(recovery.values()):
             state='attention';next_action=msg('quickstart_service.work_delivery_uncertain')
