@@ -3981,8 +3981,16 @@ class Capabilities:
     text='\n'.join(part for part in (visible.get('stdout'),visible.get('stderr')) if part)
    else:
     text=visible if isinstance(visible,str) else json.dumps(visible,ensure_ascii=False,default=str)
-   return self.store.record_read_result(self.job_id,tool=action,text=text,source_kind=kind,
-                                        epoch=getattr(getattr(self.budget,'ledger',None),'epoch',None),**page)
+   epoch=getattr(getattr(self.budget,'ledger',None),'epoch',None)
+   if browser:
+    return self.store.record_read_result(self.job_id,tool=action,text=text,source_kind=kind,epoch=epoch,**page)
+   # As for a page view, this attempt's judgment reads the full live result from memory (up to
+   # ATTEMPT_RESULT_CHARS, #767); the row is the bounded excerpt for recovery and follow-ups.
+   with self._read_results_lock:
+    row_id=self.store.record_read_result(self.job_id,tool=action,text=text,source_kind=kind,epoch=epoch)
+    if row_id is not None and self._keep_browser_page({'url':f'{action}:{row_id}','title':f'{action} result','text':text}):
+     self._locally_cached_page_rows.add(row_id)
+    return row_id
   except Exception as exc:
    LOG.warning('read result could not be kept (%s)',type(exc).__name__)
    if not browser and text is not None:

@@ -294,6 +294,16 @@ class JudgmentTests(ReadResultsBase):
         pages = caps.take_browser_pages()
         self.assertEqual(sum(MARKER in text for _url, _title, text in pages), 1)
 
+    def test_the_judgment_reads_a_live_read_past_the_excerpt_bound(self):
+        caps = self.caps()
+        caps._api = FakeApi({'filler': 'f' * (READ_RESULT_EXCERPT_CHARS + 1000), 'answer': MARKER})
+        caps.execute('api_request', {'connection': 'fixture', 'method': 'GET', 'path': '/event'})
+        (row,) = self.rows(caps.job_id)
+        self.assertNotIn(MARKER, row['excerpt'], 'the durable excerpt is bounded')
+        pages = caps.take_browser_pages()
+        self.assertEqual(sum(MARKER in text for _url, _title, text in pages), 1,
+                         'the attempt judges the full live result, once')
+
     def test_a_failed_write_leaves_the_read_available_for_the_judgment(self):
         caps = self.caps()
         caps._api = FakeApi({'guests': [MARKER]})
