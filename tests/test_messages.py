@@ -31,7 +31,6 @@ MIGRATED_MODULES = {
         '이 페이지는 로그인이 필요해요. 이 실행은 소유자에게 묻지 않는 예약 실행이라 Still은 로그인을 요청하지 않았고, 소유자를 기다리는 것도 없어요. 비밀번호는 입력하지 말고, 로그인 없이 확인할 수 있는 다른 경로가 있으면 그것으로 확인하세요. 끝내 확인하지 못한 부분은 답에서 확인하지 못했다고 짧게 밝히세요.',  # Model-only browser sign-in instructions (#815).
         '이 페이지는 로그인이 필요해요. 이 요청은 이미 다른 사이트의 로그인을 기다리고 있어 이 사이트의 로그인은 지금 요청되지 않습니다. 비밀번호는 입력하지 말고, 지금까지 확인한 내용으로 답을 마치면서 이 사이트에도 로그인이 필요하다고 말하세요.',  # Model-only browser sign-in instructions.
         '이름만 확인했습니다. 서버 실행·인증·도구 준비 여부는 검증하지 않았습니다. AI 제공 연결은 현재 작업의 도구 목록에서 별도로 확인하세요.',  # Model-only tool result or next_step guidance.
-        'configured 또는 registry를 선택하세요.',  # Model-only tool result or next_step guidance.
         '공개 서버 이름의 일부로 찾은 메타데이터입니다. 인증·도구·범위·라이선스는 별도 확인이 필요합니다. 결과가 없거나 조회가 실패하면 기존 스킬과 일반 도구 경로를 검토하세요. 설치하거나 연결하지 않았습니다.',  # Model-only tool result or next_step guidance.
         '이번 요청에서는 이미 충분히 알렸어요. 남은 내용은 답에 담아 주세요.',  # Model-only tool result or next_step guidance.
         '지금은 대화로 메시지를 보낼 수 없어요. 답에 담아 주세요.',  # Model-only tool result or next_step guidance.

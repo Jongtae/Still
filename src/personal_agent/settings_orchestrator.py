@@ -1094,17 +1094,24 @@ class SettingsOrchestrator:
             raise SettingsError(msg('settings_orchestrator.setting_unchanged', label=_CHANGE_LABELS[category, setting], value=self._describe(category, setting, after, row)))
         exact_values = ''
         if (category, setting) == ("skills", "add"):
-            from .skills import parse_source
-            source = parse_source(after)
-            name = source["path"].rstrip("/").split("/")[-1]
+            from .skills import SkillError
+            try:
+                candidate = self.service.skill_candidate(after)
+            except SkillError as exc:
+                raise SettingsError(msg('settings_orchestrator.error_unchanged', exc=exc)) from None
+            if not candidate['supported']:
+                raise SettingsError(msg('skills.not_added', reasons=' / '.join(candidate['refused'])))
+            skills = self.service.skills_status()
+            name = candidate['name']
             replacing = any(row["skill"].split("/", 1)[-1] == name and not row["skill"].startswith("agentos/")
-                            for row in self.service.skills_status().get("skills") or ())
+                            for row in skills.get("skills") or ())
             summary = (msg(
                 'settings_orchestrator.skill_replace_summary' if replacing else 'settings_orchestrator.skill_add_summary',
                 name=name,
+                licence=self.service._redact_known_secrets(candidate['licence']),
             ))
             exact_values = after
-            if not self.service.skills_status().get("enabled"):
+            if not skills.get("enabled"):
                 summary = msg('settings_orchestrator.skill_enable_summary', summary=summary)
 
         elif (category, setting) == ("skills", "remove"):

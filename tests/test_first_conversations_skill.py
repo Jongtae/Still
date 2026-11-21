@@ -26,8 +26,6 @@ class FirstConversationsContent(unittest.TestCase):
         self.assertEqual((record['status'], record['licence']), (['supported_as_is'], 'AGPL-3.0-only'))
         listed = {row['name']: row for row in reference_skills()}
         self.assertEqual(listed[NAME]['address'], f'github.com/Jongtae/Still/tree/main/skills/{NAME}')
-        guide = (ROOT / 'src' / 'personal_agent' / 'bundled_skills' / 'agentos-skills' / 'SKILL.md').read_text()
-        self.assertIn(f'https://github.com/Jongtae/Still/tree/main/skills/{NAME}', guide)
         self.assertIn(f'`{NAME}`', (ROOT / 'skills' / 'README.md').read_text())
 
     def test_it_opens_with_a_bounded_usage_header(self):

@@ -66,12 +66,17 @@ def _entry(row):
 
 
 class QueryRefused(ValueError):
-    """A registry query refused before anything was sent, with a stable ``code`` (#617)."""
+    """A discovery query refused before anything was sent, with a stable ``code`` (#617)."""
 
     def __init__(self, text, code):
         super().__init__(text)
         self.code = code
         self.ran = False
+
+
+def check_public_query(query, redact):
+    if isinstance(query, str) and (SENSITIVE.search(query) or redact(query) != query):
+        raise QueryRefused(msg('agent_runtime.public_server_query'), 'private_capability_query')
 
 
 class CapabilitySearch:
@@ -85,8 +90,7 @@ class CapabilitySearch:
         # A short public server-name token, never the request, document, URL,
         # email, credentials or a free-form semantic query.
         # #617: each refusal says what was wrong - a secret, or the token's shape - and nothing was sent.
-        if isinstance(query, str) and (SENSITIVE.search(query) or redact(query) != query):
-            raise QueryRefused(msg('agent_runtime.public_server_query'), 'private_capability_query')
+        check_public_query(query, redact)
         if not isinstance(query, str) or not NAME_QUERY.fullmatch(query):
             raise QueryRefused(msg('agent_runtime.registry_query_shape'), 'registry_query_shape')
         with self._lock:

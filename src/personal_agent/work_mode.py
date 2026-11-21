@@ -194,6 +194,9 @@ def tool_refusal(store, host_action, args=None):
     if (host_action == 'public_download' and isinstance(args, dict)
             and args.get('operation') == 'preview' and 'url' not in args):
         return None
+    if host_action == 'capability_search' and isinstance(args, dict) and args.get('source') == 'skill':
+        # The local reference list needs no connection. SkillLibrary guards each GitHub request.
+        return None
     egress = TOOL_EGRESS.get(host_action)
     if not egress or not active(store):
         return None

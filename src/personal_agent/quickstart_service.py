@@ -924,7 +924,34 @@ class AgentService:
             return {'source':'local-ai-configuration','state':'observed','contacted':False,
                     'connections':connections,'result_count':len(connections),
                     'note':'이름만 확인했습니다. 서버 실행·인증·도구 준비 여부는 검증하지 않았습니다. AI 제공 연결은 현재 작업의 도구 목록에서 별도로 확인하세요.'}
-        if source!='registry':raise ValueError('configured 또는 registry를 선택하세요.')
+        if source=='skill':
+            from .capability_search import QueryRefused, check_public_query
+            from .skills import SkillError
+            query=arguments.get('query')
+            check_public_query(query,self._redact_known_secrets)
+            if query is not None and not isinstance(query,str):
+                raise QueryRefused(msg('skills.github_url'),'invalid_source')
+            result={'source':'skill','state':'observed','contacted':False,'results':[],'result_count':0,
+                    'retrieved_at':time.time(),'untrusted':True,'provider':'github','sources':[],'sent':{}}
+            try:
+                found=self.skill_candidate(query)
+            except SkillError as exc:
+                if exc.code in ('work_mode','invalid_source'):
+                    raise QueryRefused(str(exc),exc.code) from None
+                if exc.code!='source_unavailable':
+                    return {**result,'state':'refused','contacted':True,'sent':{'query':query},'code':exc.code,
+                            'note':self._redact_known_secrets(str(exc))}
+                return {**result,'state':'unavailable','contacted':True,'sent':{'query':query},'note':msg('skills.download_failed')}
+            except OSError:
+                return {**result,'state':'unavailable','contacted':True,'sent':{'query':query},'note':msg('skills.download_failed')}
+            if isinstance(found,list):
+                return {**result,'results':found,'result_count':len(found),
+                        'note':msg('quickstart_service.skill_references_listed')}
+            for key in ('description','header','licence'):
+                found[key]=self._redact_known_secrets(found[key])
+            return {**result,'results':[found],'result_count':1,'contacted':True,'sources':[found['address']],'sent':{'query':query},
+                    'note':msg('quickstart_service.skill_candidate_inspected')}
+        if source!='registry':raise ValueError(msg('quickstart_service.capability_source'))
         result=self.capability_search.registry(arguments.get('query'),self._redact_known_secrets)
         return {**result,'sent':{'query':result['query']} if result['contacted'] else {},
                 'provider':'official-mcp-registry','sources':[result['source']],
@@ -4473,26 +4500,22 @@ class AgentService:
             return None
 
     def skills_status(self):
-        from .skills import reference_skills
         library = self.skill_library()
-        installed = {manifest['id'] for manifest in library.installed()}
         return {'enabled': library.enabled(), 'skills': library.summary(),
-                'available': [{**row, 'installed': row['name'] in installed} for row in reference_skills()]}
+                'available': library.inspect_candidate()}
+
+    def skill_candidate(self, value):
+        return self.skill_library().inspect_candidate(value)
 
     def skill_setting_value(self, setting, value):
         """The canonical draft value of a skills ``add`` (pinned address) or ``remove`` (package id)."""
-        from .skills import SkillError, parse_source, reference_skills, source_address
+        from .skills import SkillError, source_address
         library = self.skill_library()
         if setting == 'remove':
             return library.resolve(value)
-        # #963: an Still reference skill may be named instead of addressed (the address comes from data).
-        published = {row['name']: row['address'] for row in reference_skills()}
-        value = published.get(' '.join(str(value or '').split()).lower(), value)
-        source = parse_source(value, library.transport)
-        for manifest in library.installed():
-            if manifest.get('source', {}).get('revision') == source['revision'] and manifest['source'].get('repo') == source['repo'] \
-                    and manifest['source'].get('path') == source['path']:
-                raise SkillError(msg('quickstart_service.skill_already_installed', skill_id=manifest['id']), 'already_installed')
+        source = library.candidate_source(value)
+        if manifest := library.installed_at_source(source):
+            raise SkillError(msg('quickstart_service.skill_already_installed', skill_id=manifest['id']), 'already_installed')
         return source_address(source)
 
     def apply_skill_setting(self, setting, value):

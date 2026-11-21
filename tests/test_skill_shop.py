@@ -114,10 +114,12 @@ class ReferencePackages(unittest.TestCase):
         self.assertIn('https://apis.map.kakao.com/web/guide/', reference)
         self.assertIn('/link/by/{mode}/', reference)
 
-    def test_the_bundled_guide_points_at_the_reference_skills(self):
+    def test_the_bundled_guide_points_at_reference_skill_discovery(self):
         guide = (ROOT / 'src' / 'personal_agent' / 'bundled_skills' / 'agentos-skills' / 'SKILL.md').read_text()
+        self.assertIn('`capability_search` with source `skill`', guide)
+        self.assertIn('An empty query lists Still\'s reference skills.', guide)
         for name in (SHOPPING, SITE, 'map-directions'):
-            self.assertIn(address(f'skills/{name}'), guide)
+            self.assertNotIn(address(f'skills/{name}'), guide)
 
 
 class _Shop(unittest.TestCase):

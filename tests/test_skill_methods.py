@@ -53,13 +53,11 @@ class MethodContent(unittest.TestCase):
 
     def test_each_method_is_supported_instruction_only_content_listed_for_the_owner_to_add(self):
         listed = {row['name']: row for row in reference_skills()}
-        guide = (SRC / 'bundled_skills' / 'agentos-skills' / 'SKILL.md').read_text()
         for name in METHODS:
             with self.subTest(method=name):
                 record = inspect_skill(ROOT / 'skills' / name)
                 self.assertEqual((record['status'], record['licence']), (['supported_as_is'], 'AGPL-3.0-only'))
                 self.assertEqual(listed[name]['address'], f'github.com/{REPO}/tree/main/skills/{name}')
-                self.assertIn(f'https://github.com/{REPO}/tree/main/skills/{name}', guide)
 
     def test_each_method_opens_with_a_bounded_usage_header(self):
         for name in METHODS:

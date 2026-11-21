@@ -352,7 +352,9 @@ def parse_source(value, transport=http_get):
         try:
             revision = transport(f'https://api.github.com/repos/{owner}/{repo}/commits/{ref}',
                                  limit=4096).decode('ascii').strip().lower()
-        except (ValueError, AttributeError):
+        except (ValueError, AttributeError) as exc:
+            if isinstance(exc, SkillError) and exc.code == 'work_mode':
+                raise
             revision = ''
         if not COMMIT.match(revision):
             raise SkillError(msg('skills.commit_unavailable'), 'source_unavailable')
@@ -374,6 +376,13 @@ def reference_skills(path=REFERENCES_FILE):
 
 def source_address(source):
     return f"{source['uri']}/tree/{source['revision']}/{source['path']}"
+
+
+def refusal_reasons(status):
+    blocked = sorted(set(status) - ENABLE_STATUSES)
+    reasons = {'scripts_or_hooks_required': msg('skills.requires_scripts'),
+               'licence_unknown': msg('skills.unknown_license')}
+    return [reasons.get(code, code) for code in blocked]
 
 
 def fetch_github(source, dest, transport=http_get):
@@ -570,6 +579,40 @@ class SkillLibrary:
         return text, len(data) > limit, sorted(files)
 
     # Acquisition (an owner-confirmed settings change; never automatic).
+    def candidate_source(self, value):
+        """Resolve a public folder address or a reference skill name to a pinned source."""
+        published = {row['name']: row['address'] for row in reference_skills()}
+        value = published.get(' '.join(str(value or '').split()).lower(), value)
+        return parse_source(value, self.transport)
+
+    def installed_at_source(self, source):
+        return next((manifest for manifest in self.installed()
+                     if all(manifest.get('source', {}).get(key) == source[key]
+                            for key in ('repo', 'path', 'revision'))), None)
+
+    def inspect_candidate(self, value=None):
+        """Inspect public skill text in temporary staging, without installing it."""
+        if value is None or not value.strip():
+            installed = {manifest['id'] for manifest in self.installed()}
+            return [{**row, 'installed': row['name'] in installed} for row in reference_skills()]
+        source = self.candidate_source(value)
+        name = source['path'].rsplit('/', 1)[-1]
+        staging = self.root / '.inspect' / uuid.uuid4().hex
+        try:
+            folder = fetch_github(source, staging / name, self.transport)
+            record = inspect_skill(folder, staging / REPOSITORY_LICENCES)
+            _, body = parse_frontmatter((folder / 'SKILL.md').read_text(encoding='utf-8'))
+            header, _ = usage_header(body)
+            refused = refusal_reasons(record['status'])
+            return {**{key: record[key] for key in ('name', 'description', 'licence', 'licence_source',
+                                                    'digest', 'status')},
+                    **{key: source[key] for key in ('repo', 'path', 'revision')},
+                    'address': source_address(source), 'supported': not refused, 'refused': refused,
+                    'installed': self.installed_at_source(source) is not None,
+                    'header': header, 'untrusted': True}
+        finally:
+            shutil.rmtree(staging, ignore_errors=True)
+
     def install(self, value):
         """Fetch, stage, inspect and install one external skill; returns its declaration."""
         # #208: nothing is fetched from GitHub while work mode is on.
@@ -586,12 +629,8 @@ class SkillLibrary:
         try:
             folder = fetch_github(source, staging / name, self.transport)
             record = inspect_skill(folder, staging / REPOSITORY_LICENCES)
-            blocked = sorted(set(record['status']) - ENABLE_STATUSES)
-            if blocked:
-                reasons = {'scripts_or_hooks_required': msg('skills.requires_scripts'),
-                           'licence_unknown': msg('skills.unknown_license')}
-                raise SkillError(msg('skills.not_added', reasons=' / '.join(reasons.get(code, code) for code in blocked)),
-                                 'unsupported')
+            if reasons := refusal_reasons(record['status']):
+                raise SkillError(msg('skills.not_added', reasons=' / '.join(reasons)), 'unsupported')
             package_id = record['name']
             if package_id == BUNDLED_PACKAGE or package_id in {entry['name'] for entry in self.bundled()}:
                 raise SkillError(msg('skills.bundled_collision'), 'identity_collision')
