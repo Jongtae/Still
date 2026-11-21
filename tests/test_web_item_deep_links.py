@@ -128,6 +128,21 @@ class ExactRetainedItems(_OwnerSurface):
         self.assertEqual(self.task(job)['retained'][0]['available'], False)
         self.assertEqual(self.refused(f"/api/personal-space/items/memory/{link['id']}")[0], 404)
 
+    def test_undo_from_the_records_screen_restores_the_value_the_save_replaced(self):
+        """#962: 되돌리기 is the exact #955 retraction; a stale or repeated undo is refused."""
+        profile = '/api/personal-space/profile/request'
+        first = self.web(profile, {'operation': 'remember', 'memory_key': 'profile.drink', 'content': '커피'})
+        second = self.web(profile, {'operation': 'remember', 'memory_key': 'profile.drink', 'content': '차'})
+        self.assertEqual(self.item('memory', second['id'])['content'], '차')
+        undone = self.web(f"/api/personal-space/memories/{second['id']}/undo", {})
+        self.assertEqual((undone['undone'], undone['restored']), (True, first['id']))
+        self.assertEqual(self.item('memory', first['id'])['content'], '커피')
+        self.assertEqual(self.refused(f"/api/personal-space/items/memory/{second['id']}")[0], 404)
+        again = self.refused(f"/api/personal-space/memories/{second['id']}/undo", {})
+        self.assertEqual(again[0], 409)
+        app = LinksComeFromTypedDataOnly.APP
+        self.assertIn("/undo'", app[app.index('function itemDeleteActions('):])
+
     def test_a_saved_result_opens_alone_with_its_project(self):
         done = self.ask('회의 준비 목록 정리해 줘')
         other = self.ask('여행 준비 목록 정리해 줘')

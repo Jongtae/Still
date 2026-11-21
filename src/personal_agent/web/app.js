@@ -1779,6 +1779,14 @@ function itemDeleteActions(box,item){const kind=item.kind==='artifact'?'results'
     itemDeletePending=false;if(activeItem===target){itemState={target,item:null,error:t('지웠습니다. 이 기록은 더 이상 저장돼 있지 않습니다.')};renderItem();}setFeedback('item-feedback',t('지웠습니다.'));
     if(item.workspace_id){workspaceResultSummaries.delete(item.workspace_id);if(selectedWorkspaceId===item.workspace_id)void selectWorkspace(item.workspace_id);}if(savedMemory)void loadSavedMemory();await refresh();$('item-back').focus();}
    catch(error){itemDeletePending=false;renderItem();setError('item-feedback',error);}});};
+ // #962: a saved fact is undone exactly (the value it replaced is in use again), not deleted.
+ if(item.kind==='memory'&&!itemDeletePending){const undo=element('button',t('되돌리기'));undo.type='button';undo.dataset.focusKey='item-undo';
+  undo.onclick=()=>{const target=activeItem;return busy(undo,async()=>{try{const done=await api('/api/personal-space/memories/'+encodeURIComponent(item.id)+'/undo',{});
+    if(activeItem===target){itemState={target,item:null,error:t('되돌렸습니다. 이 기억은 더 이상 쓰이지 않습니다.')};renderItem();}
+    setFeedback('item-feedback',done&&done.restored?t('되돌렸습니다. 이전 값이 다시 쓰입니다.'):t('되돌렸습니다.'));
+    if(savedMemory)void loadSavedMemory();await refresh();$('item-back').focus();}
+   catch(error){setError('item-feedback',error);}});};
+  actions.append(undo);}
  actions.append(remove);box.append(actions);}
 // A MemoryCandidate decision writes canonical Memory, so every request body
 // is built from `memoryCandidateReview.inspected` - the row the owner read back.

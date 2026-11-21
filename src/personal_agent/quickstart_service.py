@@ -2332,6 +2332,23 @@ class AgentService:
     #: It is an owner operation from the local surface, not a conversation Work.
     PROFILE_SETTINGS_WORK='owner-settings-profile'
 
+    #: The Work identity an owner's 되돌리기 from the records screen is recorded under (#962).
+    RECORDS_UNDO_WORK='owner-records-undo'
+
+    def memory_undo_request(self, memory_id):
+        """#962: undo one saved fact from the records screen, the same exact retraction as asking (#955).
+
+        Reads the row's current digest itself, so the retraction binds to the value stored now; a row
+        no longer current is refused.  Returns what is in use again as ``restored`` (a memory id or
+        ``None``), ``restored_ended`` and ``expired`` ids.
+        """
+        from .memory_prompts import retract_saved
+        row=self.store.memory(memory_id,'local-owner') if isinstance(memory_id,str) and memory_id else None
+        if not row or row.get('state')!='current':raise ValueError(msg('agent_runtime.revert_not_current'))
+        undone=retract_saved(self.store,self.RECORDS_UNDO_WORK,{'id':memory_id,'digest':row['content_digest'],'key':row.get('memory_key')},asked=True)
+        if undone['status']!='retracted':raise ValueError(msg('agent_runtime.revert_not_current'))
+        return {'undone':True,'restored':undone['restored'],'restored_ended':undone['restored_ended'],'expired':undone['expired']}
+
     def memory_profile_request(self, body, owner_id='local-owner'):
         """The owner's Settings list / add / correct path for ``profile.*`` Memory (#658).
 
