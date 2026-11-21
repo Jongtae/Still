@@ -18,6 +18,15 @@ The protocol is duck-typed; one instance serves one run::
         completion_note: str          # optional: how a task ends in this world, added after the instruction
         def __exit__(self, *exc): ... # stops everything it started
 
+A **browser world** (#1122, ``worlds/shop.py``) is reached through Still's
+embedded browser instead: ``mcp_server()`` is None, ``operations()`` is empty
+and ``browser_origins()`` lists the exact loopback ``host:port`` origins the
+sandbox browser may load.  The sandbox passes them to its import guard, which
+gives them to Still's existing test-only exact-origin allowance
+(``sandbox_site/eval_browser_reach.py``); Still's loopback and private-network
+refusal is unchanged for everything else.  A world's ``workers`` names the
+main-AI routes it supports (default Codex only).
+
 ``instruction`` keeps task text out of the repository: a scenario stores only
 the task id.  ``operations`` lets the eval play the owner's trust-record
 review of the world's tools (reads as reads; the scenario names the money
@@ -46,7 +55,10 @@ EFFECTS = ('read', 'mutate')
 OPERATION = re.compile(r'^[A-Za-z0-9_.-]{1,60}$')
 ENV_NAME = re.compile(r'^[A-Za-z_][A-Za-z0-9_]{0,127}$')
 #: ``name -> 'module:Class'``; imported only when a run asks for that world.
-REGISTRY = {'appworld': 'agentos_eval.worlds.appworld:AppWorldWorld', 'fake': 'agentos_eval.worlds:FakeWorld'}
+REGISTRY = {'appworld': 'agentos_eval.worlds.appworld:AppWorldWorld', 'fake': 'agentos_eval.worlds:FakeWorld',
+            'shop': 'agentos_eval.worlds.shop:ShopWorld'}
+#: The main-AI route a world runs on unless it names others (``World.workers``).
+DEFAULT_WORKERS = ('codex',)
 
 
 class WorldError(RuntimeError):
@@ -55,6 +67,11 @@ class WorldError(RuntimeError):
 
 def load(name, task_id, root):
     """A new, not yet entered World ``name`` for ``task_id`` with its state under ``root``."""
+    return world_class(name)(task_id, root=Path(root))
+
+
+def world_class(name):
+    """The World class registered as ``name``; raises ``WorldError``."""
     target = REGISTRY.get(name)
     if target is None:
         raise WorldError(f'unknown world {name!r}; known: {sorted(REGISTRY)}')
@@ -63,7 +80,29 @@ def load(name, task_id, root):
         module = importlib.import_module(module_name)
     except ImportError as exc:
         raise WorldError(f'world {name!r} is not installed ({exc})') from None
-    return getattr(module, class_name)(task_id, root=Path(root))
+    return getattr(module, class_name)
+
+
+def workers(name):
+    """The main-AI routes world ``name`` supports."""
+    return tuple(getattr(world_class(name), 'workers', DEFAULT_WORKERS))
+
+
+#: ``host:port`` on the loopback address: the only browser origin a world may name.
+BROWSER_ORIGIN = re.compile(r'^127\.0\.0\.1:([1-9][0-9]{0,4})$')
+
+
+def browser_origins(world):
+    """A browser world's origins, validated (loopback ``host:port`` only); ``()`` for an MCP world."""
+    origins = getattr(world, 'browser_origins', None)
+    if origins is None:
+        return ()
+    origins = origins()
+    if (not isinstance(origins, list) or not origins or len(origins) > 4
+            or not all(isinstance(item, str) and BROWSER_ORIGIN.match(item) and int(item.rsplit(':', 1)[1]) < 65536
+                       for item in origins)):
+        raise WorldError('browser_origins() must list 1-4 origins of the form 127.0.0.1:<port>')
+    return tuple(origins)
 
 
 def check_server(definition):
