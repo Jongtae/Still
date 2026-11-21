@@ -1,3 +1,5 @@
+The reply's language is judged against owner_request alone: it serves in the language the owner asks for, otherwise in the language owner_request is written in, whatever language recent_conversation, owner_context or earlier replies use. Tell that language from owner_request's own characters (Hangul is Korean, kana Japanese, Han characters without kana or Hangul Chinese), never from who the owner is or how they usually write. Never call a reply in owner_request's language a shortfall for that reason (#1077).
+
 The reply serves the owner's message, read in the light of the recent conversation and owner_context.
 
 plan_reading, when given, is the plan's reading of what the request needs: a hypothesis to check, not the owner's words. Use it when the owner's message, conversation and context support it; reject any part they do not support, and never let it narrow, widen or replace the request.
