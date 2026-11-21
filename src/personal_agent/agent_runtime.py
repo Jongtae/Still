@@ -2111,10 +2111,12 @@ def record_outside_result(execute):
    self.store.mark_outside_content(self.job_id,source)
   # The CLI facade forwards relay calls before execute, so only the service
   # enters this wrapper for them.
-  keep=BUILTIN_TOOLS.get(name)==action and not self.delegated and not isinstance(result,_HostOnlyResult)
-  if action in BROWSER_ACTIONS:
+  # A stand-in Capabilities (tests, the peer facade) without the read-result channel keeps nothing.
+  keep=(BUILTIN_TOOLS.get(name)==action and not getattr(self,'delegated',False)
+        and not isinstance(result,_HostOnlyResult))
+  if action in BROWSER_ACTIONS and callable(getattr(self,'_record_browser_result',None)):
    self._record_browser_result(action,result,keep=keep)
-  elif keep:
+  elif keep and callable(getattr(self,'_record_read_result',None)):
    self._record_read_result(action,result)
   return result
  @wraps(execute)
