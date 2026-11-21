@@ -696,7 +696,7 @@ def pin_model(service, model):
     routes._put_jobs({})
 
 
-def requalify_route(service, cap):
+def requalify_route(service, cap, force=False):
     """Adapt #346's update job to a synchronous sandbox run with capped calls.
 
     The shipped job still performs isolation checks, the complete candidate
@@ -705,7 +705,7 @@ def requalify_route(service, cap):
     """
     routes = service.decision_routes
     before = effective_runtime(service)
-    if not before['active'].get('requalification_needed'):
+    if not force and not before['active'].get('requalification_needed'):
         return dict(attempted=False, calls=0)
     audit = []
     original_engine, original_spawn = routes._cli_engine, routes.spawn
@@ -732,6 +732,8 @@ def requalify_route(service, cap):
         routes._cli_engine, routes.spawn = original_engine, original_spawn
     return dict(attempted=bool(started), calls=sum(r.get('sent') is True for r in audit),
                 state=job.get('state'), budget_refused=cap.refused,
+                detail={k: job[k] for k in ('step', 'message', 'reason', 'failure') if k in job and isinstance(job[k], (str, int, float, bool))},
+                failures=dict(Counter(r['failure'] for r in audit if r.get('failure'))),
                 available=effective_runtime(service)['active'].get('available'))
 
 

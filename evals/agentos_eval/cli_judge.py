@@ -67,7 +67,16 @@ class CliJudge:
         service = (self.factory or j.service_factory)(self._sandbox.prepare())
         if self.model:
             j.pin_model(service, self.model)
-        j.requalify_route(service, self.cap)
+        # Qualify and wait: the shipped update job runs to its end here (#855), so no judged case
+        # starts against a route still qualifying (that returned provider_unavailable before).
+        ready = j.effective_runtime(service)['active']
+        report = j.requalify_route(service, self.cap, force=bool(service.decision_routes.qualifying())
+                                   or not ready.get('available'))
+        after = j.effective_runtime(service)['active']
+        self.qualification = dict(report, available=after.get('available'),
+                                  needed=after.get('requalification_needed'))
+        if not after.get('available') or service.decision_routes.qualifying():
+            raise RuntimeError('subscription-CLI judge route is not qualified: ' + repr(self.qualification))
         return service
 
     def _ask(self, system, prompt):
