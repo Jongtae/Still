@@ -19,6 +19,20 @@ from personal_agent.quickstart_store import QuickStore
 OWNER = 'local-owner'
 
 
+def rewrite(path, relative, text):
+    """Replace one bundle file and keep its manifest and CHECKSUMS consistent (a well-formed foreign bundle)."""
+    import hashlib
+    data = text.encode()
+    (path / relative).write_bytes(data)
+    manifest = json.loads((path / 'manifest.json').read_text())
+    entries = [entry for entry in manifest['files'] if entry['path'] != relative]
+    entries.append({'path': relative, 'sha256': hashlib.sha256(data).hexdigest(), 'bytes': len(data)})
+    manifest['files'] = sorted(entries, key=lambda entry: entry['path'])
+    (path / 'manifest.json').write_text(json.dumps(manifest))
+    if (path / 'CHECKSUMS').exists():
+        (path / 'CHECKSUMS').write_text(''.join(f"{entry['sha256']}  {entry['path']}\n" for entry in manifest['files']))
+
+
 class Interchange(unittest.TestCase):
     def setUp(self):
         tmp = tempfile.TemporaryDirectory()
@@ -81,6 +95,28 @@ class Interchange(unittest.TestCase):
         self.assertEqual(set(facts), set(), 'forgetting a value forgets its whole chain')
         self.assertEqual(import_memory(self.target, OWNER, self.bundle(name='b2'))['candidates'], 0)
         self.assertTrue(old)
+
+    def test_a_last_day_is_exported_and_a_time_bounded_fact_is_not_revived(self):
+        self.source.put('calendar_timezone', 'Asia/Seoul')
+        past = self.source.save_memory('plan.trip', 'Jeju', valid_until='2020-01-31')
+        later = self.source.save_memory('plan.desk', 'window seat', valid_until='2999-12-31')
+        facts = {fact['id']: fact for fact in self.facts(self.bundle())}
+        self.assertEqual(facts[fact_id(past['id'])]['tValidTo'], '2020-01-31T15:00:00Z', 'next midnight in Seoul')
+        self.assertEqual(facts[fact_id(later['id'])]['tValidTo'], '2999-12-31T15:00:00Z')
+        report = import_memory(self.target, OWNER, self.bundle(name='b2'))
+        self.assertEqual((report['candidates'], report['history_skipped'], report['time_bounded_skipped']), (0, 1, 1))
+        self.assertEqual(self.pending(self.target), [])
+
+    def test_a_fact_about_someone_else_is_refused(self):
+        self.source.save_memory('profile.home_city', 'Seoul')
+        path = self.bundle()
+        fact = self.facts(path)[0]
+        line = json.dumps({**fact, 'id': 'fact_alice', 'subject': 'Alice', 'object': 'Berlin', 'text': 'Alice lives in Berlin'},
+                          sort_keys=True, separators=(',', ':')) + '\n'
+        rewrite(path, 'items/fact.jsonl', (path / 'items' / 'fact.jsonl').read_text() + line)
+        report = import_memory(self.target, OWNER, path)
+        self.assertEqual((report['candidates'], report['other_subject']), (1, 1))
+        self.assertEqual([row['content'] for row in self.pending(self.target)], ['Seoul'])
 
     def test_import_makes_only_pending_candidates_and_round_trips_after_review(self):
         self.source.save_memory('profile.home_city', 'Busan')

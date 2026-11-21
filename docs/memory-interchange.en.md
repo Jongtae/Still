@@ -36,6 +36,9 @@ Still-only fields: those fields are left out and listed below.
 |---|---|---|---|
 | `memories` row (`current`) | `fact` with `tValidTo` null | export, import (as a candidate) | `subject` = `owner`, `predicate` = memory key, `object` = value, `text` = `key: value` |
 | `memories` row (`superseded`, `corrected`) | `fact` with `tValidTo` and `supersededBy` | export only | Still links new→old (`supersedes`); the bundle links old→new. An imported historical fact is counted, not stored |
+| `valid_until` (the fact's last day, an ISO date) | `tValidTo` = the next midnight in the owner's time zone | export | Kept on a current row too, even after that day (Still keeps such a row `current` and leaves it out of reads by date) |
+| A fact with a future `tValidTo` | — | import: counted as `time_bounded_skipped` | A candidate cannot carry a last day, and accepting one would make a time-bounded fact lasting |
+| A fact whose `subject` is not `owner` or `user` | — | import: counted as `other_subject` | Dropping the subject would make a fact about someone else read as the owner's own |
 | `created` (float seconds) | `tValidFrom`, `createdAt` | both | Whole-second UTC: sub-second precision is lost |
 | Forget receipt (`forget`, `migrate`), state `forgotten` | `tombstone` `op: delete` | export | Receipts carry no content; the fact itself is not exported |
 | Delete receipt, state `deleted` | `tombstone` `op: redact` | export | |
@@ -46,14 +49,14 @@ Still-only fields: those fields are left out and listed below.
 | — | `episodeID` | export | Required; Still keeps no portable episode, so it is empty |
 | Memory candidates, approvals | — | never | Approval tokens are runtime-secret-bound; candidates are not knowledge yet |
 | Profile snapshot, search terms | (`core`) | never | Derived from facts; a receiver rebuilds its own |
-| `source_works`, `evidence`, `basis`, `origin`, `valid_until` | — | never | Work-local references and quotes; the extra keys would be dropped by the codec anyway |
+| `source_works`, `evidence`, `basis`, `origin` | — | never | Work-local references and quotes; the extra keys would be dropped by the codec anyway |
 | Secrets, credentials, sessions, Grants, folder grants | — | never | Values are redacted with `redact_known_secrets`; an imported value holding a stored secret is refused |
 | `episode`, `core`, `entity`, `edge`, `procedure`, `preference`, passthrough streams | — | import: counted under `not_imported` | Never stored |
 
 ## Import rules
 
 - Before any write, the SDK verifies the manifest and every checksum; a corrupt bundle is refused whole.
-- Only facts current in the bundle become pending `MemoryCandidate` rows, with `source.kind = portable_import` (C5).
+- Only facts that are current in the bundle, have no last day and are about the owner become pending `MemoryCandidate` rows, with `source.kind = portable_import` (C5).
   The owner reviews them in Personal Space (`/api/personal-space/memory-candidates`) through the existing approval path.
   Nothing imported becomes an instruction, an approval or a Grant.
 - A value is skipped when it is already current here or already proposed, including one the owner declined earlier.

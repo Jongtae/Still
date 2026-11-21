@@ -39,6 +39,8 @@ FACT_PREFIX = 'fact_still_'
 TOMBSTONE_RECEIPTS = ('forgotten', 'deleted')
 #: Bounded per bundle, like every other owner-state read.
 MAX_FACTS = 10000
+#: The subjects that name the owner themself; a fact about anyone else has no home in the owner's Memory.
+OWNER_SUBJECTS = ('owner', 'user')
 
 
 class MemoryInterchangeError(ValueError):
@@ -67,6 +69,19 @@ def _generator():
         return 'still/unknown'
 
 
+def _day_end(store, valid_until):
+    """The instant a fact whose last day is ``valid_until`` (owner's calendar) stops holding: the next midnight there."""
+    from datetime import date, time as clock, timedelta
+    from zoneinfo import ZoneInfo
+    from .current_context import resolve_local_timezone
+    try:
+        day = date.fromisoformat(str(valid_until))
+        zone = ZoneInfo(resolve_local_timezone(store))
+    except (ValueError, KeyError):
+        return None
+    return datetime.combine(day + timedelta(days=1), clock(), zone).astimezone(timezone.utc)
+
+
 def fact_id(memory_id):
     return FACT_PREFIX + str(memory_id)
 
@@ -82,7 +97,7 @@ def _store_class():
             self.owner_key = store._memory_binding(owner_id)
             self.bundle = bundle or {}
             self.report = {'candidates': 0, 'already_known': 0, 'forgotten_here': 0, 'history_skipped': 0,
-                           'invalid': 0, 'secret_refused': 0, 'withdrawn': 0, 'tombstones_not_applied': 0}
+                           'invalid': 0, 'secret_refused': 0, 'time_bounded_skipped': 0, 'other_subject': 0, 'withdrawn': 0, 'tombstones_not_applied': 0}
             self.tombstoned = set()
 
         def store_info(self):
@@ -112,6 +127,7 @@ def _store_class():
                 key = redact_known_secrets(self.store, row['memory_key'])
                 after = successor.get(row['id'])
                 ended = next_id = None
+                bounded = _day_end(self.store, row['valid_until']) if row['valid_until'] else None
                 if row['state'] != 'current':
                     # A row no longer current always carries an end, so a reader never takes it as current.
                     ended = (after or {}).get('created') or row['invalidated_at'] or row['created']
@@ -120,7 +136,8 @@ def _store_class():
                     id=fact_id(row['id']), episode_id='', subject='owner', predicate=key, obj=value,
                     text=f'{key}: {value}', t_valid_from=_at(row['created']), confidence=NEUTRAL,
                     importance=NEUTRAL, created_at=_at(row['created']),
-                    t_valid_to=_at(ended) if ended is not None else None,
+                    # #38 review: a current row with a last day ends then, even past it (it stays 'current' here).
+                    t_valid_to=_at(ended) if ended is not None else bounded,
                     superseded_by=fact_id(next_id) if next_id in exported else None))
             return facts
 
@@ -176,8 +193,17 @@ def _store_class():
 
         def import_fact(self, fact):
             from .owner_forget import OwnerForget
-            if fact.t_valid_to is not None or fact.superseded_by or fact.pruned_at is not None:
+            if fact.superseded_by or fact.pruned_at is not None or (
+                    fact.t_valid_to is not None and fact.t_valid_to <= _at(self.now())):
                 self.report['history_skipped'] += 1
+                return
+            if fact.t_valid_to is not None:
+                # A candidate cannot carry a last day; accepting it would revive a time-bounded fact as lasting.
+                self.report['time_bounded_skipped'] += 1
+                return
+            if str(fact.subject or '').strip().lower() not in OWNER_SUBJECTS:
+                # #38 review: a fact about someone else would read as the owner's own once its subject is dropped.
+                self.report['other_subject'] += 1
                 return
             key = fact.predicate
             value = fact.obj or fact.text
