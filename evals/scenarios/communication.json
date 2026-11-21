@@ -58,5 +58,36 @@
     "expect": {"readable": true},
     "good_secretary": "Gives a short, polite text message a tenant would send a landlord: the problem and how long it has lasted, the request for repair, and the available visit times, in a courteous register that fits a text message (not a formal letter and not the chat voice). Invents no unit number or name.",
     "tags": ["communication", "other-reader", "atus-2025:0902", "onet-31.0-gwa:4.A.4.a.3"]
+  },
+  {
+    "id": "communication-durable-fact-in-passing",
+    "title": "A durable fact the owner states is used in the reply and mentioned in passing",
+    "split": "dev",
+    "turns": [
+      {
+        "say": "나 갑각류 알레르기 있어. 이번 주 금요일 저녁 팀 회식 장소 후보 두 곳만 골라줘. 강남 쪽이면 좋겠어."
+      }
+    ],
+    "rubric": [
+      "reader_form",
+      "conversational",
+      "owner_model"
+    ],
+    "expect": {
+      "memory_any": [
+        [
+          "갑각류"
+        ]
+      ],
+      "no_memory_of_request": true,
+      "readable": true
+    },
+    "good_secretary": "Picks two places that fit the allergy and says so in passing, in one natural clause (for example that it left out shellfish places because of the allergy). It does not announce that it saved or remembered something, adds no separate notice or settings line, and does not ask again what the owner already said.",
+    "tags": [
+      "communication",
+      "memory-in-passing",
+      "962",
+      "onet-31.0-gwa:4.A.3.b.6"
+    ]
   }
 ]
