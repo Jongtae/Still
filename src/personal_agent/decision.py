@@ -37,6 +37,26 @@ class StructuredSchema(dict):
         self.optional = frozenset(optional)
 
 
+#: #1093: what a model writes when a prompt's in-band "" (none) is copied as text.
+QUOTED_EMPTY = frozenset({'""', "''", '\u201c\u201d', '\u2018\u2019'})
+
+
+def unquoted_empty(value):
+    """``value`` with every string that is only a pair of quote marks read as "" (#1093).
+
+    Prompts describe an unused text field as ``""``; a model sometimes writes
+    those two characters as the value, which a caller would otherwise take as
+    text (a location question, a reply) and show the owner.
+    """
+    if isinstance(value, str):
+        return '' if value.strip() in QUOTED_EMPTY else value
+    if isinstance(value, dict):
+        return {key: unquoted_empty(item) for key, item in value.items()}
+    if isinstance(value, list):
+        return [unquoted_empty(item) for item in value]
+    return value
+
+
 # --- outcomes ----------------------------------------------------------------
 OUTCOME_DECIDED = 'decided'
 OUTCOME_UNAVAILABLE = 'provider_unavailable'
@@ -607,10 +627,10 @@ class SchemaDecisionEngine(DecisionEngine):
         def shape(data):
             if set(data) - names or any(name not in data for name in response_required):
                 return False
-            answer = {key: value for key, value in data.items() if key != 'confidence'}
+            answer = {key: unquoted_empty(value) for key, value in data.items() if key != 'confidence'}
             return bool(valid(answer)) if valid else True
         outcome, data, confidence = self._ask(context, 'structured', f'Question: {question}', declared, shape)
-        answer = {key: value for key, value in data.items() if key != 'confidence'}
+        answer = {key: unquoted_empty(value) for key, value in data.items() if key != 'confidence'}
         return StructuredDecision(outcome, answer, confidence)
 
     def _ask(self, context, kind, question, schema, valid):  # pragma: no cover - interface
