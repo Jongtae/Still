@@ -418,6 +418,16 @@ class TellOwnerService(_PreviewCase):
         self.assertEqual(len(refused), 1)
         self.assertIn('owner_update_limit', refused[0]['detail'])
 
+    def test_an_unavailable_chat_tells_the_worker_to_include_the_update_in_its_answer(self):
+        work = self.receive(self.REQUEST)
+        tell = self.service.owner_updater(self.store.job(work))
+        self.store.put('telegram', {'enabled': False})
+        with self.assertRaises(ToolError) as raised:
+            tell('소식이 있어요.')
+        self.assertEqual(raised.exception.code, 'owner_update_unavailable')
+        self.assertEqual(str(raised.exception), '지금은 대화로 메시지를 보낼 수 없어요. 답에 담아 주세요.')
+        self.assertFalse(self.updates(work))
+
     def test_without_a_preview_the_tool_is_not_offered(self):
         self.preview = dict(EMPTY)
         self.receive('고마워')

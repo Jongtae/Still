@@ -17,7 +17,7 @@ import uuid
 from mcp_types.version import HANDSHAKE_PROTOCOL_VERSIONS, LATEST_HANDSHAKE_VERSION
 
 from .agent_runtime import (ENGINE_UNMEDIATED, OWNER_STATE_ACTIONS,
-                            Capabilities, ToolError, WorkBudget, WorkLedger, attempted_outbound, classify_failure, declared_effect,
+                            Capabilities, LedgerSuperseded, ToolError, WorkBudget, WorkLedger, attempted_outbound, classify_failure, declared_effect,
                             call_target_field, claim_owner_steers, evidence_summary, lookup_sources, outbound_evidence, executed_field, observed_field, progress_step, ran_field, worker_result,
                             recorded_private_sources, split_status, work_source_records,
                             work_stop_requested)
@@ -494,6 +494,8 @@ def serve(data, job_id, provenance=(), native_search=False, profile=BOUNDED_PROF
     relay_store_redaction(store, relay)
     def record(tool, status, detail):
         with store.db() as db:
+            try:store.require_read_checkpoint_writer(db)
+            except LedgerSuperseded:return
             db.execute('INSERT INTO tool_events(job_id,tool,status,detail,created) VALUES (?,?,?,?,?)', (job_id,tool,status,detail,time.time()))
     # #604: the Work's allowed actions are the bounded CLI profile; names and
     # schemas come from Capabilities.definitions(), never a bridge-local list.
@@ -555,6 +557,12 @@ def serve(data, job_id, provenance=(), native_search=False, profile=BOUNDED_PROF
         return {'bound_epoch': epoch} if type(epoch) is int and epoch >= 0 else {}
 
     def handle(method, params):
+        # The bridge's read-tool threads share the epoch it attached to on startup.
+        epoch = getattr(getattr(capabilities.budget, 'ledger', None), 'epoch', None)
+        with store.read_checkpoint_writer(job_id, epoch):
+            return handle_request(method, params)
+
+    def handle_request(method, params):
         if method == 'initialize':
             offered = params.get('protocolVersion') if isinstance(params, dict) else None
             result = {'protocolVersion':negotiated_protocol_version(offered),'capabilities':{'tools':{}},'serverInfo':{'name':'agentos','version':'1'}}

@@ -30,6 +30,8 @@ import secrets
 import time
 import uuid
 
+from . import work_status as ws
+
 #: The tables this interface owns, in the owner's one SQLite file.
 TABLES = ('telegram_task_cards', 'telegram_photo_attachments', 'telegram_photo_albums',
           'telegram_notifications', 'telegram_context_choices')
@@ -86,6 +88,7 @@ class TelegramStore:
     def remove_telegram_photo(self, job_id):
         store=self.store
         with store.db() as db:
+            store.require_read_checkpoint_writer(db)
             db.execute('DELETE FROM telegram_photo_attachments WHERE job_id=?', (job_id,))
 
     def transfer_telegram_photo(self, source_job_id, target_job_id, db=None):
@@ -110,6 +113,7 @@ class TelegramStore:
         store=self.store
         token=secrets.token_urlsafe(9)
         with store.db() as db:
+            store.require_read_checkpoint_writer(db)
             db.execute('INSERT INTO telegram_context_choices VALUES (?,?,?,?,?,?,?,?)',(token,job_id,event_id,chat_id,generation,None,'offered',time.time()))
         return token
 
@@ -118,7 +122,9 @@ class TelegramStore:
         if not isinstance(message_id,int):return
         with store.db() as db:
             marks=','.join('?' for _ in tokens)
-            if marks:db.execute(f"UPDATE telegram_context_choices SET message_id=? WHERE token IN ({marks})",(message_id,*tokens))
+            if marks:
+                store.require_read_checkpoint_writer(db)
+                db.execute(f"UPDATE telegram_context_choices SET message_id=? WHERE token IN ({marks})",(message_id,*tokens))
 
     def telegram_context_choice(self, token):
         store=self.store
@@ -153,6 +159,7 @@ class TelegramStore:
     def save_task_card(self, job_id, chat_id, message_id, state):
         store=self.store
         with store.db() as db:
+            store.require_read_checkpoint_writer(db,terminal=ws.is_terminal(state))
             db.execute('INSERT INTO telegram_task_cards VALUES (?,?,?,?,?) ON CONFLICT(job_id) DO UPDATE SET chat_id=excluded.chat_id,message_id=excluded.message_id,state=excluded.state,created=CASE WHEN telegram_task_cards.message_id=-1 THEN excluded.created ELSE telegram_task_cards.created END',
                        (job_id,chat_id,message_id,state,time.time()))
 
@@ -160,6 +167,7 @@ class TelegramStore:
         """Persist deletion intent before the Telegram side effect can race restart."""
         store=self.store
         with store.db() as db:
+            store.require_read_checkpoint_writer(db)
             return db.execute("UPDATE telegram_task_cards SET state='deleting' WHERE job_id=? AND message_id=?",
                               (job_id,message_id)).rowcount == 1
 
@@ -167,6 +175,7 @@ class TelegramStore:
         """Forget only the Telegram card whose deletion was confirmed."""
         store=self.store
         with store.db() as db:
+            store.require_read_checkpoint_writer(db)
             return db.execute('DELETE FROM telegram_task_cards WHERE job_id=? AND message_id=?',
                               (job_id,message_id)).rowcount == 1
 
@@ -186,6 +195,7 @@ class TelegramStore:
         """
         store=self.store
         with store.db() as db:
+            store.require_read_checkpoint_writer(db)
             return db.execute("UPDATE telegram_notifications SET fingerprint=?,state='queued',message_id=NULL,sent_at=NULL "
                               "WHERE job_id=? AND kind=? AND state!='sending'", (fingerprint, job_id, kind)).rowcount == 1
 
@@ -214,6 +224,7 @@ class TelegramStore:
             with self.store.db() as connection:
                 return self.queue_notification(job_id, chat_id, generation, kind, fingerprint, surface,
                                                db=connection, created=created)
+        self.store.require_read_checkpoint_writer(db)
         db.execute('INSERT OR IGNORE INTO telegram_notifications(id,job_id,chat_id,generation,kind,fingerprint,state,message_id,created,surface) VALUES (?,?,?,?,?,?,?,?,?,?)',
                    (str(uuid.uuid4()), job_id, chat_id, generation, kind, fingerprint, 'queued', None,
                     time.time() if created is None else created, surface))
@@ -239,6 +250,7 @@ class TelegramStore:
         """
         store=self.store
         with store.db() as db:
+            store.require_read_checkpoint_writer(db)
             if fingerprint is not None:
                 # #818: a memory prompt's binding is recorded with what the send showed.
                 db.execute('UPDATE telegram_notifications SET fingerprint=? WHERE id=?',(fingerprint,notification_id))
