@@ -2146,6 +2146,12 @@ class WorkExecutor:
         """After the run: the task card, browser login offer, photo cleanup and owner-decision notifications."""
         service=self.service
         job=run.job
+        if run.outcome=='cancelled':
+            try:
+                forget=getattr(service.browser_profile,'forget_work',None)
+                if callable(forget):forget(job['id'])
+            except Exception:
+                pass   # Browser settings cleanup must not fail the Work's finish.
         service.update_task_card(job,run.outcome)
         # #709: a login page during this run: show the window now that the
         # run released the profile, and ask the owner to log in.  #752: only

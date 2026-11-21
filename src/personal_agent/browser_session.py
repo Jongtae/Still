@@ -75,6 +75,7 @@ import time
 import unicodedata
 from pathlib import Path
 from urllib.parse import parse_qsl, urlsplit, urlunsplit, unquote_plus
+from zoneinfo import available_timezones
 
 from .agent_runtime import BROWSER_ACTIONS, ToolError, WorkBudget, effect_fence_error
 from .bounded_execution import SECRET_PATTERN
@@ -82,6 +83,7 @@ from .browser_jar import (JAR_NAME, SERVICE as JAR_SERVICE, CookieJar, JarError,
                           site_marks, store_account, unexpired)
 from .browser_worker import (LAYOUTS, PAYMENT_TOKENS, SECRET_TOKENS, authorization_blocked, authorization_host,
                              authorization_redirect_host, destination_refusal, qr_links, remote_fields)
+from .context_observations import valid_timezone
 
 #: The model's declared effect class of one action.
 EFFECTS = ('read', 'navigate', 'mutate', 'payment')
@@ -117,6 +119,10 @@ LOAD_MORE_ARGUMENT_TEXT = 'load_more는 1부터 5까지의 횟수입니다.'
 #: #617: said with the page it is true of: a driver without load-more still returns the current page.
 LOAD_MORE_UNAVAILABLE_TEXT = msg('browser_session.load_more_unavailable')
 LOGIN_WINDOW_SECONDS = 1800
+WORK_BROWSER_SETTINGS_LIMIT = 256
+PRESENTATION_LOCALE = re.compile(
+    r'([a-z]{2,3})(?:-([a-z]{4}))?(?:-([a-z]{2}|[0-9]{3}))?'
+    r'((?:-(?:[a-z0-9]{5,8}|[0-9][a-z0-9]{3}))*)', re.ASCII | re.IGNORECASE)
 REDACTED = '[가림]'
 
 CANCELLED_NOTE = '승인 없이 시도된 결제 양식 제출을 멈췄습니다'
@@ -551,6 +557,46 @@ def step_binding(work_id, action, url, element_key, argument='', state=''):
             'target_digest': digest(element_key), 'argument_digest': digest(argument), 'state_digest': digest(state)}
 
 
+def presentation_locale(value):
+    """Canonical casing for the browser's RFC 5646 language/script/region/variant subset."""
+    if value is None or value == '':
+        return None
+    match = PRESENTATION_LOCALE.fullmatch(value) if isinstance(value, str) and len(value) <= 35 else None
+    if match is None:
+        raise ValueError('locale must be a BCP 47 language tag such as en-US or zh-Hans-CN.')
+    language, script, region, variants = match.groups()
+    subtags = [language.lower()]
+    if script:
+        subtags.append(script.title())
+    if region:
+        subtags.append(region.upper())
+    return '-'.join(subtags) + variants.lower()
+
+
+@functools.lru_cache(maxsize=1)
+def _presentation_timezones():
+    return {name.lower(): name for name in available_timezones()
+            if name not in ('Factory', 'localtime', 'posixrules') and not name.startswith(('posix/', 'right/'))}
+
+
+def presentation_timezone(value):
+    """An IANA time zone in canonical case, or None when omitted."""
+    if value is None or value == '':
+        return None
+    canonical = _presentation_timezones().get(value.lower()) if isinstance(value, str) else None
+    validated = valid_timezone(canonical if canonical is not None else value)
+    if canonical is None:
+        raise ValueError('알 수 없는 시간대입니다. Asia/Seoul 같은 IANA 이름으로 입력하세요.')
+    return validated
+
+
+def _check_presentation(stored, requested):
+    if any(value is not None and value != stored[key] for key, value in requested.items()):
+        from .agent_runtime import not_run
+        message = msg('browser.presentation_fixed', locale=stored['locale'] or '-', timezone=stored['timezone'] or '-')
+        raise not_run(ToolError(message, 'presentation_fixed'))
+
+
 def binding_digest(binding):
     return digest('|'.join(str(binding.get(key) or '') for key in BINDING_FIELDS))
 
@@ -875,6 +921,7 @@ class BrowserSession:
         #: carried by the profile's factory (``BrowserProfile.driver_factory``).
         self._intranet = getattr(driver_factory, 'intranet', None) or frozenset
         self.driver = None
+        self._presentation = None
         self.work_id = work_id
         self.budget = budget if budget is not None else WorkBudget()
         self.approvals = approvals or NoApprovals()
@@ -1590,6 +1637,8 @@ class BrowserSession:
         asked = args.get('layout')
         if asked not in (None, '') + LAYOUTS:
             raise ValueError('layout은 mobile 또는 desktop입니다.')
+        presentation = {'locale': presentation_locale(args.get('locale')),
+                        'timezone': presentation_timezone(args.get('timezone'))}
         # #680 review P1-2: never this computer or its private network (the
         # Still UI included).  Name and literal here; the worker checks every
         # navigation again after DNS resolution (redirects, forms, new windows).
@@ -1605,7 +1654,22 @@ class BrowserSession:
             # step. Neither engine's navigation guard covers all that traffic.
             from .agent_runtime import not_run
             raise not_run(effect_fence_error(refusal))
-        self._guard(step_binding(self.work_id, 'browser_open', url, url, url), f'{_host(parts)} 페이지 열기',
+        fix_presentation = getattr(self._factory, 'fix_presentation', None)
+        if callable(fix_presentation):
+            if self._presentation is not None:
+                _check_presentation(self._presentation, presentation)
+                presentation = {key: self._presentation[key] if value is None else value
+                                for key, value in presentation.items()}
+            presentation = fix_presentation(presentation)   # #1082: refused here, before anything runs
+            if self._presentation is None:
+                self._presentation = dict(presentation)
+        locale, timezone = presentation['locale'], presentation['timezone']
+        description = f'{_host(parts)} 페이지 열기'
+        state = ''
+        if locale or timezone:
+            state = f'locale={locale or ""};timezone={timezone or ""}'
+            description += ' (' + ', '.join(value for value in (locale, timezone) if value) + ')'
+        self._guard(step_binding(self.work_id, 'browser_open', url, url, url, state=state), description,
                     effect == 'payment')
         self._last_input = None   # a submit cancelled on the new page is not that step's (#700)
         # A failed navigation must not leave old element numbers actionable.
@@ -1640,6 +1704,14 @@ class BrowserSession:
         page = self._page_state(requested_url=url)
         if sent and layout == 'desktop':
             page['layout'] = layout
+        if locale or timezone:
+            applied = getattr(driver, 'presentation', None)
+            page['presentation'] = {
+                'requested': presentation,
+                'applied': _presentation_strings(applied, ('locale', 'timezone')),
+                'unsupported': list(applied.get('unsupported', [])) if isinstance(applied, dict) else [],
+                'observed': getattr(driver, 'presentation_observed', None),
+            }
         return page
 
     def _layout(self, host, asked):
@@ -2401,13 +2473,28 @@ def engine_unavailable_reason(platform=None, find_spec=None, environ=None):
     return 'platform'
 
 
-def chromium_worker_command(profile_id, chrome, allowed_origins=()):
+def _worker_options(allowed_origins, locale, timezone):
+    options = []
+    for origin in allowed_origins:
+        options.extend(['--test-allow-origin', str(origin)])
+    if locale:
+        options.extend(['--locale', locale])
+    if timezone:
+        options.extend(['--timezone', timezone])
+    return options
+
+
+def chromium_worker_command(profile_id, chrome, allowed_origins=(), *, locale=None, timezone=None):
     """The Linux worker's command line for the pinned ``chrome`` (#34); test origins only from a test constructor."""
     command = [sys.executable, '-P', '-m', 'personal_agent.browser_worker_chromium', '--profile', str(profile_id),
                '--chromium', str(chrome)]
-    for origin in allowed_origins:
-        command += ['--test-allow-origin', str(origin)]
-    return command
+    return command + _worker_options(allowed_origins, locale, timezone)
+
+
+def webkit_worker_command(profile_id, allowed_origins=(), *, locale=None, timezone=None):
+    """The macOS worker's command line. ``-P`` keeps its working directory off the import path."""
+    command = [sys.executable, '-P', '-m', 'personal_agent.browser_worker', '--profile', str(profile_id)]
+    return command + _worker_options(allowed_origins, locale, timezone)
 
 
 def engine_name(platform=None):
@@ -2433,6 +2520,13 @@ class WorkerError(RuntimeError):
         self.detail = detail
 
 
+def _presentation_strings(data, keys):
+    """Keep a worker's named presentation fields as strings or None."""
+    if not isinstance(data, dict):
+        return None
+    return {key: data[key] if isinstance(data.get(key), str) else None for key in keys}
+
+
 class WebKitWorkerDriver:
     """The real ``PageDriver``: the embedded WebKit worker process (``browser_worker``).
 
@@ -2454,19 +2548,16 @@ class WebKitWorkerDriver:
 
     def __init__(self, profile_id='default', *, seed=None, command=None, start_seconds=WORKER_START_SECONDS,
                  grace_seconds=WORKER_GRACE_SECONDS, cwd=None, allowed_origins_for_tests=(), intranet=None,
-                 before_start=None):
+                 before_start=None, locale=None, timezone=None):
         self.profile_id = str(profile_id)
         #: #209: ``() -> {host:port}``, sent with every command so a change applies from the next one.
         self._intranet = intranet or frozenset
         #: #34: ``() -> bool``, whether the engine binary may start now; asked before every start.
         self._before_start = before_start
         self._seed = seed
-        # ``-P``: the working directory is never on the worker's import path.
-        self._command = list(command) if command else [sys.executable, '-P', '-m', 'personal_agent.browser_worker',
-                                                       '--profile', self.profile_id]
-        if not command:
-            for origin in allowed_origins_for_tests:
-                self._command += ['--test-allow-origin', str(origin)]
+        self._command = (list(command) if command else
+                         webkit_worker_command(self.profile_id, allowed_origins_for_tests,
+                                               locale=locale, timezone=timezone))
         # A fixed working directory (the profile's private folder) and a minimal environment.
         self._cwd = str(cwd) if cwd else os.path.expanduser('~')
         self.start_seconds, self.grace_seconds = start_seconds, grace_seconds
@@ -2476,6 +2567,7 @@ class WebKitWorkerDriver:
         self._ids = itertools.count(1)
         self._visible = False
         self._expect = {}
+        self.presentation = self.presentation_observed = None
         #: #11 review: the page a load_more captured under its navigation hold, for the next snapshot.
         self._held_page = None
         self.starts = 0
@@ -2488,6 +2580,7 @@ class WebKitWorkerDriver:
 
     # -- process ---------------------------------------------------------------
     def _start(self):
+        self.presentation = self.presentation_observed = None
         # #34: checked before every start, a restart after a crash included (the pinned Chromium's digest).
         if self._before_start is not None and not self._before_start():
             raise WorkerError('worker_unavailable', 'chromium_changed')
@@ -2548,6 +2641,12 @@ class WebKitWorkerDriver:
                 self._kill()
                 raise WorkerError('worker_unavailable', (message or {}).get('error'))
             if message.get('event') == 'ready':
+                presentation = message.get('presentation')
+                self.presentation = _presentation_strings(presentation, ('locale', 'timezone'))
+                if self.presentation is not None:
+                    unsupported = presentation.get('unsupported')
+                    self.presentation['unsupported'] = ([key for key in unsupported if isinstance(key, str)]
+                                                        if isinstance(unsupported, list) else [])
                 break
         rows = []
         if self._seed is not None:
@@ -2709,7 +2808,10 @@ class WebKitWorkerDriver:
         self._provider_sign_in_policy = policy
 
     def goto(self, url, timeout, layout=None):
-        self._request('navigate', timeout, url=url, **({'layout': layout} if layout else {}))
+        self.presentation_observed = None
+        reply = self._request('navigate', timeout, url=url, **({'layout': layout} if layout else {}))
+        self.presentation_observed = _presentation_strings(reply.get('presentation_observed'),
+                                                           ('navigator_language', 'intl_locale', 'intl_timezone'))
 
     def settle(self, seconds, timeout):
         """Wait, bounded by ``seconds``, until a client-rendered page's content stops changing (#709)."""
@@ -2952,6 +3054,7 @@ class BrowserProfile:
         self._jar_lock = threading.RLock()
         self._layout_lock = threading.Lock()
         self._work_layouts = {}
+        self._work_presentations = {}
         self._holder = None
         self._live = None
         self._suppressed = set()
@@ -2999,7 +3102,35 @@ class BrowserProfile:
             raise ValueError(layout)
         if work_id:
             with self._layout_lock:
+                self._work_layouts.pop(work_id, None)
                 self._work_layouts[work_id] = layout
+                while len(self._work_layouts) > WORK_BROWSER_SETTINGS_LIMIT:
+                    del self._work_layouts[next(iter(self._work_layouts))]
+
+    def presentation_for(self, work_id):
+        """The Work's fixed browser presentation, if it has one."""
+        with self._layout_lock:
+            stored = self._work_presentations.get(work_id) if work_id else None
+            return dict(stored) if stored is not None else None
+
+    def fix_presentation(self, work_id, requested):
+        """Fix the presentation once. Omitted fields on later opens keep their fixed values."""
+        if not work_id:
+            return dict(requested)
+        with self._layout_lock:
+            stored = self._work_presentations.pop(work_id, None)
+            if stored is None:
+                stored = dict(requested)
+            self._work_presentations[work_id] = stored
+            while len(self._work_presentations) > WORK_BROWSER_SETTINGS_LIMIT:
+                del self._work_presentations[next(iter(self._work_presentations))]
+            _check_presentation(stored, requested)
+            return dict(stored)
+
+    def forget_work(self, work_id):
+        with self._layout_lock:
+            self._work_layouts.pop(work_id, None)
+            self._work_presentations.pop(work_id, None)
 
     def allow_origins_for_tests(self, *origins):
         """Test-only: exact ``host:port`` fixture origins the worker may load.  Never set by config."""
@@ -3019,7 +3150,7 @@ class BrowserProfile:
         self._imported |= sites
         return rows
 
-    def _launch_engine(self, profile_dir, headless):
+    def _launch_engine(self, profile_dir, headless, presentation=None):
         """The worker for this computer: macOS WebKit, or the pinned Chromium on a Linux desktop (#34)."""
         command = None
         if sys.platform.startswith('linux'):
@@ -3029,7 +3160,8 @@ class BrowserProfile:
                 # Codex review on #640: a desktop without some of Chromium's libraries gets the one command.
                 self._block('libraries', chrome)
                 raise ToolError(LIBRARIES_TEXT + '\n\n' + chromium_runtime.libraries_setup(), UNAVAILABLE_CODE)
-            command = chromium_worker_command(self.profile_dir.name, chrome, self._allowed_origins)
+            command = chromium_worker_command(self.profile_dir.name, chrome, self._allowed_origins,
+                                              **(presentation or {}))
         before_start = None
         if command is not None:
             from . import chromium_runtime
@@ -3037,7 +3169,7 @@ class BrowserProfile:
         try:
             driver = WebKitWorkerDriver(self.profile_dir.name, seed=self._seed, cwd=self.profile_dir,
                                         allowed_origins_for_tests=self._allowed_origins, intranet=self.intranet_keys,
-                                        command=command, before_start=before_start)
+                                        command=command, before_start=before_start, **(presentation or {}))
         except WorkerError as exc:
             if exc.detail == 'sandbox_unavailable':
                 self._block('sandbox', chrome)
@@ -3305,7 +3437,9 @@ class BrowserProfile:
             self._acquire(work_id, check=check, wait_seconds=wait_seconds)
             try:
                 self.profile_dir.mkdir(parents=True, exist_ok=True, mode=0o700)
-                driver = self.launcher(self.profile_dir, self.headless)
+                presentation = self.fix_presentation(work_id, {'locale': None, 'timezone': None})
+                options = {'presentation': presentation} if any(presentation.values()) else {}
+                driver = self.launcher(self.profile_dir, self.headless, **options)
             except Exception:
                 self._release()
                 raise
@@ -3314,6 +3448,8 @@ class BrowserProfile:
         launch.intranet = self.intranet_keys
         launch.layout_for = lambda host: self.layout_for(host, work_id=work_id)
         launch.set_layout = lambda host, layout: self.set_layout(host, layout, work_id=work_id)
+        launch.presentation_for = lambda: self.presentation_for(work_id)
+        launch.fix_presentation = lambda requested: self.fix_presentation(work_id, requested)
         return launch
 
     # -- the owner's sessions (Settings) -------------------------------------------
@@ -3490,7 +3626,9 @@ class BrowserProfile:
             reason = 'failed'
             try:
                 self.profile_dir.mkdir(parents=True, exist_ok=True, mode=0o700)
-                driver = self.launcher(self.profile_dir, False)
+                presentation = self.presentation_for(work_id) if work_id else None
+                options = {'presentation': presentation} if presentation and any(presentation.values()) else {}
+                driver = self.launcher(self.profile_dir, False, **options)
                 self._live = driver
                 record['driver'] = driver   # #939: what the phone drives, while the window is open
                 show = getattr(driver, 'show', None)

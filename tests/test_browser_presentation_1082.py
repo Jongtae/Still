@@ -10,6 +10,7 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 from personal_agent import browser_session as bs
 from personal_agent.agent_runtime import DEFINITIONS, ToolError, evidence_summary
@@ -78,6 +79,14 @@ class Validation(unittest.TestCase):
         self.assertIsNone(bs.presentation_timezone(None))
         self.assertIsNone(bs.presentation_timezone(''))
         for given in ('Mars/Olympus', '../etc/passwd', '/etc/localtime', 'Asia/Tokyo; rm', 5):
+            with self.subTest(given=given):
+                with self.assertRaises(ValueError):
+                    bs.presentation_timezone(given)
+
+    def test_time_zones_take_their_canonical_spelling(self):
+        self.assertEqual(bs.presentation_timezone('asia/tokyo'), 'Asia/Tokyo')
+        self.assertEqual(bs.presentation_timezone('AMERICA/NEW_YORK'), 'America/New_York')
+        for given in ('Factory', 'posixrules', 'localtime'):
             with self.subTest(given=given):
                 with self.assertRaises(ValueError):
                     bs.presentation_timezone(given)
@@ -210,6 +219,30 @@ class PerWork(unittest.TestCase):
         again.open({'url': URL, 'effect': 'read', 'locale': 'en-US'})
         self.assertEqual(self.launcher.launches[-1], {'locale': 'en-US', 'timezone': None})
 
+    def test_a_live_work_keeps_its_settings_when_its_entry_is_evicted(self):
+        work = self.work('A')
+        work.open({'url': URL, 'effect': 'read', 'locale': 'ja-JP'})
+        with mock.patch.object(bs, 'WORK_BROWSER_SETTINGS_LIMIT', 2):
+            for ident in ('B', 'C', 'D'):
+                self.profile.fix_presentation(ident, {'locale': None, 'timezone': None})
+            self.assertIsNone(self.profile.presentation_for('A'), 'evicted')
+            page = work.open({'url': ORIGIN + '/coupon', 'effect': 'read'})
+            self.assertEqual(page['presentation']['requested'], {'locale': 'ja-JP', 'timezone': None})
+            self.assertEqual(self.profile.presentation_for('A'), {'locale': 'ja-JP', 'timezone': None})
+            with self.assertRaises(ToolError) as refused:
+                work.open({'url': URL, 'effect': 'read', 'locale': 'en-US'})
+            self.assertEqual(refused.exception.code, 'presentation_fixed')
+        self.assertEqual(len(self.launcher.launches), 1)
+
+    def test_a_recently_used_work_is_not_the_one_evicted(self):
+        with mock.patch.object(bs, 'WORK_BROWSER_SETTINGS_LIMIT', 2):
+            self.profile.fix_presentation('A', {'locale': 'ja-JP', 'timezone': None})
+            self.profile.fix_presentation('B', {'locale': None, 'timezone': None})
+            self.profile.fix_presentation('A', {'locale': None, 'timezone': None})   # A opens again
+            self.profile.fix_presentation('C', {'locale': None, 'timezone': None})
+            self.assertEqual(self.profile.presentation_for('A'), {'locale': 'ja-JP', 'timezone': None})
+            self.assertIsNone(self.profile.presentation_for('B'))
+
     def test_an_unsupported_time_zone_is_reported_not_claimed(self):
         launcher = Launcher(unsupported=('timezone',))
         profile = bs.BrowserProfile(Path(self.tmp.name) / 'p3', launcher=launcher)
@@ -273,6 +306,16 @@ class ApprovalBinding(unittest.TestCase):
         self.assertEqual(refused.exception.code, 'approval_required')
         self.assertEqual(len(approvals.issued), 1, 'the default approval was not spent')
 
+    def test_a_mid_work_change_on_a_payment_open_asks_for_nothing(self):
+        approvals = Approvals()
+        profile = bs.BrowserProfile(Path(self.tmp.name) / 'z', launcher=Launcher())
+        profile.fix_presentation('w', {'locale': 'ja-JP', 'timezone': None})
+        work = bs.BrowserSession(profile.driver_factory('w'), work_id='w', approvals=approvals)
+        with self.assertRaises(ToolError) as refused:
+            work.open({'url': ORIGIN + '/pay', 'effect': 'payment', 'locale': 'en-US'})
+        self.assertEqual(refused.exception.code, 'presentation_fixed')
+        self.assertEqual(approvals.requests, [])
+
     def test_a_matching_approval_is_consumed(self):
         japanese, _ = self.refused_open('w', locale='ja-JP')
         approvals = Approvals(japanese)
@@ -296,6 +339,37 @@ class WorkerCommand(unittest.TestCase):
         self.assertEqual(bs.webkit_worker_command('p', locale='zh-Hans-CN')[len(webkit):], ['--locale', 'zh-Hans-CN'])
         self.assertEqual(bs.webkit_worker_command('p', timezone='Asia/Tokyo')[len(webkit):],
                          ['--timezone', 'Asia/Tokyo'])
+
+
+class LaunchWiring(unittest.TestCase):
+    """The profile's own engine launcher hands the Work's values to the worker command."""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.profile = bs.BrowserProfile(Path(self.tmp.name) / 'profile', launcher=lambda d, h: None)
+
+    def test_macos_worker_gets_the_flags_only_when_set(self):
+        with mock.patch.object(bs.sys, 'platform', 'darwin'), mock.patch.object(bs, 'WebKitWorkerDriver') as driver:
+            self.profile._launch_engine(self.profile.profile_dir, True)
+            self.profile._launch_engine(self.profile.profile_dir, True,
+                                        presentation={'locale': 'ja-JP', 'timezone': 'Asia/Tokyo'})
+        first, second = driver.call_args_list
+        self.assertIsNone(first.kwargs.get('command'))
+        self.assertFalse(first.kwargs.get('locale') or first.kwargs.get('timezone'))
+        self.assertEqual((second.kwargs['locale'], second.kwargs['timezone']), ('ja-JP', 'Asia/Tokyo'))
+
+    def test_linux_worker_command_gets_the_flags(self):
+        from personal_agent import chromium_runtime
+        with mock.patch.object(bs.sys, 'platform', 'linux'), \
+                mock.patch.object(self.profile, '_prepared_chromium', return_value='/opt/chrome'), \
+                mock.patch.object(chromium_runtime, 'missing_libraries', return_value=[]), \
+                mock.patch.object(bs, 'WebKitWorkerDriver') as driver:
+            self.profile._launch_engine(self.profile.profile_dir, True,
+                                        presentation={'locale': 'zh-Hans-CN', 'timezone': None})
+        command = driver.call_args.kwargs['command']
+        self.assertEqual(command[-2:], ['--locale', 'zh-Hans-CN'])
+        self.assertNotIn('--timezone', command)
 
 
 class FakeWorkerProcess(unittest.TestCase):
