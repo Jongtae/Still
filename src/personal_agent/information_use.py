@@ -312,7 +312,11 @@ def _event_items(action, evidence):
             return [f"맡은 일 {_text(evidence.get('line_id'), 40)} (버전 {int(evidence.get('version') or 0)})"]
         return [f"맡은 일 {int(evidence.get('lines') or 0)}개"] if 'lines' in evidence else []
     if action == 'search_conversation':
-        return [f"earlier exchange {ref['work_id']} (messages {','.join(str(i) for i in ref['message_ids'])})" for ref in evidence.get('exchange_refs') or []]
+        return [
+            *(f"earlier exchange {ref['work_id']} (messages {','.join(str(i) for i in ref['message_ids'])})"
+              for ref in evidence.get('exchange_refs') or []),
+            *(f"an earlier Work's read results {work_id}" for work_id in evidence.get('read_result_work_ids') or []),
+        ]
     if action == 'list_memory':
         keys = [_text(key, 80) for key in evidence.get('memory_keys') or ()]
         return keys or [f"기억 {int(evidence.get('memory_count') or 0)}개"]

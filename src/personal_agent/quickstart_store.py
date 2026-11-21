@@ -3,7 +3,7 @@
 from . import work_status as ws
 from .messages import msg
 from .memory_terms import ELIGIBLE_SQL, cleared_meta
-from contextlib import contextmanager
+from contextlib import contextmanager, nullcontext
 from functools import cached_property
 import datetime
 import fcntl
@@ -35,6 +35,11 @@ MEMORY_EVIDENCE_CHARS=300
 #: #380: the ``forget_record`` actions that change what Still keeps about the owner.
 #: #955 review: revert (undoing a save by asking) is the owner managing what Still keeps, too.
 OWNER_STATE_ACTIONS=('forget','delete','undo','revert')
+
+READ_RESULT_EXCERPT_CHARS = 4000
+READ_RESULTS_PER_WORK = 24
+READ_RESULT_RETENTION_SECONDS = 30 * 86400
+_ANY_READ_RESULT_EPOCH = object()
 
 
 def fts_prefix_expression(query):
@@ -175,6 +180,13 @@ class QuickStore:
                 job_id TEXT PRIMARY KEY, epoch INTEGER NOT NULL, value TEXT NOT NULL,
                 resume_pending INTEGER NOT NULL DEFAULT 0, resume_count INTEGER NOT NULL DEFAULT 0
             );
+            CREATE TABLE IF NOT EXISTS work_read_results(
+                id INTEGER PRIMARY KEY AUTOINCREMENT, job_id TEXT NOT NULL, tool_event_id INTEGER,
+                call_id TEXT, tool TEXT NOT NULL, epoch INTEGER, created REAL NOT NULL,
+                source_kind TEXT NOT NULL, full_length INTEGER NOT NULL, excerpt TEXT NOT NULL,
+                page_url TEXT, page_title TEXT
+            );
+            CREATE INDEX IF NOT EXISTS work_read_results_job ON work_read_results(job_id,id);
             CREATE TABLE IF NOT EXISTS work_read_judgments(
                 job_id TEXT NOT NULL, input_digest TEXT NOT NULL, epoch INTEGER NOT NULL,
                 result TEXT, PRIMARY KEY(job_id,input_digest)
@@ -297,6 +309,10 @@ class QuickStore:
             # #213: the conversation surface whose delivery claims a notice; every earlier row is Telegram's.
             if 'surface' not in columns:
                 db.execute("ALTER TABLE telegram_notifications ADD COLUMN surface TEXT NOT NULL DEFAULT 'telegram'")
+            read_result_columns = {row['name'] for row in db.execute('PRAGMA table_info(work_read_results)')}
+            for column in ('page_url', 'page_title'):
+                if column not in read_result_columns:
+                    db.execute(f'ALTER TABLE work_read_results ADD COLUMN {column} TEXT')
             columns={row['name'] for row in db.execute('PRAGMA table_info(messages)')}
             if 'workspace_id' not in columns: db.execute('ALTER TABLE messages ADD COLUMN workspace_id TEXT')
             if 'job_id' not in columns: db.execute('ALTER TABLE messages ADD COLUMN job_id TEXT')
@@ -2670,6 +2686,66 @@ class QuickStore:
     def update_notification(self, notification_id, state, message_id=None, fingerprint=None, delivered=False):
         return self.telegram.update_notification(notification_id, state, message_id, fingerprint, delivered=delivered)
 
+    def record_read_result(self, job_id, *, tool, text, source_kind, epoch=None, call_id=None,
+                           tool_event_id=None, now=None, db=None, page_url=None, page_title=None):
+        """Keep one worker-visible excerpt locally, redacted before it can be cut."""
+        from .current_context import redact_known_secrets
+        from .entrusted_lines import line_state
+        from .preparations import preparation_lineage, preparation_of
+
+        excerpt = redact_known_secrets(self, text)[:READ_RESULT_EXCERPT_CHARS]
+        page_url = redact_known_secrets(self, page_url)[:512] if page_url else None
+        page_title = redact_known_secrets(self, page_title)[:512] if page_title else None
+        with (self.db() if db is None else nullcontext(db)) as conn:
+            if not conn.in_transaction:
+                conn.execute('BEGIN IMMEDIATE')
+            if epoch is not None and getattr(self._checkpoint_writer, 'guard', None) is not None:
+                ledger = self._read_checkpoint_ledger(conn, job_id)
+                if not ledger or ledger['epoch'] != epoch:
+                    return None
+            job = conn.execute(
+                f"SELECT request_key FROM jobs WHERE id=? AND NOT EXISTS ("
+                f"SELECT 1 FROM messages WHERE job_id=jobs.id AND id IN ({FORGOTTEN_MESSAGE_IDS}))",
+                (job_id,),
+            ).fetchone()
+            if job is None:
+                return None
+            preparation = preparation_of(job['request_key'])
+            lineage = preparation_lineage(conn, preparation) if preparation else None
+            if lineage and lineage['line_id'] and line_state(conn, lineage['line_id']) is None:
+                return None
+            row_id = conn.execute(
+                'INSERT INTO work_read_results(job_id,tool_event_id,call_id,tool,epoch,created,source_kind,'
+                'full_length,excerpt,page_url,page_title) VALUES (?,?,?,?,?,?,?,?,?,?,?)',
+                (job_id, tool_event_id, call_id, tool, epoch, time.time() if now is None else now,
+                 source_kind, len(text), excerpt, page_url, page_title),
+            ).lastrowid
+            conn.execute('DELETE FROM work_read_results WHERE id IN ('
+                         'SELECT id FROM work_read_results WHERE job_id=? ORDER BY id DESC LIMIT -1 OFFSET ?)',
+                         (job_id, READ_RESULTS_PER_WORK))
+            return row_id
+
+    def read_results(self, job_id, *, epoch=_ANY_READ_RESULT_EPOCH, after_id=0, now=None):
+        """Unexpired result rows, newest first. An explicit None matches only ledgerless reads."""
+        cutoff = (time.time() if now is None else now) - READ_RESULT_RETENTION_SECONDS
+        sql = 'SELECT * FROM work_read_results WHERE job_id=? AND id>? AND created>?'
+        params = (job_id, after_id, cutoff)
+        if epoch is not _ANY_READ_RESULT_EPOCH:
+            sql += ' AND epoch IS ?'
+            params += (epoch,)
+        with self.db() as db:
+            return [dict(row) for row in db.execute(sql + ' ORDER BY id DESC', params)]
+
+    def sweep_read_results(self, now=None):
+        cutoff = (time.time() if now is None else now) - READ_RESULT_RETENTION_SECONDS
+        with self.db() as db:
+            return db.execute('DELETE FROM work_read_results WHERE created<=?', (cutoff,)).rowcount
+
+    @staticmethod
+    def _move_read_results(db, work_id, prior_epoch, epoch):
+        db.execute('UPDATE work_read_results SET epoch=? WHERE job_id=? AND epoch=?',
+                   (epoch, work_id, prior_epoch))
+
     @staticmethod
     def _read_checkpoint_value(value):
         """Validate only host-owned progress and representation identity fields."""
@@ -2780,10 +2856,14 @@ class QuickStore:
             if (not self.read_checkpoint_can_settle(work_id, epoch, db=db)
                     or self._read_checkpoint_stopped(db, work_id)):
                 return False
-            return bool(db.execute(
+            prior = db.execute('SELECT epoch FROM work_read_checkpoints WHERE job_id=?', (work_id,)).fetchone()
+            changed = db.execute(
                 'UPDATE work_read_checkpoints SET epoch=? WHERE job_id=? AND resume_pending=0 AND epoch<?',
                 (epoch, work_id, epoch),
-            ).rowcount)
+            ).rowcount
+            if changed:
+                self._move_read_results(db, work_id, prior['epoch'], epoch)
+            return bool(changed)
 
     def _read_checkpoint_ready(self, db, work_id, checkpoint, predicate, *, expected_epoch, for_judgment=False):
         """Check eligibility and spending limits. Judgments spend only model turns."""
@@ -2813,6 +2893,7 @@ class QuickStore:
             claimed = db.execute('UPDATE work_read_checkpoints SET resume_pending=0, resume_count=resume_count+1, '
                                  'epoch=? WHERE job_id=? AND resume_pending=1', (epoch, work_id)).rowcount
             if claimed:
+                self._move_read_results(db, work_id, checkpoint['epoch'], epoch)
                 return epoch
         db.execute('UPDATE work_read_checkpoints SET resume_pending=0 WHERE job_id=?', (work_id,))
         db.execute("UPDATE jobs SET status='interrupted',error=?,delivery=? "
@@ -2828,13 +2909,20 @@ class QuickStore:
 
     def claim_effect_recovery(self, db, work_id, predicate, *, delivery):
         pending = self.pending_effect_recovery(db, work_id)
-        epoch = json.loads(pending['detail'])['epoch']
+        recovery = json.loads(pending['detail'])
+        epoch = recovery['epoch']
         admitted = self._read_checkpoint_ready(db, work_id, None, predicate, expected_epoch=epoch)
         db.execute('UPDATE tool_events SET status=? WHERE id=?',
                    ('claimed' if admitted else 'held', pending['id']))
         if admitted:
+            checkpoint = self.read_checkpoint(work_id, db=db)
             db.execute('UPDATE work_read_checkpoints SET epoch=? WHERE job_id=? AND resume_pending=0 AND epoch<?',
                        (epoch, work_id, epoch))
+            # Use the last active ledger epoch captured before the restart fence.
+            # Older queue records can fall back to the checkpoint they are advancing.
+            prior = recovery.get('prior_epoch', checkpoint['epoch'] if checkpoint else None)
+            if type(prior) is int and 0 <= prior < epoch:
+                self._move_read_results(db, work_id, prior, epoch)
             return epoch
         db.execute("UPDATE jobs SET status='interrupted',error=?,delivery=? WHERE id=? AND status='queued'",
                    ('Remaining work is pending. The previous dispatch receipts are retained.', delivery, work_id))
@@ -2916,7 +3004,7 @@ class QuickStore:
                     if (work_id not in resumes and ledger and used + continuation_count(db, work_id) < MAX_CONTINUATIONS
                             and self._read_checkpoint_ready(db, work_id, None, can_resume_effect,
                                                              expected_epoch=ledger['epoch'])):
-                        effect_resumes[work_id] = ledger['epoch'] + 1
+                        effect_resumes[work_id] = {'epoch': ledger['epoch'] + 1, 'prior_epoch': ledger['epoch']}
             interrupted=db.execute("UPDATE jobs SET status='interrupted',error='실행 중 재시작되었습니다. 자동으로 재호출하지 않습니다.' WHERE status='running'").rowcount
             WorkLedger.fence_restart(db,running)
             for work_id in resumes:
@@ -2925,10 +3013,10 @@ class QuickStore:
             for work_id, state in effect_states.items():
                 db.execute('UPDATE jobs SET effect_state=? WHERE id=? AND status=?',
                            (state, work_id, 'interrupted'))
-            for work_id, epoch in effect_resumes.items():
+            for work_id, recovery in effect_resumes.items():
                 db.execute("UPDATE jobs SET status='queued',error=NULL WHERE id=?", (work_id,))
                 db.execute('INSERT INTO tool_events(job_id,tool,status,detail,created) VALUES (?,?,?,?,?)',
-                           (work_id, EFFECT_CONTINUATION, 'queued', json.dumps({'epoch': epoch}), time.time()))
+                           (work_id, EFFECT_CONTINUATION, 'queued', json.dumps(recovery), time.time()))
             resumes.extend(effect_resumes)
             if resumes:
                 replies=[work_id for work_id in replies if work_id not in resumes]

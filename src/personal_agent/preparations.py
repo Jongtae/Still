@@ -894,15 +894,20 @@ def preparation_lineage(db, preparation_id):
     return json.loads(deleted['detail']) if deleted else None
 
 
-def line_works_sql(column):
-    """#938: SQL matching Works (by ``column``, a request key) of any row of one line; one parameter, the line id.
+def line_works_sql(column, *, include_deleted=False):
+    """#938: SQL matching Works (by ``column``, a request key) of any row of one line.
 
     A line done in pieces keeps a row per piece, so its rows are matched by a subquery rather than
     by one ``LIKE`` term per row, which SQLite's expression-depth bound would refuse on a long line.
+    Bind the line id once, or twice when including deleted preparation lineage.
     """
     start = len(REQUEST_KEY_PREFIX) + 1
+    ids = 'SELECT id FROM preparations WHERE line_id=?'
+    if include_deleted:
+        ids += (" UNION SELECT job_id FROM tool_events WHERE tool='preparation_lineage' AND status='deleted' "
+                "AND json_extract(detail,'$.line_id')=?")
     return (f"{column} LIKE '{REQUEST_KEY_PREFIX}%' AND substr({column},{start},"
-            f"instr(substr({column},{start}),':')-1) IN (SELECT id FROM preparations WHERE line_id=?)")
+            f"instr(substr({column},{start}),':')-1) IN ({ids})")
 
 
 #: #798: ``run_refusal`` reasons of a row whose line was stopped or whose brief cannot be read.

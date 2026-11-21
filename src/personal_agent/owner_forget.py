@@ -64,7 +64,8 @@ MIGRATE = 'migrate'
 UNDOABLE_OPERATIONS = ('forget', MIGRATE)
 #: What a result says about copies outside this store (never claimed erased).
 OUTSIDE_SCOPE = ('the Telegram app\'s own copy of the conversation, copies already sent to an AI provider, '
-                 'Work records that quoted it, exports and backups are not affected')
+                 'Work records and read results already kept by other Works that quoted it, '
+                 'exports and backups are not affected')
 
 DDL = '''
 CREATE TABLE IF NOT EXISTS owner_state_receipts(
@@ -320,6 +321,9 @@ class OwnerForget:
         db.execute('UPDATE preparations SET state=?,updated_at=? WHERE line_id=? AND check_spec IS NOT NULL '
                    'AND state IN (?,?,?,?)', (prep.STATE_CANCELLED, now, line_id, *prep.ACTIVE_STATES))
         prep.Preparations._clear_closed_budget_skips(db)
+        db.execute(f'DELETE FROM work_read_results WHERE job_id IN ('
+                   f'SELECT id FROM jobs WHERE {prep.line_works_sql("request_key", include_deleted=True)})',
+                   (line_id, line_id))
         return {'rows': [{'table': 'procedure_versions', 'id': row['id'], 'prior': row['state']} for row in rows],
                 'line': line_id}
 
@@ -331,7 +335,7 @@ class OwnerForget:
             raise _refuse('bad_ref')
         items = []
         for message_id in dict.fromkeys(int(part) for part in parts):
-            row = db.execute("SELECT m.id,m.content,j.status FROM messages m LEFT JOIN jobs j ON j.id=m.job_id "
+            row = db.execute("SELECT m.id,m.content,m.job_id,j.status FROM messages m LEFT JOIN jobs j ON j.id=m.job_id "
                              "WHERE m.id=? AND m.role IN ('user','assistant')", (message_id,)).fetchone()
             if row is None or not (row['content'] or '') or db.execute(
                     'SELECT 1 FROM forgotten_messages WHERE message_id=?', (message_id,)).fetchone():
@@ -341,6 +345,7 @@ class OwnerForget:
                 raise _refuse('running')
             db.execute('INSERT INTO forgotten_messages(message_id,receipt_id,created) VALUES (?,?,?)',
                        (message_id, receipt_id, now))
+            db.execute('DELETE FROM work_read_results WHERE job_id=?', (row['job_id'],))
             items.append({'table': 'messages', 'id': message_id, 'prior': 'current'})
         return {'rows': items}
 

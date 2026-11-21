@@ -28,7 +28,7 @@ from .orchestrator import NOT_JUDGED, NOT_REACHED, OWNER_NEEDED, REACHED, UNJUDG
 from .isolated_engine_gateway import EngineGatewayError
 from .file_workspace import FileWorkspace
 from .gmail import GMAIL_CONNECTOR_ID
-from .conversation_handoff import JUDGMENT_YES, FOLLOWUP_CANCEL, FOLLOWUP_REFERENCE, FOLLOWUP_RETRY, ConnectorHandoff, AUTHORITY_OWNER, AUTHORITY_RULE, INTENT_CONVERSATION, IntentDecision, INTENT_GREETING, INTENT_KNOWLEDGE, INTENT_MAIL_SEARCH, INTENT_MAIN_AI, INTENT_DEVELOPER_MODE, INTENT_NOTE_CREATE, INTENT_NOTE_LIST, INTENT_SETTINGS, INTENT_SAVED_CONTEXT, INTENT_WORKSPACE_SEARCH
+from .conversation_handoff import JUDGMENT_YES, FOLLOWUP_CANCEL, FOLLOWUP_CORRECTION, FOLLOWUP_REFERENCE, FOLLOWUP_RETRY, ConnectorHandoff, AUTHORITY_OWNER, AUTHORITY_RULE, INTENT_CONVERSATION, IntentDecision, INTENT_GREETING, INTENT_KNOWLEDGE, INTENT_MAIL_SEARCH, INTENT_MAIN_AI, INTENT_DEVELOPER_MODE, INTENT_NOTE_CREATE, INTENT_NOTE_LIST, INTENT_SETTINGS, INTENT_SAVED_CONTEXT, INTENT_WORKSPACE_SEARCH
 from . import owner_mcp
 from .context_observations import continuation_request
 from . import preparations as prep
@@ -59,6 +59,13 @@ from .quickstart_service import (
 
 #: #970: claims one dispatcher pass may make per lane; a settled candidate counts as one.
 DISPATCH_CLAIMS=8
+
+
+def related_work_note(work_id):
+    if not work_id:
+        return ''
+    return (f'Still host note: Related Work {work_id}. Calling search_conversation with that work_id '
+            'returns its exchange and what it read.')
 
 
 class _FirstTurnCommit:
@@ -532,6 +539,7 @@ class WorkExecutor:
                     # replayed, and the refusal is Evidence, not the answer.
                     service.record_continuity(job['id'],previous['id'],RETRY_REFUSED_RAN_CURRENT,
                                            executed=False,reason=reason,link_kind=FOLLOWUP_REFERENCE)
+                    run.related_work_id=previous['id']
                     # The AI decides; Still tells it, from recorded events, what the
                     # earlier Work may already have changed.  Its effects stay gated
                     # by Still's approvals as for any request.
@@ -557,6 +565,9 @@ class WorkExecutor:
                 # Calendar, Memory and connector state machines remain
                 # the authority for any actual change.
                 service.record_continuity(job['id'],previous['id'],relation,executed=False)
+                run.related_work_id=previous['id']
+        elif job.get('relation_kind') in (FOLLOWUP_REFERENCE,FOLLOWUP_CORRECTION):
+            run.related_work_id=job.get('related_job_id')
         if run.continued and run.retry_note is None:
             # #774 (C8): the continuation runs the asking Work's message again.
             # Nothing is replayed blindly: the worker reads, before it, which
@@ -938,6 +949,10 @@ class WorkExecutor:
             service.record_turn_provenance(job['id'],skills=run.skill_binding.refs())
         # #826: what the owner-model sections and splices referred to (keys, refs, labels).
         run.spliced_refs=spliced_refs
+        # Only brief the worker about a relation while it is reading this Work's owner turn.
+        latest=run.history_rows[-1] if run.history_rows else {}
+        if not run.history or latest.get('role')!='user' or latest.get('job_id')!=job['id']:
+            run.related_work_id=None
         run.base_history,run.base_rows,run.base_config,run.base_key=run.history,run.history_rows,run.config,run.key
         # #826: material spliced into this turn (documents, Drive, the context inbox,
         # notes) no longer pins the worker; the plan may choose any available worker.
@@ -1006,7 +1021,8 @@ class WorkExecutor:
                 job,run.attempt,refresh=refresh,with_items=True)
             refresh=None
             run.config,run.key,run.subscription,run.attempt_test=service.attempt_route(run.orchestration,run.attempt,run.base_config,run.base_key,run.route_snapshot)
-            run.brief=run.attempt.brief(adjusted=run.attempt.number>1 and not run.attempt.steer) if run.attempt is not None else None
+            plan_brief=run.attempt.brief(adjusted=run.attempt.number>1 and not run.attempt.steer) if run.attempt is not None else None
+            run.brief='\n\n'.join(part for part in (related_work_note(run.related_work_id),plan_brief) if part) or None
             # Every replacement worker sees the latest committed coverage as
             # host context. The original owner request stays in the conversation.
             if progress := '\n\n'.join(filter(None,(service.read_checkpoint_note(job, include_fresh=True),

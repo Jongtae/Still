@@ -42,7 +42,7 @@ import socketserver
 import tempfile
 import threading
 
-from .agent_runtime import (BROWSER_ACTIONS, CODE_ACTIONS, EFFECT_FREE_READS, HOST_RELAYED_ACTIONS, LoopGuard, ToolError,
+from .agent_runtime import (BROWSER_ACTIONS, HOST_RELAYED_ACTIONS, LoopGuard, ToolError,
                             classify_failure, concurrent_read, executed_field, loop_outcome, not_executed, not_run, observed_field,
                             observed_value, path_key, ran_field, repeat_path_error, result_page_digest)
 
@@ -279,21 +279,16 @@ class BrowserRelay:
             if action in BROWSER_ACTIONS:
                 self._page = result_page_digest(value) or self._page
             else:
-                self._remember(name, arguments, action, value)
+                self._remember(name, arguments, value)
             return {'ok': value}
 
-    def _remember(self, name, arguments, action, value):
+    def _remember(self, name, arguments, value):
         """What the service reads of one relayed owner-state result after the turn (caller holds the lock)."""
         # #774 review: the service reads typed owner-state results (a missing
         # connector's ``needs_setup``) after the turn, as the direct route's memo.
         memo = getattr(self.tools.capabilities, 'memo', None)
         if isinstance(memo, dict):
             memo[(name, json.dumps(arguments, sort_keys=True, ensure_ascii=False))] = value
-        # #1466: what an effect-free read returned joins this attempt's judgment (memory only);
-        # code_run keeps its own output in ``Capabilities.execute``.
-        keep = getattr(self.tools.capabilities, 'keep_read_result', None)
-        if callable(keep) and action in EFFECT_FREE_READS and action not in CODE_ACTIONS:
-            keep(name, arguments, value)
 
     def _read(self, name, arguments, action):
         """One effect-free read, run beside the turn's other reads (#386); its results are kept under the lock."""
@@ -307,7 +302,7 @@ class BrowserRelay:
             except Exception as exc:   # every failure becomes a typed reply
                 return {'error': _error_payload(exc)}
             with self._lock:
-                self._remember(name, arguments, action, value)
+                self._remember(name, arguments, value)
             return {'ok': value}
         finally:
             with self._reading:

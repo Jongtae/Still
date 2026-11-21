@@ -39,6 +39,7 @@ def _portable_db(source, target, redaction=((), None)):
         # Work-local staging and representation validators cannot resume in a portable restore.
         if 'work_read_checkpoints' in tables:copy.execute("DELETE FROM work_read_checkpoints")
         if 'work_read_judgments' in tables:copy.execute("DELETE FROM work_read_judgments")
+        if 'work_read_results' in tables:copy.execute("DELETE FROM work_read_results")
         copy.executemany("DELETE FROM config WHERE key=?", ((key,) for key in _RESET_CONFIG))
         # Grants and result paths are valid only in the original runtime. Keep
         # durable result IDs/provenance as owner work evidence, but detach each
@@ -308,6 +309,10 @@ def restore_owner_state(archive, data):
             if name.startswith("plugins/") and name.count("/") == 1: validate(json.loads(path.read_text()))
         with sqlite3.connect(staged / DB_RELATIVE) as db:
             if not db.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='config'").fetchone(): raise ValueError("Invalid owner-state database.")
+            if db.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='work_read_results'").fetchone():
+                if db.execute("DELETE FROM work_read_results").rowcount:
+                    db.commit()
+                    db.execute("VACUUM")
         if data.exists():
             # rmdir is deliberately race-safe: if anything appeared after the
             # initial emptiness check, restoration refuses instead of merging.

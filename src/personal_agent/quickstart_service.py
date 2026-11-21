@@ -5914,7 +5914,7 @@ class AgentService:
         Still ran confined (strict-isolated, the isolated sidecar) or on the
         direct route is evaluated from its tool events alone, as before.
         #1282: ``pages`` are the attempt's latest mediated browser pages
-        (``Capabilities.take_browser_pages``, memory only); their text joins
+        and bounded read results (``Capabilities.take_browser_pages``); their text joins
         the observations (``observations_with_pages``) so a reply's details
         can be checked against what the page showed.
         """
@@ -10104,6 +10104,10 @@ class AgentService:
     def purge_forgotten(self):
         """Purge forgotten owner state whose undo window ended (#794); a failure is logged and retried next tick."""
         from .owner_forget import OwnerForget
+        try:
+            self.store.sweep_read_results()
+        except Exception as exc:
+            LOG.warning('read result sweep failed (%s)',type(exc).__name__)
         try:
             purged=OwnerForget(self.store).purge_due()
         except Exception as exc:

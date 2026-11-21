@@ -109,6 +109,20 @@ def exposed_strings(rows):
     return sorted({value for row in rows for value in json.loads(row['strings_json']) if isinstance(value, str)})
 
 
+def _literal_redaction_values(values, text):
+    """Match nested JSON strings and mixed logs without decoding the surrounding text."""
+    if '\\' not in text:
+        return sorted(set(values), key=len, reverse=True)
+    from .quickstart_store import QuickStore
+    matches = forms = set(values)
+    for _ in range(3):
+        forms = {escaped for value in forms for escaped in QuickStore.json_escaped_forms(value)} - matches
+        if not forms:
+            break
+        matches = matches | forms
+    return sorted(matches, key=len, reverse=True)
+
+
 def redact_known_secrets(store, text, *, extra_values=()):
     """The stored secrets' literal values and credential shapes, replaced.
 
@@ -127,13 +141,11 @@ def redact_known_secrets(store, text, *, extra_values=()):
     relayed = getattr(store, 'relayed_secret_redaction', None)
     if callable(relayed):
         text = str(relayed(text))
-        for value in sorted(extra_values, key=len, reverse=True):
+        for value in _literal_redaction_values(extra_values, text):
             text = text.replace(value, '[redacted]')
         return text
     entry = _material_entry(store)
     values, ledger = entry['values'], entry['ledger']
-    if extra_values:
-        values = sorted(set(values).union(extra_values), key=len, reverse=True)
     # #819: the same text (a prompt envelope, a recorded step) is redacted several times per Work; its result
     # is kept with this secrets revision's own entry, so it is dropped with it on any secrets change.
     memo = None if extra_values else entry.get('results')
@@ -144,7 +156,7 @@ def redact_known_secrets(store, text, *, extra_values=()):
                 memo[text] = known
                 return known
     original = text
-    for value in values:
+    for value in _literal_redaction_values((*values, *extra_values), text):
         text = text.replace(value, '[redacted]')
     # #258 (Codex review): a value since replaced or removed is no longer stored; its spans are found by
     # their retired digests, at this one boundary every model-bound text already passes.
