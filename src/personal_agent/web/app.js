@@ -1103,8 +1103,19 @@ function decisionSpeedReason(qualification){
  const others=(record.compared||[]).filter(row=>row.model!==record.model).map(row=>row.qualified&&Number.isFinite(row.p50_seconds)?t('{model} {seconds}초',{model:row.model,seconds:seconds(row.p50_seconds)}):t('{model} 검사 미통과',{model:row.model}));
  return ' '+t('응답 시간 중앙값 {p50}초, 95% {p95}초.',{p50:seconds(record.p50_seconds),p95:seconds(record.p95_seconds)})+(others.length?' '+t('비교한 후보: {models}',{models:others.join(', ')}):'');
 }
+// #1069: the "check started" notice belongs to a running check. Once the
+// check has run (seen running, or a result newer than the start), the Method
+// line carries the result and the notice is cleared.
+let judgmentCheckNotice=null;
+function judgmentCheckNoticeDone(route){
+ const notice=judgmentCheckNotice;if(!notice)return false;
+ if(route.effective?.state==='checking'){notice.seen=true;return false;}
+ const finished=Math.max(route.active?.qualification?.at||0,route.follow_check?.checked_at||0);
+ return notice.seen||finished>=notice.started;
+}
 function renderJudgmentFollow(route){
  const box=$('judgment-follow');if(!box)return;
+ if(judgmentCheckNoticeDone(route)){judgmentCheckNotice=null;setFeedback('judgment-feedback','');}
  const active=route.active||{},effective=route.effective,follow=route.follow||{},following=active.source==='follow';
  const transport=active.transport||'none',usable=!['none','off'].includes(transport)&&active.available!==false;
  const state=usable?[t('대화 해석에 사용 중'),'active']:transport==='off'&&!following?[t('사용 안 함'),'neutral']:following||transport!=='none'?[t('확인 필요'),'attention']:[t('설정 안 됨'),'neutral'];
@@ -1285,7 +1296,7 @@ function decisionActivate(body,button){
  decisionClearDiscard();
  const revision=decisionEditorRevision,editor=decisionEditor,form=editor.form,submitted=decisionDraftState(form);
  const follow=body.transport==='follow_main',feedback=follow?'judgment-feedback':'decision-route-feedback';
- decisionActivationPending=true;
+ decisionActivationPending=true;judgmentCheckNotice=null;
  setError(feedback,'');setFeedback(feedback,follow?t('판단 AI 확인을 요청하는 중…'):t('확인 판단을 보내 경로를 검증하는 중… 통과한 경우에만 바뀝니다.'));
  return busy(button,async()=>{
   try{
@@ -1294,6 +1305,7 @@ function decisionActivate(body,button){
     const unchanged=decisionDraftState(form)===submitted;
     form.dataset.initialDraft=submitted;
     setFeedback(feedback,follow?t('판단 AI 확인을 백그라운드에서 시작했습니다. 통과하면 기본 AI를 따라갑니다.'):t('대화 해석 경로를 바꿨습니다. 작업 실행 AI는 그대로입니다.'));
+    if(follow)judgmentCheckNotice={started:Date.now()/1000,seen:false};
     if(route?.active)renderDecisionRoute({...decisionSettings,decision_route:route},unchanged&&!decisionDraftDirty()&&(!follow||route.mode==='follow_main'));
    }
    if($('active-ai'))$('active-ai').dataset.state='';
