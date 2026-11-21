@@ -36,6 +36,7 @@ class Element {
  append(...nodes){this.children.push(...nodes);} replaceChildren(...nodes){this._text='';this.children=[];this.append(...nodes);}
  setAttribute(key,value){this.attrs[key]=value;} focus(){if(!this.disabled)document.activeElement=this;} get isConnected(){return true;}
  contains(node){return node===this||descendants(this).includes(node);}
+ setSelectionRange(start,end,direction){this.selectionStart=start;this.selectionEnd=end;this.selectionDirection=direction;}
  get classList(){const node=this;return {toggle(name,on){node._cls=Boolean(on);},add(){},remove(){},contains:()=>Boolean(node._cls)};}
  querySelector(selector){return descendants(this).find(node=>selector[0]==='.'?node.className.split(' ').includes(selector.slice(1)):node.tag===selector.replace(/\[.*$/,''))||null;}
  querySelectorAll(selector){return descendants(this).filter(node=>selector==='[data-focus-key]'?Boolean(node.dataset.focusKey):node.tag===selector);}
@@ -160,6 +161,11 @@ const checks=[];
  group.open=true;group.ontoggle();render(available({sessions:many.map(row=>({...row,cookies:2}))}));group=descendants($('browser-status')).find(node=>node.className==='settings-disclosure browser-visited');
  assert.equal(group.open,true,'the visited group stays open across polling');filter=descendants(group).find(node=>node.name==='browser-visited-filter');assert.equal(filter.value,'visit3');
  assert.equal(rowsOf(group).filter(row=>!row.hidden).length,1,'the filter still applies after a re-render');
+ // Polling while the owner edits the filter keeps the caret and selection where they were.
+ filter.focus();filter.setSelectionRange(1,4,'backward');render(available({sessions:many.map(row=>({...row,cookies:5}))}));
+ const refocused=document.activeElement;assert.notEqual(refocused,filter,'the filter was rebuilt');assert.equal(refocused.name,'browser-visited-filter');
+ assert.deepEqual([refocused.selectionStart,refocused.selectionEnd,refocused.selectionDirection],[1,4,'backward']);
+ group=descendants($('browser-status')).find(node=>node.className==='settings-disclosure browser-visited');filter=refocused;document.activeElement=null;
  // A deletion that drops the list under the filter threshold keeps the filter while a query is active.
  render(available({sessions:many.slice(2)}));group=descendants($('browser-status')).find(node=>node.className==='settings-disclosure browser-visited');
  filter=descendants(group).find(node=>node.name==='browser-visited-filter');assert(filter,'an active query keeps its filter');assert.equal(filter.value,'visit3');
