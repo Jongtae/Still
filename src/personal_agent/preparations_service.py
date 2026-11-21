@@ -346,6 +346,7 @@ class PreparationsService:
                 with (service.store.db() if current else nullcontext()) as db:
                     if db is not None:
                         db.execute('BEGIN IMMEDIATE')
+                        service.store.require_read_checkpoint_writer(db)
                         target=db.execute('SELECT state FROM preparations WHERE id=?',(replaces,)).fetchone()
                         if not target or target['state'] not in prep.ACTIVE_STATES:
                             raise not_run(prep.PreparationRefusal('replace_not_found'))
@@ -420,6 +421,7 @@ class PreparationsService:
         try:
             with service.store.db() as db:
                 db.execute('BEGIN IMMEDIATE')
+                service.store.require_read_checkpoint_writer(db)
                 if prep.Preparations.run_refusal(db,job['id'],service.preparations.clock()):
                     raise not_run(ToolError(UNATTENDED_APPROVAL_TEXT,'unattended_run'))
                 row=service.preparations.create(kind=fields['kind'],goal=fields['goal'],due_at=fields['due_at'],
@@ -487,6 +489,7 @@ class PreparationsService:
             ledger = getattr(service.current_decision_budget(),'ledger',None)
             with service.store.db() as db:
                 db.execute('BEGIN IMMEDIATE')
+                service.store.require_read_checkpoint_writer(db)
                 current = db.execute('SELECT status FROM jobs WHERE id=?',(job['id'],)).fetchone()
                 refusal=prep.Preparations.run_refusal(db,job['id'],now)
                 if refusal in (prep.LINE_STOPPED,prep.LINE_UNREADABLE):raise refused('line_stopped')
@@ -896,6 +899,7 @@ class PreparationsService:
                     if work_id:
                         with service.store.db() as db:
                             db.execute('BEGIN IMMEDIATE')
+                            service.store.require_read_checkpoint_writer(db)
                             current=db.execute('SELECT state,last_run_job_id FROM preparations WHERE id=?',(row['id'],)).fetchone()
                             request=db.execute('SELECT id,state,expires FROM context_location_requests WHERE job_id=? '
                                                'ORDER BY created DESC LIMIT 1',(work_id,)).fetchone()
@@ -919,6 +923,7 @@ class PreparationsService:
                     if work_id and (waiting or row.get('job_status')=='queued'):
                         with service.store.db() as db:
                             db.execute('BEGIN IMMEDIATE')
+                            service.store.require_read_checkpoint_writer(db)
                             refusal=service.preparations.run_refusal(db,work_id,now)
                             current=db.execute('SELECT status FROM jobs WHERE id=?',(work_id,)).fetchone()
                             if refusal and current and (current['status']=='queued' or service.work_has_pending_resume(work_id,now)):
@@ -1804,6 +1809,7 @@ class PreparationsService:
             line_id=brief['line_id']
             with service.store.db() as db:
                 db.execute('BEGIN IMMEDIATE')
+                service.store.require_read_checkpoint_writer(db)
                 events=db.execute("SELECT detail FROM tool_events WHERE tool='line_announced'").fetchall()
                 if any(json.loads(row['detail']).get('day')==day for row in events):return
                 notices=db.execute("SELECT n.state,n.sent_at FROM telegram_notifications n "
@@ -1825,6 +1831,7 @@ class PreparationsService:
                 if not text:return
                 with service.store.db() as db:
                     db.execute('BEGIN IMMEDIATE')
+                    service.store.require_read_checkpoint_writer(db)
                     key='line-announce:'+line_id+':1'
                     if db.execute('SELECT 1 FROM jobs WHERE request_key=?',(key,)).fetchone():return
                     work_id=uuid.uuid4().hex
@@ -1847,6 +1854,7 @@ class PreparationsService:
                 first=stats['first']
                 with service.store.db() as db:
                     db.execute('BEGIN IMMEDIATE')
+                    service.store.require_read_checkpoint_writer(db)
                     restart=self.line_start_restart(brief['line_id'],db)
                     rows=self.line_rows(brief['line_id'],db)
                     work=[row for row in rows if row.get('origin')!=prep.ORIGIN_LINE_ACCOUNT]
@@ -1941,6 +1949,7 @@ class PreparationsService:
         """Route held rows before the existing start/settle loop, without changing its slot logic."""
         with self.service.store.db() as db:
             db.execute('BEGIN IMMEDIATE')
+            self.service.store.require_read_checkpoint_writer(db)
             rows=[dict(r) for r in db.execute('SELECT * FROM preparations WHERE line_id IS NOT NULL')]
             for row in rows:
                 if not self.held_row(row, db):
@@ -2090,6 +2099,7 @@ class PreparationsService:
         service=self.service
         with service.store.db() as db:
             db.execute('BEGIN IMMEDIATE')
+            service.store.require_read_checkpoint_writer(db)
             bundles=db.execute("SELECT j.id FROM jobs j WHERE j.model='line-bundle' AND j.provider='builtin' "
                                "AND (j.delivery='sent' OR (j.channel='web' AND j.delivery='none' "
                                "AND EXISTS(SELECT 1 FROM messages m WHERE m.job_id=j.id AND m.role='assistant'))) "
@@ -2134,6 +2144,7 @@ class PreparationsService:
         service=self.service
         with service.store.db() as db:
             db.execute('BEGIN IMMEDIATE')
+            service.store.require_read_checkpoint_writer(db)
             # Ordinary preparations pay no per-run scan for a budget they do not use.
             if not db.execute("SELECT 1 FROM tool_events WHERE tool='line_held' LIMIT 1").fetchone():return None
             tz=prep.zone(self.home_zone())
@@ -2359,6 +2370,7 @@ class PreparationsService:
         stood=service.lines.provenance(brief['line_id']).get('by')=='look-back'
         with service.store.db() as db:
             db.execute('BEGIN IMMEDIATE')
+            service.store.require_read_checkpoint_writer(db)
             restart=self.line_start_restart(brief['line_id'],db)
             if stood and self.line_row_started(brief['line_id'],'account',restart,db):return None
             # A cancelled account also stays cancelled on a tick; only a new owner act may restart it.
@@ -2395,6 +2407,7 @@ class PreparationsService:
         service=self.service
         with service.store.db() as db:
             db.execute('BEGIN IMMEDIATE')
+            service.store.require_read_checkpoint_writer(db)
             if end_line:
                 before,after=service.lines.write(line_id,work_id,None,'stopped',
                                                  lambda brief:{**brief,'state':el.STATE_STOPPED},db=db)
@@ -2679,6 +2692,7 @@ class PreparationsService:
         destination=self.self_change_destination(own_row) if own_row else None
         with service.store.db() as db:
             db.execute('BEGIN IMMEDIATE')
+            service.store.require_read_checkpoint_writer(db)
             before,after=service.lines.write(line_id,job['id'],expected,'rule' if rule else 'revised',update,db=db)
             if own_row and after['version']!=before['version']:
                 fingerprint=f"{line_id}:{after['version']}"
@@ -2742,6 +2756,7 @@ class PreparationsService:
             # The owner's act is an announcement even when the already-active brief did not change.
             with service.store.db() as db:
                 db.execute('BEGIN IMMEDIATE')
+                service.store.require_read_checkpoint_writer(db)
                 if not db.execute("SELECT 1 FROM tool_events WHERE job_id=? AND tool='line_restarted' "
                                   "AND json_extract(detail,'$.line_id')=?",(job['id'],line_id)).fetchone():
                     db.execute('INSERT INTO tool_events(job_id,tool,status,detail,created) VALUES (?,?,?,?,?)',
@@ -2799,6 +2814,7 @@ class PreparationsService:
     def _record_line_read(self, work_id, brief, *, once=False):
         with self.service.store.db() as db:
             db.execute('BEGIN IMMEDIATE')
+            self.service.store.require_read_checkpoint_writer(db)
             if once and db.execute(
                     "SELECT 1 FROM tool_events WHERE job_id=? AND tool=? AND "
                     "COALESCE(json_extract(detail,'$.evidence.line_id'),json_extract(detail,'$.line_id'))=? LIMIT 1",

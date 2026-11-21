@@ -5,6 +5,7 @@ from dataclasses import dataclass
 import json
 import sqlite3
 from threading import Event
+import time
 from unittest import mock
 
 import pytest
@@ -624,12 +625,19 @@ def test_checkpoint_scope_leaves_cte_reads_and_unfenced_autocommit_transaction_f
     ('continuity_reply', 'SELECT response,delivery FROM jobs', True),
     ('projection', "SELECT content FROM messages WHERE role='assistant'", True),
     ('orchestration', "SELECT detail FROM tool_events WHERE status='test-publication'", False),
+    ('preparation_create', 'SELECT id,state FROM preparations', True),
+    ('preparation_cancel', 'SELECT id,state FROM preparations', True),
 ])
 def test_explicit_commit_points_refuse_stale_writes_and_admit_current(case, point, query, raises):
     store, service, work_id = case.store, case.service, case.id
 
     if point == 'owner_forget':
         memory = store.save_memory('fixture.key', 'observed', work_id=work_id)
+    preparation = lambda goal, created_from: service.preparations.create(
+        kind='prepare', goal=goal, due_at=time.time() + 3600, timezone='Asia/Seoul', recurrence=None,
+        channel='web', created_from=created_from, state='scheduled')
+    if point == 'preparation_cancel':
+        scheduled = preparation('Existing preparation.', None)
 
     def publish(budget):
         writes = {
@@ -654,6 +662,8 @@ def test_explicit_commit_points_refuse_stale_writes_and_admit_current(case, poin
             'continuity_reply': lambda: service.complete_continuity_turn(case.work, 'observed'),
             'projection': lambda: service.record_conversation_notice('observed', job=case.work),
             'orchestration': lambda: orchestration(case, budget=budget).record('test-publication', {'seen': True}),
+            'preparation_create': lambda: preparation('Observed preparation.', work_id),
+            'preparation_cancel': lambda: service.preparations.cancel(scheduled['id']),
         }
         with service.work_decision_scope(work_id, budget):
             writes[point]()
