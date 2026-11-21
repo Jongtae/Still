@@ -1071,10 +1071,13 @@ class ConversationJudgments:
         if read_snapshot is ... and callable(self.checkpoint_snapshot):
             read_snapshot = self.checkpoint_snapshot(work_id)
         request = str(request or '')
-        facts = {'owner_request': request, 'recent_conversation': conversation or 'none',
+        # #1118: the owner's message follows the conversation and context, next to the reply, so a long
+        # conversation in another language is not read as the language of the message.
+        facts = {'recent_conversation': conversation or 'none',
                  # #980: the earlier exchange this message was judged to follow up, when linked.
                  'continues': continues or 'none',
                  'owner_context': owner_context or 'none',
+                 'owner_request': request,
                  'attachments': attachments or 'none',
                  'reply': answer or 'none (only the observations are known)',
                  'reply_source': reply_source, 'reply_delivery': reply_delivery,
