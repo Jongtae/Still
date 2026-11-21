@@ -1,0 +1,137 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Memory and personal state | Still Concept Guide</title>
+<meta name="description" content="Moving memory is broader than exporting a conversation history. This page explains three levels of moving memory, memory versus authority, the difference between context and memory, and Still’s current memory policy.">
+<link rel="stylesheet" href="../../assets/read.css?v=1">
+</head>
+<body>
+<a class="skip" href="#main">Skip to main content</a>
+<header class="top">
+  <a class="brand" href="index.html">Still <span>Concept Guide</span></a>
+  <nav class="top-links" aria-label="Site"><a href="../../index.html">Home</a><a href="https://github.com/Jongtae/Still/blob/main/docs/whitepapers/README.md">Source</a><a href="https://github.com/Jongtae/Still">GitHub</a><a href="../ko/memory.html" hreflang="ko" lang="ko">한국어</a></nav>
+</header>
+<div class="layout">
+  <nav class="side" aria-label="Concept guide contents">
+    <ol>
+      <li><a href="index.html">Start here</a></li>
+      <li><a href="memory.html" aria-current="page">Memory and personal state</a></li>
+      <li><a href="ai.html">Working with AI</a></li>
+      <li><a href="authority.html">Authority, connections and evidence</a></li>
+      <li><a href="skills.html">Skills and expertise</a></li>
+      <li><a href="industry.html">Industry hypotheses and counterarguments</a></li>
+      <li><a href="history.html">Development history</a></li>
+      <li><a href="limits.html">What is confirmed and open questions</a></li>
+      <li><a href="glossary.html">Glossary</a></li>
+    </ol>
+  </nav>
+  <main id="main" class="doc">
+    <nav class="crumbs" aria-label="You are here"><ol><li><a href="index.html">Concept guide</a></li><li aria-current="page">Memory and personal state</li></ol></nav>
+    <h1>Memory and personal state</h1>
+    <p class="summary">Moving memory is broader than exporting a conversation history. This page explains three levels of moving memory, memory versus authority, the difference between context and memory, and Still’s current memory policy.</p>
+    <p class="meta">Manuscripts: Whitepaper ch. 4, Compendium §5.1, 5.3, 7.4, 7.9 and ch. 24. Last updated October 14, 2026.</p>
+
+    <h2 id="levels">Three levels of moving memory</h2>
+    <p class="basis"><span>Basis</span> Proposal. Whitepaper §4.1</p>
+    <p>The whitepaper separates three levels of moving memory.</p>
+    <dl class="defs">
+      <dt>Moving data</dt><dd>Bringing records over in a readable format.</dd>
+      <dt>Moving meaning</dt><dd>Preserving whether a record is a fact, a user preference or a model’s guess, and whether it was later corrected.</dd>
+      <dt>Continuity of use</dt><dd>Applying that information appropriately in the new environment so the user does not have to repeat what they already explained or corrected.</dd>
+    </dl>
+    <div class="note" role="note"><p><strong>Example</strong> If “I’d rather avoid beef on weekdays” is saved as “vegetarian”, the data moved but the meaning was distorted. Carrying a temporary business-trip condition over as a permanent lifestyle preference is the same.</p></div>
+    <p>So the whitepaper proposes that a move carry, along with the content, its source, time, scope, whether the user confirmed it, its correction history and its validity period. What moves is stored information that can be checked. It is not a promise to move learning effects that exist only inside a model, or state that cannot be seen from outside.</p>
+
+    <h2 id="existing">How this differs from existing features</h2>
+    <p class="basis"><span>Basis</span> Case. Whitepaper §4.2</p>
+    <p>Features that support moving memory already exist. Anthropic’s official guide describes importing memory from and exporting it to other AI providers, and says importing is experimental and may not always be applied successfully.</p>
+    <p>So the problem is not that “nobody can move memory”. The next step the whitepaper asks for is transfer quality the user can check: what moved, what was left out and what meaning changed.</p>
+
+    <h2 id="not-authority">Moving memory is not copying authority</h2>
+    <p class="basis"><span>Basis</span> Proposal. Whitepaper §4.3</p>
+    <p>Knowing that a user prefers a particular bookstore is separate from the authority to buy from that bookstore account. Moving an ongoing purchase review is also different from moving the authority to pay. The transfer procedure the whitepaper proposes is as follows.</p>
+    <ul>
+      <li>Check again in the new environment which authority is needed.</li>
+      <li>Show the transfer result as imported items, excluded items, conflicting items and items that could not be checked.</li>
+      <li>If an old record conflicts with a recent explicit correction, the old record is not revived. Memory that was withdrawn or corrected is not revived either.</li>
+      <li>Imported sentences are reference data, not commands that grant new authority. Connection secrets are not moved inside a memory bundle.</li>
+      <li>Existing material is not deleted automatically before the user has checked the result in the new environment.</li>
+    </ul>
+    <blockquote><p>The final test of Portable Memory is not whether data can be exported, but whether the user can still control their context after moving to another environment.</p><cite>Whitepaper §4.3</cite></blockquote>
+    <p>This standard applies to Still itself. If it can connect many models but cannot be left, it has gained model independence but not enough user independence.</p>
+
+    <h2 id="context">Context is not memory</h2>
+    <p class="basis"><span>Basis</span> Contract. Compendium §5.1, 5.3, Development Constitution C5</p>
+    <p>Still separates context from memory. Context is the information given for one Work. Its usable scope and source are set, it expires, and it does not automatically become memory. Memory is the canonical record that Still manages.</p>
+    <p>A whole conversation, a model’s reasoning, search results and file content do not automatically become canonical memory. A package’s or external runtime’s internal state does not either. Memory that a third party wants to save stays a candidate (<code>MemoryCandidate</code>) until it is approved.</p>
+
+    <h2 id="policy">The current memory policy</h2>
+    <p class="basis"><span>Basis</span> Contract·Implemented. Compendium §7.4</p>
+    <p>At first, only what the owner explicitly asked to be remembered and then confirmed became canonical. In real use, though, being asked about every fact to remember was itself a bad experience. So the policy changed as follows.</p>
+    <div class="table-wrap" role="region" aria-labelledby="m1" tabindex="0">
+    <table>
+      <caption id="m1">Table 1. How the memory policy changed</caption>
+      <thead><tr><th scope="col">When</th><th scope="col">Decision</th><th scope="col">Content</th></tr></thead>
+      <tbody>
+        <tr><td>#597</td><th scope="row">Only explicit requests become canonical</th><td>An explicit “remember this” judgment and the owner’s “yes” make canonical memory; otherwise a candidate</td></tr>
+        <tr><td>#805 (09-28)</td><th scope="row">Owner-model upkeep</th><td>After a successful Work the judgment model proposes up to five facts to remember, distinguishing what the owner stated from what was inferred</td></tr>
+        <tr><td>#818, #836 (09-28)</td><th scope="row">Ask only once per Work</th><td>Fixed a double-ask bug and removed machinery text that described internal behavior</td></tr>
+        <tr><td>#918 (10-02)</td><th scope="row">Save without asking, tell, undo</th><td>For the owner’s own AI only, save immediately as canonical memory, with an exact undo. The manuscript describes a “Remembered: …” notice and a 7-day undo; an owner decision of November 17, 2026 removed the standalone notice, and the reply that saved the fact now says so in passing (Development Constitution C5)</td></tr>
+        <tr><td>#998 (10-04)</td><th scope="row">Self-review</th><td>After a failure or correction, the assistant reviews what it missed and saves one lesson as memory</td></tr>
+      </tbody>
+    </table>
+    </div>
+    <p class="source-line">Source: Still Compendium v0.1, §7.4. Abridged and restructured. Numbers are GitHub issues and PRs.</p>
+    <p>Saving immediately without asking applies only to the AI the owner chose. Third parties such as package tools and delegated specialists still save candidates. Values that look like passwords or tokens are not saved.</p>
+    <div class="caution" role="note"><p><strong>Note</strong> A remaining risk is also on record. A save induced by text on an untrusted web page can become current memory at once. Today this is mitigated only by attribution and undo; the defence against such attacks (injection) is parked.</p></div>
+
+    <h2 id="forget">Correct, forget, delete completely</h2>
+    <p class="basis"><span>Basis</span> Contract. Compendium §7.9</p>
+    <p>Correcting and forgetting memory happens in the conversation, without a management console. The contract separates three operations.</p>
+    <dl class="defs">
+      <dt>Correct</dt><dd>Fix it in conversation, as in “you remembered that wrong”. It distinguishes “it was wrong” from “it is no longer true”.</dd>
+      <dt>Forget</dt><dd>Stop using it right away, keep only a receipt without the content, allow an undo for 7 days, then purge.</dd>
+      <dt>Delete completely</dt><dd>Purge immediately with no undo, reporting success, partial success and failure distinctly.</dd>
+    </dl>
+    <p>Forgetting locally is not claimed to erase copies held by the AI provider, exported files or backups. These three operations are set by contract, but their implementation is not finished yet.</p>
+
+    <h2 id="open">Remaining problems</h2>
+    <p class="basis"><span>Source</span> Compendium ch. 24</p>
+    <ul>
+      <li>How to show how confident an agent is in a fact has not been settled. No standard or product defining this was found, and the design judgment so far is only to show it in a few categories instead of a number.</li>
+      <li>The correct, forget and delete contract and the research on forgetting at the database level are not yet connected to each other.</li>
+      <li>The current memory store records neither a validity period nor a retraction time.</li>
+    </ul>
+    <p>Other open questions are in <a href="limits.html">What is confirmed and open questions</a>.</p>
+
+    <section class="page-sources" aria-labelledby="page-sources-title">
+      <h2 id="page-sources-title">Sources for this page</h2>
+      <ul>
+        <li><a href="https://github.com/Jongtae/Still/blob/main/docs/whitepapers/whose-agent.ko.md">Whose Agent? (Korean) v0.3.1</a>: ch. 4</li>
+        <li><a href="https://github.com/Jongtae/Still/blob/main/docs/whitepapers/personal-agentos-compendium.en.md">Still Compendium v0.1</a>: §5.1, 5.3, 7.4, 7.9, ch. 24</li>
+        <li><a href="https://support.claude.com/en/articles/12123587-import-and-export-your-memory-from-claude">Anthropic, Import and export your memory from Claude</a></li>
+      </ul>
+    </section>
+    <nav class="pager" aria-label="Previous and next pages"><a class="prev" href="index.html"><span>Previous</span>Start here</a><a class="next" href="ai.html"><span>Next</span>Working with AI</a></nav>
+  </main>
+  <nav class="onpage" aria-labelledby="onpage-title">
+    <h2 id="onpage-title">On this page</h2>
+    <ol>
+      <li><a href="#levels">Three levels of moving memory</a></li>
+      <li><a href="#existing">How this differs from existing features</a></li>
+      <li><a href="#not-authority">Moving memory is not copying authority</a></li>
+      <li><a href="#context">Context is not memory</a></li>
+      <li><a href="#policy">The current memory policy</a></li>
+      <li><a href="#forget">Correct, forget, delete completely</a></li>
+      <li><a href="#open">Remaining problems</a></li>
+    </ol>
+  </nav>
+</div>
+<footer class="foot">
+  <p>This guide is a plain-language retelling of two manuscripts, written by an AI coding assistant at the project owner's request. It has had only that same AI's self-review, not review by an independent expert or a person. If it differs from the source, the source is right. It is not a promise of product features; what works now is in the <a href="https://github.com/Jongtae/Still/blob/main/docs/product-status.en.md">product status</a>.</p>
+  <p>Still is licensed <a href="https://github.com/Jongtae/Still/blob/main/LICENSE">AGPL-3.0-only</a>. This page has no sign-in, analytics or scripts. <a href="../../privacy.html">Privacy</a> <a href="../../terms.html">Terms</a></p>
+</footer>
+</body>
+</html>

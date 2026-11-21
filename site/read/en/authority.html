@@ -1,0 +1,157 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Authority, connections and evidence | Still Concept Guide</title>
+<meta name="description" content="This page explains the protection rules Still enforces today, the kinds of action, the order in which it looks for a needed capability, and the difference between saying &quot;done&quot; and having proof it was done.">
+<link rel="stylesheet" href="../../assets/read.css?v=1">
+</head>
+<body>
+<a class="skip" href="#main">Skip to main content</a>
+<header class="top">
+  <a class="brand" href="index.html">Still <span>Concept Guide</span></a>
+  <nav class="top-links" aria-label="Site"><a href="../../index.html">Home</a><a href="https://github.com/Jongtae/Still/blob/main/docs/whitepapers/README.md">Source</a><a href="https://github.com/Jongtae/Still">GitHub</a><a href="../ko/authority.html" lang="ko">한국어</a></nav>
+</header>
+<div class="layout">
+  <nav class="side" aria-label="Concept guide contents">
+    <ol>
+      <li><a href="index.html">Start here</a></li>
+      <li><a href="memory.html">Memory and personal state</a></li>
+      <li><a href="ai.html">Working with AI</a></li>
+      <li><a href="authority.html" aria-current="page">Authority, connections and evidence</a></li>
+      <li><a href="skills.html">Skills and expertise</a></li>
+      <li><a href="industry.html">Industry hypotheses and counterarguments</a></li>
+      <li><a href="history.html">Development history</a></li>
+      <li><a href="limits.html">What is confirmed and open questions</a></li>
+      <li><a href="glossary.html">Glossary</a></li>
+    </ol>
+  </nav>
+  <main id="main" class="doc">
+    <nav class="crumbs" aria-label="You are here"><ol><li><a href="index.html">Concept guide</a></li><li aria-current="page">Authority, connections and evidence</li></ol></nav>
+    <h1>Authority, connections and evidence</h1>
+    <p class="summary">This page explains the protection rules Still enforces today, the kinds of action, the order in which it looks for a needed capability, and the difference between saying "done" and having proof it was done.</p>
+    <p class="meta">Manuscripts: Whitepaper ch. 7 and 9, Compendium ch. 10–11. Last updated October 14, 2026.</p>
+
+    <h2 id="pilot">The protection rules enforced today</h2>
+    <p class="basis"><span>Basis</span> Contract and implemented. Compendium 10.1–10.2</p>
+    <p>This is a pilot: one owner, using their own machine and their own accounts. In this phase two rules are enforced on every request.</p>
+    <ul>
+      <li>Secrets never enter a model prompt, a log or Evidence.</li>
+      <li>Each payment needs the owner's approval.</li>
+    </ul>
+    <p>Folder grants, owner scope, secrets, per-action payment approval, no replay of the same action and authority over memory also stay as they were. What was removed: per-request judgments about whether information is sensitive, re-asking about ordinary search terms, and per-provider blocks. These were deferred to a separately started hardening program.</p>
+    <p>Instead, each Work leaves an information-use audit. It shows which owner information (profile, memory, calendar, files, current context, conversation) was used, which AI, route and model it went to, and which queries a web search used if one ran.</p>
+    <div class="caution" role="note"><p><strong>Note</strong> An audit tells you what happened; it does not prevent it. The proposal for injection and exfiltration defences against the combination of private data, internet access and autonomous action was parked by owner decision on September 28, 2026.</p></div>
+
+    <h2 id="effects">Kinds of action</h2>
+    <p class="basis"><span>Basis</span> Contract and implemented. Compendium 10.3</p>
+    <p>Reading public information, changing a cart or a hold, entering identity details, confirming a reservation, sending a message and paying are different kinds of action, even when a website handles them in one flow. A request to look something up does not grant cart or payment authority. If the request or the authority changes, an earlier approval that no longer covers the change cannot be used.</p>
+    <p>Payment protection does not rely on the model's judgment. Typing into a card number, CVC or OTP field always needs owner approval, whatever the model calls the action. The model's own label for an action and an MCP server's "read-only" hint are treated as hints only. Such a label can add a requirement, but never remove one.</p>
+
+    <h2 id="capabilities">The order for finding a capability</h2>
+    <p class="basis"><span>Basis</span> Contract and implemented. Compendium 11.2</p>
+    <p>When a Work needs a capability it lacks, code does not decide in advance, task by task, which service to use. The contract sets only the order of places the AI looks.</p>
+    <ol>
+      <li>AI ecosystem capabilities: connectors, MCP servers and plugins already present, or the official MCP Registry and vendor directories.</li>
+      <li>The service's own developer documentation and API, and maintained public implementations.</li>
+      <li>Skills: public skills first, then Still reference skills. A skill says "how to do it"; it is never authority.</li>
+      <li>Generic channels: a signed-in browser, API reads that use a secret slot, sandboxed code runs.</li>
+      <li>Building something new, only for a concrete unmet contract after a review of existing solutions.</li>
+    </ol>
+    <p>This order is the default when other things are equal. In practice the choice also weighs the owner's install and registration burden, whether a route is official, standard and maintained, whether it matches the scope needed, how secrets are handled and how reliable it is. The capability search stage only finds information; it installs, connects and signs in to nothing.</p>
+
+    <h2 id="records">Words and proof</h2>
+    <p class="basis"><span>Basis</span> Proposal. Whitepaper 7.1</p>
+    <p>Suppose an agent said "done" and the result is not there. The agent may not have sent the request. The service may have received it without applying it. It may have been applied and then changed again. What is needed is not an agent that remembers confidently but evidence that separates request, processing, observation and later change.</p>
+    <div class="table-wrap" role="region" aria-labelledby="r1" tabindex="0">
+    <table>
+      <caption id="r1">Table 1. Kinds of record and what they can check</caption>
+      <thead><tr><th scope="col">Kind of record</th><th scope="col">What it checks</th><th scope="col">What it cannot settle alone</th></tr></thead>
+      <tbody>
+        <tr><th scope="row">Execution request record</th><td>Which actor submitted which request</td><td>Whether the request was actually applied</td></tr>
+        <tr><th scope="row">Observation record</th><td>What screen or response was seen at a given time</td><td>The service's full internal processing and change history</td></tr>
+        <tr><th scope="row">Service processing receipt</th><td>What the service confirmed it did with which request</td><td>Issuer error or falsehood; the current state afterwards</td></tr>
+        <tr><th scope="row">Ledger inclusion proof</th><td>Whether a record was included in a verifiable structure</td><td>Truth of the content; whether every event was recorded</td></tr>
+      </tbody>
+    </table>
+    </div>
+    <p class="source-line">Source: Whose Agent? (Korean) v0.3.1, section 7.1. Table reproduced.</p>
+    <p class="table-note">This table is not a ranking from weak to strong evidence; it separates evidence that answers different questions.</p>
+    <p>Digital signatures do not remove these boundaries either. The W3C Verifiable Credentials data model also states that verifiability does not mean the claims inside are true.</p>
+
+    <h2 id="cart-example">Example: a cart record</h2>
+    <p class="basis"><span>Basis</span> Proposal. Whitepaper 7.2</p>
+    <div class="caution" role="note"><p><strong>Note</strong> This is a design case that assumes a store provides processing receipts and change history. It does not mean any particular store, or Still today, supports this.</p></div>
+    <ol class="steps">
+      <li><strong>10:00.</strong> Still submits request R1 to add milk. The store issues a processing receipt, with the request number, saying the cart moved from version 41 to 42.</li>
+      <li><strong>11:00.</strong> A request R2 to remove the milk is submitted from the mobile app on the same account. The store leaves a separate receipt saying the cart moved from version 42 to 43.</li>
+      <li><strong>13:00.</strong> The user asks why the milk is not there. Still checks the two receipts and the state at the time of the lookup, then answers.</li>
+    </ol>
+    <blockquote><p>According to the service's records, the 10:00 request to add it was applied, and a removal submitted from this account's mobile app at 11:00 was applied. A check at 13:00 shows there is no milk.</p><cite>Example answer, Whitepaper 7.2</cite></blockquote>
+    <p>This explanation is different from "I think I added it". It also does not assert "you deleted it yourself", because the records identify the account and the client path, not the person who actually acted.</p>
+    <blockquote><p>That a past action succeeded is different from its result still holding now. An authenticated account, a client, a delegated agent and an actual person must not be treated as the same actor.</p><cite>Whitepaper 7.2</cite></blockquote>
+
+    <h2 id="ledgers">Ledgers and signatures</h2>
+    <p class="basis"><span>Basis</span> Proposal. Whitepaper 7.3–7.4</p>
+    <ul>
+      <li>Missing records matter as much as altered ones. If Still records only its own requests and not the user's app actions, it cannot explain how things changed. Every path that changes the same object must leave a common processing and change record.</li>
+      <li>So the whitepaper proposes that the service that actually changes the state be responsible for producing the evidence along with the change, rather than having an agent write a record after it has worked.</li>
+      <li>A blockchain is one option for preserving evidence, not a device that creates facts. Writing to a ledger does not check whether the content is true.</li>
+      <li>Verifiable record structures exist, such as Certificate Transparency (RFC 9162) and the SCITT architecture (RFC 9943), but proof of registration does not guarantee that the content is true or that everything was recorded.</li>
+    </ul>
+
+    <h2 id="portable-proof">Portable execution evidence</h2>
+    <p class="basis"><span>Basis</span> Proposal. Whitepaper 7.5</p>
+    <p>When changing agents, users should be able to take, as far as needed, not only preferences and conversations but the processing evidence for the work being handed over. The new agent should not accept the previous agent's summary as fact but re-check it against preserved originals and issuer information. Moving evidence does not create new authority to act. Verifiability does not mean publishing every record either.</p>
+    <blockquote><p>A trustworthy agent ecosystem is not one that assumes every participant is always right. It is one in which the remaining evidence can still be compared when participants are wrong, lose their memory or are replaced.</p><cite>Whitepaper 7.6</cite></blockquote>
+
+    <h2 id="truthfulness">The repository's truthfulness rules</h2>
+    <p class="basis"><span>Basis</span> Contract, implemented and observed. Compendium 10.8</p>
+    <p>What Still can do internally, without cooperation from outside services, is already set as rules.</p>
+    <ul>
+      <li>Progress and action receipts are built only from observed Work and tool events. Requested, observed, failed and unknown are kept distinct.</li>
+      <li>The effect of an action on an outside service is recorded as none, confirmed or unknown. An action whose result is unknown says so, and the same action is never silently re-run.</li>
+      <li>No invented ETA, tool execution, model identity or successful external effect.</li>
+      <li>Nothing is called "delivered" without an unambiguous confirmation that the other service received it.</li>
+    </ul>
+    <p>These rules actually caught a bug. In the skill evaluation of October 3, 2026, the AI saw that the owner's store session was signed out, asked for sign-in without touching the cart, and honestly answered that nothing was added. Yet the Work was recorded as a success although it was waiting for a sign-in. That defect is left as a separate follow-up.</p>
+
+    <h2 id="interop">Connection and independence</h2>
+    <p class="basis"><span>Basis</span> Hypothesis. Whitepaper ch. 9</p>
+    <p>MCP covers how AI applications exchange with external tools and data, and A2A covers communication and collaboration between agents on different systems. The whitepaper does not aim to replace these protocols. Its question is who chooses what can be connected, who manages personal context and authority among those connections, and how the user can change the whole environment.</p>
+    <blockquote><p>The product meaning of interoperability lies not only in a longer list of connections but in the user being able to form, adjust and end relationships.</p><cite>Whitepaper ch. 9</cite></blockquote>
+
+    <section class="page-sources" aria-labelledby="page-sources-title">
+      <h2 id="page-sources-title">Sources for this page</h2>
+      <ul>
+        <li><a href="https://github.com/Jongtae/Still/blob/main/docs/whitepapers/whose-agent.ko.md">Whose Agent? (Korean) v0.3.1</a>: ch. 7 and 9</li>
+        <li><a href="https://github.com/Jongtae/Still/blob/main/docs/whitepapers/personal-agentos-compendium.en.md">Still Compendium v0.1</a>: ch. 10–11</li>
+        <li><a href="https://www.w3.org/TR/vc-data-model-2.0/">W3C, Verifiable Credentials Data Model v2.0</a></li>
+        <li><a href="https://www.rfc-editor.org/rfc/rfc9162.html">IETF, RFC 9162</a>, <a href="https://www.rfc-editor.org/rfc/rfc9943.html">RFC 9943</a></li>
+        <li><a href="https://modelcontextprotocol.io/docs/2026-07-28/learn/architecture">Model Context Protocol, Architecture overview</a>, <a href="https://a2a-protocol.org/latest/">A2A Protocol</a></li>
+      </ul>
+    </section>
+    <nav class="pager" aria-label="Previous and next pages"><a class="prev" href="ai.html"><span>Previous</span>Working with AI</a><a class="next" href="skills.html"><span>Next</span>Skills and expertise</a></nav>
+  </main>
+  <nav class="onpage" aria-labelledby="onpage-title">
+    <h2 id="onpage-title">On this page</h2>
+    <ol>
+      <li><a href="#pilot">The protection rules enforced today</a></li>
+      <li><a href="#effects">Kinds of action</a></li>
+      <li><a href="#capabilities">The order for finding a capability</a></li>
+      <li><a href="#records">Words and proof</a></li>
+      <li><a href="#cart-example">Example: a cart record</a></li>
+      <li><a href="#ledgers">Ledgers and signatures</a></li>
+      <li><a href="#portable-proof">Portable execution evidence</a></li>
+      <li><a href="#truthfulness">The repository's truthfulness rules</a></li>
+      <li><a href="#interop">Connection and independence</a></li>
+    </ol>
+  </nav>
+</div>
+<footer class="foot">
+  <p>This guide is a plain-language retelling of two manuscripts, written by an AI coding assistant at the project owner's request. It has had only that same AI's self-review, not review by an independent expert or a person. If it differs from the source, the source is right. It is not a promise of product features; what works now is in the <a href="https://github.com/Jongtae/Still/blob/main/docs/product-status.en.md">product status</a>.</p>
+  <p>Still is licensed <a href="https://github.com/Jongtae/Still/blob/main/LICENSE">AGPL-3.0-only</a>. This page has no sign-in, analytics or scripts. <a href="../../privacy.html">Privacy</a> <a href="../../terms.html">Terms</a></p>
+</footer>
+</body>
+</html>

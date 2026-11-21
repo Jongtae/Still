@@ -1,0 +1,96 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Glossary | Still Concept Guide</title>
+<meta name="description" content="The main terms used in this guide, based on the Still Compendium glossary and the whitepaper definitions.">
+<link rel="stylesheet" href="../../assets/read.css?v=1">
+</head>
+<body>
+<a class="skip" href="#main">Skip to main content</a>
+<header class="top">
+  <a class="brand" href="index.html">Still <span>Concept Guide</span></a>
+  <nav class="top-links" aria-label="Site"><a href="../../index.html">Home</a><a href="https://github.com/Jongtae/Still/blob/main/docs/whitepapers/README.md">Source</a><a href="https://github.com/Jongtae/Still">GitHub</a><a href="../ko/glossary.html" lang="ko">한국어</a></nav>
+</header>
+<div class="layout">
+  <nav class="side" aria-label="Concept guide contents">
+    <ol>
+      <li><a href="index.html">Start here</a></li>
+      <li><a href="memory.html">Memory and personal state</a></li>
+      <li><a href="ai.html">Working with AI</a></li>
+      <li><a href="authority.html">Authority, connections and evidence</a></li>
+      <li><a href="skills.html">Skills and expertise</a></li>
+      <li><a href="industry.html">Industry hypotheses and counterarguments</a></li>
+      <li><a href="history.html">Development history</a></li>
+      <li><a href="limits.html">What is confirmed and open questions</a></li>
+      <li><a href="glossary.html" aria-current="page">Glossary</a></li>
+    </ol>
+  </nav>
+  <main id="main" class="doc">
+    <nav class="crumbs" aria-label="You are here"><ol><li><a href="index.html">Concept guide</a></li><li aria-current="page">Glossary</li></ol></nav>
+    <h1>Glossary</h1>
+    <p class="summary">The main terms used in this guide. Most are based on the glossary in Appendix A of the Still Compendium and on definitions in the whitepaper.</p>
+    <p class="meta">Manuscripts: Whitepaper ch. 2, Compendium Appendix A. Last updated October 14, 2026.</p>
+
+    <h2 id="terms">Main terms</h2>
+    <dl class="defs terms">
+      <dt id="personal-agent">Personal agent</dt><dd>A system that remembers the user's goals and context and carries work forward across several tools. <a href="index.html#hypothesis">Details</a> <span class="ref">Whitepaper ch. 2</span></dd>
+      <dt id="still">Still</dt><dd>An operating environment that keeps a person's context, entrusted authority and work in progress together over time. It does not mean replacing the computer's operating system. <a href="index.html#hypothesis">Details</a> <span class="ref">Whitepaper ch. 2</span></dd>
+      <dt id="owner">Owner</dt><dd>The one person Still works for and protects. Authority never passes to a package or a marketplace. This guide says "owner" when stating Still's rules and "user" when carrying over the whitepaper's industry discussion. <a href="index.html#audience">Details</a> <span class="ref">Compendium 5.1</span></dd>
+      <dt id="agent">Agent</dt><dd>An AI system that carries work forward on the user's behalf. <a href="index.html#hypothesis">Details</a> <span class="ref">Whitepaper ch. 2</span></dd>
+      <dt id="operating-context">Operating context</dt><dd>The information that builds up between a person and an agent. It includes what was wanted, preferences that were corrected, the scope that was allowed, work in progress and what actually changed. <a href="index.html#hypothesis">Details</a> <span class="ref">Whitepaper ch. 2</span></dd>
+      <dt id="context">Context</dt><dd>Information issued for one piece of work. Its permitted use and source are fixed, and it never becomes memory automatically. <a href="memory.html#context">Details</a> <span class="ref">Compendium 5.1, 5.3</span></dd>
+      <dt id="memory">Memory</dt><dd>The canonical memory that Still manages. Memory that a third party wants to save stays a candidate (MemoryCandidate) until accepted. <a href="memory.html#context">Details</a> <span class="ref">Compendium 5.1, 7.4</span></dd>
+      <dt id="canonical">Canonical record</dt><dd>The record that serves as the standard among several copies or candidates. Still manages the canonical record of memory. <a href="memory.html#context">Details</a> <span class="ref">Compendium 5.1</span></dd>
+      <dt id="portable-memory">Portable Memory</dt><dd>Carrying over not only the records but the continuity of meaning and use, and letting the user keep control of context after the move. <a href="memory.html#levels">Details</a> <span class="ref">Whitepaper ch. 4</span></dd>
+      <dt id="grant">Grant</dt><dd>The only record that confers authority. It fixes who may do what, in which Work, how far, where to and until when, and anything ambiguous is refused. <a href="authority.html#effects">Details</a> <span class="ref">Compendium 5.1</span></dd>
+      <dt id="mandate">Mandate</dt><dd>The goal, scope and constraints the owner actually entrusted. It is not authority by itself. <a href="limits.html#questions">Details</a> <span class="ref">Compendium 11.4, 13.3</span></dd>
+      <dt id="work">Work</dt><dd>One piece of work that Still manages from start to end. Only Still settles whether it has ended. <a href="authority.html#truthfulness">Details</a> <span class="ref">Compendium 5.4</span></dd>
+      <dt id="evidence">Evidence and evidence classes</dt><dd>The sealed records Still keeps, which cannot be changed later. They state what kind of basis they are, and a strong conclusion is never drawn from weak evidence. Distinct from a service's "processing receipt". <a href="index.html#evidence">Details</a> <span class="ref">Compendium 5.5</span></dd>
+      <dt id="decision-model">Decision model</dt><dd>The model that, per request, chooses the AI tool and model, writes the brief and hands the work over, and evaluates the result. It does not do the work itself and does not create authority. The manuscripts also call it the decision engine, the judgment AI or the orchestrator. <a href="ai.html#engine">Details</a> <span class="ref">Compendium ch. 6</span></dd>
+      <dt id="worker">Worker</dt><dd>The AI tool or model to which the decision model hands the work. This guide mostly says "the AI that does the work". <a href="ai.html#engine">Details</a> <span class="ref">Compendium ch. 6</span></dd>
+      <dt id="brief">Brief</dt><dd>The goal, relevant context and completion criteria the decision model hands to the AI that does the work. <a href="ai.html#engine">Details</a> <span class="ref">Compendium 6.2</span></dd>
+      <dt id="presence">Presence</dt><dd>The experience of staying connected to the same counterpart who knows you, across many turns, changes of tool and AI, failures and restarts. <a href="ai.html#presence">Details</a> <span class="ref">Compendium 8.2</span></dd>
+      <dt id="projection">Projection</dt><dd>Internal concepts leaking into the owner's conversation and screens. <a href="ai.html#presence">Details</a> <span class="ref">Compendium 8.2</span></dd>
+      <dt id="pilot-posture">Pilot posture</dt><dd>The pilot phase's principle of enforcing only secret protection and payment approval on every request. <a href="authority.html#pilot">Details</a> <span class="ref">Compendium 10.1</span></dd>
+      <dt id="information-use-audit">Information-use audit</dt><dd>A record showing which owner information a Work used and where it went. <a href="authority.html#pilot">Details</a> <span class="ref">Compendium 10.2</span></dd>
+      <dt id="processing-receipt">Processing receipt</dt><dd>A record issued by a service confirming it processed a request with a given result. Distinct from the "evidence" Still keeps. <a href="authority.html#records">Details</a> <span class="ref">Whitepaper 7.1</span></dd>
+      <dt id="ledger-inclusion-proof">Ledger inclusion proof</dt><dd>Proof that a record was included in a verifiable structure. It does not guarantee that the content is true. <a href="authority.html#records">Details</a> <span class="ref">Whitepaper 7.1</span></dd>
+      <dt id="portable-execution-evidence">Portable execution evidence</dt><dd>Moving, as far as needed, the processing evidence for work being handed over when changing agents. <a href="authority.html#portable-proof">Details</a> <span class="ref">Whitepaper 7.5</span></dd>
+      <dt id="skill">Skill</dt><dd>Versioned knowledge of how to do a task, which the owner's AI chooses to load when needed. It is not authority. <a href="authority.html#capabilities">Details</a> <span class="ref">Compendium 6.5, ch. 12</span></dd>
+      <dt id="pages-principle">Pages principle</dt><dd>Pages are used only for results and necessary inputs; management is done in conversation. <a href="ai.html#presence">Details</a> <span class="ref">Compendium 8.6</span></dd>
+    </dl>
+
+    <h2 id="about">About this guide</h2>
+    <dl class="defs">
+      <dt>Manuscripts</dt><dd>Whose Agent? (Korean) v0.3.1 and Still Compendium v0.1. If this guide differs from the source, the source is right.</dd>
+      <dt>Writing and review</dt><dd>At the project owner's request, an AI coding assistant split the manuscripts by topic and retold them in plain language. It has had only that same AI's self-review, not review by an independent expert or a person.</dd>
+      <dt>Reproduced tables</dt><dd>"Table reproduced" means the manuscript's table was copied as it is; "abridged or restructured" means sentences were shortened or columns regrouped.</dd>
+      <dt>Numbers</dt><dd>This guide creates no new surveys, success rates or market sizes. It uses only the manuscripts' tables, dated observations and public sources with citations.</dd>
+      <dt>Feedback</dt><dd>Please leave objections or other ideas in <a href="https://github.com/Jongtae/Still/discussions">GitHub Discussions</a>.</dd>
+    </dl>
+
+    <section class="page-sources" aria-labelledby="page-sources-title">
+      <h2 id="page-sources-title">Sources for this page</h2>
+      <ul>
+        <li><a href="https://github.com/Jongtae/Still/blob/main/docs/whitepapers/whose-agent.ko.md">Whose Agent? (Korean) v0.3.1</a>: ch. 2</li>
+        <li><a href="https://github.com/Jongtae/Still/blob/main/docs/whitepapers/personal-agentos-compendium.en.md">Still Compendium v0.1</a>: Appendix A, Glossary</li>
+      </ul>
+    </section>
+    <nav class="pager" aria-label="Previous and next pages"><a class="prev" href="limits.html"><span>Previous</span>What is confirmed and open questions</a></nav>
+  </main>
+  <nav class="onpage" aria-labelledby="onpage-title">
+    <h2 id="onpage-title">On this page</h2>
+    <ol>
+      <li><a href="#terms">Main terms</a></li>
+      <li><a href="#about">About this guide</a></li>
+    </ol>
+  </nav>
+</div>
+<footer class="foot">
+  <p>This guide is a plain-language retelling of two manuscripts, written by an AI coding assistant at the project owner's request. It has had only that same AI's self-review, not review by an independent expert or a person. If it differs from the source, the source is right. It is not a promise of product features; what works now is in the <a href="https://github.com/Jongtae/Still/blob/main/docs/product-status.en.md">product status</a>.</p>
+  <p>Still is licensed <a href="https://github.com/Jongtae/Still/blob/main/LICENSE">AGPL-3.0-only</a>. This page has no sign-in, analytics or scripts. <a href="../../privacy.html">Privacy</a> <a href="../../terms.html">Terms</a></p>
+</footer>
+</body>
+</html>

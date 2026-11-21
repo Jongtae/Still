@@ -1,0 +1,152 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>What is confirmed and open questions | Still Concept Guide</title>
+<meta name="description" content="This page separates what the two manuscripts confirmed from what they did not. It sets out Still's evidence boundary, the verification plan not yet carried out, and the open questions.">
+<link rel="stylesheet" href="../../assets/read.css?v=1">
+</head>
+<body>
+<a class="skip" href="#main">Skip to main content</a>
+<header class="top">
+  <a class="brand" href="index.html">Still <span>Concept Guide</span></a>
+  <nav class="top-links" aria-label="Site"><a href="../../index.html">Home</a><a href="https://github.com/Jongtae/Still/blob/main/docs/whitepapers/README.md">Source</a><a href="https://github.com/Jongtae/Still">GitHub</a><a href="../ko/limits.html" lang="ko">한국어</a></nav>
+</header>
+<div class="layout">
+  <nav class="side" aria-label="Concept guide contents">
+    <ol>
+      <li><a href="index.html">Start here</a></li>
+      <li><a href="memory.html">Memory and personal state</a></li>
+      <li><a href="ai.html">Working with AI</a></li>
+      <li><a href="authority.html">Authority, connections and evidence</a></li>
+      <li><a href="skills.html">Skills and expertise</a></li>
+      <li><a href="industry.html">Industry hypotheses and counterarguments</a></li>
+      <li><a href="history.html">Development history</a></li>
+      <li><a href="limits.html" aria-current="page">What is confirmed and open questions</a></li>
+      <li><a href="glossary.html">Glossary</a></li>
+    </ol>
+  </nav>
+  <main id="main" class="doc">
+    <nav class="crumbs" aria-label="You are here"><ol><li><a href="index.html">Concept guide</a></li><li aria-current="page">What is confirmed and open questions</li></ol></nav>
+    <h1>What is confirmed and open questions</h1>
+    <p class="summary">This page separates what the two manuscripts confirmed from what they did not. It sets out Still's evidence boundary, the verification plan not yet carried out, and the open questions.</p>
+    <p class="meta">Manuscripts: Whitepaper ch. 12–13, Compendium ch. 22–24. Last updated October 14, 2026.</p>
+
+    <h2 id="case">A case, not a proof</h2>
+    <p class="basis"><span>Basis</span> Observed. Whitepaper ch. 12, Compendium 22.1</p>
+    <p>The two manuscripts do not treat Still as a finished product that proves the industry's future. They treat it as a development case that makes the industry's questions concrete and draws out what needs verifying.</p>
+    <p>The real-use research of September 23, 2026 showed two things. Having an internal structure that manages task execution is separate from the user feeling they work with a persistent counterpart. Having a selection screen is also different from that selection actually taking effect.</p>
+    <blockquote><p>One project's observations do not prove how often something happens across the industry, but they can show concretely what the industry needs to verify.</p><cite>Whitepaper ch. 12</cite></blockquote>
+
+    <h2 id="boundary">What is confirmed so far</h2>
+    <p>The Compendium regroups what it covered by evidence class. The meaning of each label is in <a href="index.html#evidence">Start here</a>.</p>
+    <div class="table-wrap" role="region" aria-labelledby="l1" tabindex="0">
+    <table>
+      <caption id="l1">Table 1. Examples of what is confirmed, by evidence class</caption>
+      <thead><tr><th scope="col">Class</th><th scope="col">Examples of what is confirmed</th></tr></thead>
+      <tbody>
+        <tr><th scope="row">Observed</th><td>Public release v1.3.0 (Homebrew and install script). Real-use recording excerpts in the README (a remembered taste, a continued search, confirming a cart after sign-in, a cart conversation continuing across an AI switch). The first skill-evaluation sample's sign-in request and the truthfulness bug it found. Tool-call decision points in Claude Code and Codex. The compatibility test of the code-run sandbox</td></tr>
+        <tr><th scope="row">Implemented</th><td>The decision-engine boundary and routes, the three orchestration rules, the information-use audit, saving memory without asking with undo, settings in conversation, skill supply, pinning and revocation, connection precedence and trust records, the continuity acceptance criteria, code run phase 1. All on unit and integration tests</td></tr>
+        <tr><th scope="row">Contract</th><td>Kernel concepts and schemas, owner control rights, Presence principles, current context, correct/forget/delete, the delegation contract, separating role and mandate</td></tr>
+        <tr><th scope="row">Proposal</th><td>The owner-model ledger and decision-journal schema, memory slots and retrieval, portable execution evidence, the role ontology</td></tr>
+      </tbody>
+    </table>
+    </div>
+    <p class="source-line">Source: Still Compendium v0.1, section 22.2. Table reproduced.</p>
+
+    <h2 id="not-claimed">What is not claimed today</h2>
+    <p class="basis"><span>Basis</span> Contract. Compendium 22.2, product status document</p>
+    <p>The product status document makes no current claim for the following.</p>
+    <ul>
+      <li>Autonomous purchasing</li>
+      <li>Arbitrary computer use</li>
+      <li>Universal web verification</li>
+      <li>Live stock and checkout verification</li>
+      <li>Arbitrary third-party package execution</li>
+      <li>A public marketplace</li>
+    </ul>
+    <p>Some things have also not yet been observed: the decision model actually running on the owner's accounts, the cause of the mismatch between real Telegram behavior and the automated tests' expectations, how well a model follows a skill's method on real sites, and actual continuation, through to the end, of a service request that was not prepared in advance.</p>
+
+    <h2 id="agenda">The verification agenda</h2>
+    <p class="basis"><span>Basis</span> Proposal. Whitepaper ch. 13</p>
+    <p>If it stops at listing principles that are easy to agree with, this direction will not become an empirical claim. It needs experiments that actually compare. The items the whitepaper proposes:</p>
+    <div class="table-wrap" role="region" aria-labelledby="l2" tabindex="0">
+    <table>
+      <caption id="l2">Table 2. Comparison experiments and observed indicators, by hypothesis</caption>
+      <thead><tr><th scope="col">Hypothesis</th><th scope="col">Comparison</th><th scope="col">Main indicators</th></tr></thead>
+      <tbody>
+        <tr><th scope="row">Moving memory reduces the real burden of switching</th><td>An environment with transferred context versus starting fresh</td><td>Time spent re-explaining, loss of meaning, wrongly applied memories, number of corrections</td></tr>
+        <tr><th scope="row">Model replacement and work continuity can be offered together</th><td>Resume the same work state after switching models</td><td>State preservation, completion quality, cost change, authority violations</td></tr>
+        <tr><th scope="row">Presence gives benefits beyond tone</th><td>Improving wording only versus improving continuity and recovery too</td><td>Recovery time, repeated explanation, understanding of state, error awareness</td></tr>
+        <tr><th scope="row">A collaborative agent is a useful mode in its own right</th><td>Manual work, full delegation and joint work compared</td><td>User effort, corrections applied, errors, acceptance of results</td></tr>
+        <tr><th scope="row">Skills can become sustainable professional services</th><td>General handling versus a professional skill</td><td>Total cost per successful result, maintenance burden, reuse and willingness to pay</td></tr>
+        <tr><th scope="row">Retained execution evidence helps separate causes after switching agents</th><td>Moving only a conversation summary versus also moving processing and change evidence</td><td>Accuracy of cause attribution, unfounded actor claims, detection of omissions, investigation time, cost of evidence</td></tr>
+      </tbody>
+    </table>
+    </div>
+    <p class="source-line">Source: Whose Agent? (Korean) v0.3.1, ch. 13. Table reproduced.</p>
+    <div class="caution" role="note"><p><strong>Note</strong> This table is not a table of results from experiments performed. Participants, repetitions, budget and prior criteria are not yet set.</p></div>
+    <p>The whitepaper also sets out evaluation conditions. It does not pick only successes: it includes failures during model switches, stale memories creeping in, expired authority, users changing course midway, and external effects that could not be confirmed. The criteria are set before the experiment, not after seeing results. A well-working integrated product is included as a comparison.</p>
+    <p>The whitepaper states that if experiments show the benefit of transfer is small, or the complexity and cost of an independent agent layer keep exceeding the benefit, the product strategy must change.</p>
+
+    <h2 id="questions">Open questions</h2>
+    <p class="basis"><span>Source</span> Compendium ch. 24</p>
+    <h3>Authority and protection</h3>
+    <ul>
+      <li>Can transparency replace prevention? The information-use audit tells you what happened but does not stop it, and injection and exfiltration defences are parked.</li>
+      <li>How temporary is the pilot? Pilot exceptions are layered over the base rules of several contracts, and the hardening program is not yet defined.</li>
+      <li>How does a mandate connect to existing Grants? Integrating it into actual behavior is deferred.</li>
+    </ul>
+    <h3>Judgment and orchestration</h3>
+    <ul>
+      <li>Mid-work corrections do not reach the decision model, so re-delegation can happen on a stale plan.</li>
+      <li>Restricting delegation to the main AI's family narrows the original idea considerably, and the recorded basis is a single owner decision.</li>
+      <li>Codex and Claude Code differ in how they handle outside connections and skills, so they are not controlled to the same degree.</li>
+    </ul>
+    <h3>Memory</h3>
+    <ul>
+      <li>How confidence should be expressed is not yet settled.</li>
+      <li>The three altitudes of forgetting do not yet mesh.</li>
+      <li>Today's memory store records no validity period or retraction time.</li>
+    </ul>
+    <h3>Skills and connections</h3>
+    <ul>
+      <li>There is not yet a mechanism for an AI to safely write a new skill for the owner.</li>
+      <li>The safest route may be the least capable. On connections where a step cannot be checked midway, changes are not offered at all, so real work is pushed onto other routes.</li>
+      <li>Whether the premise of using a service company's own official skill first actually holds has not been confirmed.</li>
+    </ul>
+    <h3>Product</h3>
+    <ul>
+      <li>Local first is not local only. Subscription AIs run on provider servers.</li>
+      <li>Truthfulness and apparent usefulness sometimes conflict. The rule of never saying "delivered" without a receipt can end many shares as "delivery uncertain".</li>
+      <li>Features judged finished in development have several times behaved differently in real use. Ways to narrow the distance between the test environment and real use are still being refined.</li>
+    </ul>
+
+    <section class="page-sources" aria-labelledby="page-sources-title">
+      <h2 id="page-sources-title">Sources for this page</h2>
+      <ul>
+        <li><a href="https://github.com/Jongtae/Still/blob/main/docs/whitepapers/whose-agent.ko.md">Whose Agent? (Korean) v0.3.1</a>: ch. 12–13</li>
+        <li><a href="https://github.com/Jongtae/Still/blob/main/docs/whitepapers/personal-agentos-compendium.en.md">Still Compendium v0.1</a>: ch. 22–24</li>
+        <li><a href="https://github.com/Jongtae/Still/blob/main/docs/product-status.en.md">Product status</a></li>
+      </ul>
+    </section>
+    <nav class="pager" aria-label="Previous and next pages"><a class="prev" href="history.html"><span>Previous</span>Development history</a><a class="next" href="glossary.html"><span>Next</span>Glossary</a></nav>
+  </main>
+  <nav class="onpage" aria-labelledby="onpage-title">
+    <h2 id="onpage-title">On this page</h2>
+    <ol>
+      <li><a href="#case">A case, not a proof</a></li>
+      <li><a href="#boundary">What is confirmed so far</a></li>
+      <li><a href="#not-claimed">What is not claimed today</a></li>
+      <li><a href="#agenda">The verification agenda</a></li>
+      <li><a href="#questions">Open questions</a></li>
+    </ol>
+  </nav>
+</div>
+<footer class="foot">
+  <p>This guide is a plain-language retelling of two manuscripts, written by an AI coding assistant at the project owner's request. It has had only that same AI's self-review, not review by an independent expert or a person. If it differs from the source, the source is right. It is not a promise of product features; what works now is in the <a href="https://github.com/Jongtae/Still/blob/main/docs/product-status.en.md">product status</a>.</p>
+  <p>Still is licensed <a href="https://github.com/Jongtae/Still/blob/main/LICENSE">AGPL-3.0-only</a>. This page has no sign-in, analytics or scripts. <a href="../../privacy.html">Privacy</a> <a href="../../terms.html">Terms</a></p>
+</footer>
+</body>
+</html>

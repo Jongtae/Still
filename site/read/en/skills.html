@@ -1,0 +1,130 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Skills and expertise | Still Concept Guide</title>
+<meta name="description" content="A skill is a bundle of content that the AI loads to learn how to do a task. This page covers the difference between a skill format and a tradable capability, the supply-first principle, the interface decision, what the first real-use sample does and does not show, and how packages and upstream projects are handled.">
+<link rel="stylesheet" href="../../assets/read.css?v=1">
+</head>
+<body>
+<a class="skip" href="#main">Skip to main content</a>
+<header class="top">
+  <a class="brand" href="index.html">Still <span>Concept Guide</span></a>
+  <nav class="top-links" aria-label="Site"><a href="../../index.html">Home</a><a href="https://github.com/Jongtae/Still/blob/main/docs/whitepapers/README.md">Source</a><a href="https://github.com/Jongtae/Still">GitHub</a><a href="../ko/skills.html" hreflang="ko" lang="ko">한국어</a></nav>
+</header>
+<div class="layout">
+  <nav class="side" aria-label="Concept guide contents">
+    <ol>
+      <li><a href="index.html">Start here</a></li>
+      <li><a href="memory.html">Memory and personal state</a></li>
+      <li><a href="ai.html">Working with AI</a></li>
+      <li><a href="authority.html">Authority, connections and evidence</a></li>
+      <li><a href="skills.html" aria-current="page">Skills and expertise</a></li>
+      <li><a href="industry.html">Industry hypotheses and counterarguments</a></li>
+      <li><a href="history.html">Development history</a></li>
+      <li><a href="limits.html">What is confirmed and open questions</a></li>
+      <li><a href="glossary.html">Glossary</a></li>
+    </ol>
+  </nav>
+  <main id="main" class="doc">
+    <nav class="crumbs" aria-label="You are here"><ol><li><a href="index.html">Concept Guide</a></li><li aria-current="page">Skills and expertise</li></ol></nav>
+    <h1>Skills and expertise</h1>
+    <p class="summary">A skill is a bundle of content that the AI loads to learn how to do a task. This page covers the difference between a skill format and a tradable capability, the supply-first principle, the interface decision, what the first real-use sample does and does not show, and how packages and upstream projects are handled.</p>
+    <p class="meta">Manuscripts: Whitepaper ch. 8–9, Compendium ch. 12. Last updated October 14, 2026.</p>
+
+    <h2 id="format">A format is not a capability</h2>
+    <p class="basis"><span>Basis</span> Hypothesis. Whitepaper ch. 8, Compendium 12.1</p>
+    <p>The public Agent Skills format bundles a <code>SKILL.md</code> of instructions with optional scripts, references and templates as a unit for distributing expertise and procedures. But the whitepaper <strong>distinguishes a distributable format from a tradable capability</strong>. Providing a file that describes how to do a job, maintaining it so it works in a given environment, verifying the quality of results and supporting failures are different products.</p>
+    <p>A "receipt organizing skill" name alone does not tell a buyer what they get: which inputs it handles, which tools it needs, which models and environments it was tested on, how it checks for duplicates and omissions, and who maintains it when a service changes.</p>
+    <blockquote><p>The purpose of a skill economy is not to rename every service an agent but to make professional capability discoverable, delegable and verifiable.</p><cite>Compendium 12.1</cite></blockquote>
+    <p>A skill market can also create new lock-in. Even if the file format is open, competition is limited if the required runtime, reputation, payment and access to user context are tied to one business. Not every skill needs to be a dynamically reasoning agent either; software running a stable procedure, fixed validation rules or a human-reviewed professional service may fit better. Execution evidence can be part of the grounds for confirming capability, but issuing evidence is not a quality guarantee or proof of user satisfaction.</p>
+
+    <h2 id="supply">Supply first, adapt second, learn only the gaps</h2>
+    <p class="basis"><span>Basis</span> Contract. Compendium 12.2</p>
+    <p>On October 1 the owner said the AI should not have to rediscover a site's mechanics by trial and error every time it repeats a job. Someone may already have built a skill for it, or the service may publish one officially. The principle of the skill supply program was <strong>supply first, adapt second, learn only the gaps</strong>.</p>
+    <p>Its fourteen requirements compress this project's way of thinking. Supply comes before per-user learning. Discovery is bounded and its results are reused. Importing a skill, connecting a tool and delegating a task are different integration modes. A skill's allowed-tools marking grants nothing. Reuse methods, re-read facts. Reconcile with current state before replaying. Knowledge is not authority: sharing a public skill with family is not sharing accounts or history. A single successful trace is not automatically promoted to a trusted skill. Additions preserve existing behaviour.</p>
+    <p>The owner also asked to preserve behaviour that already worked, such as the cart, and not to compensate for a big redesign with token-hungry tests. So the program was reshaped around interface-first design and bounded verification, not a rebuild.</p>
+
+    <h2 id="interface">The interface decision</h2>
+    <p class="basis"><span>Basis</span> Contract, Implemented. Compendium 12.3</p>
+    <p>The decision record defined a skill like this: <strong>a skill is optional, versioned knowledge carried by an existing AgentPackage, not a new executor or permission.</strong> The worker reaches the content through two effect-free host actions (<code>skill_load</code> and <code>skill_resource</code>). They are defined in one place, so the direct API, Codex and Claude Code routes all get them identically. Foreign formats are normalized once on acquisition. Rollout was staged so that, with skills off, the tool surface is byte-identical to before skills existed. Per-site strategy classes, site inheritance trees, mandatory specialist chains, translator agents and skill-specific verifiers were not adopted.</p>
+    <p>The reuse review was kept with exact revisions.</p>
+    <div class="table-wrap" role="region" aria-labelledby="s1" tabindex="0">
+    <table>
+      <caption id="s1">Table 1. Reuse review for the skill interface</caption>
+      <thead><tr><th scope="col">Candidate</th><th scope="col">Decision</th><th scope="col">Reason</th></tr></thead>
+      <tbody>
+        <tr><th scope="row">Agent Skills specification</th><td>Adopt</td><td>The format and its progressive-disclosure model. Still execution metadata stays outside it</td></tr>
+        <tr><th scope="row"><code>skills-ref</code></th><td>Rejected as a runtime dependency</td><td>Describes itself as "alpha, not for production". Used only as a conformance reference in tests</td></tr>
+        <tr><th scope="row">Microsoft Agent Framework <code>SkillsProvider</code></th><td>Adapt the semantics only</td><td>Follow its path-containment and symlink rules, but its own agent loop and approval layer duplicate Still authority</td></tr>
+        <tr><th scope="row">PyYAML</th><td>Adopt</td><td>Used only through a <code>SafeLoader</code> subclass that rejects duplicate keys. The feature's only new dependency</td></tr>
+        <tr><th scope="row"><code>python-frontmatter</code></th><td>Rejected</td><td>Adds no needed contract and silently accepts duplicate keys</td></tr>
+        <tr><th scope="row">skills.sh CLI, Hermes Skills Hub</th><td>Adapt conventions only</td><td>Source-spec shape, archive caps, quarantine and trust tiers. Not the CLI itself, and its hashes and regex scans are not proof of safety</td></tr>
+      </tbody>
+    </table>
+    </div>
+    <p class="source-line">Source: Still Compendium v0.1, 12.3. Table reproduced.</p>
+    <p>Budgets were also placed inside the existing Work budget: at most 32 descriptors and 8 KB in the catalogue, three skill loads and eight resource reads per Work, and so on. The first external supplier was one public repository pinned to a commit, accepting only folders whose licence file is Apache-2.0. Skills without a licence file were marked <code>licence_unknown</code>, and source-available but not open-source skills were excluded.</p>
+    <p>The risk of an AI CLI quietly showing the worker unreviewed skills from the owner's home was found and closed. Codex is passed a setting that turns off skill-instruction inclusion, and Claude Code is passed a flag that disables slash commands. This was confirmed with a real <code>codex</code>, a fake model and a canary skill.</p>
+    <div class="caution" role="note"><p><strong>Note</strong> "Implemented" means confirmed by code and unit or integration tests. It does not mean skills work well on live accounts and live services.</p></div>
+
+    <h2 id="sample">The first real-use sample and the scope of claims</h2>
+    <p class="basis"><span>Basis</span> Observed, Implemented. Compendium 12.4</p>
+    <p>The skill evaluation begins by saying it is not a second test project. It maps existing evidence to the inventory, adds only the checks that were really missing, and states what remains unproven. The owner approved a live sample plan: four cases in sequence with the real Codex and a signed-in browser, changing only one product line, never paying, with caps on Works, turns, tool attempts and time, stopping at the first false completion or unrequested effect, and restoring the original state at the end.</p>
+    <p>The first run on October 3 stopped at the first case. The session was signed out, and the AI asked for sign-in at once without touching the cart. And a truthfulness bug appeared: the Work was recorded as succeeded. An answer inferring an account owner not present in the request was recorded as well.</p>
+    <p>So what can and cannot be claimed is clear.</p>
+    <div class="table-wrap" role="region" aria-labelledby="s2" tabindex="0">
+    <table>
+      <caption id="s2">Table 2. What is confirmed about skills and what is not claimed</caption>
+      <thead><tr><th scope="col">Class</th><th scope="col">Content</th></tr></thead>
+      <tbody>
+        <tr><th scope="row">Confirmed</th><td>Fixtures, one real bridge process and one real public skill install confirmed supply, pinning, revocation, route parity and preservation of the switched-off path</td></tr>
+        <tr><th scope="row">Not claimed</th><td>Cart success rates on real sites, how well the model follows the method, conversation quality, and token or time savings</td></tr>
+        <tr><th scope="row">Unconfirmed premise</th><td>The supply premise that someone has already built a skill for a given store. Three public shopping skill candidates were rejected because they needed Playwright scripts, injected JavaScript for one overseas supermarket, or their own MCP servers</td></tr>
+      </tbody>
+    </table>
+    </div>
+    <p class="source-line">Source: a summary table of Still Compendium v0.1, 12.4. It adds no new figures.</p>
+    <p>The evidence for importing an external skill and the evidence for site-knowledge content remain two separate pieces and were not merged into one stronger claim.</p>
+
+    <h2 id="packages">AgentPackages and the distribution platform</h2>
+    <p class="basis"><span>Basis</span> Contract. Compendium 12.5</p>
+    <div class="caution" role="note"><p><strong>Note</strong> This section is rules and design. Running arbitrary third-party packages and a public marketplace are not claimed as working today (see <a href="limits.html#not-claimed">What is not claimed now</a>).</p></div>
+    <p>In the long run the owner will install and replace better agents like apps. The lifecycle goes: discover, inspect and download, verify, stage, health check, install disabled, separately grant, enable and connect, run under Work-scoped Grants, update or roll back, disable or quarantine, uninstall. An update that widens authority, data destinations, memory or background behaviour, dependencies, budgets or consequential actions needs new authority. A failed update defines a path back to a known good state. Uninstalling removes the package's authority but does not delete the owner's Artifacts or retained evidence. A package's internal memory is not canonical.</p>
+    <p>Capability acquisition has a ladder from L1 to L5: manual install, recommendation, owner-approved plan, bounded standing acquisition, kernel-mediated self-request. L4 and L5 are outside the first MVP. An agent completing installation, activation or privilege escalation on its own is not the default behaviour. A recommendation is information only and never changes capability state. A model's suggestion, a catalogue entry or a bare "yes" is not an install or an approval.</p>
+
+    <h2 id="upstream">Relationships with upstream projects</h2>
+    <p class="basis"><span>Basis</span> Contract, Implemented. Compendium 12.6</p>
+    <p>As reuse grows, relationships with outside projects must be recorded precisely. The upstream relationship map separates attack surface (code installed) from actual authority (what is actually projected at runtime): neither implies the other. Relationships are classified with six terms: reference-only, vendored/patched, runtime package, protocol or schema conformance, versioned content and external service. For example, model providers are reached by implementing their wire contracts directly without an SDK, and the document names this an explicit uninspected gap. Ontology and provenance standards (OWL 2, SKOS, SHACL, PROV-O) are strictly reference-only; there is no RDF or reasoner runtime.</p>
+    <p>Dependency management adopted a single <code>uv</code> lock and Dependabot. Renovate could have tracked commit pins of skill content but was rejected, because changing a skill commit cannot safely refresh copied bytes, licences, digests, local wrappers and evidence of semantic impact. A bot pull request is a discovery candidate, not implementation authority. The official MCP SDK was adapted only on the host's stdio path, as an optional extra. The decision states that the 13 transitive packages the SDK brings in increase the installed attack surface, and each licence was checked.</p>
+    <p>Upstream contribution was careful too. A defect in one release of a public-suffix-list package, whose wheel and sdist bundled different list snapshots, was reproduced, and the dependency was pinned to a known good version. A draft upstream issue was prepared, but submission was left to a separate owner approval. A response-handling problem in the MCP SDK overlapped an already open upstream issue, so nothing new was submitted; instead a local adapter was kept with tests, to be removed once an upstream fix is released.</p>
+
+    <section class="page-sources" aria-labelledby="page-sources-title">
+      <h2 id="page-sources-title">Sources for this page</h2>
+      <ul>
+        <li><a href="https://github.com/Jongtae/Still/blob/main/docs/whitepapers/whose-agent.ko.md">Whose Agent? (Korean) v0.3.1</a>: ch. 8–9</li>
+        <li><a href="https://github.com/Jongtae/Still/blob/main/docs/whitepapers/personal-agentos-compendium.en.md">Still Compendium v0.1</a>: ch. 12</li>
+        <li><a href="https://github.com/Jongtae/Still/blob/main/docs/product-status.en.md">Product status</a></li>
+      </ul>
+    </section>
+    <nav class="pager" aria-label="Previous and next pages"><a class="prev" href="authority.html"><span>Previous</span>Authority, connections and evidence</a><a class="next" href="industry.html"><span>Next</span>Industry hypotheses and counterarguments</a></nav>
+  </main>
+  <nav class="onpage" aria-labelledby="onpage-title">
+    <h2 id="onpage-title">On this page</h2>
+    <ol>
+      <li><a href="#format">A format is not a capability</a></li>
+      <li><a href="#supply">Supply first, adapt second, learn only the gaps</a></li>
+      <li><a href="#interface">The interface decision</a></li>
+      <li><a href="#sample">The first real-use sample and the scope of claims</a></li>
+      <li><a href="#packages">AgentPackages and the distribution platform</a></li>
+      <li><a href="#upstream">Relationships with upstream projects</a></li>
+    </ol>
+  </nav>
+</div>
+<footer class="foot">
+  <p>This guide is a plain-language retelling of two manuscripts, written by an AI coding assistant at the project owner's request. It has had only that same AI's self-review, not review by an independent expert or a person. If it differs from the source, the source is right. It is not a promise of product features; what works now is in the <a href="https://github.com/Jongtae/Still/blob/main/docs/product-status.en.md">product status</a>.</p>
+  <p>Still is licensed <a href="https://github.com/Jongtae/Still/blob/main/LICENSE">AGPL-3.0-only</a>. This page has no sign-in, analytics or scripts. <a href="../../privacy.html">Privacy</a> <a href="../../terms.html">Terms</a></p>
+</footer>
+</body>
+</html>
