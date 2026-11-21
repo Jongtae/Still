@@ -134,6 +134,11 @@ def run(baseline, arm_files, *, scenarios_kwargs=None):
     meta = progress_scenarios(**(scenarios_kwargs or {}))
     arms = {}
     for label, path in arm_files.items():
+        if str(path).endswith('.eval'):  # an Inspect sweep log (``sweep --arm <label>``)
+            from .report import records_from_samples
+            from .task import read_eval_log
+            arms[label] = records_from_samples(read_eval_log(str(path)).samples)
+            continue
         data = json.loads(Path(path).read_text(encoding='utf-8'))
         arms[label] = data['records'] if isinstance(data, dict) else data
     return compare_arms(arms, meta, baseline=baseline), meta

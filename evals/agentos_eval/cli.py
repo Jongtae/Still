@@ -76,14 +76,20 @@ def selected_judge(value='', environ=None):
 def task_judge_settings(judge='', judge_notice=True):
     """Inspect task wiring without importing Inspect or loading credentials."""
     judge = selected_judge(judge)
-    scorer_judge = 'none' if judge == 'none' else 'grader'
-    model_roles = None if judge == 'none' else {'grader': judge}
+    cli_judge = judge.startswith('subscription-cli:')
+    scorer_judge = 'none' if judge == 'none' else judge if cli_judge else 'grader'
+    model_roles = None if judge == 'none' or cli_judge else {'grader': judge}
     announce = str(judge_notice).lower() not in ('0', 'false', 'no')
     return judge, scorer_judge, model_roles, announce
 
 
 def judge_notice(judge, key_loader=None):
     """Resolve credentials only after opt-in, and disclose the effective budget once."""
+    if judge.startswith('subscription-cli:'):
+        # #1036: the owner's subscription CLI judges; no API key is read and no USD is spent.
+        print(f"Eval judge: {judge}; subscription CLI, no API key, no USD; "
+              f"call cap: {os.environ.get('AGENTOS_EVAL_JUDGE_MAX_CALLS') or 400}.")
+        return 'subscription-cli'
     if judge == 'none':
         print('Checks only; eval judge is off. Enable with --judge <model> or AGENTOS_EVAL_JUDGE_MODEL=<model>.')
         return 'none'
@@ -226,18 +232,21 @@ def cmd_sweep(args, folder=None, inspect_eval=None, task_factory=None, key_loade
     judge = selected_judge(args.judge)
     if args.cap_usd is not None:
         os.environ['AGENTOS_EVAL_JUDGE_CAP_USD'] = str(args.cap_usd)
+    if getattr(args, 'max_judge_calls', None) is not None:
+        os.environ['AGENTOS_EVAL_JUDGE_MAX_CALLS'] = str(args.max_judge_calls)
     key_source = judge_notice(judge, key_loader)
     seed = resolve_seed(args.seed)
     run = {'id': run_id(), 'started': time.time(), 'git_head': git_head(), 'worker': args.worker,
            'instances': args.instances, 'epochs': args.epochs, 'judge': judge, 'judge_key': key_source,
            'judgment_timeout': getattr(args, 'judgment_timeout', JUDGMENT_TIMEOUT),
-           'seed': seed.name if seed else 'fresh'}
+           'seed': seed.name if seed else 'fresh', **({'arm': args.arm} if getattr(args, 'arm', '') else {})}
     if getattr(args, 'continuity', None):
         run['continuity'] = args.continuity
         run['observation_version'] = args.continuity['observation_version']
     task = task_factory(scenarios=args.scenarios, split=args.split, worker=args.worker,
                              instances=args.instances, seed=str(seed or ''), judge=judge,
                              turn_timeout=args.turn_timeout, judgment_timeout=run['judgment_timeout'],
+                             **({'arm': args.arm} if getattr(args, 'arm', '') else {}),
                              include_local=not args.no_local,
                              keep_sandboxes=args.keep_sandboxes, measures=getattr(args, 'measures', ''),
                              sample_limit=args.limit, judge_notice=False)
@@ -503,6 +512,9 @@ def main(argv=None):
     sweep.add_argument('--split', choices=scenario_module.SPLITS)
     sweep.add_argument('--no-local', action='store_true', help='bundled synthetic scenarios only')
     sweep.add_argument('--judge', default='', help="Inspect model name, e.g. openai/gpt-6.1-terra, or 'none'")
+    sweep.add_argument('--arm', default='', help='candidate reporting form for progress-update scenarios (evals/progress-update-arms.json)')
+    sweep.add_argument('--max-judge-calls', type=int, default=None,
+                       help='call cap for --judge subscription-cli:codex[:model] (default 400)')
     sweep.add_argument('--cap-usd', type=float, default=None, help='daily judge spend cap (default 10)')
     sweep.add_argument('--turn-timeout', type=int, default=900)
     sweep.add_argument('--judgment-timeout', type=int, default=JUDGMENT_TIMEOUT, help='seconds to wait for Judgment AI qualification')
