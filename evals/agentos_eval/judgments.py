@@ -687,7 +687,7 @@ def service_factory(data):
 
 _production_service_factory = service_factory
 
-def pin_model(service, model):
+def pin_model(service, model, effort=None):
     """Pin only the sandbox's copied CLI route, invalidating copied proof.
 
     Adopt the shipped explicit policy and update-job guard. Removing follow mode
@@ -705,6 +705,8 @@ def pin_model(service, model):
     route = {k: v for k, v in route.items()
              if k not in ('mode', 'main', 'declared_candidates', 'qualification')}
     route.update(requested_model=model, model_policy='explicit', fingerprint='', activated_at=time.time())
+    if effort:
+        route['effort'] = effort
     routes.store.put('decision_route', route)
     # Copied pending jobs must not run the seed's former candidate policy.
     routes._put_jobs({})

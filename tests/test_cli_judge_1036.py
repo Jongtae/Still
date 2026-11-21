@@ -15,7 +15,8 @@ from agentos_eval.scoring import judge_call  # noqa: E402
 
 def test_spec_and_notice_take_no_api_key(capsys):
     assert cj.is_cli_judge('subscription-cli:codex') and not cj.is_cli_judge('openai/gpt-6.1-terra')
-    assert cj.parse_spec('subscription-cli:codex:gpt-5.6-terra') == ('codex', 'gpt-5.6-terra')
+    assert cj.parse_spec('subscription-cli:codex:gpt-5.6-terra') == ('codex', 'gpt-5.6-terra', None)
+    assert cj.parse_spec('subscription-cli:codex:gpt-6.2-sol:medium') == ('codex', 'gpt-6.2-sol', 'medium')
     with pytest.raises(ValueError):
         cj.parse_spec('subscription-cli:other')
     called = []
