@@ -26,7 +26,7 @@ from .document_reader import read as read_document, supported as supported_docum
 from . import folder_grants
 from . import work_mode
 from .file_workspace import FileWorkspace, active_file_roots
-from .manifests import BUILTIN_MANIFEST, CONTEXT_GATED_ACTIONS, HOST_TOOLS, runtime_packages
+from .manifests import BUILTIN_MANIFEST, CONTEXT_GATED_ACTIONS, HOST_TOOLS, LOCAL_WRITE_ACTIONS, runtime_packages
 from .memory_service import PROFILE_KEY_GUIDANCE, CONNECTION_PREFERENCE_GUIDANCE, PROFILE_SECTION_CHARS
 from .prompt_files import prompt
 from .preparations import PREPARED_HEADING, MAX_DAILY_WINDOW_RUNS, preparation_of
@@ -4645,7 +4645,9 @@ class Capabilities:
    if refused is not None:raise refused
    action = tool['host_action']
    settings_draft_only = False
-   if (action not in API_ACTIONS|CODE_ACTIONS|OWNER_LOCAL_ACTIONS|INTERNAL_STATE_ACTIONS|{'schedule_preparation'}
+   # #1102: a write that changes only the owner's own Still records (a note, a forget, a line stop) is
+   # not held by an unknown external outcome; settings drafts keep their draft-only handling.
+   if (action not in API_ACTIONS|CODE_ACTIONS|(LOCAL_WRITE_ACTIONS-{'settings_change'})|INTERNAL_STATE_ACTIONS
        and not effect_free_call(action,declared_effect(action,args),'running')):
     if action in BROWSER_ACTIONS:
      refusal = self._browser_mutation_refusal(args.get('url'))

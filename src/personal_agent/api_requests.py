@@ -1098,14 +1098,28 @@ class ApiRequests:
 
     def _current_effect_run(self, db):
         from .agent_runtime import WorkLedger, effect_work_chain, work_stop_requested
-        chain = WorkLedger.request_chain(db, self.work_id)
         current = getattr(self.approvals, 'api_effect_current', None)
-        if (not ws.is_active(chain[0]['status']) or any(ws.is_active(work['status']) for work in chain[1:])
-                or any(work_stop_requested(self.store, work['id']) for work in effect_work_chain(db, self.work_id))
-                or self.ledger is not None and (chain[0]['status'] != 'running' or self.ledger.lapse(db=db))
-                or callable(current) and not current()):
+        # #1101: an unreadable Work relation (``request_chain``/``EffectAncestryError``) is the same
+        # typed refusal on every caller: the guard, the pre-dispatch recheck and reconciliation.
+        try:
+            chain = WorkLedger.request_chain(db, self.work_id)
+            inactive = (not ws.is_active(chain[0]['status']) or any(ws.is_active(work['status']) for work in chain[1:])
+                        or any(work_stop_requested(self.store, work['id']) for work in effect_work_chain(db, self.work_id))
+                        or self.ledger is not None and (chain[0]['status'] != 'running' or self.ledger.lapse(db=db))
+                        or callable(current) and not current())
+        except ValueError:
+            raise ApiError('현재 작업을 확인할 수 없어 실행하지 않았습니다.', 'api_work_inactive') from None
+        if inactive:
             raise ApiError('중단되었거나 실행 중이 아닌 작업이라 요청을 보내지 않았습니다.', 'api_work_inactive')
         return chain
+
+    def _effect_run_current(self):
+        try:
+            with self.store.db() as db:
+                self._current_effect_run(db)
+        except ApiError:
+            return False
+        return True
 
     def _effect_guard(self, slot, identity, replay_keys, *, method=None, effect=None, destination=None,
                       request_ref=None, approved_next=False):
@@ -1120,10 +1134,7 @@ class ApiRequests:
         from .api_credentials import fingerprint
         with self.store.db() as db:
             db.execute('BEGIN IMMEDIATE')
-            try:
-                chain = self._current_effect_run(db)
-            except ValueError:
-                raise ApiError('현재 작업을 확인할 수 없어 실행하지 않았습니다.', 'api_work_inactive') from None
+            chain = self._current_effect_run(db)
             current = self.slots().get(slot['name'])
             if current is None or fingerprint(slot['name'], current) != fingerprint(slot['name'], slot):
                 raise ApiError('API 연결이 바뀌어 요청을 보내지 않았습니다.', 'needs_setup',
@@ -1202,7 +1213,9 @@ class ApiRequests:
         # Outside-content provenance applies before this read (or judgment) can carry authority.
         self.store.mark_outside_content(self.work_id, {'operation': 'api_request', 'category': 'owner-api'})
         proof = json.dumps(data, ensure_ascii=False)
-        if len(proof) > 12000:
+        # #1101: a read that came back after the Work stopped still returns its result; the claim stays
+        # unknown, and no judgment is spent on a Work that can no longer settle it.
+        if len(proof) > 12000 or not self._effect_run_current():
             return False
         resolution = self.reconcile(self.work_id, claim['request_ref'], proof,
                                     source=record['source'], operation=claim['operation'])
@@ -1214,7 +1227,10 @@ class ApiRequests:
         quantum = _reported_time_quantum(record['as_of_source'], data, text)
         with self.store.db() as db:
             db.execute('BEGIN IMMEDIATE')
-            self._current_effect_run(db)
+            try:
+                self._current_effect_run(db)
+            except ApiError:
+                return False
             current = self.slots().get(slot['name'])
             if current is None or fingerprint(slot['name'], current) != fingerprint(slot['name'], slot):
                 return False
