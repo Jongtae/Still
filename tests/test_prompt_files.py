@@ -303,6 +303,26 @@ class ConsolidatedPromptTests(unittest.TestCase):
             self.assertNotIn('해요체', description)
             self.assertNotIn('friendly', description)
 
+    def test_voice_carries_the_progress_update_form_and_leaves_the_owner_in_charge_of_it(self):
+        """#1036: conclusion first, then only what changed, evidence only when it decides; the owner's
+        voice preference for progress updates comes first. Generic wording, no site or domain."""
+        from personal_agent.agent_runtime import CORE_INSTRUCTIONS
+        guidance = prompt_files.prompt('voice_calibration')
+        [line] = [item for item in guidance.splitlines() if item.startswith('A progress update')]
+        for phrase in ("the form the owner's voice preference names", 'lead with the conclusion',
+                       'only what changed since the last update', 'evidence only when it decides something',
+                       'Do not repeat what an earlier update already said', 'say so in one line'):
+            self.assertIn(phrase, line)
+        # Precedence: the owner's named form is the rule, "Otherwise" introduces the default after it.
+        self.assertRegex(line, r"^A progress update \([^)]*\) uses the form the owner's voice preference names "
+                               r"for progress updates, when it names one\. Otherwise lead with the conclusion")
+        self.assertLess(line.index("uses the form the owner's"), line.index('Otherwise'))
+        self.assertLess(line.index('Otherwise'), line.index('lead with the conclusion'))
+        self.assertNotRegex(line, r'(?i)\b(ignore|ignores|never follow|regardless of)\b')
+        self.assertIn(line, CORE_INSTRUCTIONS)
+        self.assertNotIn('A progress update', prompt_files.prompt('voice'))  # the planner prompt (and its recorded digest) is untouched
+        self.assertNotRegex(line, r'(?i)weather|delivery|price|stock|mail|flight')
+
     def test_planner_lens_frames_content_without_assigning_a_voice(self):
         from personal_agent.orchestrator import QUESTION
         [lens] = [line for line in QUESTION.splitlines() if line.startswith('- brief.lens')]
