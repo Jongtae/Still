@@ -1286,7 +1286,9 @@ class Orchestration:
         if getattr(self, 'corrections', ()):
             # #428: only when the owner corrected this Work, so an uncorrected plan asks exactly as before.
             facts['owner_corrections'] = '\n'.join(f'- {text}' for text in self.corrections)
-        return DecisionContext(PURPOSE, facts, work_id=self.work_id,
+        # #1077: the plan writes the owner's direct replies, so it asks for the route's most capable
+        # qualified model, as the outcome judgment does (#1071); a route without one uses its own model.
+        return DecisionContext(PURPOSE, facts, work_id=self.work_id, qualified_strongest=True,
                                context_messages=self._turns_in(facts['recent_conversation']),
                                max_chars=MAX_CONTEXT_CHARS + len(request) + len(workers) + len(tools_text)
                                + len(profile) + len(current) + len(connections) + CONVERSATION_CHARS)

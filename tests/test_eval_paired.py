@@ -507,7 +507,7 @@ class TestMeasuredArm(ServiceFixture):
         path = Path(self.root) / 'frozen.json'
         path.write_text(json.dumps(cases))
         request = dict(checkout=str(ROOT), commit='fixture-sha', cases_path=str(path),
-                       model='gpt-5.6-terra', seed='fixture-seed', max_calls=13, repetitions=3,
+                       model='gpt-5.6-terra', seed='fixture-seed', max_calls=14, repetitions=3,
                        splits=splits, partner_version=data['version'], partner_digest=p._digest(data))
         def factory(folder):
             # The copied seed owns the store; keep the fixture CLI transport.
@@ -523,14 +523,14 @@ class TestMeasuredArm(ServiceFixture):
         assert result['pinned_model'] == 'gpt-5.6-terra'
         assert result['git_head'] == 'fixture-sha'
         assert result['evidence_class'] == 'fixture'
-        assert result['requalification']['calls'] == 11
-        assert result['call_budget']['admitted'] == 13
+        assert result['requalification']['calls'] == 12
+        assert result['call_budget']['admitted'] == 14
         assert result['call_budget']['refused']
         assert len(result['rows']) == 6
         assert sum(len(row['calls']) for row in result['rows']) == 2
         assert {row['id'] for row in result['rows']} == set(splits)
         calls = [call['argv'] for call in self.runner.calls if '--output-schema' in call['argv']]
-        assert len(calls) == 13
+        assert len(calls) == 14
         assert {argv[argv.index('--model') + 1] for argv in calls} == {'gpt-5.6-terra'}
         assert p._cost(result)['usage'] == 'unavailable'
         assert result['seed_manifest']['owner_data'] == 'none'
@@ -548,7 +548,7 @@ def test_fresh_process_uses_measured_checkout_and_fixture_engine(tmp_path):
     frozen = tmp_path / 'cases.json'
     frozen.write_text(json.dumps(cases))
     request = dict(checkout=str(checkout), commit='fixture-revision', cases_path=str(frozen),
-                   model='gpt-5.6-terra', seed='fixture-seed', max_calls=17, repetitions=3,
+                   model='gpt-5.6-terra', seed='fixture-seed', max_calls=18, repetitions=3,
                    splits=splits, partner_version=data['version'], partner_digest=p._digest(data))
     request_file, result_file = tmp_path / 'request.json', tmp_path / 'result.json'
     request_file.write_text(json.dumps(request))
@@ -580,9 +580,9 @@ finally:
     result = json.loads(result_file.read_text())
     assert Path(result['src']).resolve() == (checkout / 'src').resolve()
     assert result['git_head'] == 'fixture-revision' and result['evidence_class'] == 'fixture'
-    assert result['requalification']['calls'] == 11
+    assert result['requalification']['calls'] == 12
     assert result['summary']['total']['calls'] == 6
-    assert result['call_budget']['admitted'] == 17
+    assert result['call_budget']['admitted'] == 18
     relative = str(prompt.relative_to(checkout / 'src'))
     import hashlib
     assert result['prompt_digests'][relative] == hashlib.sha256(prompt.read_bytes()).hexdigest()[:12]
@@ -643,7 +643,7 @@ def test_mixed_selection_runs_judgments_and_lists_unrun_sets(tmp_path, seed_path
                 row['role'] = 'qualification-suite'
         return result
     result = p.run_pair('base', 'candidate', chosen, model='pinned-model', seed=seed_path,
-                        max_calls=100, live=True, git_runner=FakeGit(), arm_runner=arm, requalify_attempts=1)
+                        max_calls=108, live=True, git_runner=FakeGit(), arm_runner=arm, requalify_attempts=1)
     assert result['selected_not_run'] == result['plan']['selected_not_run'] == chosen['selected_not_run']
     assert {row['set'] for row in result['selected_not_run']} == {'recall'}
     assert all(row['reason'] == p.NOT_RUN_REASON for row in result['selected_not_run'])
@@ -757,8 +757,8 @@ def test_verifier_qualification_selection_runs_suite_and_counts_calls():
     plan = p.run_pair('base', 'candidate', chosen, model='pinned-model', max_calls=1000, requalify_attempts=1)
     assert not plan['selected_not_run']
     assert qualification in plan['cases']
-    assert plan['measurement_calls'] == 2 * 3 * (2 + 11)
-    assert plan['planned_calls'] == plan['measurement_calls'] + 22
+    assert plan['measurement_calls'] == 2 * 3 * (2 + 12)
+    assert plan['planned_calls'] == plan['measurement_calls'] + 24
 
 
 def test_verifier_worker_stderr_and_timeout_are_exposed_and_worktree_removed(seed_path, monkeypatch):
@@ -792,16 +792,16 @@ class TestMeasuredQualificationArm(ServiceFixture):
         source = Path(self.root) / 'cases.json'
         source.write_text(json.dumps(cases))
         request = dict(seed='fixture-seed', checkout=str(ROOT), commit='fixture-sha', cases_path=str(source),
-                       model='gpt-5.6-terra', max_calls=50, repetitions=3, splits=splits,
+                       model='gpt-5.6-terra', max_calls=54, repetitions=3, splits=splits,
                        partner_version=data['version'], partner_digest=p._digest(data), qualification_selected=[ids[0]])
         result = p.measure_arm(request, factory=factory, timer=lambda: 0.)
         measured = [row for row in result['rows'] if row['role'] == 'qualification-suite']
-        assert len(measured) == 33
+        assert len(measured) == 36
         assert {row['id'] for row in measured} == set(ids)
-        assert result['requalification']['calls'] == 11
-        assert result['summary']['total']['calls'] == 39
-        assert result['call_budget']['admitted'] == 50
-        assert p._cost(result)['calls'] == 50
+        assert result['requalification']['calls'] == 12
+        assert result['summary']['total']['calls'] == 42
+        assert result['call_budget']['admitted'] == 54
+        assert p._cost(result)['calls'] == 54
         comparison = p.compare_paired(result, result, splits=splits)
         assert comparison['comparable']
         assert {row['id'] for row in comparison['cases'] if row['set'] == 'qualification'} == set(ids)
@@ -816,8 +816,8 @@ def test_requalify_attempt_bounds(attempts):
 def test_requalify_default_plans_two_full_suites_without_calls():
     planned = p.run_pair('a', 'b', ['goal-served'], model='pinned-model', max_calls=100)
     assert planned['requalify_attempts'] == 2
-    assert planned['qualification_calls_per_arm'] == 22
-    assert planned['planned_calls'] == 2 * (6 + 22)
+    assert planned['qualification_calls_per_arm'] == 24
+    assert planned['planned_calls'] == 2 * (6 + 24)
 
 
 @pytest.mark.parametrize('unavailable_arm', ['baseline', 'candidate'])
@@ -861,13 +861,13 @@ class TestRequalificationAttempts(ServiceFixture):
         return request, copied
 
     def test_failed_shipped_job_is_retried_and_only_job_can_qualify(self):
-        request, factory = self.make_request(cap=20)
+        request, factory = self.make_request(cap=21)
         with patch.object(j, 'pin_model', wraps=j.pin_model) as pin, patch.object(j, 'requalify_route', wraps=j.requalify_route) as job:
             result = p.measure_arm(request, factory=factory, timer=lambda: 0.)
         assert pin.call_count == job.call_count == 2
-        assert [(a['state'], a['calls']) for a in result['requalification']['attempts']] == [('failed', 3), ('passed', 11)]
-        assert result['requalification']['calls'] == 14
-        assert result['call_budget']['admitted'] == 20
+        assert [(a['state'], a['calls']) for a in result['requalification']['attempts']] == [('failed', 3), ('passed', 12)]
+        assert result['requalification']['calls'] == 15
+        assert result['call_budget']['admitted'] == 21
         assert result['summary']['total']['calls'] == 6
         assert result['status'] == 'available'
 
@@ -912,11 +912,11 @@ def test_reuse_runs_only_other_arm_and_preserves_old_bytes(tmp_path, seed_path, 
                       measured_at='2026-11-14T00:01:00+00:00')
         return result
     result = p.run_pair('a' * 40, 'b' * 40, ['goal-served'], model='pinned-model', seed=seed_path,
-                        max_calls=28, reuse_arm={saved_arm: path}, live=True, out=tmp_path,
+                        max_calls=30, reuse_arm={saved_arm: path}, live=True, out=tmp_path,
                         git_runner=git, arm_runner=engine)
     assert len(requests) == len(git.paths) == 1
-    assert requests[0]['max_calls'] == 28
-    assert result['plan']['planned_calls'] == 28
+    assert requests[0]['max_calls'] == 30
+    assert result['plan']['planned_calls'] == 30
     assert result['cost']['calls'] == 37 and result['cost']['new_calls'] == 20 and result['cost']['reused_calls'] == 17
     assert result['reused_arm']['report_sha256'] == hashlib.sha256(original).hexdigest()
     assert result['reused_arm']['arm'] == saved_arm

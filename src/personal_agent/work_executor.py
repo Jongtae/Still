@@ -1981,6 +1981,8 @@ class WorkExecutor:
         # #1216: stale, inconsistent, partial or undated response data is said in Still's own words,
         # on every route and whatever the outcome; a line the answer already carries is not repeated.
         run.response=service._with_disclosures(job['id'],run.response)
+        # #782: a Work the payment mode allowed requests in closes with one line from its receipts.
+        run.response=service._with_payment_autonomy_closing(job['id'],run.response)
         # #1486: a Work judged to have reached its outcome saves the function libraries it proposed.
         run.response=service._settle_procedures(job['id'],run.response,ws.request_met(run.outcome,goal) and goal=='reached')
         with service.store.db() as db:
@@ -2084,6 +2086,8 @@ class WorkExecutor:
             except Exception:
                 LOG.warning('failed-attempt report could not be built job=%s',job['id'])
             if report:transcript=run.reply_notice+TERMINAL_FAILED_HEADER+'\n\n'+report
+        # #782: see the success path; the line reads only this Work's own records.
+        transcript=service._with_payment_autonomy_closing(job['id'],transcript)
         if prep.preparation_of(job.get('request_key')):
             # #659: see the success path; nothing unscrubbed is persisted.
             run.response,transcript=service.scrub_work_text(job['id'],run.response),service.scrub_work_text(job['id'],transcript)
@@ -2146,6 +2150,12 @@ class WorkExecutor:
         """After the run: the task card, browser login offer, photo cleanup and owner-decision notifications."""
         service=self.service
         job=run.job
+        if run.outcome=='cancelled':
+            try:
+                forget=getattr(service.browser_profile,'forget_work',None)
+                if callable(forget):forget(job['id'])
+            except Exception:
+                pass   # Browser settings cleanup must not fail the Work's finish.
         service.update_task_card(job,run.outcome)
         # #709: a login page during this run: show the window now that the
         # run released the profile, and ask the owner to log in.  #752: only

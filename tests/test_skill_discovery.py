@@ -122,9 +122,11 @@ class SkillDiscovery(_Case):
         reason = 'It offers a method for project updates.'
         draft = self.settings.propose('owner', 'web', 'skills', 'add', ADDRESS, reason=reason)
         row = self.settings._drafts()[draft['draft_id']]
-        for text in (UPSTREAM, 'skills/internal-comms', COMMIT, 'Apache-2.0'):
-            self.assertIn(text, draft['summary'])
-        self.assertIn(reason, self.settings.confirmation_text([row]))
+        self.assertIn('Apache-2.0', draft['summary'])
+        self.assertEqual(row['exact_values'], ADDRESS)
+        shown = self.settings.confirmation_text([row])
+        for text in (UPSTREAM, 'skills/internal-comms', COMMIT, 'Apache-2.0', reason):
+            self.assertIn(text, shown)
         self.assert_only_inspected()
 
     def test_confirmation_resumes_original_work_and_loaded_method_changes_tool_choice(self):

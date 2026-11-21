@@ -10,6 +10,7 @@ the trend report.  This is the only module that imports Inspect AI.
 """
 import asyncio
 import hashlib
+import json
 import os
 import sys
 from pathlib import Path
@@ -42,11 +43,25 @@ def workers_for(worker):
     return (worker,)
 
 
-def dataset(scenario_ids='', split='', worker='codex', include_local=True):
+def arm_prefix(arm):
+    """#1036: a candidate reporting form as instruction text for progress-update turns ('' for no arm)."""
+    if not arm:
+        return ''
+    arms = json.loads((Path(__file__).resolve().parents[1] / 'progress-update-arms.json').read_text(encoding='utf-8'))['arms']
+    if arm not in arms:
+        raise ValueError(f'Unknown arm {arm!r}; known: {sorted(arms)}')
+    return arms[arm]
+
+
+def dataset(scenario_ids='', split='', worker='codex', include_local=True, arm=''):
+    prefix = arm_prefix(arm)
     ids = [item for item in scenario_ids.split(',') if item] if isinstance(scenario_ids, str) else list(scenario_ids)
     loaded = scenario_module.load(include_local=include_local, split=split or None, ids=ids or None)
     samples = []
     for scenario in loaded:
+        if prefix and 'progress-update' in scenario['tags']:
+            turns = [dict(scenario['turns'][0], say=f"{scenario['turns'][0]['say']} {prefix}"), *scenario['turns'][1:]]
+            scenario = {**scenario, 'turns': turns}
         for each in workers_for(worker):
             samples.append(Sample(id=f"{scenario['id']}@{each}", input=scenario['turns'][0]['say'],
                                   metadata={'scenario': scenario, 'worker': each}))
@@ -74,7 +89,16 @@ def agentos_blackbox(pool, turn_timeout=900, judgment_timeout=300):
 
 @scorer(metrics={'*': [mean()]})
 def secretary(judge='none', budget_path=None, seed=None, measures=''):
-    budget, redact = scorer_judge_resources(judge, budget_path, seed)
+    cli_judge = None
+    if judge.startswith('subscription-cli:'):
+        # #1036: a subscription-CLI judge counts calls, not USD, and needs no provider key.
+        from agentos_eval.redaction import Redactor
+        from agentos_eval.cli_judge import CallBudget, CliJudge
+        limit = int(os.environ.get('AGENTOS_EVAL_JUDGE_MAX_CALLS') or 400)
+        budget, redact = CallBudget(limit), Redactor.for_seed(seed)
+        cli_judge = CliJudge(judge, seed, max_calls=limit)
+    else:
+        budget, redact = scorer_judge_resources(judge, budget_path, seed)
     if measures:
         from agentos_eval.continuity import load_rubric
         rubric = load_rubric(measures)
@@ -83,6 +107,8 @@ def secretary(judge='none', budget_path=None, seed=None, measures=''):
         rubric, rubric_digest = None, None
 
     async def generate(system, prompt):
+        if cli_judge is not None:
+            return await cli_judge.generate(system, prompt)
         model = get_model(role='grader') if judge == 'grader' else get_model(judge)
         return await model.generate([ChatMessageSystem(content=system), ChatMessageUser(content=prompt)],
                                     config=GenerateConfig(max_tokens=JUDGE_MAX_TOKENS))
@@ -102,7 +128,7 @@ def secretary(judge='none', budget_path=None, seed=None, measures=''):
 @task
 def agentos_secretary(scenarios='', split='', worker='codex', instances=3, seed='', judge='',
                       turn_timeout=900, judgment_timeout=300, include_local=True, keep_sandboxes=False, measures='',
-                      sample_limit=None, judge_notice=True):
+                      sample_limit=None, judge_notice=True, arm=''):
     """Multi-turn owner scenarios against fresh Still sandboxes, on Codex and/or Claude Code."""
     seed = seed or os.environ.get('AGENTOS_EVAL_SEED', '')
     from agentos_eval.cli import judge_notice as announce_judge, task_judge_settings
@@ -112,7 +138,7 @@ def agentos_secretary(scenarios='', split='', worker='codex', instances=3, seed=
     pool = SandboxPool(size=int(instances), seed=Path(seed).expanduser() if seed else None,
                        keep=str(keep_sandboxes).lower() in ('1', 'true', 'yes'))
     include_local = str(include_local).lower() not in ('0', 'false', 'no')
-    selected = dataset(scenarios, split, worker, include_local)
+    selected = dataset(scenarios, split, worker, include_local, arm)
     if sample_limit is not None:
         selected = selected[:int(sample_limit)]
     scenario_ids = sorted({sample.metadata['scenario']['id'] for sample in selected})
@@ -124,4 +150,4 @@ def agentos_secretary(scenarios='', split='', worker='codex', instances=3, seed=
                 early_stopping=StopOnUsageLimit(EarlyStop),
                 model_roles=model_roles,
                 metadata={'worker': worker, 'instances': int(instances), 'seed': bool(seed), 'judge': judge,
-                          'scenario_ids': scenario_ids})
+                          'scenario_ids': scenario_ids, 'arm': arm})

@@ -4320,10 +4320,10 @@
   "zh": "无法确认此设置的当前状态，因此未作更改。请在设置页面查看。"
  },
  "settings_orchestrator.skill_add_note": {
-  "ko": "초안을 만들 때 고정된 커밋에서 폴더의 라이선스와 내용을 확인해요. 승인하면 같은 커밋의 폴더를 다시 받아 확인한 뒤 추가해요. 스크립트·훅은 실행하지 않고, 라이선스를 확인할 수 없거나 실행 파일이 필요한 스킬은 추가하지 않아요. 스킬은 방법 안내일 뿐 권한이 아니에요.",
-  "en": "The draft checks the folder’s license and contents at the pinned commit. After confirmation, the folder is fetched from that commit and checked again before it is added. Scripts and hooks are not run. Skills with unverifiable licenses or required executables are not added. Skills provide guidance, not authority.",
-  "ja": "変更案を作るときに固定したコミットでフォルダーのライセンスと内容を確認します。承認後、同じコミットから取得してもう一度確認し、追加します。スクリプトやフックは実行しません。ライセンスを確認できないスキルや実行ファイルが必要なスキルは追加しません。スキルは手順の案内であり、権限ではありません。",
-  "zh": "创建草案时会检查固定提交中该文件夹的许可证和内容。确认后会从同一提交重新下载并检查，再添加技能。不运行脚本或钩子，不添加许可证无法核实或需要可执行文件的技能。技能仅提供方法指导，不授予权限。"
+  "ko": "확인하면 이 버전의 내용과 사용 조건을 확인한 뒤 추가해요. 실행이 필요한 내용은 추가하지 않아요. 스킬은 방법을 안내하며 새 권한을 주지 않아요.",
+  "en": "After you confirm, Still checks this version’s contents and terms before adding it. It skips skills that require running code. A skill provides guidance and grants no permissions.",
+  "ja": "確認すると、この版の内容と利用条件を確かめてから追加します。コードの実行が必要なものは追加しません。スキルは手順を案内するもので、新しい権限は付与しません。",
+  "zh": "确认后，会先检查此版本的内容和使用条款，再添加。需要运行代码的技能不会添加。技能提供方法指导，不会授予新权限。"
  },
  "settings_orchestrator.in_doubt": {
   "ko": "설정 변경이 적용 중에 중단되어 적용됐는지 확인하지 못했어요. 현재 값을 확인해 주세요. 필요하면 다시 요청하세요: {effect}",
@@ -4433,11 +4433,17 @@
   "ja": "依頼時に公開サーバー情報を確認",
   "zh": "请求时审查公开服务器信息"
  },
+ "settings_orchestrator.mcp_connect_summary": {
+  "ko": "'{name}' 연결을 추가해요",
+  "en": "Add the {name} connection",
+  "ja": "「{name}」の接続を追加します",
+  "zh": "添加“{name}”连接"
+ },
  "settings_orchestrator.mcp_connect_note": {
-  "ko": "확인하면 설치된 Claude Code로 이 공개 HTTPS 서버를 등록하고 필요한 경우 Mac 브라우저에서 로그인해요. 게시자·출처·라이선스는 제안된 정보이며 안전성을 보증하지 않아요. 서버에 연결해 도구 목록을 확인한 뒤 AI 연결 사용을 켜고 이 서버를 허용해요. 지정한 읽기만 읽기로 기록하고, 돈이 오가는 연결의 다른 동작과 결제는 건별 승인이 필요해요. 현재 허용된 다른 AI 연결도 함께 사용 가능해져요. 계정·OAuth 동의 범위는 이 경로에서 검증하지 못해요.",
-  "en": "After confirmation, the installed Claude Code registers this public HTTPS server and opens login in the Mac browser if needed. Publisher, source, and license are proposed information, not a safety guarantee. After connecting and checking its tools, AI connections and this server are enabled. Only the specified reads are recorded as reads; other actions on connections involving money and payments require approval each time. Other currently allowed AI connections also become available. Account and OAuth consent scopes cannot be verified through this path.",
-  "ja": "確認後、インストール済みの Claude Code でこの公開 HTTPS サーバーを登録し、必要なら Mac のブラウザでログインします。発行者、出典、ライセンスは提案された情報であり、安全性を保証しません。接続してツール一覧を確認した後、AI 接続の使用とこのサーバーを有効にします。指定した読み取りだけを読み取りとして記録し、金銭を扱う接続の他の操作や支払いには毎回承認が必要です。現在許可されている他の AI 接続も利用可能になります。アカウントや OAuth の同意範囲はこの経路では検証できません。",
-  "zh": "确认后，已安装的 Claude Code 会注册此公开 HTTPS 服务器，必要时在 Mac 浏览器中登录。发布者、来源和许可证均为提议信息，不保证安全。连接并检查工具列表后，将启用 AI 连接及此服务器。只有指定的读取会记为读取；涉及资金的连接的其他操作及付款均需逐次批准。当前允许的其他 AI 连接也会可用。此路径无法验证账户及 OAuth 同意范围。"
+  "ko": "확인하면 연결을 점검하고, 필요하면 로그인 창을 열어요. 점검을 통과하면 기존에 허용한 연결도 함께 쓸 수 있어요. 변경이나 결제 권한을 따로 주지는 않으며, 돈이 오가는 연결의 변경과 결제는 기본적으로 건별 승인이 필요해요. 로그인으로 허용된 범위와 출처의 안전성은 확인할 수 없어요.",
+  "en": "After you confirm, Still checks the connection and opens a sign-in window if needed. If the check passes, previously allowed connections also become available. This grants no separate permission to make changes or payments. By default, changes on connections involving money and payments need approval each time. Still can’t verify what sign-in grants or whether the source is safe.",
+  "ja": "確認すると接続を点検し、必要ならログイン画面を開きます。点検が通ると、すでに許可した接続も使えるようになります。変更や支払いの権限は別途付与しません。金銭を扱う接続での変更や支払いは、原則として毎回承認が必要です。ログインで許可された範囲や出典の安全性は確認できません。",
+  "zh": "确认后会检查连接，并在需要时打开登录窗口。检查通过后，之前允许的连接也可以使用。此操作不会另行授予修改或付款权限。默认情况下，涉及资金的连接中的变更和付款都需要逐次批准。无法核实登录授权范围或来源是否安全。"
  },
  "settings_orchestrator.servers_format": {
   "ko": "AI|서버 이름(쉼표로 여럿, 비우면 모두 끔), 예: codex|notes",
@@ -4830,10 +4836,10 @@
   "zh": "{label}已为{value}，无需更改。"
  },
  "settings_orchestrator.skill_add_summary": {
-  "ko": "스킬을 추가해요. {repo}의 {path} (커밋 {revision}, 라이선스 {licence})",
-  "en": "Add the skill at {path} in {repo} (commit {revision}, license {licence}).",
-  "ja": "{repo} の {path} にあるスキルを追加します（コミット {revision}、ライセンス {licence}）。",
-  "zh": "添加 {repo} 中 {path} 的技能（提交 {revision}，许可证 {licence}）。"
+ "ko": "'{name}' 스킬을 추가해요 (라이선스 {licence})",
+  "en": "Add the {name} skill (license {licence})",
+  "ja": "スキル「{name}」を追加します（ライセンス {licence}）",
+  "zh": "添加“{name}”技能（许可证 {licence}）"
  },
  "settings_orchestrator.skill_enable_summary": {
   "ko": "{summary}. 스킬 사용이 꺼져 있어 함께 켜요",
@@ -4870,18 +4876,6 @@
   "en": "Accept reservation: {reservation}",
   "ja": "予約を承諾します: {reservation}",
   "zh": "接受预约：{reservation}"
- },
- "settings_orchestrator.api_connect_summary": {
-  "ko": "API 연결 {name}: {hosts}\n읽기 확인: {probe_url} · 대상 확인: {subject}\n돈이 오가는 연결: {money}",
-  "en": "API connection {name}: {hosts}\nRead check: {probe_url} · Subject check: {subject}\nConnection involving money: {money}",
-  "ja": "API 接続 {name}: {hosts}\n読み取り確認: {probe_url} · 対象確認: {subject}\n金銭を扱う接続: {money}",
-  "zh": "API 连接 {name}：{hosts}\n读取检查：{probe_url} · 对象检查：{subject}\n涉及资金的连接：{money}"
- },
- "settings_orchestrator.oauth_destination": {
-  "ko": "인증 정보를 보낼 주소: {token_url} · 요청 범위: {scope}",
-  "en": "Credentials destination: {token_url} · Requested scope: {scope}",
-  "ja": "認証情報の送信先: {token_url} · 要求範囲: {scope}",
-  "zh": "凭据发送地址：{token_url} · 请求范围：{scope}"
  },
  "settings_orchestrator.mcp_connect_line": {
   "ko": "{engine}에 {name} 연결: {url}",
@@ -5069,18 +5063,6 @@
   "ja": "いいえ",
   "zh": "否"
  },
- "settings_orchestrator.subject_not_set": {
-  "ko": "지정 안 함",
-  "en": "Not specified",
-  "ja": "指定なし",
-  "zh": "未指定"
- },
- "settings_orchestrator.default_scope": {
-  "ko": "기본 범위",
-  "en": "Default scope",
-  "ja": "既定の範囲",
-  "zh": "默认范围"
- },
  "settings_orchestrator.money_mark_summary": {
   "ko": "{connection}({engine} {kind})을(를) 돈이 오가는 연결로 표시해요(보고만 하는 단계에서 시작)",
   "en": "Mark {connection} ({engine} {kind}) as a connection involving money (starting at report only)",
@@ -5094,10 +5076,10 @@
   "zh": "不将 {connection}（{engine} {kind}）标记为涉及资金的连接"
  },
  "settings_orchestrator.skill_replace_summary": {
-  "ko": "스킬을 {repo}의 {path}에 있는 이 버전으로 바꿔요 (커밋 {revision}, 라이선스 {licence}).",
-  "en": "Update the skill at {path} in {repo} to commit {revision} (license {licence}).",
-  "ja": "{repo} の {path} にあるスキルをコミット {revision} のバージョンに更新します（ライセンス {licence}）。",
-  "zh": "将 {repo} 中 {path} 的技能更新至提交 {revision} 的版本（许可证 {licence}）。"
+ "ko": "'{name}' 스킬을 이 버전으로 바꿔요 (라이선스 {licence})",
+  "en": "Update the {name} skill to this version (license {licence})",
+  "ja": "スキル「{name}」をこの版に更新します（ライセンス {licence}）",
+  "zh": "将“{name}”技能更新至此版本（许可证 {licence}）"
  },
  "settings_orchestrator.skill_disabled": {
   "ko": "{skill} ({source}, 꺼짐)",
@@ -6347,6 +6329,12 @@
   "ja": "⚠️ 要約の数字のうち、実際のリクエストにないものがあります: {numbers}。下の原文を確認してください。",
   "zh": "⚠️ 摘要中有些数字不在实际请求中：{numbers}。请查看下面的原文。"
  },
+ "notice.exact_values": {
+  "ko": "정확한 값",
+  "en": "Exact values",
+  "ja": "正確な値",
+  "zh": "确切值"
+ },
  "notice.request_raw": {
   "ko": "실제로 보낼 요청",
   "en": "The exact request to send",
@@ -6713,11 +6701,17 @@
   "ja": "AI はまだ接続されていません。ブラウザの AI 設定で接続すれば、すぐに使えます。",
   "zh": "尚未连接 AI。在浏览器的 AI 设置中连接后即可使用。"
  },
+ "browser.click_summary": {
+  "ko": "'{name}' 버튼을 눌러요",
+  "en": "Press the {name} button",
+  "ja": "「{name}」ボタンを押します",
+  "zh": "按下“{name}”按钮"
+ },
  "browser.click_preview": {
-  "ko": "{description}\n주소: {url}\n대상: {target}\n상태 및 매개변수:\n{state}\n폼 전송 주소:\n{actions}",
-  "en": "{description}\nAddress: {url}\nTarget: {target}\nState and parameters:\n{state}\nForm destinations:\n{actions}",
-  "ja": "{description}\nアドレス: {url}\n対象: {target}\n状態とパラメータ:\n{state}\nフォーム送信先:\n{actions}",
-  "zh": "{description}\n地址：{url}\n目标：{target}\n状态和参数：\n{state}\n表单目标地址：\n{actions}"
+  "ko": "주소: {url}\n대상: {target}\n상태 및 매개변수:\n{state}\n폼 전송 주소:\n{actions}",
+  "en": "Address: {url}\nTarget: {target}\nState and parameters:\n{state}\nForm destinations:\n{actions}",
+  "ja": "アドレス: {url}\n対象: {target}\n状態とパラメータ:\n{state}\nフォーム送信先:\n{actions}",
+  "zh": "地址：{url}\n目标：{target}\n状态和参数：\n{state}\n表单目标地址：\n{actions}"
  },
  "browser.destination_check_failed": {
   "ko": "이 주소가 공개 네트워크인지 확인하는 중 오류가 나서 이번 이동을 중단했어요. 접근 금지가 확인된 것은 아니니 잠시 뒤 다시 시도할 수 있어요.",
@@ -6736,6 +6730,12 @@
   "en": "An app address outside http/https cannot be opened. Use a web address.",
   "ja": "http(s) 以外のアプリのアドレスは開けません。ウェブのアドレスを使ってください。",
   "zh": "无法打开非 http(s) 的应用地址。请使用网页地址。"
+ },
+ "browser.presentation_fixed": {
+  "ko": "이 작업은 이미 로캘 {locale}, 시간대 {timezone}으로 페이지를 열도록 정해졌어요. 작업 내내 이 설정을 유지하므로 이번 페이지는 열지 않았어요. locale과 timezone을 빼고 열거나 새 요청으로 다시 요청해 주세요.",
+  "en": "This Work already opens pages in locale {locale}, time zone {timezone}. These settings stay fixed for the whole Work, so the page was not opened. Open it without locale or timezone, or ask in a new request.",
+  "ja": "この作業では、ロケール {locale}、タイムゾーン {timezone} でページを開く設定がすでに決まっています。作業中はこの設定が固定されるため、ページを開きませんでした。locale と timezone を省いて開くか、新しい依頼で開くように頼んでください。",
+  "zh": "此工作已设定使用语言区域 {locale} 和时区 {timezone} 打开页面。这些设置在整个工作期间保持固定，因此未打开此页面。请省略 locale 和 timezone 后再打开，或发起新的请求。"
  },
  "browser.app_link_not_followed": {
   "ko": "페이지가 앱 링크를 열려고 했지만 Still은 따라가지 않았어요. 현재 페이지를 반환해요. 나중에 읽으면 사이트의 웹 대체 페이지가 표시될 수 있어요.",
@@ -11145,6 +11145,24 @@
   "en": "Payment autonomy allowed the request below without asking. Whether it went through is in this Work's reply.\n\n{label}",
   "ja": "自律決済モードで、下のリクエストを承認なしで許可しました。実際に処理されたかはこの作業の返信に出ます。\n\n{label}",
   "zh": "自主付款模式已无需确认地允许了下面的请求。是否实际完成会在这项工作的回复中说明。\n\n{label}"
+ },
+ "payment_autonomy.status": {
+  "ko": "자율 결제 모드로 이 작업에서 요청 {count}건을 승인 없이 허용했어요. 실제로 처리됐는지는 이 작업의 답변에 나와요. 가장 최근 요청이에요.\n\n{label}",
+  "en": "Payment autonomy has allowed {count} requests in this Work without asking. Whether each went through is in this Work's reply. The latest one:\n\n{label}",
+  "ja": "自律決済モードで、この作業のリクエスト{count}件を承認なしで許可しました。実際に処理されたかはこの作業の返信に出ます。最新のリクエストです。\n\n{label}",
+  "zh": "自主付款模式已在这项工作中无需确认地允许了 {count} 个请求。是否实际完成会在这项工作的回复中说明。最新的请求：\n\n{label}"
+ },
+ "payment_autonomy.closing": {
+  "ko": "자율 결제 모드로 이 작업에서 요청 {allowed}건을 허용했어요. Still 기록으로는 변경 확인 {observed}건, 실패 {failed}건, 결과 모름 {unknown}건이에요.",
+  "en": "Payment autonomy allowed {allowed} requests in this Work. Still's records show {observed} changes observed, {failed} failed and {unknown} with an unknown result.",
+  "ja": "自律決済モードで、この作業のリクエスト{allowed}件を許可しました。Stillの記録では、変更の確認{observed}件、失敗{failed}件、結果不明{unknown}件です。",
+  "zh": "自主付款模式在这项工作中允许了 {allowed} 个请求。Still 的记录显示：已确认变更 {observed} 个，失败 {failed} 个，结果未知 {unknown} 个。"
+ },
+ "payment_autonomy.closing_stopped": {
+  "ko": "보내기 전에 멈춘 요청은 {stopped}건이에요.",
+  "en": "{stopped} stopped before they were sent.",
+  "ja": "送信前に止まったリクエストは{stopped}件です。",
+  "zh": "有 {stopped} 个请求在发送前停止。"
  },
  "payment_autonomy.local_only": {
   "ko": "자율 결제 모드는 이 컴퓨터의 Still 설정에서만 바꿀 수 있어요.",

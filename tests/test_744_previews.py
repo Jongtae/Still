@@ -59,10 +59,17 @@ def request_click(service, work, session):
 
 
 def test_browser_preview_keeps_destination_and_parameters(service):
-    work, session, driver = browser(service)
+    work, session, driver = browser(service, 'Buy now $700')
     _, preview = request_click(service, work, session)
     assert DESTINATION in preview and PARAMETERS in preview
     assert FORM_DESTINATION in preview
+    summary, exact = service.browser_step_prompt_html(work).split('<blockquote expandable>')
+    assert summary.startswith("'Buy now $700'")
+    assert DESTINATION not in summary and FORM_DESTINATION not in summary
+    assert PARAMETERS in exact and DESTINATION in exact and FORM_DESTINATION in exact
+    pending = next(row for row in service.browser_status()['pending_steps'] if row['work_id'] == work)
+    assert 'Buy now' in pending['label'] and FORM_DESTINATION not in pending['label']
+    assert FORM_DESTINATION in pending['exact_values']
     assert not driver.posts
 
 

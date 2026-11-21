@@ -1,0 +1,1570 @@
+[
+ {
+  "id": "progress-weather-watch-nochange-short",
+  "title": "A no-change update in a weather watch series (short reader)",
+  "split": "dev",
+  "turns": [
+   {
+    "say": "이번 주말 한강 피크닉 날씨 감시 중이야. 지난번에 알려준 내용: \"토요일 오후 비 확률 30%, 일요일 맑음\". 이번에 확인한 결과: 토요일 오후 비 확률 30%, 일요일 맑음, 지난번과 같음. 이번에 나한테 보낼 알림을 써줘.",
+    "note": "Judge only, not sent to Still. The reader wants it short: a line or two, the conclusion first, no evidence unless it decides something."
+   }
+  ],
+  "rubric": [
+   "progress_update",
+   "reader_form",
+   "honest_unverified"
+  ],
+  "expect": {
+   "readable": true
+  },
+  "good_secretary": "Says in one short line that nothing relevant changed, without restating the earlier report, the sources or the standing caveats. The reader wants it short: a line or two, the conclusion first, no evidence unless it decides something.",
+  "tags": [
+   "communication",
+   "progress-update",
+   "domain-weather-watch",
+   "variant-nochange",
+   "reader-short",
+   "onet-31.0-gwa:4.A.4.a.1"
+  ]
+ },
+ {
+  "id": "progress-weather-watch-nochange-evidence",
+  "title": "A no-change update in a weather watch series (evidence reader)",
+  "split": "dev",
+  "turns": [
+   {
+    "say": "이번 주말 한강 피크닉 날씨 감시 중이야. 지난번에 알려준 내용: \"토요일 오후 비 확률 30%, 일요일 맑음\". 이번에 확인한 결과: 토요일 오후 비 확률 30%, 일요일 맑음, 지난번과 같음. 이번에 나한테 보낼 알림을 써줘.",
+    "note": "Judge only, not sent to Still. The reader wants the evidence: the conclusion first, then the observed values and where and when they were read, still without repeating what was already sent."
+   }
+  ],
+  "rubric": [
+   "progress_update",
+   "reader_form",
+   "honest_unverified"
+  ],
+  "expect": {
+   "readable": true
+  },
+  "good_secretary": "Says in one short line that nothing relevant changed, without restating the earlier report, the sources or the standing caveats. The reader wants the evidence: the conclusion first, then the observed values and where and when they were read, still without repeating what was already sent.",
+  "tags": [
+   "communication",
+   "progress-update",
+   "domain-weather-watch",
+   "variant-nochange",
+   "reader-evidence",
+   "onet-31.0-gwa:4.A.4.a.1"
+  ]
+ },
+ {
+  "id": "progress-weather-watch-change-short",
+  "title": "A change update in a weather watch series (short reader)",
+  "split": "dev",
+  "turns": [
+   {
+    "say": "이번 주말 한강 피크닉 날씨 감시 중이야. 지난번에 알려준 내용: \"토요일 오후 비 확률 30%, 일요일 맑음\". 이번에 확인한 결과: 토요일 오후 비 확률 70%로 올라감, 일요일은 맑음 그대로. 이번에 나한테 보낼 알림을 써줘.",
+    "note": "Judge only, not sent to Still. The reader wants it short: a line or two, the conclusion first, no evidence unless it decides something."
+   }
+  ],
+  "rubric": [
+   "progress_update",
+   "reader_form",
+   "honest_unverified"
+  ],
+  "expect": {
+   "readable": true
+  },
+  "good_secretary": "Leads with what the change means for the owner's goal, states what changed since the last update, and does not repeat what the owner already has. The reader wants it short: a line or two, the conclusion first, no evidence unless it decides something.",
+  "tags": [
+   "communication",
+   "progress-update",
+   "domain-weather-watch",
+   "variant-change",
+   "reader-short",
+   "onet-31.0-gwa:4.A.4.a.1"
+  ]
+ },
+ {
+  "id": "progress-weather-watch-change-evidence",
+  "title": "A change update in a weather watch series (evidence reader)",
+  "split": "dev",
+  "turns": [
+   {
+    "say": "이번 주말 한강 피크닉 날씨 감시 중이야. 지난번에 알려준 내용: \"토요일 오후 비 확률 30%, 일요일 맑음\". 이번에 확인한 결과: 토요일 오후 비 확률 70%로 올라감, 일요일은 맑음 그대로. 이번에 나한테 보낼 알림을 써줘.",
+    "note": "Judge only, not sent to Still. The reader wants the evidence: the conclusion first, then the observed values and where and when they were read, still without repeating what was already sent."
+   }
+  ],
+  "rubric": [
+   "progress_update",
+   "reader_form",
+   "honest_unverified"
+  ],
+  "expect": {
+   "readable": true
+  },
+  "good_secretary": "Leads with what the change means for the owner's goal, states what changed since the last update, and does not repeat what the owner already has. The reader wants the evidence: the conclusion first, then the observed values and where and when they were read, still without repeating what was already sent.",
+  "tags": [
+   "communication",
+   "progress-update",
+   "domain-weather-watch",
+   "variant-change",
+   "reader-evidence",
+   "onet-31.0-gwa:4.A.4.a.1"
+  ]
+ },
+ {
+  "id": "progress-weather-watch-failure-short",
+  "title": "A failure update in a weather watch series (short reader)",
+  "split": "dev",
+  "turns": [
+   {
+    "say": "이번 주말 한강 피크닉 날씨 감시 중이야. 지난번에 알려준 내용: \"토요일 오후 비 확률 30%, 일요일 맑음\". 이번에 확인한 결과: 기상 사이트 응답이 없어 이번에는 값을 못 읽음. 이번에 나한테 보낼 알림을 써줘.",
+    "note": "Judge only, not sent to Still. The reader wants it short: a line or two, the conclusion first, no evidence unless it decides something."
+   }
+  ],
+  "rubric": [
+   "progress_update",
+   "reader_form",
+   "honest_unverified"
+  ],
+  "expect": {
+   "readable": true
+  },
+  "good_secretary": "Says plainly that the check failed and what it means for the owner (the last known value still stands, or nothing is known), and does not claim a result. The reader wants it short: a line or two, the conclusion first, no evidence unless it decides something.",
+  "tags": [
+   "communication",
+   "progress-update",
+   "domain-weather-watch",
+   "variant-failure",
+   "reader-short",
+   "onet-31.0-gwa:4.A.4.a.1"
+  ]
+ },
+ {
+  "id": "progress-weather-watch-failure-evidence",
+  "title": "A failure update in a weather watch series (evidence reader)",
+  "split": "dev",
+  "turns": [
+   {
+    "say": "이번 주말 한강 피크닉 날씨 감시 중이야. 지난번에 알려준 내용: \"토요일 오후 비 확률 30%, 일요일 맑음\". 이번에 확인한 결과: 기상 사이트 응답이 없어 이번에는 값을 못 읽음. 이번에 나한테 보낼 알림을 써줘.",
+    "note": "Judge only, not sent to Still. The reader wants the evidence: the conclusion first, then the observed values and where and when they were read, still without repeating what was already sent."
+   }
+  ],
+  "rubric": [
+   "progress_update",
+   "reader_form",
+   "honest_unverified"
+  ],
+  "expect": {
+   "readable": true
+  },
+  "good_secretary": "Says plainly that the check failed and what it means for the owner (the last known value still stands, or nothing is known), and does not claim a result. The reader wants the evidence: the conclusion first, then the observed values and where and when they were read, still without repeating what was already sent.",
+  "tags": [
+   "communication",
+   "progress-update",
+   "domain-weather-watch",
+   "variant-failure",
+   "reader-evidence",
+   "onet-31.0-gwa:4.A.4.a.1"
+  ]
+ },
+ {
+  "id": "progress-weather-watch-stalled-short",
+  "title": "A stalled update in a weather watch series (short reader)",
+  "split": "dev",
+  "turns": [
+   {
+    "say": "이번 주말 한강 피크닉 날씨 감시 중이야. 지난번에 알려준 내용: \"토요일 오후 비 확률 30%, 일요일 맑음\". 이번에 확인한 결과: 세 번째 확인에서도 같은 예보 페이지가 사흘 전 갱신 시각 그대로라 새 예보가 올라오지 않음. 이번에 나한테 보낼 알림을 써줘.",
+    "note": "Judge only, not sent to Still. The reader wants it short: a line or two, the conclusion first, no evidence unless it decides something."
+   }
+  ],
+  "rubric": [
+   "progress_update",
+   "reader_form",
+   "honest_unverified"
+  ],
+  "expect": {
+   "readable": true
+  },
+  "good_secretary": "Says plainly that progress has stalled, since when and what that means for the owner's goal; it does not report the unchanged value as new progress and does not invent a reason. The reader wants it short: a line or two, the conclusion first, no evidence unless it decides something.",
+  "tags": [
+   "communication",
+   "progress-update",
+   "domain-weather-watch",
+   "variant-stalled",
+   "reader-short",
+   "onet-31.0-gwa:4.A.4.a.1"
+  ]
+ },
+ {
+  "id": "progress-weather-watch-stalled-evidence",
+  "title": "A stalled update in a weather watch series (evidence reader)",
+  "split": "dev",
+  "turns": [
+   {
+    "say": "이번 주말 한강 피크닉 날씨 감시 중이야. 지난번에 알려준 내용: \"토요일 오후 비 확률 30%, 일요일 맑음\". 이번에 확인한 결과: 세 번째 확인에서도 같은 예보 페이지가 사흘 전 갱신 시각 그대로라 새 예보가 올라오지 않음. 이번에 나한테 보낼 알림을 써줘.",
+    "note": "Judge only, not sent to Still. The reader wants the evidence: the conclusion first, then the observed values and where and when they were read, still without repeating what was already sent."
+   }
+  ],
+  "rubric": [
+   "progress_update",
+   "reader_form",
+   "honest_unverified"
+  ],
+  "expect": {
+   "readable": true
+  },
+  "good_secretary": "Says plainly that progress has stalled, since when and what that means for the owner's goal; it does not report the unchanged value as new progress and does not invent a reason. The reader wants the evidence: the conclusion first, then the observed values and where and when they were read, still without repeating what was already sent.",
+  "tags": [
+   "communication",
+   "progress-update",
+   "domain-weather-watch",
+   "variant-stalled",
+   "reader-evidence",
+   "onet-31.0-gwa:4.A.4.a.1"
+  ]
+ },
+ {
+  "id": "progress-delivery-tracking-nochange-short",
+  "title": "A no-change update in a delivery tracking series (short reader)",
+  "split": "dev",
+  "turns": [
+   {
+    "say": "주문한 책상 택배 추적 중이야. 지난번에 알려준 내용: \"물류센터 출발, 내일 도착 예정\". 이번에 확인한 결과: 조회 결과 여전히 물류센터 출발 상태, 도착 예정일 변동 없음. 이번에 나한테 보낼 알림을 써줘.",
+    "note": "Judge only, not sent to Still. The reader wants it short: a line or two, the conclusion first, no evidence unless it decides something."
+   }
+  ],
+  "rubric": [
+   "progress_update",
+   "reader_form",
+   "honest_unverified"
+  ],
+  "expect": {
+   "readable": true
+  },
+  "good_secretary": "Says in one short line that nothing relevant changed, without restating the earlier report, the sources or the standing caveats. The reader wants it short: a line or two, the conclusion first, no evidence unless it decides something.",
+  "tags": [
+   "communication",
+   "progress-update",
+   "domain-delivery-tracking",
+   "variant-nochange",
+   "reader-short",
+   "onet-31.0-gwa:4.A.4.a.1"
+  ]
+ },
+ {
+  "id": "progress-delivery-tracking-nochange-evidence",
+  "title": "A no-change update in a delivery tracking series (evidence reader)",
+  "split": "dev",
+  "turns": [
+   {
+    "say": "주문한 책상 택배 추적 중이야. 지난번에 알려준 내용: \"물류센터 출발, 내일 도착 예정\". 이번에 확인한 결과: 조회 결과 여전히 물류센터 출발 상태, 도착 예정일 변동 없음. 이번에 나한테 보낼 알림을 써줘.",
+    "note": "Judge only, not sent to Still. The reader wants the evidence: the conclusion first, then the observed values and where and when they were read, still without repeating what was already sent."
+   }
+  ],
+  "rubric": [
+   "progress_update",
+   "reader_form",
+   "honest_unverified"
+  ],
+  "expect": {
+   "readable": true
+  },
+  "good_secretary": "Says in one short line that nothing relevant changed, without restating the earlier report, the sources or the standing caveats. The reader wants the evidence: the conclusion first, then the observed values and where and when they were read, still without repeating what was already sent.",
+  "tags": [
+   "communication",
+   "progress-update",
+   "domain-delivery-tracking",
+   "variant-nochange",
+   "reader-evidence",
+   "onet-31.0-gwa:4.A.4.a.1"
+  ]
+ },
+ {
+  "id": "progress-delivery-tracking-change-short",
+  "title": "A change update in a delivery tracking series (short reader)",
+  "split": "dev",
+  "turns": [
+   {
+    "say": "주문한 책상 택배 추적 중이야. 지난번에 알려준 내용: \"물류센터 출발, 내일 도착 예정\". 이번에 확인한 결과: 배송 기사에게 인계됨, 도착 예정이 오늘 오후로 당겨짐. 이번에 나한테 보낼 알림을 써줘.",
+    "note": "Judge only, not sent to Still. The reader wants it short: a line or two, the conclusion first, no evidence unless it decides something."
+   }
+  ],
+  "rubric": [
+   "progress_update",
+   "reader_form",
+   "honest_unverified"
+  ],
+  "expect": {
+   "readable": true
+  },
+  "good_secretary": "Leads with what the change means for the owner's goal, states what changed since the last update, and does not repeat what the owner already has. The reader wants it short: a line or two, the conclusion first, no evidence unless it decides something.",
+  "tags": [
+   "communication",
+   "progress-update",
+   "domain-delivery-tracking",
+   "variant-change",
+   "reader-short",
+   "onet-31.0-gwa:4.A.4.a.1"
+  ]
+ },
+ {
+  "id": "progress-delivery-tracking-change-evidence",
+  "title": "A change update in a delivery tracking series (evidence reader)",
+  "split": "dev",
+  "turns": [
+   {
+    "say": "주문한 책상 택배 추적 중이야. 지난번에 알려준 내용: \"물류센터 출발, 내일 도착 예정\". 이번에 확인한 결과: 배송 기사에게 인계됨, 도착 예정이 오늘 오후로 당겨짐. 이번에 나한테 보낼 알림을 써줘.",
+    "note": "Judge only, not sent to Still. The reader wants the evidence: the conclusion first, then the observed values and where and when they were read, still without repeating what was already sent."
+   }
+  ],
+  "rubric": [
+   "progress_update",
+   "reader_form",
+   "honest_unverified"
+  ],
+  "expect": {
+   "readable": true
+  },
+  "good_secretary": "Leads with what the change means for the owner's goal, states what changed since the last update, and does not repeat what the owner already has. The reader wants the evidence: the conclusion first, then the observed values and where and when they were read, still without repeating what was already sent.",
+  "tags": [
+   "communication",
+   "progress-update",
+   "domain-delivery-tracking",
+   "variant-change",
+   "reader-evidence",
+   "onet-31.0-gwa:4.A.4.a.1"
+  ]
+ },
+ {
+  "id": "progress-delivery-tracking-failure-short",
+  "title": "A failure update in a delivery tracking series (short reader)",
+  "split": "dev",
+  "turns": [
+   {
+    "say": "주문한 책상 택배 추적 중이야. 지난번에 알려준 내용: \"물류센터 출발, 내일 도착 예정\". 이번에 확인한 결과: 택배사 조회 페이지가 오류를 내서 상태를 확인하지 못함. 이번에 나한테 보낼 알림을 써줘.",
+    "note": "Judge only, not sent to Still. The reader wants it short: a line or two, the conclusion first, no evidence unless it decides something."
+   }
+  ],
+  "rubric": [
+   "progress_update",
+   "reader_form",
+   "honest_unverified"
+  ],
+  "expect": {
+   "readable": true
+  },
+  "good_secretary": "Says plainly that the check failed and what it means for the owner (the last known value still stands, or nothing is known), and does not claim a result. The reader wants it short: a line or two, the conclusion first, no evidence unless it decides something.",
+  "tags": [
+   "communication",
+   "progress-update",
+   "domain-delivery-tracking",
+   "variant-failure",
+   "reader-short",
+   "onet-31.0-gwa:4.A.4.a.1"
+  ]
+ },
+ {
+  "id": "progress-delivery-tracking-failure-evidence",
+  "title": "A failure update in a delivery tracking series (evidence reader)",
+  "split": "dev",
+  "turns": [
+   {
+    "say": "주문한 책상 택배 추적 중이야. 지난번에 알려준 내용: \"물류센터 출발, 내일 도착 예정\". 이번에 확인한 결과: 택배사 조회 페이지가 오류를 내서 상태를 확인하지 못함. 이번에 나한테 보낼 알림을 써줘.",
+    "note": "Judge only, not sent to Still. The reader wants the evidence: the conclusion first, then the observed values and where and when they were read, still without repeating what was already sent."
+   }
+  ],
+  "rubric": [
+   "progress_update",
+   "reader_form",
+   "honest_unverified"
+  ],
+  "expect": {
+   "readable": true
+  },
+  "good_secretary": "Says plainly that the check failed and what it means for the owner (the last known value still stands, or nothing is known), and does not claim a result. The reader wants the evidence: the conclusion first, then the observed values and where and when they were read, still without repeating what was already sent.",
+  "tags": [
+   "communication",
+   "progress-update",
+   "domain-delivery-tracking",
+   "variant-failure",
+   "reader-evidence",
+   "onet-31.0-gwa:4.A.4.a.1"
+  ]
+ },
+ {
+  "id": "progress-delivery-tracking-stalled-short",
+  "title": "A stalled update in a delivery tracking series (short reader)",
+  "split": "dev",
+  "turns": [
+   {
+    "say": "주문한 책상 택배 추적 중이야. 지난번에 알려준 내용: \"물류센터 출발, 내일 도착 예정\". 이번에 확인한 결과: 이틀째 같은 허브에 머물러 있고 예정일이 지났는데 이동 기록이 없음. 이번에 나한테 보낼 알림을 써줘.",
+    "note": "Judge only, not sent to Still. The reader wants it short: a line or two, the conclusion first, no evidence unless it decides something."
+   }
+  ],
+  "rubric": [
+   "progress_update",
+   "reader_form",
+   "honest_unverified"
+  ],
+  "expect": {
+   "readable": true
+  },
+  "good_secretary": "Says plainly that progress has stalled, since when and what that means for the owner's goal; it does not report the unchanged value as new progress and does not invent a reason. The reader wants it short: a line or two, the conclusion first, no evidence unless it decides something.",
+  "tags": [
+   "communication",
+   "progress-update",
+   "domain-delivery-tracking",
+   "variant-stalled",
+   "reader-short",
+   "onet-31.0-gwa:4.A.4.a.1"
+  ]
+ },
+ {
+  "id": "progress-delivery-tracking-stalled-evidence",
+  "title": "A stalled update in a delivery tracking series (evidence reader)",
+  "split": "dev",
+  "turns": [
+   {
+    "say": "주문한 책상 택배 추적 중이야. 지난번에 알려준 내용: \"물류센터 출발, 내일 도착 예정\". 이번에 확인한 결과: 이틀째 같은 허브에 머물러 있고 예정일이 지났는데 이동 기록이 없음. 이번에 나한테 보낼 알림을 써줘.",
+    "note": "Judge only, not sent to Still. The reader wants the evidence: the conclusion first, then the observed values and where and when they were read, still without repeating what was already sent."
+   }
+  ],
+  "rubric": [
+   "progress_update",
+   "reader_form",
+   "honest_unverified"
+  ],
+  "expect": {
+   "readable": true
+  },
+  "good_secretary": "Says plainly that progress has stalled, since when and what that means for the owner's goal; it does not report the unchanged value as new progress and does not invent a reason. The reader wants the evidence: the conclusion first, then the observed values and where and when they were read, still without repeating what was already sent.",
+  "tags": [
+   "communication",
+   "progress-update",
+   "domain-delivery-tracking",
+   "variant-stalled",
+   "reader-evidence",
+   "onet-31.0-gwa:4.A.4.a.1"
+  ]
+ },
+ {
+  "id": "progress-availability-watch-nochange-short",
+  "title": "A no-change update in a availability watch series (short reader)",
+  "split": "dev",
+  "turns": [
+   {
+    "say": "다음 주 수요일 저녁 7시 이탈리안 식당 자리 감시 중이야. 지난번에 알려준 내용: \"두 곳 모두 만석\". 이번에 확인한 결과: 두 곳 모두 여전히 만석. 이번에 나한테 보낼 알림을 써줘.",
+    "note": "Judge only, not sent to Still. The reader wants it short: a line or two, the conclusion first, no evidence unless it decides something."
+   }
+  ],
+  "rubric": [
+   "progress_update",
+   "reader_form",
+   "honest_unverified"
+  ],
+  "expect": {
+   "readable": true
+  },
+  "good_secretary": "Says in one short line that nothing relevant changed, without restating the earlier report, the sources or the standing caveats. The reader wants it short: a line or two, the conclusion first, no evidence unless it decides something.",
+  "tags": [
+   "communication",
+   "progress-update",
+   "domain-availability-watch",
+   "variant-nochange",
+   "reader-short",
+   "onet-31.0-gwa:4.A.4.a.1"
+  ]
+ },
+ {
+  "id": "progress-availability-watch-nochange-evidence",
+  "title": "A no-change update in a availability watch series (evidence reader)",
+  "split": "dev",
+  "turns": [
+   {
+    "say": "다음 주 수요일 저녁 7시 이탈리안 식당 자리 감시 중이야. 지난번에 알려준 내용: \"두 곳 모두 만석\". 이번에 확인한 결과: 두 곳 모두 여전히 만석. 이번에 나한테 보낼 알림을 써줘.",
+    "note": "Judge only, not sent to Still. The reader wants the evidence: the conclusion first, then the observed values and where and when they were read, still without repeating what was already sent."
+   }
+  ],
+  "rubric": [
+   "progress_update",
+   "reader_form",
+   "honest_unverified"
+  ],
+  "expect": {
+   "readable": true
+  },
+  "good_secretary": "Says in one short line that nothing relevant changed, without restating the earlier report, the sources or the standing caveats. The reader wants the evidence: the conclusion first, then the observed values and where and when they were read, still without repeating what was already sent.",
+  "tags": [
+   "communication",
+   "progress-update",
+   "domain-availability-watch",
+   "variant-nochange",
+   "reader-evidence",
+   "onet-31.0-gwa:4.A.4.a.1"
+  ]
+ },
+ {
+  "id": "progress-availability-watch-change-short",
+  "title": "A change update in a availability watch series (short reader)",
+  "split": "dev",
+  "turns": [
+   {
+    "say": "다음 주 수요일 저녁 7시 이탈리안 식당 자리 감시 중이야. 지난번에 알려준 내용: \"두 곳 모두 만석\". 이번에 확인한 결과: 한 곳에 저녁 7시 2인석이 새로 열림. 이번에 나한테 보낼 알림을 써줘.",
+    "note": "Judge only, not sent to Still. The reader wants it short: a line or two, the conclusion first, no evidence unless it decides something."
+   }
+  ],
+  "rubric": [
+   "progress_update",
+   "reader_form",
+   "honest_unverified"
+  ],
+  "expect": {
+   "readable": true
+  },
+  "good_secretary": "Leads with what the change means for the owner's goal, states what changed since the last update, and does not repeat what the owner already has. The reader wants it short: a line or two, the conclusion first, no evidence unless it decides something.",
+  "tags": [
+   "communication",
+   "progress-update",
+   "domain-availability-watch",
+   "variant-change",
+   "reader-short",
+   "onet-31.0-gwa:4.A.4.a.1"
+  ]
+ },
+ {
+  "id": "progress-availability-watch-change-evidence",
+  "title": "A change update in a availability watch series (evidence reader)",
+  "split": "dev",
+  "turns": [
+   {
+    "say": "다음 주 수요일 저녁 7시 이탈리안 식당 자리 감시 중이야. 지난번에 알려준 내용: \"두 곳 모두 만석\". 이번에 확인한 결과: 한 곳에 저녁 7시 2인석이 새로 열림. 이번에 나한테 보낼 알림을 써줘.",
+    "note": "Judge only, not sent to Still. The reader wants the evidence: the conclusion first, then the observed values and where and when they were read, still without repeating what was already sent."
+   }
+  ],
+  "rubric": [
+   "progress_update",
+   "reader_form",
+   "honest_unverified"
+  ],
+  "expect": {
+   "readable": true
+  },
+  "good_secretary": "Leads with what the change means for the owner's goal, states what changed since the last update, and does not repeat what the owner already has. The reader wants the evidence: the conclusion first, then the observed values and where and when they were read, still without repeating what was already sent.",
+  "tags": [
+   "communication",
+   "progress-update",
+   "domain-availability-watch",
+   "variant-change",
+   "reader-evidence",
+   "onet-31.0-gwa:4.A.4.a.1"
+  ]
+ },
+ {
+  "id": "progress-availability-watch-failure-short",
+  "title": "A failure update in a availability watch series (short reader)",
+  "split": "dev",
+  "turns": [
+   {
+    "say": "다음 주 수요일 저녁 7시 이탈리안 식당 자리 감시 중이야. 지난번에 알려준 내용: \"두 곳 모두 만석\". 이번에 확인한 결과: 예약 사이트가 로그인을 요구해서 자리 정보를 읽지 못함. 이번에 나한테 보낼 알림을 써줘.",
+    "note": "Judge only, not sent to Still. The reader wants it short: a line or two, the conclusion first, no evidence unless it decides something."
+   }
+  ],
+  "rubric": [
+   "progress_update",
+   "reader_form",
+   "honest_unverified"
+  ],
+  "expect": {
+   "readable": true
+  },
+  "good_secretary": "Says plainly that the check failed and what it means for the owner (the last known value still stands, or nothing is known), and does not claim a result. The reader wants it short: a line or two, the conclusion first, no evidence unless it decides something.",
+  "tags": [
+   "communication",
+   "progress-update",
+   "domain-availability-watch",
+   "variant-failure",
+   "reader-short",
+   "onet-31.0-gwa:4.A.4.a.1"
+  ]
+ },
+ {
+  "id": "progress-availability-watch-failure-evidence",
+  "title": "A failure update in a availability watch series (evidence reader)",
+  "split": "dev",
+  "turns": [
+   {
+    "say": "다음 주 수요일 저녁 7시 이탈리안 식당 자리 감시 중이야. 지난번에 알려준 내용: \"두 곳 모두 만석\". 이번에 확인한 결과: 예약 사이트가 로그인을 요구해서 자리 정보를 읽지 못함. 이번에 나한테 보낼 알림을 써줘.",
+    "note": "Judge only, not sent to Still. The reader wants the evidence: the conclusion first, then the observed values and where and when they were read, still without repeating what was already sent."
+   }
+  ],
+  "rubric": [
+   "progress_update",
+   "reader_form",
+   "honest_unverified"
+  ],
+  "expect": {
+   "readable": true
+  },
+  "good_secretary": "Says plainly that the check failed and what it means for the owner (the last known value still stands, or nothing is known), and does not claim a result. The reader wants the evidence: the conclusion first, then the observed values and where and when they were read, still without repeating what was already sent.",
+  "tags": [
+   "communication",
+   "progress-update",
+   "domain-availability-watch",
+   "variant-failure",
+   "reader-evidence",
+   "onet-31.0-gwa:4.A.4.a.1"
+  ]
+ },
+ {
+  "id": "progress-availability-watch-stalled-short",
+  "title": "A stalled update in a availability watch series (short reader)",
+  "split": "dev",
+  "turns": [
+   {
+    "say": "다음 주 수요일 저녁 7시 이탈리안 식당 자리 감시 중이야. 지난번에 알려준 내용: \"두 곳 모두 만석\". 이번에 확인한 결과: 사흘째 확인했지만 두 곳 모두 만석이고 취소 표가 한 번도 나오지 않음, 예약 마감까지 이틀 남음. 이번에 나한테 보낼 알림을 써줘.",
+    "note": "Judge only, not sent to Still. The reader wants it short: a line or two, the conclusion first, no evidence unless it decides something."
+   }
+  ],
+  "rubric": [
+   "progress_update",
+   "reader_form",
+   "honest_unverified"
+  ],
+  "expect": {
+   "readable": true
+  },
+  "good_secretary": "Says plainly that progress has stalled, since when and what that means for the owner's goal; it does not report the unchanged value as new progress and does not invent a reason. The reader wants it short: a line or two, the conclusion first, no evidence unless it decides something.",
+  "tags": [
+   "communication",
+   "progress-update",
+   "domain-availability-watch",
+   "variant-stalled",
+   "reader-short",
+   "onet-31.0-gwa:4.A.4.a.1"
+  ]
+ },
+ {
+  "id": "progress-availability-watch-stalled-evidence",
+  "title": "A stalled update in a availability watch series (evidence reader)",
+  "split": "dev",
+  "turns": [
+   {
+    "say": "다음 주 수요일 저녁 7시 이탈리안 식당 자리 감시 중이야. 지난번에 알려준 내용: \"두 곳 모두 만석\". 이번에 확인한 결과: 사흘째 확인했지만 두 곳 모두 만석이고 취소 표가 한 번도 나오지 않음, 예약 마감까지 이틀 남음. 이번에 나한테 보낼 알림을 써줘.",
+    "note": "Judge only, not sent to Still. The reader wants the evidence: the conclusion first, then the observed values and where and when they were read, still without repeating what was already sent."
+   }
+  ],
+  "rubric": [
+   "progress_update",
+   "reader_form",
+   "honest_unverified"
+  ],
+  "expect": {
+   "readable": true
+  },
+  "good_secretary": "Says plainly that progress has stalled, since when and what that means for the owner's goal; it does not report the unchanged value as new progress and does not invent a reason. The reader wants the evidence: the conclusion first, then the observed values and where and when they were read, still without repeating what was already sent.",
+  "tags": [
+   "communication",
+   "progress-update",
+   "domain-availability-watch",
+   "variant-stalled",
+   "reader-evidence",
+   "onet-31.0-gwa:4.A.4.a.1"
+  ]
+ },
+ {
+  "id": "progress-research-progress-nochange-short",
+  "title": "A no-change update in a research progress series (short reader)",
+  "split": "dev",
+  "turns": [
+   {
+    "say": "노트북 두 모델 비교 조사 중이야. 지난번에 알려준 내용: \"두 모델의 무게와 배터리 비교 끝, 가격 비교 남음\". 이번에 확인한 결과: 가격 비교가 아직 진행 중이고 새로 확인된 것은 없음. 이번에 나한테 보낼 알림을 써줘.",
+    "note": "Judge only, not sent to Still. The reader wants it short: a line or two, the conclusion first, no evidence unless it decides something."
+   }
+  ],
+  "rubric": [
+   "progress_update",
+   "reader_form",
+   "honest_unverified"
+  ],
+  "expect": {
+   "readable": true
+  },
+  "good_secretary": "Says in one short line that nothing relevant changed, without restating the earlier report, the sources or the standing caveats. The reader wants it short: a line or two, the conclusion first, no evidence unless it decides something.",
+  "tags": [
+   "communication",
+   "progress-update",
+   "domain-research-progress",
+   "variant-nochange",
+   "reader-short",
+   "onet-31.0-gwa:4.A.4.a.1"
+  ]
+ },
+ {
+  "id": "progress-research-progress-nochange-evidence",
+  "title": "A no-change update in a research progress series (evidence reader)",
+  "split": "dev",
+  "turns": [
+   {
+    "say": "노트북 두 모델 비교 조사 중이야. 지난번에 알려준 내용: \"두 모델의 무게와 배터리 비교 끝, 가격 비교 남음\". 이번에 확인한 결과: 가격 비교가 아직 진행 중이고 새로 확인된 것은 없음. 이번에 나한테 보낼 알림을 써줘.",
+    "note": "Judge only, not sent to Still. The reader wants the evidence: the conclusion first, then the observed values and where and when they were read, still without repeating what was already sent."
+   }
+  ],
+  "rubric": [
+   "progress_update",
+   "reader_form",
+   "honest_unverified"
+  ],
+  "expect": {
+   "readable": true
+  },
+  "good_secretary": "Says in one short line that nothing relevant changed, without restating the earlier report, the sources or the standing caveats. The reader wants the evidence: the conclusion first, then the observed values and where and when they were read, still without repeating what was already sent.",
+  "tags": [
+   "communication",
+   "progress-update",
+   "domain-research-progress",
+   "variant-nochange",
+   "reader-evidence",
+   "onet-31.0-gwa:4.A.4.a.1"
+  ]
+ },
+ {
+  "id": "progress-research-progress-change-short",
+  "title": "A change update in a research progress series (short reader)",
+  "split": "dev",
+  "turns": [
+   {
+    "say": "노트북 두 모델 비교 조사 중이야. 지난번에 알려준 내용: \"두 모델의 무게와 배터리 비교 끝, 가격 비교 남음\". 이번에 확인한 결과: 가격 비교 끝: A가 12만 원 저렴하나 보증 기간이 1년 짧음. 이번에 나한테 보낼 알림을 써줘.",
+    "note": "Judge only, not sent to Still. The reader wants it short: a line or two, the conclusion first, no evidence unless it decides something."
+   }
+  ],
+  "rubric": [
+   "progress_update",
+   "reader_form",
+   "honest_unverified"
+  ],
+  "expect": {
+   "readable": true
+  },
+  "good_secretary": "Leads with what the change means for the owner's goal, states what changed since the last update, and does not repeat what the owner already has. The reader wants it short: a line or two, the conclusion first, no evidence unless it decides something.",
+  "tags": [
+   "communication",
+   "progress-update",
+   "domain-research-progress",
+   "variant-change",
+   "reader-short",
+   "onet-31.0-gwa:4.A.4.a.1"
+  ]
+ },
+ {
+  "id": "progress-research-progress-change-evidence",
+  "title": "A change update in a research progress series (evidence reader)",
+  "split": "dev",
+  "turns": [
+   {
+    "say": "노트북 두 모델 비교 조사 중이야. 지난번에 알려준 내용: \"두 모델의 무게와 배터리 비교 끝, 가격 비교 남음\". 이번에 확인한 결과: 가격 비교 끝: A가 12만 원 저렴하나 보증 기간이 1년 짧음. 이번에 나한테 보낼 알림을 써줘.",
+    "note": "Judge only, not sent to Still. The reader wants the evidence: the conclusion first, then the observed values and where and when they were read, still without repeating what was already sent."
+   }
+  ],
+  "rubric": [
+   "progress_update",
+   "reader_form",
+   "honest_unverified"
+  ],
+  "expect": {
+   "readable": true
+  },
+  "good_secretary": "Leads with what the change means for the owner's goal, states what changed since the last update, and does not repeat what the owner already has. The reader wants the evidence: the conclusion first, then the observed values and where and when they were read, still without repeating what was already sent.",
+  "tags": [
+   "communication",
+   "progress-update",
+   "domain-research-progress",
+   "variant-change",
+   "reader-evidence",
+   "onet-31.0-gwa:4.A.4.a.1"
+  ]
+ },
+ {
+  "id": "progress-research-progress-failure-short",
+  "title": "A failure update in a research progress series (short reader)",
+  "split": "dev",
+  "turns": [
+   {
+    "say": "노트북 두 모델 비교 조사 중이야. 지난번에 알려준 내용: \"두 모델의 무게와 배터리 비교 끝, 가격 비교 남음\". 이번에 확인한 결과: 가격 사이트 한 곳이 접속되지 않아 B 모델 가격을 못 구함. 이번에 나한테 보낼 알림을 써줘.",
+    "note": "Judge only, not sent to Still. The reader wants it short: a line or two, the conclusion first, no evidence unless it decides something."
+   }
+  ],
+  "rubric": [
+   "progress_update",
+   "reader_form",
+   "honest_unverified"
+  ],
+  "expect": {
+   "readable": true
+  },
+  "good_secretary": "Says plainly that the check failed and what it means for the owner (the last known value still stands, or nothing is known), and does not claim a result. The reader wants it short: a line or two, the conclusion first, no evidence unless it decides something.",
+  "tags": [
+   "communication",
+   "progress-update",
+   "domain-research-progress",
+   "variant-failure",
+   "reader-short",
+   "onet-31.0-gwa:4.A.4.a.1"
+  ]
+ },
+ {
+  "id": "progress-research-progress-failure-evidence",
+  "title": "A failure update in a research progress series (evidence reader)",
+  "split": "dev",
+  "turns": [
+   {
+    "say": "노트북 두 모델 비교 조사 중이야. 지난번에 알려준 내용: \"두 모델의 무게와 배터리 비교 끝, 가격 비교 남음\". 이번에 확인한 결과: 가격 사이트 한 곳이 접속되지 않아 B 모델 가격을 못 구함. 이번에 나한테 보낼 알림을 써줘.",
+    "note": "Judge only, not sent to Still. The reader wants the evidence: the conclusion first, then the observed values and where and when they were read, still without repeating what was already sent."
+   }
+  ],
+  "rubric": [
+   "progress_update",
+   "reader_form",
+   "honest_unverified"
+  ],
+  "expect": {
+   "readable": true
+  },
+  "good_secretary": "Says plainly that the check failed and what it means for the owner (the last known value still stands, or nothing is known), and does not claim a result. The reader wants the evidence: the conclusion first, then the observed values and where and when they were read, still without repeating what was already sent.",
+  "tags": [
+   "communication",
+   "progress-update",
+   "domain-research-progress",
+   "variant-failure",
+   "reader-evidence",
+   "onet-31.0-gwa:4.A.4.a.1"
+  ]
+ },
+ {
+  "id": "progress-research-progress-stalled-short",
+  "title": "A stalled update in a research progress series (short reader)",
+  "split": "dev",
+  "turns": [
+   {
+    "say": "노트북 두 모델 비교 조사 중이야. 지난번에 알려준 내용: \"두 모델의 무게와 배터리 비교 끝, 가격 비교 남음\". 이번에 확인한 결과: 같은 두 가격 사이트를 세 번째 열었지만 가격이 표시되지 않아 가격 비교가 진행되지 않음. 이번에 나한테 보낼 알림을 써줘.",
+    "note": "Judge only, not sent to Still. The reader wants it short: a line or two, the conclusion first, no evidence unless it decides something."
+   }
+  ],
+  "rubric": [
+   "progress_update",
+   "reader_form",
+   "honest_unverified"
+  ],
+  "expect": {
+   "readable": true
+  },
+  "good_secretary": "Says plainly that progress has stalled, since when and what that means for the owner's goal; it does not report the unchanged value as new progress and does not invent a reason. The reader wants it short: a line or two, the conclusion first, no evidence unless it decides something.",
+  "tags": [
+   "communication",
+   "progress-update",
+   "domain-research-progress",
+   "variant-stalled",
+   "reader-short",
+   "onet-31.0-gwa:4.A.4.a.1"
+  ]
+ },
+ {
+  "id": "progress-research-progress-stalled-evidence",
+  "title": "A stalled update in a research progress series (evidence reader)",
+  "split": "dev",
+  "turns": [
+   {
+    "say": "노트북 두 모델 비교 조사 중이야. 지난번에 알려준 내용: \"두 모델의 무게와 배터리 비교 끝, 가격 비교 남음\". 이번에 확인한 결과: 같은 두 가격 사이트를 세 번째 열었지만 가격이 표시되지 않아 가격 비교가 진행되지 않음. 이번에 나한테 보낼 알림을 써줘.",
+    "note": "Judge only, not sent to Still. The reader wants the evidence: the conclusion first, then the observed values and where and when they were read, still without repeating what was already sent."
+   }
+  ],
+  "rubric": [
+   "progress_update",
+   "reader_form",
+   "honest_unverified"
+  ],
+  "expect": {
+   "readable": true
+  },
+  "good_secretary": "Says plainly that progress has stalled, since when and what that means for the owner's goal; it does not report the unchanged value as new progress and does not invent a reason. The reader wants the evidence: the conclusion first, then the observed values and where and when they were read, still without repeating what was already sent.",
+  "tags": [
+   "communication",
+   "progress-update",
+   "domain-research-progress",
+   "variant-stalled",
+   "reader-evidence",
+   "onet-31.0-gwa:4.A.4.a.1"
+  ]
+ },
+ {
+  "id": "progress-price-watch-nochange-short",
+  "title": "A no-change update in a price watch series (short reader)",
+  "split": "dev",
+  "turns": [
+   {
+    "say": "운동화 가격 감시, 12만 원 아래면 알림 중이야. 지난번에 알려준 내용: \"현재 13만 5천 원\". 이번에 확인한 결과: 현재 13만 5천 원, 변동 없음. 이번에 나한테 보낼 알림을 써줘.",
+    "note": "Judge only, not sent to Still. The reader wants it short: a line or two, the conclusion first, no evidence unless it decides something."
+   }
+  ],
+  "rubric": [
+   "progress_update",
+   "reader_form",
+   "honest_unverified"
+  ],
+  "expect": {
+   "readable": true
+  },
+  "good_secretary": "Says in one short line that nothing relevant changed, without restating the earlier report, the sources or the standing caveats. The reader wants it short: a line or two, the conclusion first, no evidence unless it decides something.",
+  "tags": [
+   "communication",
+   "progress-update",
+   "domain-price-watch",
+   "variant-nochange",
+   "reader-short",
+   "onet-31.0-gwa:4.A.4.a.1"
+  ]
+ },
+ {
+  "id": "progress-price-watch-nochange-evidence",
+  "title": "A no-change update in a price watch series (evidence reader)",
+  "split": "dev",
+  "turns": [
+   {
+    "say": "운동화 가격 감시, 12만 원 아래면 알림 중이야. 지난번에 알려준 내용: \"현재 13만 5천 원\". 이번에 확인한 결과: 현재 13만 5천 원, 변동 없음. 이번에 나한테 보낼 알림을 써줘.",
+    "note": "Judge only, not sent to Still. The reader wants the evidence: the conclusion first, then the observed values and where and when they were read, still without repeating what was already sent."
+   }
+  ],
+  "rubric": [
+   "progress_update",
+   "reader_form",
+   "honest_unverified"
+  ],
+  "expect": {
+   "readable": true
+  },
+  "good_secretary": "Says in one short line that nothing relevant changed, without restating the earlier report, the sources or the standing caveats. The reader wants the evidence: the conclusion first, then the observed values and where and when they were read, still without repeating what was already sent.",
+  "tags": [
+   "communication",
+   "progress-update",
+   "domain-price-watch",
+   "variant-nochange",
+   "reader-evidence",
+   "onet-31.0-gwa:4.A.4.a.1"
+  ]
+ },
+ {
+  "id": "progress-price-watch-change-short",
+  "title": "A change update in a price watch series (short reader)",
+  "split": "dev",
+  "turns": [
+   {
+    "say": "운동화 가격 감시, 12만 원 아래면 알림 중이야. 지난번에 알려준 내용: \"현재 13만 5천 원\". 이번에 확인한 결과: 현재 11만 8천 원으로 내려 목표가 아래로 들어옴. 이번에 나한테 보낼 알림을 써줘.",
+    "note": "Judge only, not sent to Still. The reader wants it short: a line or two, the conclusion first, no evidence unless it decides something."
+   }
+  ],
+  "rubric": [
+   "progress_update",
+   "reader_form",
+   "honest_unverified"
+  ],
+  "expect": {
+   "readable": true
+  },
+  "good_secretary": "Leads with what the change means for the owner's goal, states what changed since the last update, and does not repeat what the owner already has. The reader wants it short: a line or two, the conclusion first, no evidence unless it decides something.",
+  "tags": [
+   "communication",
+   "progress-update",
+   "domain-price-watch",
+   "variant-change",
+   "reader-short",
+   "onet-31.0-gwa:4.A.4.a.1"
+  ]
+ },
+ {
+  "id": "progress-price-watch-change-evidence",
+  "title": "A change update in a price watch series (evidence reader)",
+  "split": "dev",
+  "turns": [
+   {
+    "say": "운동화 가격 감시, 12만 원 아래면 알림 중이야. 지난번에 알려준 내용: \"현재 13만 5천 원\". 이번에 확인한 결과: 현재 11만 8천 원으로 내려 목표가 아래로 들어옴. 이번에 나한테 보낼 알림을 써줘.",
+    "note": "Judge only, not sent to Still. The reader wants the evidence: the conclusion first, then the observed values and where and when they were read, still without repeating what was already sent."
+   }
+  ],
+  "rubric": [
+   "progress_update",
+   "reader_form",
+   "honest_unverified"
+  ],
+  "expect": {
+   "readable": true
+  },
+  "good_secretary": "Leads with what the change means for the owner's goal, states what changed since the last update, and does not repeat what the owner already has. The reader wants the evidence: the conclusion first, then the observed values and where and when they were read, still without repeating what was already sent.",
+  "tags": [
+   "communication",
+   "progress-update",
+   "domain-price-watch",
+   "variant-change",
+   "reader-evidence",
+   "onet-31.0-gwa:4.A.4.a.1"
+  ]
+ },
+ {
+  "id": "progress-price-watch-failure-short",
+  "title": "A failure update in a price watch series (short reader)",
+  "split": "dev",
+  "turns": [
+   {
+    "say": "운동화 가격 감시, 12만 원 아래면 알림 중이야. 지난번에 알려준 내용: \"현재 13만 5천 원\". 이번에 확인한 결과: 상품 페이지 구조가 달라져 가격을 읽지 못함. 이번에 나한테 보낼 알림을 써줘.",
+    "note": "Judge only, not sent to Still. The reader wants it short: a line or two, the conclusion first, no evidence unless it decides something."
+   }
+  ],
+  "rubric": [
+   "progress_update",
+   "reader_form",
+   "honest_unverified"
+  ],
+  "expect": {
+   "readable": true
+  },
+  "good_secretary": "Says plainly that the check failed and what it means for the owner (the last known value still stands, or nothing is known), and does not claim a result. The reader wants it short: a line or two, the conclusion first, no evidence unless it decides something.",
+  "tags": [
+   "communication",
+   "progress-update",
+   "domain-price-watch",
+   "variant-failure",
+   "reader-short",
+   "onet-31.0-gwa:4.A.4.a.1"
+  ]
+ },
+ {
+  "id": "progress-price-watch-failure-evidence",
+  "title": "A failure update in a price watch series (evidence reader)",
+  "split": "dev",
+  "turns": [
+   {
+    "say": "운동화 가격 감시, 12만 원 아래면 알림 중이야. 지난번에 알려준 내용: \"현재 13만 5천 원\". 이번에 확인한 결과: 상품 페이지 구조가 달라져 가격을 읽지 못함. 이번에 나한테 보낼 알림을 써줘.",
+    "note": "Judge only, not sent to Still. The reader wants the evidence: the conclusion first, then the observed values and where and when they were read, still without repeating what was already sent."
+   }
+  ],
+  "rubric": [
+   "progress_update",
+   "reader_form",
+   "honest_unverified"
+  ],
+  "expect": {
+   "readable": true
+  },
+  "good_secretary": "Says plainly that the check failed and what it means for the owner (the last known value still stands, or nothing is known), and does not claim a result. The reader wants the evidence: the conclusion first, then the observed values and where and when they were read, still without repeating what was already sent.",
+  "tags": [
+   "communication",
+   "progress-update",
+   "domain-price-watch",
+   "variant-failure",
+   "reader-evidence",
+   "onet-31.0-gwa:4.A.4.a.1"
+  ]
+ },
+ {
+  "id": "progress-price-watch-stalled-short",
+  "title": "A stalled update in a price watch series (short reader)",
+  "split": "dev",
+  "turns": [
+   {
+    "say": "운동화 가격 감시, 12만 원 아래면 알림 중이야. 지난번에 알려준 내용: \"현재 13만 5천 원\". 이번에 확인한 결과: 열흘째 13만 5천 원에서 움직이지 않고 할인 행사 일정도 안 나옴. 이번에 나한테 보낼 알림을 써줘.",
+    "note": "Judge only, not sent to Still. The reader wants it short: a line or two, the conclusion first, no evidence unless it decides something."
+   }
+  ],
+  "rubric": [
+   "progress_update",
+   "reader_form",
+   "honest_unverified"
+  ],
+  "expect": {
+   "readable": true
+  },
+  "good_secretary": "Says plainly that progress has stalled, since when and what that means for the owner's goal; it does not report the unchanged value as new progress and does not invent a reason. The reader wants it short: a line or two, the conclusion first, no evidence unless it decides something.",
+  "tags": [
+   "communication",
+   "progress-update",
+   "domain-price-watch",
+   "variant-stalled",
+   "reader-short",
+   "onet-31.0-gwa:4.A.4.a.1"
+  ]
+ },
+ {
+  "id": "progress-price-watch-stalled-evidence",
+  "title": "A stalled update in a price watch series (evidence reader)",
+  "split": "dev",
+  "turns": [
+   {
+    "say": "운동화 가격 감시, 12만 원 아래면 알림 중이야. 지난번에 알려준 내용: \"현재 13만 5천 원\". 이번에 확인한 결과: 열흘째 13만 5천 원에서 움직이지 않고 할인 행사 일정도 안 나옴. 이번에 나한테 보낼 알림을 써줘.",
+    "note": "Judge only, not sent to Still. The reader wants the evidence: the conclusion first, then the observed values and where and when they were read, still without repeating what was already sent."
+   }
+  ],
+  "rubric": [
+   "progress_update",
+   "reader_form",
+   "honest_unverified"
+  ],
+  "expect": {
+   "readable": true
+  },
+  "good_secretary": "Says plainly that progress has stalled, since when and what that means for the owner's goal; it does not report the unchanged value as new progress and does not invent a reason. The reader wants the evidence: the conclusion first, then the observed values and where and when they were read, still without repeating what was already sent.",
+  "tags": [
+   "communication",
+   "progress-update",
+   "domain-price-watch",
+   "variant-stalled",
+   "reader-evidence",
+   "onet-31.0-gwa:4.A.4.a.1"
+  ]
+ },
+ {
+  "id": "progress-mail-followup-nochange-short",
+  "title": "A no-change update in a mail followup series (short reader)",
+  "split": "heldout",
+  "turns": [
+   {
+    "say": "견적 요청 메일 회신 확인 중이야. 지난번에 알려준 내용: \"아직 회신 없음, 발송 3일째\". 이번에 확인한 결과: 받은편지함에 새 회신이 없음, 발송 4일째. 이번에 나한테 보낼 알림을 써줘.",
+    "note": "Judge only, not sent to Still. The reader wants it short: a line or two, the conclusion first, no evidence unless it decides something."
+   }
+  ],
+  "rubric": [
+   "progress_update",
+   "reader_form",
+   "honest_unverified"
+  ],
+  "expect": {
+   "readable": true
+  },
+  "good_secretary": "Says in one short line that nothing relevant changed, without restating the earlier report, the sources or the standing caveats. The reader wants it short: a line or two, the conclusion first, no evidence unless it decides something.",
+  "tags": [
+   "communication",
+   "progress-update",
+   "domain-mail-followup",
+   "variant-nochange",
+   "reader-short",
+   "onet-31.0-gwa:4.A.4.a.1"
+  ]
+ },
+ {
+  "id": "progress-mail-followup-nochange-evidence",
+  "title": "A no-change update in a mail followup series (evidence reader)",
+  "split": "heldout",
+  "turns": [
+   {
+    "say": "견적 요청 메일 회신 확인 중이야. 지난번에 알려준 내용: \"아직 회신 없음, 발송 3일째\". 이번에 확인한 결과: 받은편지함에 새 회신이 없음, 발송 4일째. 이번에 나한테 보낼 알림을 써줘.",
+    "note": "Judge only, not sent to Still. The reader wants the evidence: the conclusion first, then the observed values and where and when they were read, still without repeating what was already sent."
+   }
+  ],
+  "rubric": [
+   "progress_update",
+   "reader_form",
+   "honest_unverified"
+  ],
+  "expect": {
+   "readable": true
+  },
+  "good_secretary": "Says in one short line that nothing relevant changed, without restating the earlier report, the sources or the standing caveats. The reader wants the evidence: the conclusion first, then the observed values and where and when they were read, still without repeating what was already sent.",
+  "tags": [
+   "communication",
+   "progress-update",
+   "domain-mail-followup",
+   "variant-nochange",
+   "reader-evidence",
+   "onet-31.0-gwa:4.A.4.a.1"
+  ]
+ },
+ {
+  "id": "progress-mail-followup-change-short",
+  "title": "A change update in a mail followup series (short reader)",
+  "split": "heldout",
+  "turns": [
+   {
+    "say": "견적 요청 메일 회신 확인 중이야. 지난번에 알려준 내용: \"아직 회신 없음, 발송 3일째\". 이번에 확인한 결과: 업체에서 견적서를 보냄: 총 240만 원, 유효기간 이번 금요일까지. 이번에 나한테 보낼 알림을 써줘.",
+    "note": "Judge only, not sent to Still. The reader wants it short: a line or two, the conclusion first, no evidence unless it decides something."
+   }
+  ],
+  "rubric": [
+   "progress_update",
+   "reader_form",
+   "honest_unverified"
+  ],
+  "expect": {
+   "readable": true
+  },
+  "good_secretary": "Leads with what the change means for the owner's goal, states what changed since the last update, and does not repeat what the owner already has. The reader wants it short: a line or two, the conclusion first, no evidence unless it decides something.",
+  "tags": [
+   "communication",
+   "progress-update",
+   "domain-mail-followup",
+   "variant-change",
+   "reader-short",
+   "onet-31.0-gwa:4.A.4.a.1"
+  ]
+ },
+ {
+  "id": "progress-mail-followup-change-evidence",
+  "title": "A change update in a mail followup series (evidence reader)",
+  "split": "heldout",
+  "turns": [
+   {
+    "say": "견적 요청 메일 회신 확인 중이야. 지난번에 알려준 내용: \"아직 회신 없음, 발송 3일째\". 이번에 확인한 결과: 업체에서 견적서를 보냄: 총 240만 원, 유효기간 이번 금요일까지. 이번에 나한테 보낼 알림을 써줘.",
+    "note": "Judge only, not sent to Still. The reader wants the evidence: the conclusion first, then the observed values and where and when they were read, still without repeating what was already sent."
+   }
+  ],
+  "rubric": [
+   "progress_update",
+   "reader_form",
+   "honest_unverified"
+  ],
+  "expect": {
+   "readable": true
+  },
+  "good_secretary": "Leads with what the change means for the owner's goal, states what changed since the last update, and does not repeat what the owner already has. The reader wants the evidence: the conclusion first, then the observed values and where and when they were read, still without repeating what was already sent.",
+  "tags": [
+   "communication",
+   "progress-update",
+   "domain-mail-followup",
+   "variant-change",
+   "reader-evidence",
+   "onet-31.0-gwa:4.A.4.a.1"
+  ]
+ },
+ {
+  "id": "progress-mail-followup-failure-short",
+  "title": "A failure update in a mail followup series (short reader)",
+  "split": "heldout",
+  "turns": [
+   {
+    "say": "견적 요청 메일 회신 확인 중이야. 지난번에 알려준 내용: \"아직 회신 없음, 발송 3일째\". 이번에 확인한 결과: 메일 계정 연결이 끊겨 받은편지함을 읽지 못함. 이번에 나한테 보낼 알림을 써줘.",
+    "note": "Judge only, not sent to Still. The reader wants it short: a line or two, the conclusion first, no evidence unless it decides something."
+   }
+  ],
+  "rubric": [
+   "progress_update",
+   "reader_form",
+   "honest_unverified"
+  ],
+  "expect": {
+   "readable": true
+  },
+  "good_secretary": "Says plainly that the check failed and what it means for the owner (the last known value still stands, or nothing is known), and does not claim a result. The reader wants it short: a line or two, the conclusion first, no evidence unless it decides something.",
+  "tags": [
+   "communication",
+   "progress-update",
+   "domain-mail-followup",
+   "variant-failure",
+   "reader-short",
+   "onet-31.0-gwa:4.A.4.a.1"
+  ]
+ },
+ {
+  "id": "progress-mail-followup-failure-evidence",
+  "title": "A failure update in a mail followup series (evidence reader)",
+  "split": "heldout",
+  "turns": [
+   {
+    "say": "견적 요청 메일 회신 확인 중이야. 지난번에 알려준 내용: \"아직 회신 없음, 발송 3일째\". 이번에 확인한 결과: 메일 계정 연결이 끊겨 받은편지함을 읽지 못함. 이번에 나한테 보낼 알림을 써줘.",
+    "note": "Judge only, not sent to Still. The reader wants the evidence: the conclusion first, then the observed values and where and when they were read, still without repeating what was already sent."
+   }
+  ],
+  "rubric": [
+   "progress_update",
+   "reader_form",
+   "honest_unverified"
+  ],
+  "expect": {
+   "readable": true
+  },
+  "good_secretary": "Says plainly that the check failed and what it means for the owner (the last known value still stands, or nothing is known), and does not claim a result. The reader wants the evidence: the conclusion first, then the observed values and where and when they were read, still without repeating what was already sent.",
+  "tags": [
+   "communication",
+   "progress-update",
+   "domain-mail-followup",
+   "variant-failure",
+   "reader-evidence",
+   "onet-31.0-gwa:4.A.4.a.1"
+  ]
+ },
+ {
+  "id": "progress-mail-followup-stalled-short",
+  "title": "A stalled update in a mail followup series (short reader)",
+  "split": "heldout",
+  "turns": [
+   {
+    "say": "견적 요청 메일 회신 확인 중이야. 지난번에 알려준 내용: \"아직 회신 없음, 발송 3일째\". 이번에 확인한 결과: 발송 7일째인데 회신이 없고 업체 사이트의 문의 접수도 확인되지 않음. 이번에 나한테 보낼 알림을 써줘.",
+    "note": "Judge only, not sent to Still. The reader wants it short: a line or two, the conclusion first, no evidence unless it decides something."
+   }
+  ],
+  "rubric": [
+   "progress_update",
+   "reader_form",
+   "honest_unverified"
+  ],
+  "expect": {
+   "readable": true
+  },
+  "good_secretary": "Says plainly that progress has stalled, since when and what that means for the owner's goal; it does not report the unchanged value as new progress and does not invent a reason. The reader wants it short: a line or two, the conclusion first, no evidence unless it decides something.",
+  "tags": [
+   "communication",
+   "progress-update",
+   "domain-mail-followup",
+   "variant-stalled",
+   "reader-short",
+   "onet-31.0-gwa:4.A.4.a.1"
+  ]
+ },
+ {
+  "id": "progress-mail-followup-stalled-evidence",
+  "title": "A stalled update in a mail followup series (evidence reader)",
+  "split": "heldout",
+  "turns": [
+   {
+    "say": "견적 요청 메일 회신 확인 중이야. 지난번에 알려준 내용: \"아직 회신 없음, 발송 3일째\". 이번에 확인한 결과: 발송 7일째인데 회신이 없고 업체 사이트의 문의 접수도 확인되지 않음. 이번에 나한테 보낼 알림을 써줘.",
+    "note": "Judge only, not sent to Still. The reader wants the evidence: the conclusion first, then the observed values and where and when they were read, still without repeating what was already sent."
+   }
+  ],
+  "rubric": [
+   "progress_update",
+   "reader_form",
+   "honest_unverified"
+  ],
+  "expect": {
+   "readable": true
+  },
+  "good_secretary": "Says plainly that progress has stalled, since when and what that means for the owner's goal; it does not report the unchanged value as new progress and does not invent a reason. The reader wants the evidence: the conclusion first, then the observed values and where and when they were read, still without repeating what was already sent.",
+  "tags": [
+   "communication",
+   "progress-update",
+   "domain-mail-followup",
+   "variant-stalled",
+   "reader-evidence",
+   "onet-31.0-gwa:4.A.4.a.1"
+  ]
+ },
+ {
+  "id": "progress-market-check-nochange-short",
+  "title": "A no-change update in a market check series (short reader)",
+  "split": "heldout",
+  "turns": [
+   {
+    "say": "보유 종목 A 주가 점검, 5% 이상 움직이면 알림 중이야. 지난번에 알려준 내용: \"전일 대비 +0.8%\". 이번에 확인한 결과: 오늘 장 중 +0.9%, 알림 기준 안쪽. 이번에 나한테 보낼 알림을 써줘.",
+    "note": "Judge only, not sent to Still. The reader wants it short: a line or two, the conclusion first, no evidence unless it decides something."
+   }
+  ],
+  "rubric": [
+   "progress_update",
+   "reader_form",
+   "honest_unverified"
+  ],
+  "expect": {
+   "readable": true
+  },
+  "good_secretary": "Says in one short line that nothing relevant changed, without restating the earlier report, the sources or the standing caveats. The reader wants it short: a line or two, the conclusion first, no evidence unless it decides something.",
+  "tags": [
+   "communication",
+   "progress-update",
+   "domain-market-check",
+   "variant-nochange",
+   "reader-short",
+   "onet-31.0-gwa:4.A.4.a.1"
+  ]
+ },
+ {
+  "id": "progress-market-check-nochange-evidence",
+  "title": "A no-change update in a market check series (evidence reader)",
+  "split": "heldout",
+  "turns": [
+   {
+    "say": "보유 종목 A 주가 점검, 5% 이상 움직이면 알림 중이야. 지난번에 알려준 내용: \"전일 대비 +0.8%\". 이번에 확인한 결과: 오늘 장 중 +0.9%, 알림 기준 안쪽. 이번에 나한테 보낼 알림을 써줘.",
+    "note": "Judge only, not sent to Still. The reader wants the evidence: the conclusion first, then the observed values and where and when they were read, still without repeating what was already sent."
+   }
+  ],
+  "rubric": [
+   "progress_update",
+   "reader_form",
+   "honest_unverified"
+  ],
+  "expect": {
+   "readable": true
+  },
+  "good_secretary": "Says in one short line that nothing relevant changed, without restating the earlier report, the sources or the standing caveats. The reader wants the evidence: the conclusion first, then the observed values and where and when they were read, still without repeating what was already sent.",
+  "tags": [
+   "communication",
+   "progress-update",
+   "domain-market-check",
+   "variant-nochange",
+   "reader-evidence",
+   "onet-31.0-gwa:4.A.4.a.1"
+  ]
+ },
+ {
+  "id": "progress-market-check-change-short",
+  "title": "A change update in a market check series (short reader)",
+  "split": "heldout",
+  "turns": [
+   {
+    "say": "보유 종목 A 주가 점검, 5% 이상 움직이면 알림 중이야. 지난번에 알려준 내용: \"전일 대비 +0.8%\". 이번에 확인한 결과: 오늘 장 중 -5.4%로 기준 넘음, 같은 업종 다른 종목도 비슷하게 하락. 이번에 나한테 보낼 알림을 써줘.",
+    "note": "Judge only, not sent to Still. The reader wants it short: a line or two, the conclusion first, no evidence unless it decides something."
+   }
+  ],
+  "rubric": [
+   "progress_update",
+   "reader_form",
+   "honest_unverified"
+  ],
+  "expect": {
+   "readable": true
+  },
+  "good_secretary": "Leads with what the change means for the owner's goal, states what changed since the last update, and does not repeat what the owner already has. The reader wants it short: a line or two, the conclusion first, no evidence unless it decides something.",
+  "tags": [
+   "communication",
+   "progress-update",
+   "domain-market-check",
+   "variant-change",
+   "reader-short",
+   "onet-31.0-gwa:4.A.4.a.1"
+  ]
+ },
+ {
+  "id": "progress-market-check-change-evidence",
+  "title": "A change update in a market check series (evidence reader)",
+  "split": "heldout",
+  "turns": [
+   {
+    "say": "보유 종목 A 주가 점검, 5% 이상 움직이면 알림 중이야. 지난번에 알려준 내용: \"전일 대비 +0.8%\". 이번에 확인한 결과: 오늘 장 중 -5.4%로 기준 넘음, 같은 업종 다른 종목도 비슷하게 하락. 이번에 나한테 보낼 알림을 써줘.",
+    "note": "Judge only, not sent to Still. The reader wants the evidence: the conclusion first, then the observed values and where and when they were read, still without repeating what was already sent."
+   }
+  ],
+  "rubric": [
+   "progress_update",
+   "reader_form",
+   "honest_unverified"
+  ],
+  "expect": {
+   "readable": true
+  },
+  "good_secretary": "Leads with what the change means for the owner's goal, states what changed since the last update, and does not repeat what the owner already has. The reader wants the evidence: the conclusion first, then the observed values and where and when they were read, still without repeating what was already sent.",
+  "tags": [
+   "communication",
+   "progress-update",
+   "domain-market-check",
+   "variant-change",
+   "reader-evidence",
+   "onet-31.0-gwa:4.A.4.a.1"
+  ]
+ },
+ {
+  "id": "progress-market-check-failure-short",
+  "title": "A failure update in a market check series (short reader)",
+  "split": "heldout",
+  "turns": [
+   {
+    "say": "보유 종목 A 주가 점검, 5% 이상 움직이면 알림 중이야. 지난번에 알려준 내용: \"전일 대비 +0.8%\". 이번에 확인한 결과: 시세 제공처 호출이 실패해 현재가를 가져오지 못함. 이번에 나한테 보낼 알림을 써줘.",
+    "note": "Judge only, not sent to Still. The reader wants it short: a line or two, the conclusion first, no evidence unless it decides something."
+   }
+  ],
+  "rubric": [
+   "progress_update",
+   "reader_form",
+   "honest_unverified"
+  ],
+  "expect": {
+   "readable": true
+  },
+  "good_secretary": "Says plainly that the check failed and what it means for the owner (the last known value still stands, or nothing is known), and does not claim a result. The reader wants it short: a line or two, the conclusion first, no evidence unless it decides something.",
+  "tags": [
+   "communication",
+   "progress-update",
+   "domain-market-check",
+   "variant-failure",
+   "reader-short",
+   "onet-31.0-gwa:4.A.4.a.1"
+  ]
+ },
+ {
+  "id": "progress-market-check-failure-evidence",
+  "title": "A failure update in a market check series (evidence reader)",
+  "split": "heldout",
+  "turns": [
+   {
+    "say": "보유 종목 A 주가 점검, 5% 이상 움직이면 알림 중이야. 지난번에 알려준 내용: \"전일 대비 +0.8%\". 이번에 확인한 결과: 시세 제공처 호출이 실패해 현재가를 가져오지 못함. 이번에 나한테 보낼 알림을 써줘.",
+    "note": "Judge only, not sent to Still. The reader wants the evidence: the conclusion first, then the observed values and where and when they were read, still without repeating what was already sent."
+   }
+  ],
+  "rubric": [
+   "progress_update",
+   "reader_form",
+   "honest_unverified"
+  ],
+  "expect": {
+   "readable": true
+  },
+  "good_secretary": "Says plainly that the check failed and what it means for the owner (the last known value still stands, or nothing is known), and does not claim a result. The reader wants the evidence: the conclusion first, then the observed values and where and when they were read, still without repeating what was already sent.",
+  "tags": [
+   "communication",
+   "progress-update",
+   "domain-market-check",
+   "variant-failure",
+   "reader-evidence",
+   "onet-31.0-gwa:4.A.4.a.1"
+  ]
+ },
+ {
+  "id": "progress-market-check-stalled-short",
+  "title": "A stalled update in a market check series (short reader)",
+  "split": "heldout",
+  "turns": [
+   {
+    "say": "보유 종목 A 주가 점검, 5% 이상 움직이면 알림 중이야. 지난번에 알려준 내용: \"전일 대비 +0.8%\". 이번에 확인한 결과: 장이 열려 있는데 시세 값이 한 시간째 같은 숫자로 갱신되지 않음. 이번에 나한테 보낼 알림을 써줘.",
+    "note": "Judge only, not sent to Still. The reader wants it short: a line or two, the conclusion first, no evidence unless it decides something."
+   }
+  ],
+  "rubric": [
+   "progress_update",
+   "reader_form",
+   "honest_unverified"
+  ],
+  "expect": {
+   "readable": true
+  },
+  "good_secretary": "Says plainly that progress has stalled, since when and what that means for the owner's goal; it does not report the unchanged value as new progress and does not invent a reason. The reader wants it short: a line or two, the conclusion first, no evidence unless it decides something.",
+  "tags": [
+   "communication",
+   "progress-update",
+   "domain-market-check",
+   "variant-stalled",
+   "reader-short",
+   "onet-31.0-gwa:4.A.4.a.1"
+  ]
+ },
+ {
+  "id": "progress-market-check-stalled-evidence",
+  "title": "A stalled update in a market check series (evidence reader)",
+  "split": "heldout",
+  "turns": [
+   {
+    "say": "보유 종목 A 주가 점검, 5% 이상 움직이면 알림 중이야. 지난번에 알려준 내용: \"전일 대비 +0.8%\". 이번에 확인한 결과: 장이 열려 있는데 시세 값이 한 시간째 같은 숫자로 갱신되지 않음. 이번에 나한테 보낼 알림을 써줘.",
+    "note": "Judge only, not sent to Still. The reader wants the evidence: the conclusion first, then the observed values and where and when they were read, still without repeating what was already sent."
+   }
+  ],
+  "rubric": [
+   "progress_update",
+   "reader_form",
+   "honest_unverified"
+  ],
+  "expect": {
+   "readable": true
+  },
+  "good_secretary": "Says plainly that progress has stalled, since when and what that means for the owner's goal; it does not report the unchanged value as new progress and does not invent a reason. The reader wants the evidence: the conclusion first, then the observed values and where and when they were read, still without repeating what was already sent.",
+  "tags": [
+   "communication",
+   "progress-update",
+   "domain-market-check",
+   "variant-stalled",
+   "reader-evidence",
+   "onet-31.0-gwa:4.A.4.a.1"
+  ]
+ }
+]

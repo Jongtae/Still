@@ -459,11 +459,13 @@ def offset_name(parsed):
     return f'{sign}{total // 60:02d}:{total % 60:02d}'
 
 
-def local_text(ts, timezone_name):
-    """``2026-09-28 09:00 (Mon, Asia/Seoul)`` for a stored UTC time."""
-    tz = zone(timezone_name) or dt_timezone.utc
+def local_text(ts, timezone_name, home_zone=None):
+    """Show a stored UTC time in the home zone when known."""
+    home = zone(home_zone)
+    tz = home or zone(timezone_name) or dt_timezone.utc
     local = datetime.fromtimestamp(ts, tz)
-    return local.strftime('%Y-%m-%d %H:%M') + f" ({local.strftime('%a')}, {timezone_name or 'UTC'})"
+    weekday = local.strftime('%a')
+    return local.strftime('%Y-%m-%d %H:%M') + (f' ({weekday})' if home else f" ({weekday}, {timezone_name or 'UTC'})")
 
 
 def iso(ts, timezone_name=None):
@@ -1066,7 +1068,7 @@ def last_slot(row):
     return slot
 
 
-def rule_text(recurrence, lang='ko'):
+def rule_text(recurrence, lang='ko', *, timezone_name=None, home_zone=None):
     """Plain owner words for the supported rule parts (#580)."""
     parts = rule_parts(recurrence)
     interval = int(parts.get('INTERVAL', 1))
@@ -1095,8 +1097,23 @@ def rule_text(recurrence, lang='ko'):
             text = msg(key + '_days', lang, n=interval, selected_recurrence_calendar_day_list=days)
     if 'UNTIL' in parts:
         until = parts['UNTIL']
-        text = msg('preparations.rule_with_until', lang, recurrence_rule=text, recurrence_end_datetime=until[:4] + '-' + until[4:6] + '-' + until[6:8] +
-                    ((' ' + until[9:11] + ':' + until[11:13] + (' UTC' if until.endswith('Z') else '')) if len(until) > 8 else ''))
+        home = zone(home_zone)
+        stored = zone(timezone_name)
+        if len(until) == 8:
+            end = datetime.strptime(until, '%Y%m%d')
+            if home and stored and home != stored:
+                end = end.replace(hour=23, minute=59, second=59, tzinfo=stored).astimezone(home)
+                shown = end.strftime('%Y-%m-%d %H:%M')
+            else:
+                shown = end.strftime('%Y-%m-%d')
+        else:
+            utc = until.endswith('Z')
+            end = datetime.strptime(until.rstrip('Z'), '%Y%m%dT%H%M%S')
+            source = dt_timezone.utc if utc else stored
+            if home and source:
+                end = end.replace(tzinfo=source).astimezone(home)
+            shown = end.strftime('%Y-%m-%d %H:%M') + (' UTC' if utc and not home else '')
+        text = msg('preparations.rule_with_until', lang, recurrence_rule=text, recurrence_end_datetime=shown)
     if 'COUNT' in parts:
         text = msg('preparations.rule_with_count', lang, recurrence_rule=text, recurrence_maximum_count=parts['COUNT'])
     return text
@@ -1106,7 +1123,7 @@ def schedule_text(row, home_zone=None, lang='ko'):
     """#393: one owner-readable line - when it runs and how the owner hears of it.
 
     A date in the owner's words (``10월 28일(수) 18:35``), the end time alone
-    when it is the same day and the zone only when it is not ``home_zone``.
+    when it is the same day and the stored zone only when the home zone is unknown.
     A watch is stated as it is enforced (``next_window_slot``): slots up to
     and including ``until_at`` (#701) and at most ``max_runs`` times, so a
     skipped slot can never run past what the owner read.
@@ -1119,15 +1136,24 @@ def schedule_text(row, home_zone=None, lang='ko'):
         local_day = datetime.fromtimestamp(opening, tz).date()
         start = datetime.fromtimestamp(row['rule_start'], tz).time()
         opening = datetime.combine(local_day, start, tzinfo=tz).timestamp()
-    day, at, date = _local_parts(opening, row['timezone'], lang)
-    zone_note = '' if home_zone and row['timezone'] == home_zone else f" ({row['timezone']})"
+    home_zone = home_zone if zone(home_zone) else None
     recurrence = row.get('recurrence') or ''
+    # A repeating rule's days and times are the stored zone's wall clock: converting only its start
+    # would contradict "every Monday", so a repeating row keeps its zone named when it is not home.
+    repeats = recurrence.startswith('RRULE:') or recurrence in ('daily', 'weekdays', 'weekly') or bool(terms.get('recurrence'))
+    at_home = bool(home_zone)
+    if repeats and home_zone and row['timezone'] != home_zone:
+        home_zone, at_home = None, False
+    display_zone = home_zone or row['timezone']
+    day, at, date = _local_parts(opening, display_zone, lang)
+    zone_note = '' if at_home else f" ({display_zone})"
     if recurrence.startswith('RRULE:'):
-        when = msg('preparations.rule_schedule', lang, start=f'{day} {at}{zone_note}', rule=rule_text(recurrence, lang))
+        rule = rule_text(recurrence, lang, timezone_name=row['timezone'], home_zone=home_zone or row['timezone'])
+        when = msg('preparations.rule_schedule', lang, start=f'{day} {at}{zone_note}', rule=rule)
     elif recurrence == RECURRENCE_WINDOW:
         runs = max(1, int(row['max_runs']))
         every = int(row['every_seconds'])
-        end_day, end_at, end_date = _local_parts(row['until_at'], row['timezone'], lang)
+        end_day, end_at, end_date = _local_parts(row['until_at'], display_zone, lang)
         end = end_at if end_date == date else f'{end_day} {end_at}'
         end = msg('preparations.schedule_until_zone' if zone_note else 'preparations.rule_until', lang,
                   until=end, zone=row['timezone'])

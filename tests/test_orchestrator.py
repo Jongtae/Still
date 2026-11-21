@@ -348,7 +348,8 @@ class EarlyPlanContinuity(Harness):
         import threading
         from personal_agent.agent_runtime import WorkLedger
         from personal_agent.decision import SelectionDecision
-        from personal_agent.conversation_handoff import IntentDecision, INTENT_CONVERSATION, AUTHORITY_OWNER
+        from personal_agent.conversation_handoff import (IntentDecision, INTENT_CONVERSATION, AUTHORITY_OWNER,
+                                                         FOLLOWUP_RELATIONS)
         previous = self.store.enqueue('Earlier request', 'earlier-plan')
         self.service.conversation_focus.record(IntentDecision(INTENT_CONVERSATION, AUTHORITY_OWNER), previous)
         with self.store.db() as db:
@@ -371,7 +372,8 @@ class EarlyPlanContinuity(Harness):
             if context.purpose != 'conversation-followup':return None
             continuity_running.set()
             self.assertTrue(plan_started.wait(5), 'plan did not start while continuity was blocked')
-            return SelectionDecision(OUTCOME_DECIDED, relation, candidates=candidates, confidence=fixture_confidence())
+            choice = relation + ' w1' if relation in FOLLOWUP_RELATIONS else relation  # #1087: the latest Work
+            return SelectionDecision(OUTCOME_DECIDED, choice, candidates=candidates, confidence=fixture_confidence())
 
         engine._structured, engine._choose = planning, choose
         futures = []

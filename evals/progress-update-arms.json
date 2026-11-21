@@ -1,0 +1,9 @@
+{
+ "version": "progress-arms/1",
+ "note": "Candidate default forms as owner-turn instruction text only (#1036). Offline proxy: what an owner who states the form would get; no form lives in product code.",
+ "arms": {
+  "current": "",
+  "bluf": "알림은 결론(내 목표에 어떤 의미인지)을 먼저 쓰고, 그다음 지난 알림 이후 달라진 점, 필요할 때만 근거를 써줘. 이미 알려준 내용은 반복하지 마.",
+  "exception": "알림은 예외 보고 방식으로 써줘: 달라진 것이 없으면 한 줄로 변동 없음만 알리고, 변화·실패·정체가 있을 때만 그 내용과 나에게 의미하는 바, 근거를 써줘."
+ }
+}

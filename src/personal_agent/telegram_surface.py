@@ -272,6 +272,36 @@ class TelegramSurface(ConversationSurface):
             try:service.telegram.send_message(int(cfg['user_id']),text)
             except (ProviderError,TypeError,ValueError):LOG.warning('conversation notice not delivered')
 
+    def deliver_status_notice(self, text, shown=None):
+        """#782: one updating notice in the paired chat (Bot API ``editMessageText``).
+
+        The message ``shown`` names is edited when it is still in the current pairing.  When
+        Telegram refuses the edit (the message was deleted, is too old to edit) or never received
+        it, ``text`` is sent as a new message and its handle returned.  A lost answer to the edit
+        may have applied it, so nothing more is sent then and the old handle stays.
+        """
+        service=self.service
+        cfg,paired,_channel=service._notice_channel()
+        if not paired:return None
+        try:chat=int(cfg['user_id'])
+        except (TypeError,ValueError):return None
+        mine=dict(chat_id=chat,generation=cfg.get('generation'))
+        if isinstance(shown,dict) and isinstance(shown.get('message_id'),int) and all(shown.get(k)==v for k,v in mine.items()):
+            try:
+                service.telegram.edit_message_text(chat,shown['message_id'],text)
+                return {**mine,'message_id':shown['message_id']}
+            except (TelegramRejected,TelegramNotSent):
+                LOG.info('status notice edit refused; sending it as a new message')
+            except (ProviderError,TypeError,ValueError):
+                LOG.warning('status notice edit unanswered')
+                return {**mine,'message_id':shown['message_id']}
+        try:sent=service.telegram.send_message(chat,text)
+        except (ProviderError,TypeError,ValueError):
+            LOG.warning('conversation notice not delivered')
+            return None
+        message_id=sent.get('message_id') if isinstance(sent,dict) else None
+        return {**mine,'message_id':message_id} if isinstance(message_id,int) else None
+
     def queue_notification(self, job, kind, fingerprint=None):
         service=self.service
         cfg=service.store.config('telegram',{})
@@ -360,7 +390,10 @@ class TelegramSurface(ConversationSurface):
                             if notification['kind']=='browser_approval_needed' else
                             # #393: a proposal reads its offer first; each run's brief is folded.
                             service.preparation_proposal_html(bound)
-                            if notification['kind']=='preparation_proposed' else None)
+                            if notification['kind']=='preparation_proposed' else
+                            service.settings_orchestrator.confirmation_text(bound['settings_drafts'], folded=True)
+                            if notification['kind']=='settings_change_proposed'
+                            and any(row.get('exact_values') for row in bound['settings_drafts']) else None)
                     if folded and len(folded)<=3800:
                         try:
                             result=service.telegram.send_message(notification['chat_id'],folded,reply_markup,parse_mode='HTML')
@@ -373,13 +406,18 @@ class TelegramSurface(ConversationSurface):
                         if notification['kind'] in ('browser_approval_needed','settings_change_proposed') and len(text)>1900:
                             # Preserve every parameter. Only the last part carries
                             # approval controls, after earlier parts were delivered.
-                            parts=[text[offset:offset+1900] for offset in range(0,len(text),1900)]
+                            from .telegram_locale import owner_language, translate
+                            locale=owner_language(service.store)
+                            localized=translate(text, locale)
+                            lang=locale or 'ko'
+                            parts=[localized[offset:offset+1900] for offset in range(0,len(localized),1900)]
                             # #945: a settings draft is applied, not approved; its parts say so.
                             heading='settings' if notification['kind']=='settings_change_proposed' else 'approval'
                             for index,part in enumerate(parts[:-1],1):
-                                service.telegram.send_message(notification['chat_id'],msg(f'telegram_surface.{heading}_part', index=index, total=len(parts), part=part))
+                                service.telegram.send_message(notification['chat_id'],ai_text(msg(
+                                    f'telegram_surface.{heading}_part', lang, index=index, total=len(parts), part=part)))
                                 sent_part=True
-                            text=msg(f'telegram_surface.{heading}_final', total=len(parts), part=parts[-1])
+                            text=ai_text(msg(f'telegram_surface.{heading}_final', lang, total=len(parts), part=parts[-1]))
                         elif notification['kind']==om.RESTORED_NOTICE_KIND:
                             # Twenty full lessons can exceed a Telegram message. Allow room for the localized header.
                             while len(text)>3800:

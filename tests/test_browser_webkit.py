@@ -2839,6 +2839,36 @@ class WebKitIntegrationTests(unittest.TestCase):
             host_zone = self.presentation_host_zone()
             self.assertEqual(values['zone'], host_zone)
 
+    def test_a_works_browser_open_settings_reach_the_real_worker_and_are_reported(self):
+        """#1082 lane B: ``browser_open`` locale/time zone launch the Work's real worker with the flags, and the
+        page result reports what the worker acknowledged and what the page observed; another Work gets defaults."""
+        sess = self.session('work-1082-ja')
+        try:
+            page = sess.open({'url': self.origin + '/presentation', 'effect': 'navigate',
+                              'locale': 'ja-JP', 'timezone': 'Asia/Tokyo'})
+            report = page['presentation']
+            self.assertEqual(report['requested'], {'locale': 'ja-JP', 'timezone': 'Asia/Tokyo'})
+            self.assertEqual(report['applied']['locale'], 'ja-JP')
+            self.assertTrue(report['observed']['navigator_language'].lower().startswith('ja'), report)
+            if LINUX:
+                self.assertEqual(report['applied']['timezone'], 'Asia/Tokyo')
+                self.assertEqual(report['unsupported'], [])
+                self.assertEqual(report['observed']['intl_timezone'], 'Asia/Tokyo')
+            else:
+                self.assertIsNone(report['applied']['timezone'])
+                self.assertEqual(report['unsupported'], ['timezone'])
+            with self.assertRaises(bs.ToolError) as refused:
+                sess.open({'url': self.origin + '/presentation', 'effect': 'navigate', 'locale': 'en-US'})
+            self.assertEqual(refused.exception.code, 'presentation_fixed')
+        finally:
+            sess.close()
+        other = self.session('work-1082-default')
+        try:
+            page = other.open({'url': self.origin + '/presentation', 'effect': 'navigate'})
+            self.assertNotIn('presentation', page)
+        finally:
+            other.close()
+
     def presentation_host_zone(self):
         """The time zone a bare page on this host sees (the worker started without flags)."""
         send, ready = self.presentation_worker()

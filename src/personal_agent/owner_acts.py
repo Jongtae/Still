@@ -215,7 +215,7 @@ class OwnerActs:
                 proposals, remaining = service.offered_proposals(notification)
                 if not proposals:
                     continue
-                items.append({**base, 'kind': KIND_PREPARATION, 'shown_text': prep.proposal_text(proposals, remaining),
+                items.append({**base, 'kind': KIND_PREPARATION, 'shown_text': prep.proposal_text(proposals, remaining, service.home_zone()),
                               'shown_at': max(float(notification['created']), float(sent_at or 0)), 'expires_at': None})
         return items
 

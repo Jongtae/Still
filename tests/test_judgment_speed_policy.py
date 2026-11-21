@@ -43,7 +43,7 @@ def flaky_reference(answers):
     answers = list(answers)
 
     def judge(purpose, facts, kind, options):
-        if facts.get('owner_message') == '그거 저장해' and facts.get('previous_reply') and answers:
+        if facts.get('owner_message') == '그거 저장해' and facts.get('w1_reply') and answers:
             return answers.pop(0), 0.9
         return oracle(purpose, facts, kind, options)
     return judge
@@ -74,14 +74,14 @@ def test_one_unlucky_answer_on_a_borderline_case_does_not_decide_the_model():
     clock = Clock()
     timed = lambda answers: TimedTransport(clock, lambda purpose, facts: 1.0, flaky_reference(answers))
     # The #470 shape: wrong once, then right twice - a majority of three runs passed.
-    result = qualify(engine(timed([NO_CANDIDATE, 'reference', 'reference'])), trials=3, timer=clock)
+    result = qualify(engine(timed([NO_CANDIDATE, 'reference w1', 'reference w1'])), trials=3, timer=clock)
     assert result['qualified']
     assert {key: result['results'][REFERENCE][key] for key in ('passed', 'trials', 'passes', 'seconds')} == \
         {'passed': True, 'trials': 3, 'passes': 2, 'seconds': [1.0, 1.0, 1.0]}
     assert result['pass_rate'] == round((len(CASE_IDS) + 1) / (len(CASE_IDS) + 2), 3)
     assert result['latency']['samples'] == len(CASE_IDS) + 2
     # One run (lowest_qualified, explicit): the same first answer excludes it.
-    one_shot = qualify(engine(timed([NO_CANDIDATE, 'reference', 'reference'])), timer=clock)
+    one_shot = qualify(engine(timed([NO_CANDIDATE, 'reference w1', 'reference w1'])), timer=clock)
     assert not one_shot['qualified'] and one_shot['ran'] == REFERENCE + 1
     assert 'trials' not in one_shot['results'][REFERENCE]
 
@@ -89,10 +89,10 @@ def test_one_unlucky_answer_on_a_borderline_case_does_not_decide_the_model():
 def test_a_case_that_fails_most_runs_still_fails_and_stops_once_decided():
     clock = Clock()
     timed = lambda answers: TimedTransport(clock, lambda purpose, facts: 1.0, flaky_reference(answers))
-    mostly_wrong = qualify(engine(timed([NO_CANDIDATE, 'reference', NO_CANDIDATE])), trials=3, timer=clock)
+    mostly_wrong = qualify(engine(timed([NO_CANDIDATE, 'reference w1', NO_CANDIDATE])), trials=3, timer=clock)
     assert not mostly_wrong['qualified']
     assert (mostly_wrong['results'][REFERENCE]['trials'], mostly_wrong['results'][REFERENCE]['passes']) == (3, 1)
-    twice_wrong = qualify(engine(timed([NO_CANDIDATE, NO_CANDIDATE, 'reference'])), trials=3, timer=clock)
+    twice_wrong = qualify(engine(timed([NO_CANDIDATE, NO_CANDIDATE, 'reference w1'])), trials=3, timer=clock)
     assert (twice_wrong['results'][REFERENCE]['trials'], twice_wrong['results'][REFERENCE]['passes']) == (2, 0), \
         'two failures out of three runs decide it; the third run is not spent'
     # A case that passes first time is never repeated.
@@ -101,7 +101,7 @@ def test_a_case_that_fails_most_runs_still_fails_and_stops_once_decided():
 
 def test_a_failed_call_reported_by_the_caller_is_not_repeated():
     clock = Clock()
-    result = qualify(engine(TimedTransport(clock, lambda purpose, facts: 1.0, flaky_reference([NO_CANDIDATE, 'reference']))),
+    result = qualify(engine(TimedTransport(clock, lambda purpose, facts: 1.0, flaky_reference([NO_CANDIDATE, 'reference w1']))),
                      trials=3, timer=clock, call_failed=lambda: True)
     assert not result['qualified'] and 'trials' not in result['results'][REFERENCE]
 
@@ -247,7 +247,7 @@ class FastestQualifiedServiceTests(ServiceFixture):
             def __call__(self, url, body, headers=None, timeout=60):
                 purpose, facts = parse_prompt(body['input'][-1]['content'])
                 if (body.get('model') == 'gpt-6-luna' and facts.get('owner_message') == '그거 저장해'
-                        and facts.get('previous_reply') and not self.failed):
+                        and facts.get('w1_reply') and not self.failed):
                     self.failed = True
                     raise ProviderError('timed out', status=504)
                 return super().__call__(url, body, headers, timeout)

@@ -20,7 +20,7 @@ from types import SimpleNamespace
 import hashlib
 from urllib.parse import urlsplit
 from .messages import LANGUAGES, msg
-from .telegram_locale import ai_text, owner_language
+from .telegram_locale import ai_text, owner_language, translate
 from .prompt_files import prompt
 from .local_tools import LocalTools
 from functools import cached_property
@@ -73,7 +73,7 @@ from .calendar import CALENDAR_CONNECTOR_ID, CALENDAR_WRITE_CONNECTOR_ID
 from .google_drive_read import DRIVE_CONNECTOR_ID
 from .conversation_handoff import (CONNECTOR_LABELS, JUDGMENT_NO, JUDGMENT_YES,
                                    FOLLOWUP_CANCEL, FOLLOWUP_CORRECTION, FOLLOWUP_REFERENCE,
-                                   FOLLOWUP_RETRY, eligible_for_followup_judgment,
+                                   FOLLOWUP_RECENT_WORKS, FOLLOWUP_RETRY, eligible_for_followup_judgment,
                                    ConversationJudgments, TelegramChannel, telegram_request_json,
                                    telegram_request_file, telegram_request_multipart,
                                    ConnectorHandoff,
@@ -252,6 +252,22 @@ OVERLONG_MESSAGE_NOTE = ('\n\n[Still observation, not an owner instruction] This
                          'Still kept only the first {kept}. Tell the owner the rest was not read when it matters.')
 
 
+def split_approval_preview(label):
+    from .code_run import APPROVAL_EXACT_LABEL
+    summary, _, exact = label.partition(f'\n\n{APPROVAL_EXACT_LABEL} ')
+    return summary, exact
+
+
+def approval_exact_text(exact, heading='notice.exact_values'):
+    from .telegram_locale import Text
+    return Text(((msg(heading) + '\n', True), (exact, False)))
+
+
+def approval_exact_html(exact, heading='notice.exact_values'):
+    from html import escape
+    return '<blockquote expandable>' + approval_exact_text(escape(exact), heading) + '</blockquote>'
+
+
 def request_prompt_parts(label):
     """``(title, summary, rest, check, exact)`` of one request-approval label (owner choice 2026-10-14, mockup C).
 
@@ -260,8 +276,8 @@ def request_prompt_parts(label):
     other lines; ``check`` says whether every number in ``summary`` occurs in the exact request,
     so a summary can never quietly differ from what is approved.  No service, field or unit is named.
     """
-    from .code_run import APPROVAL_EXACT_LABEL, APPROVAL_MONEY_LINE
-    note,_sep,exact=label.partition(f'\n\n{APPROVAL_EXACT_LABEL} ')
+    from .code_run import APPROVAL_MONEY_LINE
+    note,exact=split_approval_preview(label)
     if not exact:note,exact='',label
     money=APPROVAL_MONEY_LINE in note
     # Owner choice 2026-10-14 (clear signing): labelled values Still checked against the exact request.
@@ -289,12 +305,14 @@ def request_prompt_parts(label):
     return title,summary,rest,check,exact
 
 
-def payment_autonomy_notice(authorization):
+def payment_autonomy_notice(authorization, count=1):
     """The owner's notice for one action the payment mode allowed (#777).
 
     A request label reads like its approval prompt (``request_prompt_parts``): the AI's
     description, the values Still checked and the exact request only when a value does not
     check out.  The receipt keeps the whole label; a browser step's short label is shown as is.
+    #782: ``count`` is how many of the Work's receipts are ``authorized``; from the second on,
+    the one status notice of the Work says so and shows the latest request.
     """
     from .quickstart_store import REQUEST_APPROVAL_ACTIONS
     label=authorization['label']
@@ -303,6 +321,7 @@ def payment_autonomy_notice(authorization):
         parts=[part for part in ('\n'.join([summary,*rest]).strip(),check) if part]
         if exact:parts.append(f"{msg('notice.request_raw')}\n{exact}")
         label='\n\n'.join(parts) or label
+    if count>1:return msg('payment_autonomy.status',count=count,label=label)
     return msg('payment_autonomy.notice',label=label)
 
 
@@ -395,7 +414,6 @@ BROWSER_LEGACY_KEY='browser_legacy_profile_removed_at'
 #: not safe to replay: the owner's current message ran instead, as a fresh Work.
 RETRY_REFUSED_RAN_CURRENT='retry-refused-ran-current'
 #: #1519: how far back an answer may reach a question asked before an interleaved request.
-OPEN_QUESTION_SECONDS=900
 EFFECT_RETRY_REFUSAL=msg('service.the_previous_request_attempted_an_action')
 #: #618 E2: the reasons the one continuation rule gives (``continuation_reasons``), strongest first.
 #: #627: ``limit`` - the request reached its one continuation count (``MAX_CONTINUATIONS``).
@@ -888,6 +906,7 @@ class AgentService:
         self.folder_picker=None
         self._local_selections={}
         self._local_approve_lock=threading.Lock()
+        self._payment_status_lock=threading.Lock()  # #782: one status notice edit at a time
         from .capability_search import CapabilitySearch
         self.capability_search=CapabilitySearch()
 
@@ -1928,7 +1947,7 @@ class AgentService:
         return self.preparations_service.preparation_history(job)
 
     def home_zone(self):
-        """#393: the owner's time zone, so a proposal names a zone only when it differs."""
+        """The time zone for owner-facing schedule text, if configured."""
         return self.preparations_service.home_zone()
 
     def preparation_proposal_html(self, bound):
@@ -2358,6 +2377,23 @@ class AgentService:
     #: The Work identity a Settings profile write is recorded under (#658).
     #: It is an owner operation from the local surface, not a conversation Work.
     PROFILE_SETTINGS_WORK='owner-settings-profile'
+
+    #: The Work identity an owner's 되돌리기 from the records screen is recorded under (#962).
+    RECORDS_UNDO_WORK='owner-records-undo'
+
+    def memory_undo_request(self, memory_id):
+        """#962: undo one saved fact from the records screen, the same exact retraction as asking (#955).
+
+        Reads the row's current digest itself, so the retraction binds to the value stored now; a row
+        no longer current is refused.  Returns what is in use again as ``restored`` (a memory id or
+        ``None``), ``restored_ended`` and ``expired`` ids.
+        """
+        from .memory_prompts import retract_saved
+        row=self.store.memory(memory_id,'local-owner') if isinstance(memory_id,str) and memory_id else None
+        if not row or row.get('state')!='current':raise ValueError(msg('agent_runtime.revert_not_current'))
+        undone=retract_saved(self.store,self.RECORDS_UNDO_WORK,{'id':memory_id,'digest':row['content_digest'],'key':row.get('memory_key')},asked=True)
+        if undone['status']!='retracted':raise ValueError(msg('agent_runtime.revert_not_current'))
+        return {'undone':True,'restored':undone['restored'],'restored_ended':undone['restored_ended'],'expired':undone['expired']}
 
     def memory_profile_request(self, body, owner_id='local-owner'):
         """The owner's Settings list / add / correct path for ``profile.*`` Memory (#658).
@@ -3050,35 +3086,63 @@ class AgentService:
                                                focus=self.conversation_focus.current())
 
     def continuity_relation(self, prompt, connector_owner=None, current_work_id=None):
-        """Resolve a short follow-up against the one focused Work, if any.
+        """Resolve a short follow-up against the recent Works of this chat, if any (#1087).
 
         RULES-OUT-01 (#173 slice B): no lexical skip decides whether a message
-        is a follow-up (the memory-save and file-save word checks are gone);
-        the follow-up judgment reads it with the focused Work's request and
-        reply, their times and what still waits for the owner
-        (``followup_context``).  Explicit commands keep their own dedicated state machines.
+        is a follow-up; the follow-up judgment reads it with each candidate's
+        request and reply, their times and what still waits for the owner
+        (``followup_context``).  #1087: the candidates are the last few Works of
+        the same chat plus the focused Work, and the judgment chooses the Work
+        and the relation together, so a message about a topic two turns back
+        in an interleaved chat can link to it (this replaces the #1519
+        open-question special case).  Explicit commands keep their own state machines.
         """
         if not eligible_for_followup_judgment(prompt):
             return None
         if self.intent_classifier.has_local_candidate(prompt):
             return None
-        focus=self.conversation_focus.current()
-        previous_id=focus.get('work_id')
-        if previous_id == current_work_id:
+        candidates=self.followup_candidates(current_work_id)
+        if not candidates:
             return None
-        previous=self.store.job(previous_id) if isinstance(previous_id,str) else None
-        if not previous:
-            return None
-        judged=self.decision_judge.followup_relation(prompt,focus.get('intent'),previous.get('status'),
-                                                     **self.followup_context(previous,current_work_id))
-        if judged.outcome==JUDGMENT_NO:
-            # #1519: not about the last Work; it may answer what the one before asked.
-            return self.open_question_link(prompt,previous,current_work_id)
+        works,awaiting=self.followup_context(candidates,current_work_id)
+        judged=self.decision_judge.followup_relation(prompt,works,awaiting_owner=awaiting)
         if judged.outcome!=JUDGMENT_YES or judged.value not in {
             FOLLOWUP_RETRY,FOLLOWUP_REFERENCE,FOLLOWUP_CANCEL,FOLLOWUP_CORRECTION,
-        }:
+        } or not isinstance(judged.work,int) or not 0<=judged.work<len(candidates):
             return None
-        return {'relation':judged.value,'previous':previous,'source':judged.source}
+        return {'relation':judged.value,'previous':candidates[judged.work],'source':judged.source}
+
+    def followup_candidates(self, current_work_id):
+        """The Works a short follow-up may continue, most recent first (#1087).
+
+        The last ``FOLLOWUP_RECENT_WORKS`` Works of the current Work's chat made
+        within ``ConversationFocus.TTL_SECONDS`` before it, and the focused Work
+        when it is not among them.  The current Work is never its own candidate.
+        A failure leaves the chat's Works out; the focused Work is still offered.
+        """
+        focus=self.conversation_focus.current()
+        found={}
+        focused=focus.get('work_id')
+        if isinstance(focused,str) and focused!=current_work_id:
+            work=self.store.job(focused)
+            if work:
+                found[work['id']]=dict(work,intent=focus.get('intent'))
+        current=self.store.job(current_work_id) if isinstance(current_work_id,str) else None
+        if current and current.get('channel') and current.get('created') is not None:
+            try:
+                with self.store.db() as db:
+                    rows=db.execute('SELECT id FROM jobs WHERE channel=? AND chat_id IS ? AND id!=? AND created<=? '
+                                    'AND created>=? ORDER BY created DESC LIMIT ?',
+                                    (current['channel'],current.get('chat_id'),current['id'],current['created'],
+                                     float(current['created'])-ConversationFocus.TTL_SECONDS,
+                                     FOLLOWUP_RECENT_WORKS)).fetchall()
+                for row in rows:
+                    if row['id'] not in found:
+                        work=self.store.job(row['id'])
+                        if work:found[work['id']]=work
+            except Exception:
+                LOG.info('follow-up candidates unavailable job=%s',current_work_id)
+        return sorted(found.values(),key=lambda work:float(work.get('created') or 0),reverse=True)
 
     @staticmethod
     def _minutes_ago(now, moment):
@@ -3089,68 +3153,39 @@ class AgentService:
             return 'unknown'
         return 'just now' if minutes<1 else f'{minutes} minutes ago'
 
-    def followup_context(self, previous, current_work_id):
-        """What the follow-up judgment reads besides the message (#173 slice B).
+    def followup_context(self, candidates, current_work_id):
+        """What the follow-up judgment reads besides the message (#173 slice B, #1087).
 
-        The focused Work's request and its last reply (the judgment bounds and
-        redacts both), when each was made, and the kinds of the items still
-        waiting for the owner in this conversation (``owner_acts.open_items``;
-        kinds only, no content).  Read from stores; a failure leaves a fact out.
+        For each candidate Work: its request and last reply (the judgment bounds
+        and redacts both), when each was made, its status, and which candidate it
+        was linked to; and the kinds of the items still waiting for the owner in
+        this conversation (``owner_acts.open_items``; kinds only, no content).
+        Read from stores; a failure leaves a fact out.
         """
         now=time.time()
-        # #367: a request or reply the owner forgot is not read back to the judgment.
-        context={'previous_request':'' if self.store.work_request_forgotten(previous['id']) else previous.get('message') or '',
-                 'previous_request_at':self._minutes_ago(now,previous.get('created'))}
-        try:
-            reply=self.store.last_reply(previous['id'],with_created=True)
-            if reply:
-                context.update(previous_reply=reply['content'] or '',
-                               previous_reply_at=self._minutes_ago(now,reply['created']))
-        except Exception:
-            LOG.info('follow-up reply unavailable job=%s',previous.get('id'))
+        labels={work['id']:f'w{number}' for number,work in enumerate(candidates,1)}
+        works=[]
+        for work in candidates:
+            # #367: a request or reply the owner forgot is not read back to the judgment.
+            entry={'request':'' if self.store.work_request_forgotten(work['id']) else work.get('message') or '',
+                   'request_at':self._minutes_ago(now,work.get('created')),
+                   'status':work.get('status') or '','intent':work.get('intent') or '',
+                   'linked_to':labels.get(work.get('related_job_id'))}
+            try:
+                reply=self.store.last_reply(work['id'],with_created=True)
+                if reply:
+                    entry.update(reply=reply['content'] or '',reply_at=self._minutes_ago(now,reply['created']))
+            except Exception:
+                LOG.info('follow-up reply unavailable job=%s',work.get('id'))
+            works.append(entry)
+        awaiting=()
         current=self.store.job(current_work_id) if isinstance(current_work_id,str) else None
         if current:
             try:
-                context['awaiting_owner']=tuple(item['kind'] for item in self.owner_acts.open_items(current))
+                awaiting=tuple(item['kind'] for item in self.owner_acts.open_items(current))
             except Exception:
                 LOG.info('open items unavailable job=%s',current_work_id)
-        return context
-
-    def open_question_link(self, prompt, focused, current_work_id):
-        """A reference to the Work just before ``focused`` when ``prompt`` answers what its reply asked (#1519).
-
-        Live 2026-10-14: "언제인가요?" was asked, an order request came in between, and the
-        answer ran as its own Work read as being about the order.  Only the one Work before
-        the focused one, in the same chat, within ``OPEN_QUESTION_SECONDS`` and not already
-        followed up, is offered; the DecisionEngine judges whether its reply asked something
-        this message answers.  None otherwise.
-        """
-        current=self.store.job(current_work_id) if isinstance(current_work_id,str) else None
-        if not current or not focused.get('created'):
-            return None
-        try:
-            with self.store.db() as db:
-                row=db.execute('SELECT id FROM jobs WHERE channel=? AND chat_id IS ? AND created<? AND id NOT IN (?,?) '
-                               'ORDER BY created DESC LIMIT 1',
-                               (current.get('channel'),current.get('chat_id'),focused['created'],
-                                current['id'],focused['id'])).fetchone()
-                earlier=self.store.job(row['id']) if row else None
-                if not earlier or float(current.get('created') or 0)-float(earlier.get('created') or 0)>OPEN_QUESTION_SECONDS:
-                    return None
-                if db.execute('SELECT 1 FROM jobs WHERE related_job_id=? AND id!=? AND relation_kind!=?',
-                              (earlier['id'],current['id'],'steer')).fetchone():
-                    return None
-            # #367: a forgotten request or reply is no open question to answer.
-            reply=None if self.store.work_request_forgotten(earlier['id']) else self.store.last_reply(earlier['id'])
-        except Exception:
-            LOG.info('open question lookup unavailable job=%s',current_work_id)
-            return None
-        if not reply or not reply['content']:
-            return None
-        judged=self.decision_judge.answers_open_question(earlier.get('message') or '',reply['content'],prompt)
-        if judged.outcome!=JUDGMENT_YES:
-            return None
-        return {'relation':FOLLOWUP_REFERENCE,'previous':earlier,'source':judged.source}
+        return works,awaiting
 
     @staticmethod
     def _unknown_effect(value):
@@ -4011,7 +4046,6 @@ class AgentService:
             task['budget_continue']=None
             offer=self.budget_continue_offer(job['id'])
             if self.budget_continue_current(job,offer):
-                from .telegram_locale import translate
                 task['budget_continue']={'nonce':offer['nonce'],'text':offer['text'],
                     'texts':{lang:translate(offer['text'],lang) for lang in ('en','ja','zh')},
                     'labels':{lang:msg('button.continue',lang) for lang in ('ko','en','ja','zh')}}
@@ -4023,7 +4057,12 @@ class AgentService:
             task['waiting_for']=list(waiting_for)
             # #855: the settings drafts this Work still offers the owner (id and wording only; no digest).
             task['settings_drafts']=[{'id':row['id'],'effect':row['effect'],'note':row.get('note'),'reason':row.get('reason'),
+                                      'exact_values':row.get('exact_values'),
                                       'expires_at':row.get('expires_at')} for row in awaiting_drafts.get(job['id'],())]
+            for draft in task['settings_drafts']:
+                if draft['exact_values']:
+                    draft['texts']={lang:{key:translate(draft[key],lang) for key in ('effect','note')}
+                                    for lang in ('en','ja','zh')}
             # #845/#477: the transient bubble shares the /dev worker gate.
             # Read model only, computed per poll; never stored.
             if kind=='active':task['step_line']=self._draft_step_text(job,SimpleNamespace(scrubbed=None)) or ''
@@ -7271,10 +7310,9 @@ class AgentService:
             _cfg,_paired,channel=self._notice_channel()
             if job is not None:channel=job['channel']
         if db is None:
-            with self.store.db() as db:self.record_conversation_notice(text,job=job,db=db,channel=channel)
-            return
-        db.execute('INSERT INTO messages(role,content,channel,created,job_id) VALUES (?,?,?,?,?)',
-                   ('assistant',text,channel,time.time(),job['id'] if job else None))
+            with self.store.db() as db:return self.record_conversation_notice(text,job=job,db=db,channel=channel)
+        return db.execute('INSERT INTO messages(role,content,channel,created,job_id) VALUES (?,?,?,?,?)',
+                          ('assistant',text,channel,time.time(),job['id'] if job else None)).lastrowid
 
     #: How much of a tapped message's text its transcript row keeps (#762).
     TAPPED_MESSAGE_CHARS=700
@@ -7631,8 +7669,70 @@ class AgentService:
         receipt=db.execute('INSERT INTO tool_events(job_id,tool,status,detail,created) VALUES (?,?,?,?,?)',
                    (job['id'],'payment_autonomy','authorized',json.dumps({'scope':'payment','effect':'none',
                     'evidence':authorization},ensure_ascii=False),time.time())).lastrowid
-        self.record_conversation_notice(payment_autonomy_notice(authorization),job=job,db=db)
+        self._record_payment_autonomy_status(job,authorization,db)
         return {**authorization,'receipt':receipt}
+
+    #: #782: config key of a Work's one payment-mode status notice: its transcript row and the
+    #: surface message showing it (``deliver_status_notice``).
+    PAYMENT_STATUS_KEY='payment_autonomy_status:'
+
+    @staticmethod
+    def _payment_receipt_counts(db, job_id):
+        rows=db.execute("SELECT status,COUNT(*) AS n FROM tool_events WHERE job_id=? AND tool='payment_autonomy' "
+                        "GROUP BY status",(job_id,)).fetchall()
+        return {row['status']:row['n'] for row in rows}
+
+    def _record_payment_autonomy_status(self, job, authorization, db):
+        """#782: the durable half of the Work's one status notice, in the receipt's transaction.
+
+        The first allowed request adds the notice row; each later one rewrites that same row with
+        the count of ``authorized`` receipts and the latest request.  A row the owner forgot is
+        never rewritten: the next request starts a new one.
+        """
+        key=self.PAYMENT_STATUS_KEY+job['id']
+        count=self._payment_receipt_counts(db,job['id']).get('authorized',0)
+        text=payment_autonomy_notice(authorization,count=count)
+        held=self.store.config(key,{},db=db) or {}
+        row=held.get('row')
+        if isinstance(row,int) and not db.execute('SELECT 1 FROM forgotten_messages WHERE message_id=?',(row,)).fetchone() \
+                and db.execute("UPDATE messages SET content=? WHERE id=? AND job_id=? AND role='assistant'",
+                               (text,row,job['id'])).rowcount==1:
+            return
+        row=self.record_conversation_notice(text,job=job,db=db)
+        # A new row is a new bubble: the message showing the old one is not edited into it.
+        self.store.put(key,{'row':row},db=db)
+
+    def payment_autonomy_closing(self, job_id):
+        """#782: one closing line for a Work the payment mode allowed requests in, or None.
+
+        Derived only from Still's own records of this Work: its payment-mode receipts (allowed,
+        and released before dispatch) and its recorded calls by their effect class
+        (``record_effect``): a change that ended ``succeeded`` is observed, one that ended
+        otherwise failed, and an ``unknown`` effect or a change still running is unknown.
+        """
+        from .agent_runtime import EFFECT_CHANGED, EFFECT_UNKNOWN, _effect_call_history
+        with self.store.db() as db:
+            receipts=self._payment_receipt_counts(db,job_id)
+            if not receipts.get('authorized'):return None
+            calls,_unscoped=_effect_call_history(db,job_id)
+        observed=failed=unknown=0
+        for work,_action,effect,status,_detail in calls:
+            if work!=job_id:continue
+            if effect==EFFECT_UNKNOWN or (effect==EFFECT_CHANGED and status=='running'):unknown+=1
+            elif effect==EFFECT_CHANGED and status=='succeeded':observed+=1
+            elif effect==EFFECT_CHANGED:failed+=1
+        line=msg('payment_autonomy.closing',allowed=receipts['authorized'],observed=observed,failed=failed,unknown=unknown)
+        if receipts.get('not_run'):line+=' '+msg('payment_autonomy.closing_stopped',stopped=receipts['not_run'])
+        return line
+
+    def _with_payment_autonomy_closing(self, job_id, text):
+        """``text`` followed by the payment-mode closing line when the Work has one (#782)."""
+        try:line=self.payment_autonomy_closing(job_id)
+        except Exception as exc:  # noqa: BLE001 - a summary line never fails the Work's finish
+            LOG.warning('payment autonomy closing line not built work=%s kind=%s',job_id,type(exc).__name__)
+            return text
+        if not line:return text
+        return f'{text}\n\n{line}' if text else line
 
     def _release_payment_autonomy(self, job, authorization):
         """Mark a mode receipt ``not_run`` when the final recheck stopped its step before dispatch.
@@ -7654,10 +7754,32 @@ class AgentService:
                 if on_failure is not None:on_failure()
 
     def _deliver_payment_autonomy_notice(self, job, authorization):
+        """#782: show the Work's one status notice on its surface, edited in place when it can be.
+
+        The text is the durable row's (``_record_payment_autonomy_status``), so the bubble reads
+        what the transcript reads; without a row it is this authorization's own notice.
+        """
         surface=self.surface_of(job)
-        if surface is not None:
-            self._deliver_authority_notice(surface, lambda: payment_autonomy_notice(authorization),
-                                           lambda: LOG.warning('payment autonomy notice delivery failed'))
+        if surface is None:return
+        key=self.PAYMENT_STATUS_KEY+job['id']
+        with self._payment_status_lock:
+            try:
+                with self.store.db() as db:
+                    held=self.store.config(key,{},db=db) or {}
+                    row=db.execute('SELECT content FROM messages WHERE id=? AND job_id=?',
+                                   (held.get('row'),job['id'])).fetchone() if isinstance(held.get('row'),int) else None
+                text=row['content'] if row and row['content'] else payment_autonomy_notice(authorization)
+                shown=held.get('shown')
+                if isinstance(shown,dict) and shown.get('text')==hashlib.sha256(text.encode()).hexdigest():return
+                shown=surface.deliver_status_notice(text,shown)
+                if isinstance(shown,dict):
+                    with self.store.db() as db:
+                        db.execute('BEGIN IMMEDIATE')
+                        current=self.store.config(key,{},db=db) or {}
+                        if current.get('row')==held.get('row'):
+                            self.store.put(key,{**current,'shown':{**shown,'text':hashlib.sha256(text.encode()).hexdigest()}},db=db)
+            except Exception:
+                LOG.warning('payment autonomy notice delivery failed')
 
     def browser_approvals_for(self, job):
         """The runtime's per-step approval surface for one Work: consume or request."""

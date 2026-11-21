@@ -1203,6 +1203,11 @@ def make_handler(service, public_hosts=(), public_access_token=''):
                 if path=='/api/personal-knowledge':return self.reply(200,service.personal_knowledge_request(body, channel='local-companion'))
                 if path=='/api/personal-space/memory-candidates/request':
                     return self.reply(200,service.memory_candidate_request(body))
+                undo_parts=path.split('/')
+                if len(undo_parts)==6 and undo_parts[:4]==['','api','personal-space','memories'] and undo_parts[5]=='undo':
+                    # #962: 되돌리기 on the records screen, the same exact retraction as the #955 revert.
+                    try:return self.reply(200,service.memory_undo_request(unquote(undo_parts[4])))
+                    except ValueError as exc:return self.reply(409,{'error':str(exc)})
                 if path=='/api/personal-space/profile/request':
                     # #658: an explicit owner write of one profile fact (add or correct).
                     return self.reply(200,service.memory_profile_request(body))

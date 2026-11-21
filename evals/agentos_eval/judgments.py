@@ -279,6 +279,20 @@ def _call(case, cases, judgments, engine, policy, keep_text, *, delivery=None):
                                  ('succeeded', 'partial', 'failed', 'unknown'),
                                  s.decision_qualification._PROJECTION_QUESTION)
         return {'value': policy.selection(decision), 'outcome': decision.outcome}
+    if (role in ('followup_relation', 'answers_open_question')
+            and 'works' in inspect.signature(judgments.followup_relation).parameters):
+        # #1087: one judgment chooses among the chat's recent Works and the relation together; a case
+        # gives one Work.  An answer to what an earlier reply asked is any relation to that Work.
+        if role == 'answers_open_question':
+            work = {'request': inputs['earlier_request'], 'reply': inputs['earlier_reply'], 'status': 'succeeded'}
+        else:
+            work = {'intent': inputs['previous_intent'], 'status': inputs['previous_status'],
+                    'request': inputs.get('previous_request', ''), 'reply': inputs.get('previous_reply', ''),
+                    'request_at': inputs.get('previous_request_at', ''), 'reply_at': inputs.get('previous_reply_at', '')}
+        result = judgments.followup_relation(inputs['utterance'], [work])
+        if role == 'answers_open_question':
+            return {'outcome': result.outcome}
+        return {'outcome': result.outcome, 'value': result.value}
     if role == 'parked_work_withdrawn':
         result = judgments.parked_work_withdrawn(inputs['utterance'], ('google-gmail-read',))
     else:
@@ -696,7 +710,7 @@ def pin_model(service, model):
     routes._put_jobs({})
 
 
-def requalify_route(service, cap):
+def requalify_route(service, cap, force=False):
     """Adapt #346's update job to a synchronous sandbox run with capped calls.
 
     The shipped job still performs isolation checks, the complete candidate
@@ -705,7 +719,7 @@ def requalify_route(service, cap):
     """
     routes = service.decision_routes
     before = effective_runtime(service)
-    if not before['active'].get('requalification_needed'):
+    if not force and not before['active'].get('requalification_needed'):
         return dict(attempted=False, calls=0)
     audit = []
     original_engine, original_spawn = routes._cli_engine, routes.spawn
@@ -732,6 +746,8 @@ def requalify_route(service, cap):
         routes._cli_engine, routes.spawn = original_engine, original_spawn
     return dict(attempted=bool(started), calls=sum(r.get('sent') is True for r in audit),
                 state=job.get('state'), budget_refused=cap.refused,
+                detail={k: job[k] for k in ('step', 'message', 'reason', 'failure') if k in job and isinstance(job[k], (str, int, float, bool))},
+                failures=dict(Counter(r['failure'] for r in audit if r.get('failure'))),
                 available=effective_runtime(service)['active'].get('available'))
 
 

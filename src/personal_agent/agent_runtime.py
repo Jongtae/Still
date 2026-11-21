@@ -26,7 +26,7 @@ from .document_reader import read as read_document, supported as supported_docum
 from . import folder_grants
 from . import work_mode
 from .file_workspace import FileWorkspace, active_file_roots
-from .manifests import BUILTIN_MANIFEST, CONTEXT_GATED_ACTIONS, HOST_TOOLS, runtime_packages
+from .manifests import BUILTIN_MANIFEST, CONTEXT_GATED_ACTIONS, HOST_TOOLS, LOCAL_WRITE_ACTIONS, runtime_packages
 from .memory_service import PROFILE_KEY_GUIDANCE, CONNECTION_PREFERENCE_GUIDANCE, PROFILE_SECTION_CHARS
 from .prompt_files import prompt
 from .preparations import PREPARED_HEADING, MAX_DAILY_WINDOW_RUNS, preparation_of
@@ -399,7 +399,9 @@ BROWSER_EFFECT={**EFFECT,'description':BROWSER_EFFECT_NOTE}
 #: #629: browser_open's argument guidance; the session note is about what an effect leaves in the session.
 BROWSER_OPEN_ARGUMENTS={'url':'The page address.'+BROWSER_SIGN_IN_NOTE,
                         'effect':BROWSER_EFFECT_NOTE+BROWSER_SESSION_NOTE,
-                        'layout':BROWSER_LAYOUT_NOTE.strip()}
+                        'layout':BROWSER_LAYOUT_NOTE.strip(),
+                        'locale':'Optional BCP 47 tag (e.g. ja-JP or zh-Hans-CN) to open pages as a reader with that language sees them. Locale and time zone are fixed at the first browser_open and kept through this Work’s sign-in and continuation. A later different value is refused. Omit both for defaults.',
+                        'timezone':'Optional IANA time zone (e.g. Asia/Tokyo). The result’s presentation reports what the engine applied and observed and lists unsupported settings. macOS WebKit cannot set a time zone.'}
 BROWSER_SIGN_IN_URL_TEXT='The site\'s address: its sign-in page or the page you need. Route rule: '+BROWSER_SIGN_IN_ROUTE_RULE
 CAPABILITY_SEARCH_ARGUMENTS={
  'source':'configured reads local AI-side server names; registry searches the official public MCP Registry by server name; skill inspects a public Agent Skills candidate. Never send the owner request or private data.',
@@ -668,7 +670,7 @@ DEFINITIONS=[
  schema('search_memory','Search the owner\'s current saved Memory for a fact relevant to this request. Use concise terms from the request and likely synonyms (for example, sushi and 초밥); results include saved_at and a source reference with source_status, as in list_memory, so you can say why you know something. Search only when prior saved information can help. It returns a bounded set and never reads another owner\'s data.',{'query':STRING},['query']),
  schema('forget_record',FORGET_RECORD_DESCRIPTION,described({'action':{'type':'string','enum':['forget','delete','undo','revert','list','find']},'ref':STRING,'receipt':STRING,'query':STRING},FORGET_RECORD_ARGUMENTS),['action']),
  schema('list_agents','List available specialist agents and their roles.'),
- schema('browser_open','Open a URL in the owner\'s own logged-in browser profile and return the page state: bounded visible text and a numbered list of interactive elements. Use for sites where the owner is signed in (shopping carts, account pages); public_page_read is enough for anonymous pages. A login_required state means the owner must log in first; never enter credentials. An element marked offscreen sits in a closed menu or panel and cannot be pressed yet: press the control that opens it first, or open its href with browser_open.',described({'url':STRING,'effect':BROWSER_EFFECT,'layout':{'type':'string','enum':['mobile','desktop']}},BROWSER_OPEN_ARGUMENTS),['url','effect']),
+ schema('browser_open','Open a URL in the owner\'s own logged-in browser profile and return the page state: bounded visible text and a numbered list of interactive elements. Use for sites where the owner is signed in (shopping carts, account pages); public_page_read is enough for anonymous pages. A login_required state means the owner must log in first; never enter credentials. An element marked offscreen sits in a closed menu or panel and cannot be pressed yet: press the control that opens it first, or open its href with browser_open.',described({'url':STRING,'effect':BROWSER_EFFECT,'layout':{'type':'string','enum':['mobile','desktop']},'locale':STRING,'timezone':STRING},BROWSER_OPEN_ARGUMENTS),['url','effect']),
  schema('browser_read','Return the current page state of the owner\'s browser session again (visible text and numbered interactive elements), for example after the page changed. load_more (optional, 1-5): first scroll the page to its end up to that many times, for a list that adds rows only when scrolled; it stops early when nothing new appears and is bounded in time. The result then has loaded: rounds, why it stopped, new_content and the text that appeared (use browser_find to reach controls in the added rows). Scrolling never presses a control.',{'load_more':STRING}),
  schema('browser_find','Find visible text on the current browser page. Returns the matching lines and interactive elements, each element with its number for browser_click and its nearby text (near). It searches the first 300 interactive elements of the page, including those beyond the listed ones (more_elements counts them), by name or nearby text; when the page state says elements_capped, later controls are not searched, so scroll or narrow the page (for example a search or filter) instead of concluding a control is absent. Use it to reach the right control and to confirm the right item or price before acting.',{'text':STRING},['text']),
  schema('browser_click','Click one interactive element of the current browser page. target is the element number from the page state or its exact visible name. Returns the resulting page state.',{'target':STRING,'effect':BROWSER_EFFECT},['target','effect']),
@@ -4643,7 +4645,9 @@ class Capabilities:
    if refused is not None:raise refused
    action = tool['host_action']
    settings_draft_only = False
-   if (action not in API_ACTIONS|CODE_ACTIONS|OWNER_LOCAL_ACTIONS|INTERNAL_STATE_ACTIONS|{'schedule_preparation'}
+   # #1102: a write that changes only the owner's own Still records (a note, a forget, a line stop) is
+   # not held by an unknown external outcome; settings drafts keep their draft-only handling.
+   if (action not in API_ACTIONS|CODE_ACTIONS|(LOCAL_WRITE_ACTIONS-{'settings_change'})|INTERNAL_STATE_ACTIONS
        and not effect_free_call(action,declared_effect(action,args),'running')):
     if action in BROWSER_ACTIONS:
      refusal = self._browser_mutation_refusal(args.get('url'))
@@ -5814,6 +5818,10 @@ def _evidence_detail(name,result):
            'element_count':len(result.get('elements',[])),'characters':len(result.get('text','')),
            'redacted_values':int(result.get('redacted_values') or 0),'found':result.get('found')}
   if result.get('layout')=='desktop':summary['layout']='desktop'   # #572
+  presentation=result.get('presentation')
+  if isinstance(presentation,dict):
+   summary['presentation']={key:presentation[key] for key in ('requested','applied','unsupported','observed')
+                            if key in presentation}
   if result.get('link_opened') is True:summary['link_opened']=True   # #971: a press run as opening the link's address
   signed=result.get('provider_sign_in')
   if isinstance(signed,dict) and signed.get('state') in ('available','returned','unconfirmed'):
