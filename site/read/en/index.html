@@ -1,0 +1,171 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Start here | Still Concept Guide</title>
+<meta name="description" content="The Still Concept Guide is a topic-by-topic, plain-language retelling of the whitepaper Whose Agent? and the Still Compendium. This page explains the questions the two manuscripts ask, their core hypothesis, the evidence labels and the reading order.">
+<link rel="stylesheet" href="../../assets/read.css?v=1">
+</head>
+<body>
+<a class="skip" href="#main">Skip to main content</a>
+<header class="top">
+  <a class="brand" href="index.html">Still <span>Concept Guide</span></a>
+  <nav class="top-links" aria-label="Site"><a href="../../index.html">Home</a><a href="https://github.com/Jongtae/Still/blob/main/docs/whitepapers/README.md">Source</a><a href="https://github.com/Jongtae/Still">GitHub</a><a href="../ko/index.html" hreflang="ko" lang="ko">한국어</a></nav>
+</header>
+<div class="layout">
+  <nav class="side" aria-label="Concept guide contents">
+    <ol>
+      <li><a href="index.html" aria-current="page">Start here</a></li>
+      <li><a href="memory.html">Memory and personal state</a></li>
+      <li><a href="ai.html">Working with AI</a></li>
+      <li><a href="authority.html">Authority, connections and evidence</a></li>
+      <li><a href="skills.html">Skills and expertise</a></li>
+      <li><a href="industry.html">Industry hypotheses and counterarguments</a></li>
+      <li><a href="history.html">Development history</a></li>
+      <li><a href="limits.html">What is confirmed and open questions</a></li>
+      <li><a href="glossary.html">Glossary</a></li>
+    </ol>
+  </nav>
+  <main id="main" class="doc">
+    <nav class="crumbs" aria-label="You are here"><ol><li><a href="index.html">Concept guide</a></li></ol></nav>
+    <h1>Start here</h1>
+    <p class="summary">The Still Concept Guide is a topic-by-topic, plain-language retelling of the whitepaper Whose Agent? and the Still Compendium. This page explains the questions the two manuscripts ask, their core hypothesis, the evidence labels and the reading order.</p>
+    <p class="meta">Manuscripts: Whitepaper summary and ch. 1–3, Compendium introduction and ch. 1–3. Last updated October 14, 2026.</p>
+
+    <h2 id="audience">Who this guide is for</h2>
+    <p>This guide is for people who work with AI or build AI systems and wonder what happens to their information and their work in progress when they change models. No programming knowledge is needed. It does not cover installation; that is explained on the <a href="../../index.html">Still home page</a>.</p>
+    <p>In this guide, “the whitepaper” and “the compendium” refer to these two manuscripts.</p>
+    <dl class="defs">
+      <dt>Whitepaper: <em>Whose Agent?</em> v0.3.1</dt>
+      <dd>An industry, product and business strategy whitepaper. It deals with the relationship between AI providers and personal agents. This is the edition reviewed on October 6, 2026 and copy-edited on October 12.</dd>
+      <dt>Compendium: <em>Still Compendium</em> v0.1</dt>
+      <dd>It gathers the concepts, designs and trial and error that accumulated in the repository from September 5 to October 13, 2026 into one document. It also includes the whitepaper's argument.</dd>
+    </dl>
+    <div class="note" role="note"><p><strong>Note</strong> Neither manuscript is a normative document. The repository's actual rules are set by the Development Constitution and the English contract documents. Still calls the one person the agent works for the “owner”. This guide says “owner” when it describes Still's rules and “user” when it carries over the whitepaper's industry discussion.</p></div>
+    <div class="note" role="note"><p><strong>Note</strong> The English edition of this guide is translated from the Korean guide. Japanese and Chinese editions of the guide are not provided.</p></div>
+
+    <h2 id="question">The central question</h2>
+    <p>The whitepaper begins with a hypothetical thought experiment. Suppose J.A.R.V.I.S. were an AI service run by another company. How much of his work and information could Tony Stark hand to it? The answer does not depend on intelligence alone. The manuscripts ask four questions.</p>
+    <ul>
+      <li>Where does the memory of who I am live?</li>
+      <li>Who decides how far the assistant may act?</li>
+      <li>What happens if the provider changes its terms or shuts down?</li>
+      <li>When a better AI appears, can I swap only the intelligence and keep the context and the work in progress?</li>
+    </ul>
+    <blockquote><p>Is Tony using his own Jarvis, or another company’s service that he calls Jarvis?</p><cite>Whitepaper, Introduction</cite></blockquote>
+    <p>This is not an argument against using the cloud. Computation and inference may be borrowed from outside; the question is whether the memory of who I am, the authority I have handed over and the relationship I have built up must also be tied to that provider.</p>
+    <p class="small">Jarvis and Tony Stark are a hypothetical example used to explain the question. They are not a claim about the technology in the films or about the abilities of any real service.</p>
+
+    <h2 id="hypothesis">The core hypothesis</h2>
+    <p class="basis"><span>Basis</span> Hypothesis. Whitepaper ch. 2, Compendium ch. 1</p>
+    <p>The central hypothesis of the two manuscripts is this. Supplying an AI model, and a personal agent that remembers one person’s goals and context and gets work done with several tools, can be separated as distinct products and distinct businesses.</p>
+    <p>When the two are bound into one service, choosing a model is no longer just a comparison of performance and price. Even if a new model is better, the user has to weigh the burden of rebuilding the context built up so far. The whitepaper sees this as the core of lock-in. What matters is less whether you can download your data than whether you can carry on with your work after you leave.</p>
+    <blockquote><p>Differences between models should show up as differences in the quality of work. A user should not have to give up their context and control first in order to compare them.</p><cite>Whitepaper ch. 2</cite></blockquote>
+    <div class="note" role="note"><p><strong>Note</strong> This hypothesis does not mean all models give the same result. Change the model and its judgment and quality change too. The whitepaper does not treat models as fully interchangeable like network carriers, and separating roles does not mean the companies must be split as well.</p></div>
+
+    <h2 id="layers">Areas of responsibility</h2>
+    <p class="basis"><span>Basis</span> Proposal. Whitepaper ch. 3</p>
+    <p>The whitepaper divides a personal-agent environment into six areas of responsibility. What to check when you change providers differs for each area.</p>
+    <div class="table-wrap" role="region" aria-labelledby="t1" tabindex="0">
+    <table>
+      <caption id="t1">Table 1. Areas of responsibility and what to check when the provider changes</caption>
+      <thead><tr><th scope="col">Responsibility</th><th scope="col">Value provided</th><th scope="col">What to check when the provider changes</th></tr></thead>
+      <tbody>
+        <tr><th scope="row">Supplying intelligence</th><td>Reasoning, generation, planning</td><td>Changes in quality, cost and supported features</td></tr>
+        <tr><th scope="row">Execution environment</th><td>Running tools, browsers, local programs, external services</td><td>Actual reachable scope and results</td></tr>
+        <tr><th scope="row">Personal context and memory</th><td>Preferences, corrections, relevant material, ways of working</td><td>Preservation of meaning, source and scope</td></tr>
+        <tr><th scope="row">Continuity of work</th><td>Work in progress, reasons for waiting, failure and resume state</td><td>Whether work can continue without duplicate execution</td></tr>
+        <tr><th scope="row">Authority and evidence</th><td>Delegation scope, approval, cancellation, confirming actual results</td><td>Whether re-approval is needed and how trustworthy records are</td></tr>
+        <tr><th scope="row">User experience</th><td>Conversation, intervention, recovery, persistent Presence</td><td>Whether the user feels it is the same work continuing</td></tr>
+      </tbody>
+    </table>
+    </div>
+    <p class="source-line">Source: Whose Agent? (Korean) v0.3.1, ch. 3. Table reproduced.</p>
+    <p class="table-note">This is a model for examining industry and product design. It does not mean Still has implemented every item.</p>
+    <p>This does not mean the user has to manage every component. In the manuscripts’ words, “being able to choose is different from having to choose every time.” Good defaults are enough, as long as the user can, when needed, change providers, withdraw authority, move data and check what was actually executed.</p>
+    <p>Local installation does not guarantee control either. The standard is not location but boundaries: what information is where, who may do what, and how the user can change that relationship.</p>
+
+    <h2 id="history">Conditions taken from history</h2>
+    <p class="basis"><span>Basis</span> Case. Whitepaper ch. 1</p>
+    <p>From the history of the internet and of mobile, the whitepaper looks not for who won but for the conditions under which technology layers could separate.</p>
+    <ul>
+      <li>Early online services (CompuServe and others) offered discussion groups, news, email and chat together in one environment.</li>
+      <li>CERN put the web software in the public domain on April 30, 1993. RFC 3724 explains the relation between the end-to-end principle, service innovation and user choice, noting that it is generally easier to change the systems at the ends than the inside of the network to create a new service.</li>
+      <li>Apple’s 2008 iPhone SDK and App Store announcement opened a path for outside developers to sell applications, but it also stated Apple’s approval and exclusive distribution through the App Store.</li>
+      <li>In 2022 the UK Competition and Markets Authority described Apple’s and Google’s influence and the limits on competition around operating systems, app stores and browsers. That is a judgment about the UK market at that time.</li>
+    </ul>
+    <blockquote><p>Separating technology layers is not the same event as strengthening user control.</p><cite>Whitepaper §1.2</cite></blockquote>
+    <p>So for AI the whitepaper proposes examining three conditions.</p>
+    <ul>
+      <li>Is there a stable connection boundary that outside businesses can use?</li>
+      <li>Can users change providers without the burden of losing context?</li>
+      <li>Do participating companies have an economic reason to open and maintain connections?</li>
+    </ul>
+
+    <h2 id="evidence">Evidence labels</h2>
+    <p>This guide uses the compendium’s status labels as they are. The “Basis” line under each section heading tells you what kind of evidence that section rests on. The labels are kinds of evidence, not a ranking of trust.</p>
+    <div class="table-wrap" role="region" aria-labelledby="t2" tabindex="0">
+    <table>
+      <caption id="t2">Table 2. Evidence labels and their meaning</caption>
+      <thead><tr><th scope="col">Label</th><th scope="col">Meaning</th></tr></thead>
+      <tbody>
+        <tr><th scope="row">Case</th><td>A confirmed external case with a source and a date</td></tr>
+        <tr><th scope="row">Hypothesis</th><td>An industry or product hypothesis. Cases do not prove the whole hypothesis</td></tr>
+        <tr><th scope="row">Proposal</th><td>A design proposal or research conclusion. Not implementation or adoption</td></tr>
+        <tr><th scope="row">Contract</th><td>A rule set by a normative repository document, regardless of implementation</td></tr>
+        <tr><th scope="row">Implemented</th><td>Confirmed by code and unit or integration tests. Excludes live accounts and services</td></tr>
+        <tr><th scope="row">Observed</th><td>Actually observed on the owner’s installation or live accounts</td></tr>
+        <tr><th scope="row">Historical</th><td>A superseded or dropped decision, kept only as evidence of its own scope</td></tr>
+      </tbody>
+    </table>
+    </div>
+    <p class="source-line">Source: Still Compendium v0.1, “How to read this document”. Table reproduced.</p>
+
+    <h2 id="order">Reading order</h2>
+    <p>The guide has nine pages. This page is the first.</p>
+    <ol>
+      <li><a href="index.html">Start here</a>: this page. The questions, the core hypothesis, the evidence labels and the reading order.</li>
+      <li><a href="memory.html">Memory and personal state</a>: three levels of moving memory, memory versus authority, and the current memory policy.</li>
+      <li><a href="ai.html">Working with AI</a>: the division of roles in which the AI works and Still guards, Presence, and collaboration between people and agents.</li>
+      <li><a href="authority.html">Authority, connections and evidence</a>: the protections kept today, the kinds of action, and the difference between “I took care of it” and proof that it was done.</li>
+      <li><a href="skills.html">Skills and expertise</a>: a skill format versus a tradable capability, supply first, the interface decision, the honest scope of claims, and packages and upstream.</li>
+      <li><a href="industry.html">Industry hypotheses and counterarguments</a>: business directions, who pays, economics per successful work, counterarguments and alternative scenarios.</li>
+      <li><a href="history.html">Development history</a>: changes of direction, dropped decisions and the timeline.</li>
+      <li><a href="limits.html">What is confirmed and open questions</a>: what is and is not confirmed, the verification agenda not yet carried out, and open questions.</li>
+      <li><a href="glossary.html">Glossary</a>: the terms used in this guide.</li>
+    </ol>
+
+    <section class="page-sources" aria-labelledby="page-sources-title">
+      <h2 id="page-sources-title">Sources for this page</h2>
+      <ul>
+        <li><a href="https://github.com/Jongtae/Still/blob/main/docs/whitepapers/whose-agent.ko.md">Whose Agent? (Korean) v0.3.1</a>: Summary, Introduction, ch. 1–3</li>
+        <li><a href="https://github.com/Jongtae/Still/blob/main/docs/whitepapers/personal-agentos-compendium.en.md">Still Compendium v0.1</a>: Introduction, “How to read this document”, ch. 1–3</li>
+        <li><a href="https://www.computerhistory.org/revolution/the-web/20/400/2337">Computer History Museum, CompuServe</a></li>
+        <li><a href="https://home.cern/science/computing/the-birth-of-the-web/">CERN, The birth of the Web</a></li>
+        <li><a href="https://www.rfc-editor.org/rfc/rfc3724.html">IAB, RFC 3724, March 2004</a></li>
+        <li><a href="https://www.apple.com/newsroom/2008/03/06Apple-Announces-iPhone-2-0-Software-Beta/">Apple, announcement of March 6, 2008</a></li>
+        <li><a href="https://www.gov.uk/government/news/cma-plans-market-investigation-into-mobile-browsers-and-cloud-gaming">UK CMA, announcement of June 10, 2022</a></li>
+      </ul>
+    </section>
+    <nav class="pager" aria-label="Previous and next pages"><a class="next" href="memory.html"><span>Next</span>Memory and personal state</a></nav>
+  </main>
+  <nav class="onpage" aria-labelledby="onpage-title">
+    <h2 id="onpage-title">On this page</h2>
+    <ol>
+      <li><a href="#audience">Who this guide is for</a></li>
+      <li><a href="#question">The central question</a></li>
+      <li><a href="#hypothesis">The core hypothesis</a></li>
+      <li><a href="#layers">Areas of responsibility</a></li>
+      <li><a href="#history">Conditions taken from history</a></li>
+      <li><a href="#evidence">Evidence labels</a></li>
+      <li><a href="#order">Reading order</a></li>
+    </ol>
+  </nav>
+</div>
+<footer class="foot">
+  <p>This guide is a plain-language retelling of two manuscripts, written by an AI coding assistant at the project owner's request. It has had only that same AI's self-review, not review by an independent expert or a person. If it differs from the source, the source is right. It is not a promise of product features; what works now is in the <a href="https://github.com/Jongtae/Still/blob/main/docs/product-status.en.md">product status</a>.</p>
+  <p>Still is licensed <a href="https://github.com/Jongtae/Still/blob/main/LICENSE">AGPL-3.0-only</a>. This page has no sign-in, analytics or scripts. <a href="../../privacy.html">Privacy</a> <a href="../../terms.html">Terms</a></p>
+</footer>
+</body>
+</html>

@@ -1,0 +1,148 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Development history | Still Concept Guide</title>
+<meta name="description" content="How Still's identity changed, which decisions were dropped and what replaced them, and what happened in each period, following the compendium's record.">
+<link rel="stylesheet" href="../../assets/read.css?v=1">
+</head>
+<body>
+<a class="skip" href="#main">Skip to main content</a>
+<header class="top">
+  <a class="brand" href="index.html">Still <span>Concept Guide</span></a>
+  <nav class="top-links" aria-label="Site"><a href="../../index.html">Home</a><a href="https://github.com/Jongtae/Still/blob/main/docs/whitepapers/README.md">Source</a><a href="https://github.com/Jongtae/Still">GitHub</a><a href="../ko/history.html" hreflang="ko" lang="ko">한국어</a></nav>
+</header>
+<div class="layout">
+  <nav class="side" aria-label="Concept guide contents">
+    <ol>
+      <li><a href="index.html">Start here</a></li>
+      <li><a href="memory.html">Memory and personal state</a></li>
+      <li><a href="ai.html">Working with AI</a></li>
+      <li><a href="authority.html">Authority, connections and evidence</a></li>
+      <li><a href="skills.html">Skills and expertise</a></li>
+      <li><a href="industry.html">Industry hypotheses and counterarguments</a></li>
+      <li><a href="history.html" aria-current="page">Development history</a></li>
+      <li><a href="limits.html">What is confirmed and open questions</a></li>
+      <li><a href="glossary.html">Glossary</a></li>
+    </ol>
+  </nav>
+  <main id="main" class="doc">
+    <nav class="crumbs" aria-label="You are here"><ol><li><a href="index.html">Concept Guide</a></li><li aria-current="page">Development history</li></ol></nav>
+    <h1>Development history</h1>
+    <p class="summary">How Still's identity changed, which decisions were dropped and what replaced them, and what happened in each period, following the compendium's record.</p>
+    <p class="meta">Manuscripts: Compendium ch. 4, 18–19. Last updated October 14, 2026. All dates are in 2026.</p>
+
+    <h2 id="read">Before you read</h2>
+    <p>Issue numbers in the compendium (such as <code>#712</code>) refer to issues or pull requests in the predecessor repository <a href="https://github.com/Jongtae/agentos">Jongtae/agentos</a>, not this one. This guide does not carry the numbers over and describes events by date and content. Most of the record here is past decisions and their reasons, content labelled Historical or Contract, not current features.</p>
+
+    <h2 id="identity">How the identity changed</h2>
+    <p class="basis"><span>Basis</span> Historical. Compendium 4.1–4.4</p>
+    <p>Still's identity changed several times in forty days. What did not change was a single question: borrow the brain, keep the assistant.</p>
+    <ul>
+      <li><strong>September 5, a multi-tenant platform on Kubernetes.</strong> The first execution design pictured a Kubernetes-based agent platform isolated per user by namespace, with default-deny egress. The first pivot happened inside that document: the product unit changed from per-task execution to a persistent environment per owner. One sentence survives today: product work state is owned by PostgreSQL, and Kubernetes owns the state of execution resources. It is the first form of separating durable state from replaceable workers.</li>
+      <li><strong>September 6, a one-day pivot.</strong> The Kubernetes direction was dropped almost at once. Still 0.2 ran as a single local process installed with Homebrew and read files only inside connected folders. It passed 42 automated tests and five acceptance cases in the same conversation. A later plan fixed the direction of no Docker or Kubernetes dependency.</li>
+      <li><strong>September 7, Hub v2.</strong> It separated four layers: the Mac, Still (an always-running personal-state runtime), Codex and Claude Code (engines called per task), and a control plane (account and operations metadata only). The key sentence was that Still is not a mere relay: it decides which assistant to assign, supplies only permitted context, and holds tool execution, approval, cancellation, retry and evidence.</li>
+      <li><strong>September 8, the first closeout.</strong> Master Plans 1 and 2 validated against mock contracts before any real credential was entered. The first closeout declared "development complete" on repository and CI evidence while explicitly excluding real subscription login, external connections, operating deployment and real-use success, and forbade relabelling an engineering gap as owner setup. The discipline was not perfect from the start. Work that produced only unconnected mock adapters was called complete until a remediation sequence, and an operating-readiness "ready" claim turned out to be false and was corrected. The evidence discipline did not hold by itself; it had to be re-established again and again.</li>
+    </ul>
+
+    <h2 id="platform">Personal AI Kernel and Agent Distribution Platform</h2>
+    <p class="basis"><span>Basis</span> Contract. Compendium 4.5</p>
+    <p>In this period the product's long-term identity was set down in one sentence: an owner-authoritative Personal AI Kernel plus an open Agent Distribution Platform. The kernel is agent-independent; the product experience and the distribution platform may be agent-centric. The documents also repeat what the product is not: not a chatbot, a coding harness, a swarm framework, a host kernel or hypervisor, or a replacement for macOS or Linux. They take particular care that the GitHub issues, pull requests, CI and delegation automation used to build the repository are not mistaken for the product itself.</p>
+    <p>The platform foundation fixed the schemas for the ten kernel concepts and the AgentPackage manifest. The follow-up work in that line and the useful-default-agent issues, however, were closed as not planned on September 24. The platform remained a long-term direction, and the immediate focus moved to an assistant genuinely useful to one person.</p>
+
+    <h2 id="turns">How real use changed direction</h2>
+    <p class="basis"><span>Basis</span> Historical, Observed. Compendium 4.6–4.7</p>
+    <p>From late September, problems found in the owner's own use set the direction.</p>
+    <ul>
+      <li><strong>September 23, Presence research.</strong> It recorded that Telegram felt like a task and status console, that failures sent the owner to a management screen instead of continuing the conversation, and that the configured AI and the actual execution path differed. The problem was not tone but projection: internal concepts leaking into the conversation.</li>
+      <li><strong>September 24, the decision model.</strong> A model-backed judgment boundary was chosen instead of a rule engine.</li>
+      <li><strong>September 26, Secretary.</strong> The owner raised the problem that the decision model had become a rule-bound blocker instead of a gate for finding alternatives. The pilot posture then removed protection layers from the request path.</li>
+      <li><strong>September 27, "AI is the engine".</strong> A constitutional principle came out of the realization that the repository was accumulating per-request features, such as directions and carts, in Still code.</li>
+      <li><strong>October 10, Connect.</strong> The goal that handles every service through the flow of the Connection and Delegation Contract became active, and the Secretary program paused at an exact resume point.</li>
+      <li><strong>October 10, the secretary is a starting point, not a boundary.</strong> The Professional Roles and Communication Contract widened the product thesis: Still is not a secretary-only app but an owner-centred operating environment for many professional roles. The same contract drew the line that a role creates no authority.</li>
+    </ul>
+    <p>The current public release at the time of the compendium is <code>v1.3.0</code> (October 10, 2026). Autonomous purchasing, arbitrary computer use, universal web verification, live stock and checkout verification, arbitrary third-party package execution and a public marketplace remain "no current claim" (see <a href="limits.html#not-claimed">What is not claimed now</a>).</p>
+
+    <h2 id="dropped">Dropped decisions and their replacements</h2>
+    <p class="basis"><span>Basis</span> Historical. Compendium ch. 18</p>
+    <p>This project does not erase what it drops. Issues closed as not planned remain design records, and removed protections remain in archive documents. If something is needed again, a small successor is created from the then-current architecture instead of reopening the old issue. A selection of rows from the compendium's table follows.</p>
+    <div class="table-wrap" role="region" aria-labelledby="h1" tabindex="0">
+    <table>
+      <caption id="h1">Table 1. Examples of dropped decisions and replacements</caption>
+      <thead><tr><th scope="col">When</th><th scope="col">Dropped</th><th scope="col">Replaced by</th><th scope="col">Why</th></tr></thead>
+      <tbody>
+        <tr><th scope="row">Sep 5</th><td>A multi-tenant Kubernetes platform</td><td>A persistent environment per owner, then a single installed process (Sep 6)</td><td>The product unit is the owner, not the task. Too many failure points for a first run</td></tr>
+        <tr><th scope="row">Sep 8</th><td>"Complete" with unconnected mock adapters</td><td>Master Plan 1 remediation R-01 to R-05</td><td>Completion needs a policy-owning orchestrator that actually wires things together</td></tr>
+        <tr><th scope="row">Sep 24</th><td>The Agent Distribution Platform epic and its 12 children</td><td>A useful default assistant first</td><td>Immediate usefulness over a marketplace. Design kept as records</td></tr>
+        <tr><th scope="row">Sep 26–28</th><td>Per-request sensitivity judgment, search gate, private/public separation</td><td>Information-use audit</td><td>Protection blocked usefulness. Only two real protections kept</td></tr>
+        <tr><th scope="row">Sep 28</th><td>A plan in which the orchestrator rewrites the request and picks tools</td><td>The owner's words verbatim, notes only</td><td>Most failures came from the layers between the owner and the AI</td></tr>
+        <tr><th scope="row">Sep 30</th><td>The web as a management console</td><td>Manage in conversation; pages only for results and necessary inputs</td><td>Designing settings as a management page was a misjudgment</td></tr>
+        <tr><th scope="row">Oct 2</th><td>Asking about every memory</td><td>Save, tell, undo</td><td>Every act of asking is not a good user experience</td></tr>
+        <tr><th scope="row">Oct 9</th><td>Docker and Kubernetes deployment config</td><td>Removed</td><td>Not the real install path</td></tr>
+        <tr><th scope="row">Oct 12</th><td>A worker catalogue spanning providers</td><td>Only within the main AI's family</td><td>Owner decision</td></tr>
+      </tbody>
+    </table>
+    </div>
+    <p class="source-line">Source: Still Compendium v0.1, ch. 18, selected rows. The original table has more rows and issue numbers.</p>
+    <p>A few currents run through the compendium's table.</p>
+    <ul>
+      <li><strong>Remove rather than add.</strong> Many decisions removed the layers that crept in between the AI and the owner rather than adding guards or branches when something failed.</li>
+      <li><strong>Protection is a dial, not a ratchet.</strong> Sensitivity judgments, private/public separation and ask-first were built and then removed for the pilot. The two invariants, secrets and payment, stayed throughout. What was removed was not declared wrong but deferred to a separately activated hardening program.</li>
+      <li><strong>Scenario-specific code is not a fight won once.</strong> The principle that AI is the engine, its amendment and the Secretary program's founding rule all restate the same constraint. Sliding toward task-specific implementation is a standing pressure that has to be pushed back at every new feature.</li>
+      <li><strong>Usefulness over ambition.</strong> The big vision of a marketplace and registry was not left quietly open but closed as not planned, with the design kept as citable history.</li>
+    </ul>
+
+    <h2 id="timeline">Timeline</h2>
+    <p class="basis"><span>Basis</span> Historical. Compendium ch. 19</p>
+    <div class="table-wrap" role="region" aria-labelledby="h2" tabindex="0">
+    <table>
+      <caption id="h2">Table 2. Periods and main events</caption>
+      <thead><tr><th scope="col">Period</th><th scope="col">Phase</th><th scope="col">Main events</th></tr></thead>
+      <tbody>
+        <tr><th scope="row">9/5–6</th><td>Bootstrap</td><td>First commit, the Kubernetes design and its immediate reversal, Homebrew-installed 0.2</td></tr>
+        <tr><th scope="row">9/7–8</th><td>Automated delivery sprint</td><td>About 156 commits in two days. Hub v2, Master Plans 1 and 2, the first closeout, repository restructuring</td></tr>
+        <tr><th scope="row">9/9–19</th><td>A slower pace</td><td>Incremental delivery, the file workspace, the distribution platform foundation, the first dogfood slice, the usefulness audit</td></tr>
+        <tr><th scope="row">9/20–23</th><td>Parallel worktree program</td><td>The Telegram assistant, the web management contract, plan-state corrections, the Presence research (9/23)</td></tr>
+        <tr><th scope="row">9/24</th><td>The day of the big pivot</td><td>122 commits in a day. Reuse infrastructure, retiring old surfaces, the repository rename, closing the distribution platform epic, activating model-first Presence, the decision engine</td></tr>
+        <tr><th scope="row">9/25–26</th><td>Governance corrections and Secretary</td><td>Correcting verification overload, the execution contract, current context, Secretary and the pilot posture</td></tr>
+        <tr><th scope="row">9/27–30</th><td>AI is the engine, and opening up</td><td>The engine principle, the orchestrator, the request-path census, opening egress with the information-use audit, dropping management pages, the worktree rule, not asking</td></tr>
+        <tr><th scope="row">10/1–5</th><td>Owner model and skills</td><td>Skill supply, the principle's amendment, the first real-use sample, self-review, the role ontology research, settling the resume point</td></tr>
+        <tr><th scope="row">10/6</th><td>The day of documents</td><td>The upstream program's five children completed, canonical contracts separated from superseded amendment history, the whitepaper v0.3 review</td></tr>
+        <tr><th scope="row">10/7–9</th><td>Install and release</td><td>uv and WSL2 install, Docker and Kubernetes removed, version-based releases, <code>v1.3.0</code></td></tr>
+        <tr><th scope="row">10/10–11</th><td>The Connect sprint</td><td>The Connection and Delegation Contract, the Connect goal activated and its six children completed, the professional roles contract, contribution governance, a corrective issue</td></tr>
+        <tr><th scope="row">10/12</th><td>Polishing</td><td>The README demo, main-AI family only, secret sets for code runs, unified effect classification</td></tr>
+        <tr><th scope="row">10/13</th><td>Release automation</td><td>The release workflow, terminal first-run setup, approval UX honesty fixes, approved state changes, the procedural memory program begins</td></tr>
+      </tbody>
+    </table>
+    </div>
+    <p class="source-line">Source: Still Compendium v0.1, ch. 19. Issue numbers omitted. All dates are in 2026.</p>
+    <p>The most recent turning point in the repository, as the compendium records it, is procedural memory. Instead of rediscovering API documentation from scratch for every request, it would accumulate, per connection, function libraries that are verified, parameterized and gated by outcomes. It too requires generality guards from the start, and it cites research showing that naive AI self-generated skills performed poorly. This is at the contract stage and in progress, not a claim that it works.</p>
+
+    <section class="page-sources" aria-labelledby="page-sources-title">
+      <h2 id="page-sources-title">Sources for this page</h2>
+      <ul>
+        <li><a href="https://github.com/Jongtae/Still/blob/main/docs/whitepapers/personal-agentos-compendium.en.md">Still Compendium v0.1</a>: ch. 4, 18–19</li>
+        <li><a href="https://github.com/Jongtae/Still/blob/main/docs/product-status.en.md">Product status</a></li>
+      </ul>
+    </section>
+    <nav class="pager" aria-label="Previous and next pages"><a class="prev" href="industry.html"><span>Previous</span>Industry hypotheses and counterarguments</a><a class="next" href="limits.html"><span>Next</span>What is confirmed and open questions</a></nav>
+  </main>
+  <nav class="onpage" aria-labelledby="onpage-title">
+    <h2 id="onpage-title">On this page</h2>
+    <ol>
+      <li><a href="#read">Before you read</a></li>
+      <li><a href="#identity">How the identity changed</a></li>
+      <li><a href="#platform">Personal AI Kernel and Agent Distribution Platform</a></li>
+      <li><a href="#turns">How real use changed direction</a></li>
+      <li><a href="#dropped">Dropped decisions and their replacements</a></li>
+      <li><a href="#timeline">Timeline</a></li>
+    </ol>
+  </nav>
+</div>
+<footer class="foot">
+  <p>This guide is a plain-language retelling of two manuscripts, written by an AI coding assistant at the project owner's request. It has had only that same AI's self-review, not review by an independent expert or a person. If it differs from the source, the source is right. It is not a promise of product features; what works now is in the <a href="https://github.com/Jongtae/Still/blob/main/docs/product-status.en.md">product status</a>.</p>
+  <p>Still is licensed <a href="https://github.com/Jongtae/Still/blob/main/LICENSE">AGPL-3.0-only</a>. This page has no sign-in, analytics or scripts. <a href="../../privacy.html">Privacy</a> <a href="../../terms.html">Terms</a></p>
+</footer>
+</body>
+</html>

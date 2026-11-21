@@ -1,0 +1,148 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>개발 기록 | Still 개념 가이드</title>
+<meta name="description" content="Still의 정체성이 어떻게 바뀌어 왔는지, 어떤 결정이 버려지고 무엇으로 바뀌었는지, 시기별로 무슨 일이 있었는지를 총람의 기록에 따라 정리합니다.">
+<link rel="stylesheet" href="../../assets/read.css?v=1">
+</head>
+<body>
+<a class="skip" href="#main">본문으로 건너뛰기</a>
+<header class="top">
+  <a class="brand" href="index.html">Still <span>개념 가이드</span></a>
+  <nav class="top-links" aria-label="Site"><a href="../../ko.html">홈</a><a href="https://github.com/Jongtae/Still/blob/main/docs/whitepapers/README.md">원문</a><a href="https://github.com/Jongtae/Still">GitHub</a><a href="../en/history.html" hreflang="en" lang="en">English</a></nav>
+</header>
+<div class="layout">
+  <nav class="side" aria-label="개념 가이드 목차">
+    <ol>
+      <li><a href="index.html">시작하기</a></li>
+      <li><a href="memory.html">기억과 개인 상태</a></li>
+      <li><a href="ai.html">AI와 함께 일하기</a></li>
+      <li><a href="authority.html">권한·연결·증거</a></li>
+      <li><a href="skills.html">스킬과 전문성</a></li>
+      <li><a href="industry.html">산업 가설과 반론</a></li>
+      <li><a href="history.html" aria-current="page">개발 기록</a></li>
+      <li><a href="limits.html">확인된 범위와 열린 질문</a></li>
+      <li><a href="glossary.html">용어</a></li>
+    </ol>
+  </nav>
+  <main id="main" class="doc">
+    <nav class="crumbs" aria-label="현재 위치"><ol><li><a href="index.html">개념 가이드</a></li><li aria-current="page">개발 기록</li></ol></nav>
+    <h1>개발 기록</h1>
+    <p class="summary">Still의 정체성이 어떻게 바뀌어 왔는지, 어떤 결정이 버려지고 무엇으로 바뀌었는지, 시기별로 무슨 일이 있었는지를 총람의 기록에 따라 정리합니다.</p>
+    <p class="meta">원고: 총람 4장, 18–19장. 최종 갱신 2026년 10월 14일. 날짜는 모두 2026년입니다.</p>
+
+    <h2 id="read">읽기 전에</h2>
+    <p>총람의 이슈 번호(<code>#712</code> 같은 표기)는 이 저장소가 아니라 선행 저장소 <a href="https://github.com/Jongtae/agentos">Jongtae/agentos</a>의 이슈나 풀 리퀘스트를 가리킵니다. 이 안내는 번호를 옮기지 않고 날짜와 내용으로 적습니다. 이 페이지의 기록은 대부분 당시의 결정과 그 이유이며, 지금의 기능이 아니라 근거 표기 ‘역사’ 또는 ‘계약’의 내용입니다.</p>
+
+    <h2 id="identity">정체성이 바뀐 과정</h2>
+    <p class="basis"><span>근거</span> 역사. 총람 4.1–4.4절</p>
+    <p>Still의 정체성은 사십 일 사이에 몇 번 바뀌었습니다. 바뀌지 않은 것은 하나의 질문, 곧 두뇌는 빌리고 비서는 지킨다는 것이었습니다.</p>
+    <ul>
+      <li><strong>9월 5일, Kubernetes 위의 다중 사용자 플랫폼.</strong> 첫 설계는 사용자별 네임스페이스와 기본 차단 외부 통신을 둔 Kubernetes 기반 에이전트 플랫폼이었습니다. 같은 문서 안에서 첫 전환이 일어나, 제품 단위가 ‘작업별 실행’에서 ‘소유자별로 계속 있는 환경’으로 바뀌었습니다. 오늘까지 남은 문장은 “작업 상태는 PostgreSQL이, 실행 자원의 상태는 Kubernetes가 소유한다”입니다. 지속하는 상태와 바꿀 수 있는 작업자를 나누는 생각의 첫 모습입니다.</li>
+      <li><strong>9월 6일, 하루 만의 전환.</strong> Kubernetes 방향은 곧 버려졌습니다. Still 0.2는 Homebrew로 설치하는 하나의 로컬 프로세스로 돌아갔고, 연결한 폴더 안의 파일만 읽었습니다. 자동 시험 42개와 같은 대화 안의 수용 사례 5개를 통과했습니다. 이후 계획은 Docker나 Kubernetes에 의존하지 않기로 못 박았습니다.</li>
+      <li><strong>9월 7일, Hub v2.</strong> 네 층(내 Mac, 늘 켜 둔 개인 상태 실행기인 Still, 작업마다 부르는 Codex와 Claude Code, 계정·운영 메타데이터만 다루는 컨트롤 플레인)이 나뉘었습니다. 핵심 문장은 “Still은 단순 중계기가 아니다”였습니다. 어떤 비서에게 맡길지 정하고, 허용된 맥락만 주고, 도구 실행·승인·취소·재시도·증빙을 쥔다는 뜻입니다.</li>
+      <li><strong>9월 8일, 첫 마감.</strong> 마스터 플랜 1·2는 실제 자격 증명을 넣기 전에 모의 계약으로 검증했습니다. 첫 마감은 저장소와 CI 증거로 ‘개발 완료’를 선언하되 실제 구독 로그인, 외부 연결, 운영 배포, 실사용 성공은 명시적으로 뺐고, 기술 결함이나 환경 증명 부족을 ‘소유자가 아직 설정하지 않은 것’으로 분류하지 못하게 했습니다. 이 규율은 처음부터 완벽하지 않았습니다. 연결되지 않은 모의 어댑터만 만든 작업이 ‘완료’로 불렸다가 보완 작업을 거쳐서야 정직하게 말할 수 있었고, 운영 준비 ‘완료’ 주장도 거짓으로 드러나 정정됐습니다. 증거 규율은 저절로 지켜지지 않았고 여러 번 다시 세워야 했습니다.</li>
+    </ul>
+
+    <h2 id="platform">개인 AI 커널과 배포 플랫폼</h2>
+    <p class="basis"><span>근거</span> 계약. 총람 4.5절</p>
+    <p>이 시기에 제품의 장기 정체성이 한 문장으로 정해졌습니다. 소유자가 권한을 갖는 개인 AI 커널과, 열린 에이전트 배포 플랫폼입니다. 커널은 에이전트에 의존하지 않고, 제품 경험과 배포 플랫폼은 에이전트 중심일 수 있습니다. 문서들은 제품이 ‘챗봇’, ‘코딩 하네스’, ‘군집 프레임워크’, ‘호스트 커널이나 하이퍼바이저’, ‘macOS나 Linux의 대체물’이 아니라고도 되풀이합니다. 저장소를 짓는 데 쓰는 GitHub 이슈, 풀 리퀘스트, CI, 위임 자동화를 제품 자체로 오해하지 말라고도 합니다.</p>
+    <p>배포 플랫폼의 기초 설계는 열 가지 커널 개념과 AgentPackage 매니페스트의 스키마를 정했습니다. 그러나 그 줄기의 후속 작업과 ‘쓸모 있는 기본 에이전트’ 이슈들은 9월 24일 계획되지 않음으로 닫혔습니다. 플랫폼은 장기 방향으로 남고 당장의 초점은 한 사람에게 정말 쓸모 있는 비서로 옮겨졌습니다.</p>
+
+    <h2 id="turns">실사용이 방향을 바꾼 과정</h2>
+    <p class="basis"><span>근거</span> 역사·관찰. 총람 4.6–4.7절</p>
+    <p>9월 말부터는 소유자 본인의 사용에서 찾은 문제가 방향을 정했습니다.</p>
+    <ul>
+      <li><strong>9월 23일, Presence 연구.</strong> Telegram이 작업·상태 콘솔처럼 느껴지고, 실패하면 대화를 이어 가는 대신 관리 화면으로 보내지고, 설정한 AI와 실제 실행 경로가 달랐다는 기록입니다. 문제는 말투가 아니라 내부 개념이 대화로 새어 나오는 투영이었습니다.</li>
+      <li><strong>9월 24일, 판단 모델.</strong> 규칙 엔진 대신 모델이 하는 판단 경계를 택했습니다.</li>
+      <li><strong>9월 26일, 비서 프로그램.</strong> 판단 모델이 대안을 찾는 관문이 아니라 규칙에 묶인 장애물이 되었다는 문제가 제기되어, 시범 단계의 자세로 보호 계층을 요청 경로에서 걷어냈습니다.</li>
+      <li><strong>9월 27일, ‘AI가 엔진이다’.</strong> 저장소가 길 안내나 장바구니 같은 요청별 기능을 Still 코드에 쌓고 있다는 깨달음에서 헌법 원칙이 나왔습니다.</li>
+      <li><strong>10월 10일, 연결.</strong> 모든 서비스를 연결·위임 계약의 흐름으로 다루는 목표가 활성화되었고, 비서 프로그램은 정확한 재개 지점에서 멈췄습니다.</li>
+      <li><strong>10월 10일, 비서는 출발점이지 경계가 아니다.</strong> 전문 역할과 소통 계약이 제품 명제를 넓혔습니다. Still은 비서 전용 앱이 아니라 여러 전문 역할을 위한 소유자 중심의 운영 환경입니다. 역할은 권한을 만들지 않는다는 선도 그었습니다.</li>
+    </ul>
+    <p>현재 공개 릴리스는 <code>v1.3.0</code>(2026년 10월 10일)입니다. 스스로 알아서 하는 구매, 컴퓨터의 아무 작업이나 대신 조작하기, 모든 웹사이트의 결과 확인, 실시간 재고·결제 확인, 아무 외부 패키지 실행, 공개 마켓플레이스는 지금도 ‘현재 주장 없음’입니다(<a href="limits.html#not-claimed">지금 주장하지 않는 것</a>).</p>
+
+    <h2 id="dropped">버려진 결정과 그 대체</h2>
+    <p class="basis"><span>근거</span> 역사. 총람 18장</p>
+    <p>이 프로젝트는 버린 결정을 지우지 않습니다. 계획되지 않음으로 닫은 이슈는 설계 기록으로 남고, 걷어낸 보호는 보관 문서에 남습니다. 다시 필요해지면 옛 이슈를 여는 대신 그때의 구조에서 작은 후속을 만듭니다. 총람의 표 중 몇 개만 옮깁니다.</p>
+    <div class="table-wrap" role="region" aria-labelledby="h1" tabindex="0">
+    <table>
+      <caption id="h1">표 1. 버려진 결정과 대체의 예</caption>
+      <thead><tr><th scope="col">시기</th><th scope="col">버린 것</th><th scope="col">대체</th><th scope="col">이유</th></tr></thead>
+      <tbody>
+        <tr><th scope="row">9월 5일</th><td>Kubernetes 다중 사용자 플랫폼</td><td>소유자별 환경, 이어서 설치형 단일 프로세스(9월 6일)</td><td>제품 단위는 작업이 아니라 소유자. 첫 실행에 실패 지점이 너무 많음</td></tr>
+        <tr><th scope="row">9월 8일</th><td>연결되지 않은 모의 어댑터로 한 ‘완료’</td><td>마스터 플랜 1 보완 R-01~R-05</td><td>완료에는 실제로 연결하는, 정책을 쥔 조정자가 필요함</td></tr>
+        <tr><th scope="row">9월 24일</th><td>에이전트 배포 플랫폼 묶음과 하위 12개</td><td>먼저 쓸모 있는 기본 비서</td><td>마켓플레이스보다 당장의 쓸모. 설계는 기록으로 보존</td></tr>
+        <tr><th scope="row">9월 26–28일</th><td>요청별 민감도 판단, 검색 관문, 개인·공개 분리</td><td>정보 사용 감사</td><td>보호가 쓸모를 막음. 진짜 보호 둘만 유지</td></tr>
+        <tr><th scope="row">9월 28일</th><td>조정자가 요청을 다시 쓰고 도구를 고르는 계획</td><td>소유자의 말을 그대로, 메모만 덧붙임</td><td>실패의 다수가 소유자와 AI 사이의 층에서 나옴</td></tr>
+        <tr><th scope="row">9월 30일</th><td>웹을 관리 콘솔로 쓰기</td><td>대화로 관리, 페이지는 결과와 꼭 필요한 입력에만</td><td>설정을 관리 페이지로 설계한 것이 오판이었음</td></tr>
+        <tr><th scope="row">10월 2일</th><td>모든 기억을 묻고 저장하기</td><td>저장하고, 알리고, 되돌리기</td><td>묻는 일마다 좋은 경험은 아님</td></tr>
+        <tr><th scope="row">10월 9일</th><td>Docker·Kubernetes 배포 설정</td><td>제거</td><td>실제 설치 경로가 아님</td></tr>
+        <tr><th scope="row">10월 12일</th><td>공급자를 가로지르는 작업자 목록</td><td>주 AI 계열 안에서만</td><td>소유자 결정</td></tr>
+      </tbody>
+    </table>
+    </div>
+    <p class="source-line">자료: 『Still 총람』 v0.1, 18장의 표에서 일부를 골라 옮김. 원표는 더 많은 항목과 이슈 번호를 담고 있습니다.</p>
+    <p>총람은 이 표에 흐르는 흐름을 이렇게 읽습니다.</p>
+    <ul>
+      <li><strong>더하기보다 걷어내기.</strong> 많은 결정이 실패했을 때 방어나 분기를 더하지 않고, AI와 소유자 사이에 끼어든 층을 걷어냈습니다.</li>
+      <li><strong>보호는 고정된 눈금이 아니라 조절 장치.</strong> 민감도 판단, 개인·공개 분리, 먼저 묻기는 만들어졌다가 시범 단계에서 걷혔습니다. 비밀과 결제라는 두 불변 조건은 계속 남았습니다. 걷어낸 것은 ‘틀렸다’고 선언된 것이 아니라 ‘별도로 활성화할 강화 작업으로 미룬 것’입니다.</li>
+      <li><strong>시나리오별 코드는 한 번 이겨서 끝나는 싸움이 아닙니다.</strong> AI가 엔진이라는 원칙과 그 개정, 비서 프로그램의 창립 규칙이 모두 같은 제약을 되풀이합니다. 새 기능마다 밀어내야 하는 상시 압력으로 봅니다.</li>
+      <li><strong>야심보다 쓸모.</strong> 마켓플레이스와 레지스트리의 큰 그림은 조용히 열어 두지 않고 계획되지 않음으로 닫았으며, 설계는 인용할 수 있는 역사로 남겼습니다.</li>
+    </ul>
+
+    <h2 id="timeline">시기별 연표</h2>
+    <p class="basis"><span>근거</span> 역사. 총람 19장</p>
+    <div class="table-wrap" role="region" aria-labelledby="h2" tabindex="0">
+    <table>
+      <caption id="h2">표 2. 시기와 주요 사건</caption>
+      <thead><tr><th scope="col">시기</th><th scope="col">국면</th><th scope="col">주요 사건</th></tr></thead>
+      <tbody>
+        <tr><th scope="row">9/5–6</th><td>시작</td><td>첫 커밋, Kubernetes 설계와 곧바로의 번복, Homebrew로 설치하는 0.2</td></tr>
+        <tr><th scope="row">9/7–8</th><td>자동화된 납품 질주</td><td>이틀에 커밋 약 156개. Hub v2, 마스터 플랜 1·2, 첫 마감, 저장소 개편</td></tr>
+        <tr><th scope="row">9/9–19</th><td>느려진 속도</td><td>점진적 납품, 파일 작업공간, 배포 플랫폼 기초 설계, 첫 자체 사용 조각, 쓸모 감사</td></tr>
+        <tr><th scope="row">9/20–23</th><td>병렬 작업 트리 프로그램</td><td>Telegram 비서, 웹 관리 계약, 계획 상태 정정, Presence 연구(9/23)</td></tr>
+        <tr><th scope="row">9/24</th><td>크게 방향을 튼 날</td><td>하루 커밋 122개. 재사용 기반, 낡은 화면 정리, 저장소 이름 변경, 배포 플랫폼 닫기, 모델 우선 Presence, 판단 엔진</td></tr>
+        <tr><th scope="row">9/25–26</th><td>거버넌스 정정과 비서</td><td>검증 과잉 정정, 실행 계약, 현재 맥락, 비서와 시범 단계의 자세</td></tr>
+        <tr><th scope="row">9/27–30</th><td>AI가 엔진, 그리고 열기</td><td>C16, 조정자, 요청 경로 전수 조사, 정보 사용 감사로 외부 전송 열기, 관리 페이지 포기, 작업 트리 규칙, 묻지 않기</td></tr>
+        <tr><th scope="row">10/1–5</th><td>소유자 모델과 스킬</td><td>스킬 공급, C16 개정, 첫 실사용 표본, 자기 검토, 역할 온톨로지 연구, 재개 지점 확정</td></tr>
+        <tr><th scope="row">10/6</th><td>문서의 날</td><td>상류 프로그램 하위 다섯 개 완료, 정본 계약과 대체된 개정 이력 분리, 백서 v0.3 검수</td></tr>
+        <tr><th scope="row">10/7–9</th><td>설치와 릴리스</td><td>uv·WSL2 설치, Docker·Kubernetes 제거, 버전 기반 릴리스, <code>v1.3.0</code></td></tr>
+        <tr><th scope="row">10/10–11</th><td>연결 질주</td><td>연결·위임 계약, 연결 목표 활성화와 하위 여섯 개 완료, 전문 역할 계약, 기여 거버넌스, 교정 이슈</td></tr>
+        <tr><th scope="row">10/12</th><td>다듬기</td><td>README 시연, 주 AI 계열 안에서만 바꾸기, 코드 실행용 비밀 묶음, 효과 분류 통일</td></tr>
+        <tr><th scope="row">10/13</th><td>릴리스 자동화</td><td>릴리스 워크플로, 터미널 첫 실행 설정, 승인 화면 정직성 수정, 승인된 상태 변경, 절차 기억 프로그램 시작</td></tr>
+      </tbody>
+    </table>
+    </div>
+    <p class="source-line">자료: 『Still 총람』 v0.1, 19장. 이슈 번호를 빼고 옮김. 모든 날짜는 2026년.</p>
+    <p>저장소에서 가장 최근의 전환점은 절차 기억 프로그램입니다. 요청이 올 때마다 API 문서를 처음부터 다시 찾아내는 대신, 연결마다 검증되고 매개변수화되고 결과로 관문을 통과한 함수 모음을 쌓으려는 계획입니다. 처음부터 일반성 보호 장치가 필요하다고 보며, AI가 스스로 만든 단순한 스킬은 성과가 낮았다는 연구도 인용합니다. 이는 계약 단계이며 진행 중이고, 동작한다는 주장이 아닙니다.</p>
+
+    <section class="page-sources" aria-labelledby="page-sources-title">
+      <h2 id="page-sources-title">이 페이지의 원문과 출처</h2>
+      <ul>
+        <li><a href="https://github.com/Jongtae/Still/blob/main/docs/whitepapers/personal-agentos-compendium.ko.md">『Still 총람』 v0.1</a>: 4장, 18–19장</li>
+        <li><a href="https://github.com/Jongtae/Still/blob/main/docs/product-status.en.md">Product status</a></li>
+      </ul>
+    </section>
+    <nav class="pager" aria-label="이전 다음 페이지"><a class="prev" href="industry.html"><span>이전</span>산업 가설과 반론</a><a class="next" href="limits.html"><span>다음</span>확인된 범위와 열린 질문</a></nav>
+  </main>
+  <nav class="onpage" aria-labelledby="onpage-title">
+    <h2 id="onpage-title">이 페이지의 내용</h2>
+    <ol>
+      <li><a href="#read">읽기 전에</a></li>
+      <li><a href="#identity">정체성이 바뀐 과정</a></li>
+      <li><a href="#platform">개인 AI 커널과 배포 플랫폼</a></li>
+      <li><a href="#turns">실사용이 방향을 바꾼 과정</a></li>
+      <li><a href="#dropped">버려진 결정과 그 대체</a></li>
+      <li><a href="#timeline">시기별 연표</a></li>
+    </ol>
+  </nav>
+</div>
+<footer class="foot">
+  <p>이 안내는 프로젝트 소유자의 요청으로 AI 코딩 어시스턴트가 두 원고를 쉽게 다시 쓴 것입니다. 같은 AI의 자기 검토만 거쳤고, 독립 전문가나 사람의 검토가 아닙니다. 원문과 다르면 원문이 맞습니다. 제품 기능에 대한 약속이 아니며, 지금 되는 것은 <a href="https://github.com/Jongtae/Still/blob/main/docs/product-status.en.md">제품 현황</a>에 있습니다.</p>
+  <p>Still은 <a href="https://github.com/Jongtae/Still/blob/main/LICENSE">AGPL-3.0-only</a> 라이선스입니다. 이 페이지에는 로그인, 분석 도구, 스크립트가 없습니다. <a href="../../privacy.html">개인정보</a> <a href="../../terms.html">이용 조건</a></p>
+</footer>
+</body>
+</html>

@@ -1,0 +1,149 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Working with AI | Still Concept Guide</title>
+<meta name="description" content="In Still, the work is done by the AI the owner chose. This page explains the division of roles between the AI and Still, what must carry on when the model changes, Presence, and collaboration between people and agents.">
+<link rel="stylesheet" href="../../assets/read.css?v=1">
+</head>
+<body>
+<a class="skip" href="#main">Skip to main content</a>
+<header class="top">
+  <a class="brand" href="index.html">Still <span>Concept Guide</span></a>
+  <nav class="top-links" aria-label="Site"><a href="../../index.html">Home</a><a href="https://github.com/Jongtae/Still/blob/main/docs/whitepapers/README.md">Source</a><a href="https://github.com/Jongtae/Still">GitHub</a><a href="../ko/ai.html" hreflang="ko" lang="ko">한국어</a></nav>
+</header>
+<div class="layout">
+  <nav class="side" aria-label="Concept guide contents">
+    <ol>
+      <li><a href="index.html">Start here</a></li>
+      <li><a href="memory.html">Memory and personal state</a></li>
+      <li><a href="ai.html" aria-current="page">Working with AI</a></li>
+      <li><a href="authority.html">Authority, connections and evidence</a></li>
+      <li><a href="skills.html">Skills and expertise</a></li>
+      <li><a href="industry.html">Industry hypotheses and counterarguments</a></li>
+      <li><a href="history.html">Development history</a></li>
+      <li><a href="limits.html">What is confirmed and open questions</a></li>
+      <li><a href="glossary.html">Glossary</a></li>
+    </ol>
+  </nav>
+  <main id="main" class="doc">
+    <nav class="crumbs" aria-label="You are here"><ol><li><a href="index.html">Concept guide</a></li><li aria-current="page">Working with AI</li></ol></nav>
+    <h1>Working with AI</h1>
+    <p class="summary">In Still, the work is done by the AI the owner chose. This page explains the division of roles between the AI and Still, what must carry on when the model changes, Presence, and collaboration between people and agents.</p>
+    <p class="meta">Manuscripts: Whitepaper ch. 5–6, Compendium ch. 6, ch. 8–9 and §11.1. Last updated October 14, 2026.</p>
+
+    <h2 id="engine">The AI is the engine</h2>
+    <p class="basis"><span>Basis</span> Contract·Implemented. Compendium ch. 6, Development Constitution C16</p>
+    <p>On September 27, 2026, it was pointed out that per-request features, such as directions, carts and particular lookups, were piling up in the code. From that realization came Development Constitution C16.</p>
+    <blockquote><p>The owner’s chosen AI does the work of meeting the owner’s needs as a secretary.</p><cite>Compendium §6.2</cite></blockquote>
+    <dl class="defs">
+      <dt>What does the work</dt><dd>The AI the owner chose. A subscription command-line tool (CLI) such as Codex or Claude Code, or a model connected by API, uses its tools to search, read, reason, write and act.</dd>
+      <dt>What the decision model does</dt><dd>For each request it chooses which AI tool and model to use, writes the brief (goal, relevant context, completion criteria) and hands it over, and evaluates the result. If the goal is not met, it adjusts the brief or re-delegates. It does not do the work itself, and it is not a device that mechanically applies fixed rules.</dd>
+      <dt>What Still code does</dt><dd>It directly keeps what an AI must not own: the canonical record about the owner, authority and approvals, secrets, payment and consequential-action approval, budgets, Work records and evidence, and recovery. And it removes the blockers that stop the AI tools: a login that gets stuck, a needed tool that is not exposed to the AI, wrong routing, and the like.</dd>
+      <dt>What it does not do</dt><dd>It does not build per-request features into code, and it does not branch code by site, provider, category or task name. When a request fails, it fixes the blocker or the decision model’s decision, not that one task.</dd>
+    </dl>
+    <p>An automated test (a static scan) enforces this principle too. Every proposal and change must answer: “Which AI does the work here, and is this change removing a blocker or orchestrating — or is it scripting the task?”</p>
+    <div class="note" role="note"><p><strong>Note</strong> Since October 12, 2026, a Work is handed only to the current main AI while it can run. What the decision model varies is the model and the effort, not the vendor. This narrows the original idea considerably, and only the owner’s decision is on record as the basis.</p></div>
+
+    <h2 id="roles">Roles by component</h2>
+    <p class="basis"><span>Basis</span> Contract. Compendium §11.1</p>
+    <p>The Connection and Delegation Contract divides the parts into five and sets what can be replaced.</p>
+    <div class="table-wrap" role="region" aria-labelledby="a1" tabindex="0">
+    <table>
+      <caption id="a1">Table 1. Roles and ownership by component</caption>
+      <thead><tr><th scope="col">Part</th><th scope="col">What it is</th><th scope="col">Who holds it</th><th scope="col">Replaceable?</th></tr></thead>
+      <tbody>
+        <tr><th scope="row">Brain</th><td>The AI the owner chose</td><td>The owner’s subscription</td><td>Yes</td></tr>
+        <tr><th scope="row">Hands</th><td>Connectors, MCP, plugins, the browser</td><td>The AI side or Still</td><td>Yes</td></tr>
+        <tr><th scope="row">Methods</th><td>Skills (public first, then Still reference)</td><td>Versioned content</td><td>Yes</td></tr>
+        <tr><th scope="row">The owner’s way</th><td>Which service, which option, what counts as news worth telling</td><td>Still owner state</td><td>No</td></tr>
+        <tr><th scope="row">Memory and records</th><td>Memory, judgment records, Work, Event, Evidence, trust records</td><td>Still</td><td>No</td></tr>
+      </tbody>
+    </table>
+    </div>
+    <p class="source-line">Source: Still Compendium v0.1, §11.1. Table reproduced.</p>
+    <p class="table-note">The contract sets one test alongside this table: “If the owner drops one AI subscription tomorrow, the bottom two rows stay whole. A design that fails this test is rejected.”</p>
+
+    <h2 id="continuity">What carries on when the model changes</h2>
+    <p class="basis"><span>Basis</span> Proposal. Whitepaper §5.1, Compendium §8.1</p>
+    <p>Even when the model or the AI doing the work changes, the relationship with the same assistant that knows me should continue. What must carry on is approved preferences, current goals, and the state of the work and its basis. It does not mean every answer becomes identical.</p>
+    <ul>
+      <li>It separates “which model is configured” from “which model actually ran”. A configured model is never shown as if it were the one that actually ran.</li>
+      <li>If switching providers changes the cost or the scope of data passed along, the user must be able to know. Automatic switching must not become a way to raise costs or widen data sharing without the user’s knowledge.</li>
+      <li>If a new model cannot fill a needed capability or level of quality, the difference is reported, and the options are considered: keep using the earlier model, use another means, or have the user step in.</li>
+    </ul>
+    <blockquote><p>Continuity does not hide differences in capability; it keeps those differences from costing the user their work in progress and their control.</p><cite>Whitepaper §5.1</cite></blockquote>
+
+    <h2 id="presence">Presence</h2>
+    <p class="basis"><span>Basis</span> Contract·Observed. Compendium §8.2–8.6, real-use study of 2026-09-23</p>
+    <p>Presence means the experience of working with one continuous, context-aware assistant that knows me, across many turns, changing tools and AIs, failures and restarts. The goal is not to pretend to be conscious or to act out emotion.</p>
+    <p>The concept came out of real-use observation on September 23, 2026. Even an ordinary request got a work-status message back, a failure sent the owner to the web management screen instead of continuing the conversation, and a follow-up request was not connected to the earlier failure. The manuscript judged the cause to be not tone but “projection”: internal concepts were leaking straight into the conversation and settings screens.</p>
+    <p>The Presence contract sets nine experience principles.</p>
+    <ul class="compact">
+      <li>Conversation first, receipts on demand.</li>
+      <li>One assistant voice over many workers.</li>
+      <li>Continue before restarting.</li>
+      <li>Communicate meaningful progress, not scheduler state.</li>
+      <li>Truth before fluency.</li>
+      <li>Ask at the moment of need; the agent does the managing.</li>
+      <li>Memory is useful, scoped and correctable.</li>
+      <li>Proactivity must earn the interruption.</li>
+      <li>Model-first semantics; rules only where exactness is unavoidable.</li>
+    </ul>
+    <p>Following these principles, Still’s settings and management happen in conversation. A separate page is used only for results that text cannot carry well, and for inputs a conversation cannot carry safely, such as secret entry, OAuth consent and payment approval.</p>
+
+    <h2 id="leaving">A structure you can leave</h2>
+    <p class="basis"><span>Basis</span> Hypothesis. Whitepaper §5.3</p>
+    <p>The more context a personal agent understands and the deeper it goes into daily life, the heavier it can become to leave that relationship. So Presence and moving memory are not opposing demands. Presence keeps the relationship going, and moving memory keeps that relationship from turning into forced dependence on one provider.</p>
+    <blockquote><p>A good personal agent should give reasons to use it for a long time, but must not make the user unable to leave because they used it for a long time.</p><cite>Whitepaper §5.3</cite></blockquote>
+
+    <h2 id="collaboration">Collaboration between people and agents</h2>
+    <p class="basis"><span>Basis</span> Proposal. Whitepaper ch. 6, Compendium ch. 9</p>
+    <p>The whitepaper proposes evaluating autonomy (finishing without human intervention) and collaboration (continuing while reflecting the human’s intent when they step in midway) as different axes.</p>
+    <p>For example, the user first puts a book in a cart. The agent suggests other books based on interests and a budget the user has allowed. When the user removes one or changes an edition, the agent respects the change. Items not yet decided are held and picked up again in the next conversation. The purchase itself happens within a delegation given in advance or through a separate confirmation step.</p>
+    <p>For that, collaboration has to be designed around the whole Work, not a single tool call. The whitepaper proposes handling the object, current state, change history, actor, delegation scope and completion evidence together. If the agent tries to increase a quantity based on its earlier plan while the user is removing that product, it does not apply the stale plan; it checks the state again and then adjusts the plan.</p>
+    <div class="note" role="note"><p><strong>Note</strong> A delegation to add to a cart never grows into a delegation to pay. The shape of answer the compendium sets as a target is: “I added one copy of the book you asked for to the cart at the bookstore you named. I did not order or pay.”</p></div>
+
+    <h2 id="field">Field record</h2>
+    <p class="basis"><span>Basis</span> Observed. Real-use recording, October 2026</p>
+    <p>In a real Telegram conversation, a single command switched the AI doing the work from Codex to Claude Code. When the owner then said only “Not Jardin, something pricier for a change,” Claude Code remembered the Momos coffee beans it had recommended earlier for lattes and suggested them instead. This is an edited real-use recording, not the result of validating a particular version from start to finish. The recording can be seen on the <a href="../../index.html#concept">Still home page</a>.</p>
+
+    <h2 id="open">Remaining problems</h2>
+    <p class="basis"><span>Source</span> Compendium §8.8, 9.4, 22.2</p>
+    <ul>
+      <li>An owner’s correction made mid-work reaches the AI that is doing the work but not the decision model. So a re-delegation plan can be made without knowing about that correction.</li>
+      <li>Presence’s acceptance scenarios are tested automatically with premade fake data (fixtures). There is a report that six checks made on real Telegram on September 25, 2026 did not behave as the tests predicted, and the cause is still unknown.</li>
+      <li>The decision model actually running on the owner’s accounts has not been observed yet.</li>
+    </ul>
+
+    <section class="page-sources" aria-labelledby="page-sources-title">
+      <h2 id="page-sources-title">Sources for this page</h2>
+      <ul>
+        <li><a href="https://github.com/Jongtae/Still/blob/main/docs/whitepapers/whose-agent.ko.md">Whose Agent? (Korean) v0.3.1</a>: ch. 5–6</li>
+        <li><a href="https://github.com/Jongtae/Still/blob/main/docs/whitepapers/personal-agentos-compendium.en.md">Still Compendium v0.1</a>: ch. 6, ch. 8–9, §11.1, §22.2</li>
+        <li><a href="https://github.com/Jongtae/Still/blob/main/docs/development-constitution.en.md">Development Constitution</a>, C16</li>
+      </ul>
+    </section>
+    <nav class="pager" aria-label="Previous and next pages"><a class="prev" href="memory.html"><span>Previous</span>Memory and personal state</a><a class="next" href="authority.html"><span>Next</span>Authority, connections and evidence</a></nav>
+  </main>
+  <nav class="onpage" aria-labelledby="onpage-title">
+    <h2 id="onpage-title">On this page</h2>
+    <ol>
+      <li><a href="#engine">The AI is the engine</a></li>
+      <li><a href="#roles">Roles by component</a></li>
+      <li><a href="#continuity">What carries on when the model changes</a></li>
+      <li><a href="#presence">Presence</a></li>
+      <li><a href="#leaving">A structure you can leave</a></li>
+      <li><a href="#collaboration">Collaboration between people and agents</a></li>
+      <li><a href="#field">Field record</a></li>
+      <li><a href="#open">Remaining problems</a></li>
+    </ol>
+  </nav>
+</div>
+<footer class="foot">
+  <p>This guide is a plain-language retelling of two manuscripts, written by an AI coding assistant at the project owner's request. It has had only that same AI's self-review, not review by an independent expert or a person. If it differs from the source, the source is right. It is not a promise of product features; what works now is in the <a href="https://github.com/Jongtae/Still/blob/main/docs/product-status.en.md">product status</a>.</p>
+  <p>Still is licensed <a href="https://github.com/Jongtae/Still/blob/main/LICENSE">AGPL-3.0-only</a>. This page has no sign-in, analytics or scripts. <a href="../../privacy.html">Privacy</a> <a href="../../terms.html">Terms</a></p>
+</footer>
+</body>
+</html>
