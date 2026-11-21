@@ -313,6 +313,12 @@ class ConsolidatedPromptTests(unittest.TestCase):
                        'only what changed since the last update', 'evidence only when it decides something',
                        'Do not repeat what an earlier update already said', 'say so in one line'):
             self.assertIn(phrase, line)
+        # Precedence: the owner's named form is the rule, "Otherwise" introduces the default after it.
+        self.assertRegex(line, r"^- A progress update \([^)]*\) uses the form the owner's voice preference names "
+                               r"for progress updates, when it names one\. Otherwise lead with the conclusion")
+        self.assertLess(line.index("uses the form the owner's"), line.index('Otherwise'))
+        self.assertLess(line.index('Otherwise'), line.index('lead with the conclusion'))
+        self.assertNotRegex(line, r'(?i)\b(ignore|ignores|never follow|regardless of)\b')
         self.assertIn(line, CORE_INSTRUCTIONS)
         self.assertIn('progress updates', prompt_files.prompt('voice_calibration'))
         self.assertNotRegex(line, r'(?i)weather|delivery|price|stock|mail|flight')
