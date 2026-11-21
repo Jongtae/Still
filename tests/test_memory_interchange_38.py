@@ -107,6 +107,13 @@ class Interchange(unittest.TestCase):
         self.assertEqual((report['candidates'], report['history_skipped'], report['time_bounded_skipped']), (0, 1, 1))
         self.assertEqual(self.pending(self.target), [])
 
+    def test_a_replaced_fact_ends_at_its_last_day_when_that_came_first(self):
+        self.source.put('calendar_timezone', 'Asia/Seoul')
+        old = self.source.save_memory('plan.trip', 'Jeju', valid_until='2020-01-31')
+        self.source.save_memory('plan.trip', 'Busan')
+        facts = {fact['id']: fact for fact in self.facts(self.bundle())}
+        self.assertEqual(facts[fact_id(old['id'])]['tValidTo'], '2020-01-31T15:00:00Z')
+
     def test_a_fact_that_has_not_started_is_not_imported(self):
         self.source.save_memory('profile.home_city', 'Seoul')
         path = self.bundle()

@@ -144,7 +144,8 @@ def _store_class():
                     text=f'{key}: {value}', t_valid_from=_at(row['created']), confidence=NEUTRAL,
                     importance=NEUTRAL, created_at=_at(row['created']),
                     # #38 review: a current row with a last day ends then, even past it (it stays 'current' here).
-                    t_valid_to=_at(ended) if ended is not None else bounded,
+                    # A replaced row ends at whichever came first: its last day or its replacement.
+                    t_valid_to=min(filter(None, (_at(ended) if ended is not None else None, bounded)), default=None),
                     superseded_by=fact_id(next_id) if next_id in exported else None))
             return facts
 
