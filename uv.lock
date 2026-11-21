@@ -890,6 +890,7 @@ dependencies = [
     { name = "mcp-types" },
     { name = "oauthlib" },
     { name = "openpyxl" },
+    { name = "portable-memory" },
     { name = "prompt-toolkit" },
     { name = "publicsuffixlist" },
     { name = "pydantic" },
@@ -938,6 +939,7 @@ requires-dist = [
     { name = "oauthlib", specifier = ">=3.3.1,<4" },
     { name = "openpyxl", specifier = ">=3.1" },
     { name = "playwright", marker = "sys_platform == 'linux' and extra == 'linux-browser'", specifier = "==1.64.1" },
+    { name = "portable-memory", specifier = "==0.3.0" },
     { name = "prompt-toolkit", specifier = ">=3.0.53,<4" },
     { name = "publicsuffixlist", specifier = ">=1.0.2,<2" },
     { name = "pydantic", specifier = ">=2.11,<3" },
@@ -979,6 +981,15 @@ source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/f9/e2/3e91f31a7d2b083fe6ef3fa267035b518369d9511ffab804f839851d2779/pluggy-1.6.0.tar.gz", hash = "sha256:7dcc130b76258d33b90f61b658791dede3486c3e6bfb003ee5c9bfb396dd22f3", size = 69412, upload-time = "2025-05-15T12:30:07.975Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/54/20/4d324d65cc6d9205fabedc306948156824eb9f0ee1633355a8f7ec5c66bf/pluggy-1.6.0-py3-none-any.whl", hash = "sha256:e920276dd6813095e9377c0bc5566d94c932c33b27a3e3945d8389c374dd4746", size = 20538, upload-time = "2025-05-15T12:30:06.134Z" },
+]
+
+[[package]]
+name = "portable-memory"
+version = "0.3.0"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/7e/09/625b6f71344347801f9bb60d6dac77e66da3c28af6db954876f2a0b35832/portable_memory-0.3.0.tar.gz", hash = "sha256:f8459b7eee26b69b7e2586e5de0bb5853ccc8b0370007a595992f1109fc5ffb3", size = 1000398, upload-time = "2026-09-14T08:34:45.788Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/73/dd/9c4eb67889acfbe3c9459f9d27868941c85bf36d5ae81acc779e0449c6bf/portable_memory-0.3.0-py3-none-any.whl", hash = "sha256:fad490745783a58fb0f1cb36c1e0fa6931d50dd101a6e4b10b549c1e44158898", size = 63450, upload-time = "2026-09-14T08:34:44.614Z" },
 ]
 
 [[package]]
