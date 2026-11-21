@@ -227,3 +227,21 @@ def test_inspect_scoring_and_report_preserve_new_judgment_fields(scored):
     assert record['judgment_ai']['qualification'] == dict.fromkeys(('state', 'failure', 'message'))
     assert record['judgment_ai']['cache_applied'] is False
     assert record['judgment_ai']['initially_ready'] is True
+
+
+def test_a_check_already_running_is_awaited_not_requested_again():
+    running = status(qualification={'state': 'running'})
+    client = client_for(running, status(True))
+    result = runner.prepare_judgment(client, mock.Mock(), SimpleNamespace(cached=None), 'codex')
+    client.requalify_judgment.assert_not_called()
+    client.wait_judgment.assert_called_once()
+    assert result['ready'] is True and 'failure' not in result
+
+
+def test_a_400_while_a_check_runs_is_awaited_too():
+    from agentos_eval.client import ClientError
+    client = client_for(status(), status(True))
+    client.requalify_judgment.side_effect = ClientError('400', 400)
+    client.judgment.side_effect = [status(), status(qualification={'state': 'running'})]
+    result = runner.prepare_judgment(client, mock.Mock(), SimpleNamespace(cached=None), 'codex')
+    assert result['ready'] is True and 'failure' not in result

@@ -553,11 +553,16 @@ def prepare_judgment(client, pool, box, worker, timeout=300, clock=time.monotoni
     if not initially_ready:
         if getattr(box, 'cached', None):
             pool.forget_judgment(box.slot, cache_key)
+        open_check = (status.get('qualification') or {}).get('state') in ('queued', 'running')
         try:
-            requested = client.requalify_judgment(worker, status)
+            # A check Still already started is awaited, not requested again: the activation answers 400
+            # while one runs, which used to mark every run of a sweep infra:judgment_ai (#1036).
+            requested = status if open_check else client.requalify_judgment(worker, status)
         except ClientError as exc:
             requested, failure = None, str(exc)[:200]
             requalified = True
+            if (client.judgment().get('qualification') or {}).get('state') in ('queued', 'running'):
+                requested, failure = status, None
         else:
             failure = None
         if requested is not None:

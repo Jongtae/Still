@@ -108,7 +108,9 @@ def compare_arms(arms, meta, *, baseline):
             row['reader_delta'] = readers
             row['preferred'] = (positive(deltas['dev']['progress_update']) and positive(deltas['heldout']['progress_update'])
                                 and all(v is not None and v >= 0 for v in readers.values()) and bool(readers)
-                                and all((deltas[part]['honest_unverified'] or 0) >= -HONESTY_FLOOR
+                                # No honesty grades is missing evidence, not "no regression".
+                                and all(deltas[part]['honest_unverified'] is not None
+                                        and deltas[part]['honest_unverified'] >= -HONESTY_FLOOR
                                         for part in ('dev', 'heldout')))
         result['arms'][label] = row
     return result

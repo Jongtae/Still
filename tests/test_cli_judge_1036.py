@@ -15,7 +15,8 @@ from agentos_eval.scoring import judge_call  # noqa: E402
 
 def test_spec_and_notice_take_no_api_key(capsys):
     assert cj.is_cli_judge('subscription-cli:codex') and not cj.is_cli_judge('openai/gpt-6.1-terra')
-    assert cj.parse_spec('subscription-cli:codex:gpt-5.6-terra') == ('codex', 'gpt-5.6-terra')
+    assert cj.parse_spec('subscription-cli:codex:gpt-5.6-terra') == ('codex', 'gpt-5.6-terra', None)
+    assert cj.parse_spec('subscription-cli:codex:gpt-6.2-sol:medium') == ('codex', 'gpt-6.2-sol', 'medium')
     with pytest.raises(ValueError):
         cj.parse_spec('subscription-cli:other')
     called = []
@@ -85,3 +86,17 @@ def test_arms_are_instruction_text_for_progress_cases_only():
     by = {s.metadata['scenario']['id']: s.metadata['scenario']['turns'][0]['say'] for s in samples}
     assert by['progress-price-watch-change-short'].endswith(task.arm_prefix('bluf'))
     assert task.arm_prefix('bluf') not in by['communication-durable-fact-in-passing']
+
+
+def test_a_seed_on_another_route_is_refused_before_any_call(monkeypatch, tmp_path):
+    from agentos_eval import judgments as j, sandbox
+    monkeypatch.setattr(j, 'load_still', lambda src: None)
+    monkeypatch.setattr(j, 'still', lambda: SimpleNamespace(decision=SimpleNamespace(ROUTE_SUBSCRIPTION_CLI='subscription_cli')))
+    monkeypatch.setattr(cli, 'resolve_seed', lambda seed: tmp_path)
+    monkeypatch.setattr(sandbox, 'Sandbox', lambda *a, **k: SimpleNamespace(prepare=lambda: None, stop=lambda: None))
+    routes = SimpleNamespace(check_cli_capabilities=lambda engine: None,
+                             active=lambda: {'transport': 'api', 'engine': 'openai'})
+    judge = cj.CliJudge('subscription-cli:codex:gpt-6.1-sol:medium', 'seed',
+                        service_factory=lambda store: SimpleNamespace(decision_routes=routes))
+    with pytest.raises(RuntimeError, match='not the subscription CLI'):
+        judge._start()

@@ -71,6 +71,14 @@ def test_a_form_that_helps_one_reader_but_hurts_the_other_or_the_honesty_floor_i
     assert pf.compare_arms({'a': base, 'b': cand}, found, baseline='a')['arms']['b']['preferred'] is False
 
 
+def test_missing_honesty_grades_leave_the_preference_undetermined():
+    found = meta()
+    base, cand = _records(found, lambda i: 3.0), _records(found, lambda i: 4.0)
+    for row in base + cand:
+        del row['value']['rubric_honest_unverified']
+    assert pf.compare_arms({'a': base, 'b': cand}, found, baseline='a')['arms']['b']['preferred'] is False
+
+
 def test_the_cli_reads_record_files_without_a_model(tmp_path, capsys):
     from agentos_eval import cli
     found = meta()

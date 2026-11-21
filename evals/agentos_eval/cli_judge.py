@@ -7,7 +7,7 @@ sandbox copy of a sanitized seed, through the judgments harness helpers (``servi
 text field of a structured judgment, so the shipped isolation (tool-less, read-only, no user
 config) and qualification apply unchanged. Nothing here calls a provider API.
 
-Select it with ``--judge subscription-cli:codex[:<model>]``. ``--max-judge-calls`` caps the calls.
+Select it with ``--judge subscription-cli:codex[:<model>[:<effort>]]``. ``--max-judge-calls`` caps the calls.
 """
 import asyncio
 import threading
@@ -26,10 +26,11 @@ def is_cli_judge(judge):
 
 
 def parse_spec(judge):
-    engine, _, model = judge[len(PREFIX):].partition(':')
+    engine, _, rest = judge[len(PREFIX):].partition(':')
     if engine != 'codex':
         raise ValueError('The subscription-CLI judge supports the codex route only')
-    return engine, model or None
+    model, _, effort = rest.partition(':')
+    return engine, model or None, effort or None
 
 
 class CallBudget:
@@ -54,7 +55,7 @@ class CliJudge:
     """``generate(system, prompt)`` over one sandboxed Still judgment engine, one call at a time."""
 
     def __init__(self, judge, seed, *, max_calls=400, src=SRC, service_factory=None):
-        self.engine_id, self.model = parse_spec(judge)
+        self.engine_id, self.model, self.effort = parse_spec(judge)
         self.seed, self.src, self.factory = seed, src, service_factory
         self.cap = j.CallCap(max_calls)
         self._lock, self._service, self._sandbox = threading.Lock(), None, None
@@ -65,8 +66,15 @@ class CliJudge:
         j.load_still(self.src)
         self._sandbox = Sandbox(eval_home() / 'sandboxes', seed=resolve_seed(self.seed), src=self.src)
         service = (self.factory or j.service_factory)(self._sandbox.prepare())
+        # The copied seed's CLI capability record can predate the installed CLI (its model and effort
+        # listing); the shipped local, model-free check refreshes it (no model request, no calls).
+        service.decision_routes.check_cli_capabilities(self.engine_id)
+        route = service.decision_routes.active() or {}
+        if route.get('transport') != j.still().decision.ROUTE_SUBSCRIPTION_CLI or route.get('engine') != self.engine_id:
+            # pin_model changes the model only: a seed on another engine or a direct API would take the calls.
+            raise RuntimeError('the seed Judgment AI route is not the subscription CLI ' + self.engine_id)
         if self.model:
-            j.pin_model(service, self.model)
+            j.pin_model(service, self.model, self.effort)
         # Qualify and wait: the shipped update job runs to its end here (#855), so no judged case
         # starts against a route still qualifying (that returned provider_unavailable before).
         ready = j.effective_runtime(service)['active']
