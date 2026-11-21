@@ -85,16 +85,19 @@ class DecisionContext:
     """
 
     __slots__ = ('purpose', 'facts', 'work_id', 'cancelled', 'max_chars', 'admission', 'reserve', 'context_messages',
-                 'strongest', 'timeout', 'refused', 'peer_store_root')
+                 'strongest', 'timeout', 'refused', 'peer_store_root', 'qualified_strongest')
 
     def __init__(self, purpose, facts=None, *, work_id=None, cancelled=None, max_chars=MAX_CONTEXT_CHARS,
-                 reserve=False, context_messages=None, strongest=False, timeout=None):
+                 reserve=False, context_messages=None, strongest=False, timeout=None, qualified_strongest=False):
         self.context_messages = context_messages
         self.peer_store_root = None
         # A judgment that asks for the route engine's strongest model (the newest top model its own
         # catalogue lists, never a pinned name) and the longer bound that model may need; an engine
         # that cannot choose one answers with its route model as usual.
         self.strongest = bool(strongest)
+        # #1071: a judgment that asks for the most capable model that passed this route's qualification
+        # (owner decision 2026-11-21: the outcome judgment); an engine without one uses its route model.
+        self.qualified_strongest = bool(qualified_strongest)
         self.timeout = timeout
         self.purpose = str(purpose)
         self.facts = {str(k): str(v) for k, v in (facts or {}).items()}
@@ -717,9 +720,11 @@ class ModelDecisionEngine(SchemaDecisionEngine):
 
     route_label = ROUTE_DIRECT_API
 
-    def __init__(self, adapter, route, *, timeout=20.0, audit=None, now=time.time):
+    def __init__(self, adapter, route, *, timeout=20.0, audit=None, now=time.time, strongest_model=None):
         super().__init__(audit=audit, now=now)
         self.adapter, self.route, self.timeout = adapter, route, timeout
+        #: #1071: the route's most capable qualified model, for a context that asks for it.
+        self.strongest_model = strongest_model
 
     def _ask(self, context, kind, question, schema, valid):
         """Return (outcome, parsed arguments, confidence) for one judgment.
@@ -733,6 +738,11 @@ class ModelDecisionEngine(SchemaDecisionEngine):
             return self._done(context, kind, OUTCOME_UNAVAILABLE, {}, DecisionConfidence(route=self.route_label),
                               started, 'not-configured')
         config, key = resolved
+        stronger = bool(getattr(context, 'qualified_strongest', False) and isinstance(config, dict)
+                        and isinstance(self.strongest_model, str) and self.strongest_model
+                        and self.strongest_model != config.get('model'))
+        if stronger:
+            config = {**config, 'model': self.strongest_model}
         effort = config.get('effort') if isinstance(config, dict) else None
         try:
             config = validate_model(config)
@@ -762,6 +772,10 @@ class ModelDecisionEngine(SchemaDecisionEngine):
                                                        tool_choice='required', timeout=self.timeout,
                                                        report_observed=True)
         except ProviderError as exc:
+            if stronger and exc.status in (400, 404):
+                # The qualification passed this model; a provider that now refuses it leaves the route model.
+                context.qualified_strongest = False
+                return self._ask(context, kind, question, schema, valid)
             outcome = OUTCOME_TIMEOUT if exc.status == 'timeout' else OUTCOME_REJECTED if exc.status in (400, 413) else OUTCOME_UNAVAILABLE
             failure = 'auth' if exc.status in (401, 403) else 'usage-limit' if exc.status == 429 else ''
             return self._done(context, kind, outcome, {}, DecisionConfidence(**identity), started, failure, sent=True)

@@ -1097,8 +1097,10 @@ class ConversationJudgments:
         from .agent_runtime import record_contradiction_text, record_contradictions
 
         def ask(facts):
+            # #1071 (owner decision 2026-11-21): the outcome judgment asks for the route's most capable
+            # qualified model; the other judgments keep the route model.
             context = self._context('goal-reached', facts, work_id=work_id, reserve=True,
-                                    context_messages=conversation_messages,
+                                    context_messages=conversation_messages, qualified_strongest=True,
                                     # #1451: the observations are caller-bounded too (``OBSERVATION_CHARS``).
                                     uncut=('owner_request', 'reply', 'recent_conversation', 'continues', 'owner_context',
                                            'observations'))

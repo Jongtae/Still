@@ -186,6 +186,23 @@ class ApiModeTests(JobFixture):
                 self.assertEqual(self.judge(service).outcome, 'unavailable')
                 self.assertEqual(len(self.openai.requests), count)
 
+    # #1071: the outcome judgment sends the route's stronger qualified model; others keep the route model.
+    def test_follow_route_goal_judgment_sends_the_stronger_qualified_model(self):
+        service = self.service()
+        self.store.secret('api_key:openai', 'openai-slot-fixture')
+        service.activate_main_ai({'route': 'openai'})
+        service.activate_decision_route({'transport': 'follow_main'})
+        self.assertTrue(service.run_due_qualification())
+        route = service.decision_routes.active()
+        fast = route['requested_model']
+        compared = [{'model': fast, 'qualified': True}, {'model': 'gpt-6.1-terra', 'qualified': True}]
+        self.store.put('decision_route', {**route, 'qualification': {**route['qualification'], 'compared': compared}})
+        self.assertEqual(service.decision_routes.engine().strongest_model, 'gpt-6.1-terra')
+        service.decision_judge.goal_reached('Find the date.', 'web_search: found it', answer='It is Sunday.')
+        self.assertEqual(self.turns[-1]['model'], 'gpt-6.1-terra')
+        service.decision_judge.followup_relation('다시 해봐', 'research', 'failed')
+        self.assertEqual(self.turns[-1]['model'], fast)
+
     def test_refuses_unknown_and_unsupported_api_effort_without_a_model_call(self):
         service = self.service()
         self.store.secret('api_key:openai', 'openai-slot-fixture')

@@ -157,6 +157,19 @@ CLAUDE_CODE_STRONGEST = 'opus'
 STRONGEST_EFFORT = 'high'
 
 
+def strongest_qualified(route):
+    """#1071: the most capable model that passed ``route``'s qualification, or None.
+
+    The qualification compares its candidates cheapest first (``RANKED_MODELS``, then the owner's
+    listed models), so the last qualified one is the most capable; None when only the route's own
+    model qualified or nothing was compared.  Read from the stored record: no new call.
+    """
+    compared = ((route or {}).get('qualification') or {}).get('compared') or ()
+    qualified = [row.get('model') for row in compared if isinstance(row, dict) and row.get('qualified') is True
+                 and isinstance(row.get('model'), str) and row.get('model')]
+    return qualified[-1] if qualified and qualified[-1] != (route or {}).get('requested_model') else None
+
+
 def known_models(route_id, listed=None):
     """The models the worker catalogue lists for one route (#710): documented
     aliases in capability order, cheapest-first Judgment candidates and the owner's last
@@ -456,7 +469,8 @@ class DecisionRoutes:
 
     # -- engines ------------------------------------------------------------
     def _direct_engine(self, audit, route=None, *, resolve=None):
-        return ModelDecisionEngine(self.service.adapter, resolve or (lambda: self._direct_resolve(route)), audit=audit)
+        return ModelDecisionEngine(self.service.adapter, resolve or (lambda: self._direct_resolve(route)), audit=audit,
+                                   strongest_model=strongest_qualified(route))
 
     def _direct_resolve(self, route):
         """Resolve an API choice with its live key, or use the legacy #417 binding."""
@@ -527,7 +541,8 @@ class DecisionRoutes:
                 # Resolved for a previous Main AI: no stale destination.
                 return UnavailableDecisionEngine()
             if route['transport'] == ROUTE_DIRECT_API:
-                return ModelDecisionEngine(self.service.adapter, lambda: self._follow_resolve(route), audit=audit)
+                return ModelDecisionEngine(self.service.adapter, lambda: self._follow_resolve(route), audit=audit,
+                                           strongest_model=strongest_qualified(route))
         if route is None or route['transport'] == ROUTE_DIRECT_API:
             return self._direct_engine(audit, route)
         if route['transport'] == ROUTE_OFF:
