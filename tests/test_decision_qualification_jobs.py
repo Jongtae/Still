@@ -326,7 +326,8 @@ class QualificationJobTests(JobFixture):
         service.decision_routes._job_checkpoint = checkpoint
         service.run_due_qualification()
         self.assertEqual(seen[0]['state'], 'checking')
-        self.assertIn(f'haiku 3/{len(CASE_IDS)}', seen[0]['text'])
+        # #1067: the running candidate says which of how many it is.
+        self.assertIn(f'후보 1/2 haiku, 검사 3/{len(CASE_IDS)}', seen[0]['text'])
 
     # -- AC1: the previous route stays in effect until the qualification passes --
     def test_failed_requalification_preserves_the_choice_but_requires_an_active_qualified_route(self):
