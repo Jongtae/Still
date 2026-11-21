@@ -72,6 +72,8 @@ def test_partner_partition_covers_existing_cases_and_new_cases_once():
     added = j.load_cases(ROOT / 'evals/judgments/cases-v2-202.json')
     added['cases'] += j.load_cases(ROOT / 'evals/judgments/cases-v3-202-plan.json')['cases']
     added['cases'] += j.load_cases(ROOT / 'evals/judgments/cases-v4-921-statement.json')['cases']
+    press = j.load_cases(ROOT / 'evals/judgments/cases-v5-1066-press-effect.json')['cases']
+    added['cases'] += press
     dev_ids = {ident for part in data['roles'].values() for ident in part['dev']}
     held_ids = {ident for part in data['roles'].values() for ident in part['heldout']}
     moved = {'heldout-goal-legitimate-question', 'heldout-plan-statement'}
@@ -82,11 +84,12 @@ def test_partner_partition_covers_existing_cases_and_new_cases_once():
     assert not dev_ids & held_ids
     assert set(data['roles']) == {c['role'] for c in old['cases']}
     lookup = {c['id']: c for c in old['cases'] + held['cases'] + added['cases']}
-    assert len(p.partners(sorted(dev_ids))) == 91
-    assert data['version'] == 'judgment-heldout-partners/4'
+    assert len(p.partners(sorted(dev_ids))) == 96
+    assert data['version'] == 'judgment-heldout-partners/5'
     assert data['case_sets'] == ['evals/judgments/cases-v1.json', 'evals/judgments/heldout-v1.json',
                                  'evals/judgments/cases-v2-202.json', 'evals/judgments/cases-v3-202-plan.json',
-                                 'evals/judgments/cases-v4-921-statement.json']
+                                 'evals/judgments/cases-v4-921-statement.json',
+                                 'evals/judgments/cases-v5-1066-press-effect.json']
     for part in data['roles'].values():
         for dev in part['dev']:
             assert part['partners'].get(dev) or part['unpaired'].get(dev)
@@ -156,7 +159,7 @@ def test_v3_partner_mapping_remains_readable_and_byte_identical():
 
 def test_v4_preserves_v3_except_the_921_statement_move_and_replacement():
     old = p.validate_partners(json.loads((ROOT / 'evals/judgments/heldout-partners-v3.json').read_text()))
-    data = p.load_partners()
+    data = p.validate_partners(json.loads((ROOT / 'evals/judgments/heldout-partners-v4.json').read_text()))
     moved, fresh = 'heldout-plan-statement', 'heldout-plan-statement2'
     assert set(data) == set(old)
     assert data['version'] == 'judgment-heldout-partners/4'
@@ -959,3 +962,31 @@ def test_reuse_cli_plan_is_read_only_and_duplicate_reuse_is_refused(tmp_path, se
     assert json.loads((out / 'plan.json').read_text())['reused_arm']['arm'] == 'candidate'
     with redirect_stderr(io.StringIO()), pytest.raises(SystemExit):
         p.main([*argv, '--reuse-arm', 'baseline=' + str(source)])
+
+
+def test_v5_adds_only_the_1066_press_cases_with_fresh_partners():
+    old = p.validate_partners(json.loads((ROOT / 'evals/judgments/heldout-partners-v4.json').read_text()))
+    data = p.load_partners()
+    assert data['version'] == 'judgment-heldout-partners/5'
+    assert data['case_sets'] == old['case_sets'] + ['evals/judgments/cases-v5-1066-press-effect.json']
+    assert data['policy'] == old['policy']
+    for role, part in old['roles'].items():
+        new = data['roles'][role]
+        if role != 'connector_effect':
+            assert new == part
+            continue
+        assert new['dev'][:len(part['dev'])] == part['dev'] and new['heldout'][:len(part['heldout'])] == part['heldout']
+        assert {k: v for k, v in new['partners'].items() if k in part['partners']} == part['partners']
+        fresh = [i for i in new['dev'] if i not in part['dev']]
+        assert len(fresh) == 5 and all(i.startswith('press-') for i in fresh)
+        assert all('#1066' in new['partners'][i][0]['reason'] for i in fresh)
+
+
+def test_press_effect_prompt_selects_only_the_target_carrying_cases():
+    from agentos_eval import selection
+    cases = {c['id']: c for c in j.load_cases(ROOT / 'evals/judgments/cases-v5-1066-press-effect.json')['cases']}
+    result = selection.select({'paths': ['src/personal_agent/prompts/press_effect.md']})
+    ids = {r['id'] for r in result['selected'] if r['set'] == 'judgments'}
+    assert ids == set(cases) and not result['unmatched']
+    other = selection.select({'paths': ['src/personal_agent/prompts/connector_effect.md']})
+    assert set(cases) <= {r['id'] for r in other['selected']}

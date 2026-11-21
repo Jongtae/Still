@@ -9,9 +9,15 @@
     },
     {
       "id": "role-connector_effect",
-      "match": {"propositions": ["connector_effect", "CONNECTOR_EFFECT_QUESTION", "PRESS_EFFECT_QUESTION"], "prompt_fragments": ["connector_effect", "press_effect"], "paths": ["src/personal_agent/prompts/connector_effect.md", "src/personal_agent/prompts/press_effect.md"]},
+      "match": {"propositions": ["connector_effect", "CONNECTOR_EFFECT_QUESTION"], "prompt_fragments": ["connector_effect"], "paths": ["src/personal_agent/prompts/connector_effect.md"]},
       "select": [{"set": "judgments", "roles": ["connector_effect"]}],
       "reason": "This instruction or proposition is exercised by the connector_effect judgment cases."
+    },
+    {
+      "id": "role-press_effect",
+      "match": {"propositions": ["PRESS_EFFECT_QUESTION"], "prompt_fragments": ["press_effect"], "paths": ["src/personal_agent/prompts/press_effect.md"]},
+      "select": [{"set": "judgments", "roles": ["connector_effect"], "tags": ["press-effect"]}],
+      "reason": "This instruction or proposition is exercised by the connector_effect cases that carry a press target (#1066)."
     },
     {
       "id": "role-followup_relation",
