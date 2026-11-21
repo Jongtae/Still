@@ -153,7 +153,7 @@ class MarkedPlan(_RunCase):
 
 class SteerStartsWork(_RunCase):
     def schedule(self, run):
-        return self.service.preparation_scheduler(run, '')({'kind': 'prepare', 'goal': 'New work',
+        return self.service.preparation_scheduler(run, '')({'offer': '바뀐 계획에 맞춰 결과를 준비해요.', 'kind': 'prepare', 'goal': 'New work',
             'due': prep.iso(self.clock[0] + 3600, 'UTC'), 'recurrence': 'daily'})
 
     def test_post_work_announces_owner_steer_schedule_once_with_working_cancel(self):

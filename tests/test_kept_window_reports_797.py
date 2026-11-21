@@ -15,7 +15,7 @@ class KeptWindowTests(_WatchCase):
         self.service.use_decision_engine(self.judge)
 
     def schedule(self, due, until, *, recurrence=None, report_every_minutes=None):
-        args = dict(kind='prepare', goal='새 결과 확인', due=due.isoformat(), timezone=due.tzinfo.key,
+        args = dict(offer='새 소식을 확인해 결과를 남겨요.', kind='prepare', goal='새 결과 확인', due=due.isoformat(), timezone=due.tzinfo.key,
                     until=until.isoformat(), every_minutes='10', delivery='when_needed')
         if recurrence:
             args['recurrence'] = recurrence

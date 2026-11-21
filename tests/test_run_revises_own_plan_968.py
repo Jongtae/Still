@@ -267,7 +267,7 @@ class SteeredRunTests(_RunCase):
         row, run = self.running(line=brief['line_id'])
         other, _ = self.running(goal=GOAL + ' other')
         schedule = self.service.preparation_scheduler(run, '')
-        args = {'kind': 'prepare', 'goal': NEW_GOAL, 'due': prep.iso(self.clock[0] + 3600, 'UTC'), 'recurrence': 'daily'}
+        args = {'offer': '변경된 조건에 맞춰 결과를 준비해요.', 'kind': 'prepare', 'goal': NEW_GOAL, 'due': prep.iso(self.clock[0] + 3600, 'UTC'), 'recurrence': 'daily'}
         with self.assertRaises(ToolError) as refused:
             schedule({**args, 'replaces': row['id']})
         # #938: an unsteered run of a qualifying line row is held to the piece rule, which refuses a replace.
@@ -295,7 +295,7 @@ class SteeredRunTests(_RunCase):
         self.yes = False
         schedule = self.service.preparation_scheduler(run, '')
         with self.assertRaises(ToolError) as refused:
-            schedule({'kind': 'prepare', 'goal': NEW_GOAL, 'due': prep.iso(self.clock[0] + 3600, 'UTC'), 'replaces': row['id']})
+            schedule({'offer': '변경된 조건에 맞춰 결과를 준비해요.', 'kind': 'prepare', 'goal': NEW_GOAL, 'due': prep.iso(self.clock[0] + 3600, 'UTC'), 'replaces': row['id']})
         self.assertEqual(refused.exception.code, 'unattended_run')
         self.assertEqual(self.preps.get(row['id'])['state'], prep.STATE_RUNNING)
         self.assertEqual(len([r for r in self.preps.rows() if r['state'] in prep.ACTIVE_STATES]), 1)
@@ -316,7 +316,7 @@ class SteeredRunTests(_RunCase):
             return None
         self.service.use_decision_engine(FixtureDecisionEngine(judge=judge))
         schedule = self.service.preparation_scheduler(run, '')
-        args = {'kind': 'prepare', 'due': prep.iso(self.clock[0] + 3600, 'UTC'), 'recurrence': 'daily', 'replaces': row['id']}
+        args = {'offer': '변경된 조건에 맞춰 결과를 준비해요.', 'kind': 'prepare', 'due': prep.iso(self.clock[0] + 3600, 'UTC'), 'recurrence': 'daily', 'replaces': row['id']}
         with self.assertRaises(ToolError) as refused:
             schedule({**args, 'goal': NEW_GOAL + ' ' + filler + hidden})
         self.assertEqual(refused.exception.code, 'unattended_run')

@@ -252,7 +252,7 @@ class WindowCapFlowTests(_WatchCase):
         self.now = DUE.timestamp() - 60
         self.judge = watch_engine([False] * 6, preparation=True)
         self.service.use_decision_engine(self.judge)
-        args = dict(kind='prepare', goal='새 결과 확인', due=DUE.isoformat(), timezone='Asia/Seoul',
+        args = dict(offer='정해진 시간대에 새 소식을 살펴요.', kind='prepare', goal='새 결과 확인', due=DUE.isoformat(), timezone='Asia/Seoul',
                     until=(until or DUE.replace(hour=20)).isoformat(), every_minutes='5', delivery='when_needed')
         if recurrence:
             args['recurrence'] = recurrence
@@ -619,7 +619,7 @@ class LegacyWindowMigrationTests(unittest.TestCase):
                                        recurrence=recurrence, channel='web', created_from=work, state=state,
                                        window=(300, until.timestamp(), 96), accepted_by=prep.ACCEPTED_OWNER_REQUEST)
         if provenance is not None:
-            args = dict(kind='prepare', goal='새 결과 확인', due=due.isoformat(), timezone='Asia/Seoul',
+            args = dict(offer='정해진 시간대에 새 소식을 살펴요.', kind='prepare', goal='새 결과 확인', due=due.isoformat(), timezone='Asia/Seoul',
                         every_minutes='5', until=until.isoformat(), **provenance)
             if recurrence:
                 args['recurrence'] = recurrence

@@ -37,7 +37,7 @@ class _Plan(_Case):
         return [item for item in self.rows() if item.get('accepted_by') == prep.ACCEPTED_DAY_PLAN and not item.get('origin')]
 
     def schedule_call(self, ident='1', goal='오늘 점심 약속 근처 식당 후보를 준비해 줘', seconds=3600, **extra):
-        return {'content': None, 'tool_calls': [call(ident, 'schedule_preparation', kind='prepare', goal=goal,
+        return {'content': None, 'tool_calls': [call(ident, 'schedule_preparation', offer='계획에 맞춰 필요한 자료를 준비해요.', kind='prepare', goal=goal,
                                                      due=self.due_iso(seconds), delivery='keep', **extra)]}
 
     def tool_trace(self, work_id, tool='schedule_preparation'):

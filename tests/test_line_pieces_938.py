@@ -53,7 +53,7 @@ class _PieceCase(Mode, _LineCase):
         return self.store.job(work)
 
     def schedule(self, job, seconds=600, **args):
-        args = {'kind': 'prepare', 'goal': '다음 단계: 확인한 상태에서 이어 보기', 'due': self.due_iso(seconds), **args}
+        args = {'offer': '이어서 진행한 결과를 남겨요.', 'kind': 'prepare', 'goal': '다음 단계: 확인한 상태에서 이어 보기', 'due': self.due_iso(seconds), **args}
         return self.service.preparation_scheduler(job, '')(args)
 
     def refused(self, job, code, **args):
@@ -136,7 +136,7 @@ class WhoMaySchedule(_PieceCase):
 
     def test_an_owner_typed_work_is_unchanged_and_sets_up_no_piece(self):
         def step(body):
-            return {'content': None, 'tool_calls': [call('s', 'schedule_preparation', kind='prepare', goal='첫 확인',
+            return {'content': None, 'tool_calls': [call('s', 'schedule_preparation', offer='이어서 진행한 결과를 남겨요.', kind='prepare', goal='첫 확인',
                                                           due=self.due_iso(3600), line=self.line_id)]}
         self.script = [step, {'content': '예약했어요.'}]
         self.receive('이 일 한 시간 뒤에 확인해 줘')
@@ -456,7 +456,7 @@ class Handoff(_PieceCase):
         seen = []
 
         def schedule_next(body):
-            return {'content': None, 'tool_calls': [call('n', 'schedule_preparation', kind='prepare', goal=handoff,
+            return {'content': None, 'tool_calls': [call('n', 'schedule_preparation', offer='이어서 진행한 결과를 남겨요.', kind='prepare', goal=handoff,
                                                           due=self.due_iso(1800), line=brief['line_id'])]}
 
         def answer(body):

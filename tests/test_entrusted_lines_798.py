@@ -50,7 +50,7 @@ class _LineCase(_Case):
         if schedule:
             def schedule_step(body):
                 [opened] = tool_results(body, 'entrusted_line')
-                prepare = {'kind': 'prepare', 'goal': '관심 목록 확인 후 정리', 'due': self.due_iso(3600),
+                prepare = {'offer': '다음 점검 결과를 정리해 드려요.', 'kind': 'prepare', 'goal': '관심 목록 확인 후 정리', 'due': self.due_iso(3600),
                            'line': opened['line_id']}
                 if recurrence:
                     prepare['recurrence'] = recurrence
@@ -166,7 +166,7 @@ class ContinuityTests(_LineCase):
         line = brief['line_id']
         [first] = self.work_rows(line)
         self.script = [
-            {'content': None, 'tool_calls': [call('next', 'schedule_preparation', kind='prepare',
+            {'content': None, 'tool_calls': [call('next', 'schedule_preparation', offer='다음 점검 결과를 정리해 드려요.', kind='prepare',
                                                   goal='다음 단계', due=self.due_iso(86400), line=line)]},
             {'content': '다음에도 이어서 확인할게요.'},
         ]
@@ -223,7 +223,7 @@ class ContinuityTests(_LineCase):
         last = self.service.preparations.get(row['id'])
 
         def next_piece(_body):
-            return {'content': None, 'tool_calls': [call('next', 'schedule_preparation', kind='prepare',
+            return {'content': None, 'tool_calls': [call('next', 'schedule_preparation', offer='다음 점검 결과를 정리해 드려요.', kind='prepare',
                                                           goal='다음 단계', due=self.due_iso(86400), line=line)]}
 
         bodies = self.run_line(last, [next_piece, {'content': '내일 이어서 확인할게요.'}])
@@ -238,7 +238,7 @@ class ContinuityTests(_LineCase):
         self.run_line(first, [{'content': '첫 정리: 항목 A가 올랐습니다.'}])
 
         def replace(body):
-            return {'content': None, 'tool_calls': [call('replace', 'schedule_preparation', kind='prepare',
+            return {'content': None, 'tool_calls': [call('replace', 'schedule_preparation', offer='다음 점검 결과를 정리해 드려요.', kind='prepare',
                                                           goal='관심 목록 확인 후 표로 정리', due=self.due_iso(7200),
                                                           recurrence='daily', delivery='keep', replaces=first['id'])]}
         self.script = [replace, {'content': '표로 바꿨어요.'}]
@@ -280,7 +280,7 @@ class ContinuityTests(_LineCase):
         self.service = self.make_service()
 
         def again(body):
-            return {'content': None, 'tool_calls': [call('again', 'schedule_preparation', kind='prepare', goal='관심 목록 확인 후 정리',
+            return {'content': None, 'tool_calls': [call('again', 'schedule_preparation', offer='다음 점검 결과를 정리해 드려요.', kind='prepare', goal='관심 목록 확인 후 정리',
                                                           due=self.due_iso(3600), line=brief['line_id'])]}
         self.script = [again, {'content': '다시 할게요.'}]
         self.receive('관심 목록 정리 다시 해 줘')
@@ -300,7 +300,7 @@ class ContinuityTests(_LineCase):
         [first] = self.work_rows(brief['line_id'])
 
         def replace(body):
-            return {'content': None, 'tool_calls': [call('replace', 'schedule_preparation', kind='prepare', goal='관심 목록 다시 정리',
+            return {'content': None, 'tool_calls': [call('replace', 'schedule_preparation', offer='다음 점검 결과를 정리해 드려요.', kind='prepare', goal='관심 목록 다시 정리',
                                                           due=self.due_iso(600), recurrence='daily', replaces=first['id'])]}
         self.script = [replace, {'content': '바꿨어요.'}]
         self.receive('정리 방식을 바꿔 줘')
@@ -529,7 +529,7 @@ class ListAndStopTests(_LineCase):
     def schedule_again(self, line_id):
         seen = []
         def schedule(body):
-            return {'content': None, 'tool_calls': [call('again', 'schedule_preparation', kind='prepare', goal='다시',
+            return {'content': None, 'tool_calls': [call('again', 'schedule_preparation', offer='다음 점검 결과를 정리해 드려요.', kind='prepare', goal='다시',
                                                           due=self.due_iso(600), line=line_id)]}
 
         def answer(body):
@@ -580,7 +580,7 @@ class ListAndStopTests(_LineCase):
         run_id = self.service.preparations.start(replacement, channel='web', chat_id=None, now=replacement['due_at'])
         self.assertIsNotNone(run_id)
         piece = self.service.preparation_scheduler(self.store.job(run_id), '')(
-            {'kind': 'prepare', 'goal': '다음 확인', 'due': self.due_iso(1200), 'line': line_id})
+            {'offer': '다음 점검 결과를 정리해 드려요.', 'kind': 'prepare', 'goal': '다음 확인', 'due': self.due_iso(1200), 'line': line_id})
         self.assertEqual(piece['accepted_by'], prep.ACCEPTED_LINE_PIECE_OWNER)
 
     def test_invalid_stop_scope_changes_nothing(self):

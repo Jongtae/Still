@@ -68,7 +68,7 @@ def schedule(c, args=ARGS, *, every=15, until=3600, goal='Report the observation
     if every is not None:
         value['every_seconds'] = every
     result = c.service.preparation_scheduler(c.store.job(c.owner), '')({
-        'kind': 'prepare', 'goal': goal, 'due': datetime.fromtimestamp(c.clock[0], timezone.utc).isoformat(),
+        'offer': '조건에 맞는 새 소식을 알려 드려요.', 'kind': 'prepare', 'goal': goal, 'due': datetime.fromtimestamp(c.clock[0], timezone.utc).isoformat(),
         'until': datetime.fromtimestamp(c.clock[0] + until, timezone.utc).isoformat(), 'timezone': 'UTC', 'check': json.dumps(value),
         **({'max_runs': max_runs} if max_runs is not None else {}),
         **({'line': line} if line is not None else {}),
