@@ -86,3 +86,17 @@ def test_arms_are_instruction_text_for_progress_cases_only():
     by = {s.metadata['scenario']['id']: s.metadata['scenario']['turns'][0]['say'] for s in samples}
     assert by['progress-price-watch-change-short'].endswith(task.arm_prefix('bluf'))
     assert task.arm_prefix('bluf') not in by['communication-durable-fact-in-passing']
+
+
+def test_a_seed_on_another_route_is_refused_before_any_call(monkeypatch, tmp_path):
+    from agentos_eval import judgments as j, sandbox
+    monkeypatch.setattr(j, 'load_still', lambda src: None)
+    monkeypatch.setattr(j, 'still', lambda: SimpleNamespace(decision=SimpleNamespace(ROUTE_SUBSCRIPTION_CLI='subscription_cli')))
+    monkeypatch.setattr(cli, 'resolve_seed', lambda seed: tmp_path)
+    monkeypatch.setattr(sandbox, 'Sandbox', lambda *a, **k: SimpleNamespace(prepare=lambda: None, stop=lambda: None))
+    routes = SimpleNamespace(check_cli_capabilities=lambda engine: None,
+                             active=lambda: {'transport': 'api', 'engine': 'openai'})
+    judge = cj.CliJudge('subscription-cli:codex:gpt-6.1-sol:medium', 'seed',
+                        service_factory=lambda store: SimpleNamespace(decision_routes=routes))
+    with pytest.raises(RuntimeError, match='not the subscription CLI'):
+        judge._start()

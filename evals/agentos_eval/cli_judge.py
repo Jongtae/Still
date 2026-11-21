@@ -69,6 +69,10 @@ class CliJudge:
         # The copied seed's CLI capability record can predate the installed CLI (its model and effort
         # listing); the shipped local, model-free check refreshes it (no model request, no calls).
         service.decision_routes.check_cli_capabilities(self.engine_id)
+        route = service.decision_routes.active() or {}
+        if route.get('transport') != j.still().decision.ROUTE_SUBSCRIPTION_CLI or route.get('engine') != self.engine_id:
+            # pin_model changes the model only: a seed on another engine or a direct API would take the calls.
+            raise RuntimeError('the seed Judgment AI route is not the subscription CLI ' + self.engine_id)
         if self.model:
             j.pin_model(service, self.model, self.effort)
         # Qualify and wait: the shipped update job runs to its end here (#855), so no judged case
