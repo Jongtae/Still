@@ -65,6 +65,24 @@ process.stdout.write(JSON.stringify({
         self.assertTrue(result['codex'].startswith('Codex includes AGENTS.override.md'))
         self.assertTrue(result['same'], 'a line the screen already translates keeps its own wording')
 
+    def test_a_running_candidate_check_reads_in_the_screen_language(self):
+        """#1067: the multi-candidate progress is translated before its values are filled in."""
+        template = catalog()['decision_routes.check_progress_candidate']['ko']
+        effective = {'template': catalog()['decision_routes.checking_keep_route']['ko'],
+                     'params': {'progress': template.format(candidate=2, candidates=3, model='claude-haiku-4-5', index=2, cases=11)},
+                     'progress_template': template,
+                     'progress_params': {'candidate': 2, 'candidates': 3, 'model': 'claude-haiku-4-5', 'index': 2, 'cases': 11}}
+        out = node_run(r"""
+const fs=require('node:fs');new Function(fs.readFileSync(process.argv[2],'utf8'))();
+const ui=require(process.argv[1]);ui.mergeMessageCatalog(globalThis.STILL_MESSAGES);ui.setLanguage('en');
+// The renderer lives in the browser-only part of app.js; take that one function and run it with the page's t().
+const app=fs.readFileSync(process.argv[1],'utf8'),start=app.indexOf('function effectiveJudgmentText(');
+const effectiveJudgmentText=new Function('t','return '+app.slice(start,app.indexOf('\nfunction ',start)))(ui.t);
+process.stdout.write(effectiveJudgmentText(JSON.parse(process.argv[3])));
+""", str(self.script), json.dumps(effective, ensure_ascii=False))
+        self.assertIn('candidate 2 of 3, claude-haiku-4-5: case 2 of 11', out)
+        self.assertNotIn('후보', out)
+
     def test_without_the_catalog_the_screen_still_loads(self):
         out = node_run("const ui=require(process.argv[1]);ui.mergeMessageCatalog(undefined);process.stdout.write(ui.t('AI'))")
         self.assertEqual(out, 'AI')

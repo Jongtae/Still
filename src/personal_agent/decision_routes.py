@@ -1498,15 +1498,21 @@ class DecisionRoutes:
                         msg('decision_routes.qualified_fallback'), **self._fallback_params(active))
         if job.get('state') in JOB_OPEN:
             step = job.get('step') or {}
+            # #1067: a multi-candidate step goes out as its template and values too,
+            # so the page translates the template before filling it in.
+            progress_template = (msg('decision_routes.check_progress_candidate')
+                                 if job['state'] == JOB_RUNNING and step.get('model') and (step.get('candidates') or 1) > 1
+                                 else '')
+            progress_params = {key: step.get(key) for key in ('candidate', 'candidates', 'model', 'index', 'cases')}
             progress = (msg('decision_routes.cancelling') if job['state'] == JOB_CANCELLING
-                        else msg('decision_routes.check_progress_candidate').format(**step)
-                        if job['state'] == JOB_RUNNING and step.get('model') and (step.get('candidates') or 1) > 1
+                        else progress_template.format(**progress_params) if progress_template
                         else f'{step.get("model")} {step.get("index")}/{step.get("cases")}'
                         if job['state'] == JOB_RUNNING and step.get('model') else msg('state.queued'))
-            if active.get('available'):
-                return said('checking', msg('decision_routes.checking_keep_route'),
-                            progress=progress)
-            return said('checking', msg('decision_routes.checking_skip'), progress=progress)
+            template = msg('decision_routes.checking_keep_route' if active.get('available') else 'decision_routes.checking_skip')
+            result = said('checking', template, progress=progress)
+            if progress_template:
+                result.update(progress_template=progress_template, progress_params=progress_params)
+            return result
         job_reason = None
         if job.get('state') in (JOB_FAILED, JOB_CANCELLED) and not (
                 active.get('source') == 'follow' and active.get('available') and route.get('main') == main):

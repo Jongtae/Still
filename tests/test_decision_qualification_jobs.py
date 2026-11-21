@@ -328,6 +328,7 @@ class QualificationJobTests(JobFixture):
         self.assertEqual(seen[0]['state'], 'checking')
         # #1067: the running candidate says which of how many it is.
         self.assertIn(f'후보 1/2 haiku, 검사 3/{len(CASE_IDS)}', seen[0]['text'])
+        self.assertEqual(seen[0]['progress_params'], {'candidate': 1, 'candidates': 2, 'model': 'haiku', 'index': 3, 'cases': len(CASE_IDS)})
 
     # -- AC1: the previous route stays in effect until the qualification passes --
     def test_failed_requalification_preserves_the_choice_but_requires_an_active_qualified_route(self):

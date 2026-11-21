@@ -1217,7 +1217,7 @@ function decisionActiveTitle(active,route=decisionSettings?.decision_route){
  }
  return t(DECISION_TRANSPORT_LABEL[active.transport]||'설정 안 됨');
 }
-function effectiveJudgmentText(effective){if(!effective)return '';const params={...(effective.params||{})};for(const key of ['main','label','verified','progress'])if(params[key])params[key]=t(params[key]);if(params.model==='기본 모델')params.model=t('기본 모델');
+function effectiveJudgmentText(effective){if(!effective)return '';const params={...(effective.params||{})};for(const key of ['main','label','verified','progress'])if(params[key])params[key]=t(params[key]);if(effective.progress_template)params.progress=t(effective.progress_template,effective.progress_params||{});if(params.model==='기본 모델')params.model=t('기본 모델');
  const reason=effective.reason_template?t(effective.reason_template,Object.fromEntries(Object.entries(effective.reason_params||{}).map(([key,value])=>[key,t(value)]))):t(effective.reason||'');
  // #760: an explicit 기본 AI 따라가기 that did not pass is shown next to the unchanged off/explicit sentence.
  const note=effective.note_template?' '+t(effective.note_template,Object.fromEntries(Object.entries(effective.note_params||{}).map(([key,value])=>[key,t(value)]))):'';
