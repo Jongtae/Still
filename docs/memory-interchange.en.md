@@ -37,14 +37,14 @@ Still-only fields: those fields are left out and listed below.
 | `memories` row (`current`) | `fact` with `tValidTo` null | export, import (as a candidate) | `subject` = `owner`, `predicate` = memory key, `object` = value, `text` = `key: value` |
 | `memories` row (`superseded`, `corrected`) | `fact` with `tValidTo` and `supersededBy` | export only | Still links new→old (`supersedes`); the bundle links old→new. An imported historical fact is counted, not stored |
 | `valid_until` (the fact's last day, an ISO date) | `tValidTo` = the next midnight in the owner's time zone | export | Kept on a current row too, even after that day (Still keeps such a row `current` and leaves it out of reads by date) |
-| A fact with a future `tValidTo` | — | import: counted as `time_bounded_skipped` | A candidate cannot carry a last day, and accepting one would make a time-bounded fact lasting |
+| A fact with a future `tValidTo`, or a `tValidFrom` still to come | — | import: counted as `time_bounded_skipped` | A candidate cannot carry a first or last day; accepting it would make a time-bounded fact current now and lasting |
 | A fact whose `subject` is not `owner` or `user` | — | import: counted as `other_subject` | Dropping the subject would make a fact about someone else read as the owner's own |
 | `created` (float seconds) | `tValidFrom`, `createdAt` | both | Whole-second UTC: sub-second precision is lost |
 | Forget receipt (`forget`, `migrate`), state `forgotten` | `tombstone` `op: delete` | export | Receipts carry no content; the fact itself is not exported |
 | Delete receipt, state `deleted` | `tombstone` `op: redact` | export | |
 | Undone receipt | none | — | The row is current again and exported as a fact |
 | `retracted` row (a save that was undone) | `tombstone` `op: delete`, reason `retracted` | export | Covers an earlier export that carried it |
-| Bundle tombstone | withdraws a still-pending imported candidate | import | Current Memory is never changed by an import; the owner forgets here if they want to |
+| Bundle tombstone | withdraws a still-pending imported candidate, and is kept (`portable_import_tombstones`, fact ids only) | import | A later bundle that still carries the fact cannot revive it. Current Memory is never changed by an import; the owner forgets here if they want to |
 | — | `confidence`, `importance` | export | Required by the spec; Still tracks neither, so both are a constant 0.5 that carries no meaning |
 | — | `episodeID` | export | Required; Still keeps no portable episode, so it is empty |
 | Memory candidates, approvals | — | never | Approval tokens are runtime-secret-bound; candidates are not knowledge yet |

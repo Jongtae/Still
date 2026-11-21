@@ -41,6 +41,10 @@ TOMBSTONE_RECEIPTS = ('forgotten', 'deleted')
 MAX_FACTS = 10000
 #: The subjects that name the owner themself; a fact about anyone else has no home in the owner's Memory.
 OWNER_SUBJECTS = ('owner', 'user')
+#: #38 review: a bundle tombstone outlives its import, so a later bundle still carrying that fact cannot revive it.
+#: Fact ids only, never content.
+DDL = '''CREATE TABLE IF NOT EXISTS portable_import_tombstones(
+  owner_key TEXT NOT NULL, target_id TEXT NOT NULL, created REAL NOT NULL, PRIMARY KEY(owner_key, target_id))'''
 
 
 class MemoryInterchangeError(ValueError):
@@ -99,6 +103,9 @@ def _store_class():
             self.report = {'candidates': 0, 'already_known': 0, 'forgotten_here': 0, 'history_skipped': 0,
                            'invalid': 0, 'secret_refused': 0, 'time_bounded_skipped': 0, 'other_subject': 0, 'withdrawn': 0, 'tombstones_not_applied': 0}
             self.tombstoned = set()
+            if bundle is not None:
+                with store.db() as db:
+                    db.execute(DDL)
 
         def store_info(self):
             return pm.StoreInfo(generator=_generator())
@@ -173,7 +180,10 @@ def _store_class():
 
         # -- import ---------------------------------------------------------
         def tombstoned_target_ids(self):
-            return set(self.tombstoned)
+            with self.store.db() as db:
+                kept = {row['target_id'] for row in db.execute(
+                    'SELECT target_id FROM portable_import_tombstones WHERE owner_key=?', (self.owner_key,))}
+            return kept | self.tombstoned
 
         def apply_tombstone(self, tombstone):
             """Withdraw a still-pending candidate imported from that fact; current Memory is never touched."""
@@ -181,6 +191,8 @@ def _store_class():
             withdrawn = 0
             with self.store.db() as db:
                 db.execute('BEGIN IMMEDIATE')
+                db.execute('INSERT OR IGNORE INTO portable_import_tombstones VALUES (?,?,?)',
+                           (self.owner_key, str(tombstone.target_id), self.now()))
                 for row in db.execute("SELECT id,source FROM memory_candidates WHERE owner_key=? AND state='pending' "
                                       "AND source IS NOT NULL", (self.owner_key,)).fetchall():
                     source = _source(row['source'])
@@ -197,8 +209,9 @@ def _store_class():
                     fact.t_valid_to is not None and fact.t_valid_to <= _at(self.now())):
                 self.report['history_skipped'] += 1
                 return
-            if fact.t_valid_to is not None:
-                # A candidate cannot carry a last day; accepting it would revive a time-bounded fact as lasting.
+            if fact.t_valid_to is not None or fact.t_valid_from > _at(self.now()):
+                # A candidate cannot carry a first or last day; accepting it would make a time-bounded fact
+                # current now and lasting.
                 self.report['time_bounded_skipped'] += 1
                 return
             if str(fact.subject or '').strip().lower() not in OWNER_SUBJECTS:

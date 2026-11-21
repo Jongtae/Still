@@ -107,6 +107,30 @@ class Interchange(unittest.TestCase):
         self.assertEqual((report['candidates'], report['history_skipped'], report['time_bounded_skipped']), (0, 1, 1))
         self.assertEqual(self.pending(self.target), [])
 
+    def test_a_fact_that_has_not_started_is_not_imported(self):
+        self.source.save_memory('profile.home_city', 'Seoul')
+        path = self.bundle()
+        fact = self.facts(path)[0]
+        line = json.dumps({**fact, 'tValidFrom': '2999-01-01T00:00:00Z'}, sort_keys=True, separators=(',', ':')) + '\n'
+        rewrite(path, 'items/fact.jsonl', line)
+        report = import_memory(self.target, OWNER, path)
+        self.assertEqual((report['candidates'], report['time_bounded_skipped']), (0, 1))
+
+    def test_a_tombstone_is_kept_for_later_bundles(self):
+        self.source.save_memory('preference.coffee', 'oat latte')
+        path = self.bundle()
+        fact = self.facts(path)[0]
+        tomb = {'id': 'tomb_1', 'op': 'delete', 'targetKind': 'fact', 'targetID': fact['id'],
+                'deletedAt': '2026-11-01T00:00:00Z', 'actor': 'owner', 'derived': {}}
+        only_tomb = self.root / 'only_tomb'
+        export_memory(QuickStore(self.root / 'empty'), OWNER, only_tomb)
+        rewrite(only_tomb, 'audit/tombstones.jsonl', json.dumps(tomb) + '\n')
+        first = import_memory(self.target, OWNER, only_tomb)
+        self.assertEqual((first['tombstones'], first['candidates']), (1, 0))
+        later = import_memory(self.target, OWNER, path)
+        self.assertEqual((later['candidates'], later['skipped_tombstoned']), (0, 1),
+                         'a fact deleted at its source earlier never comes back from a later bundle')
+
     def test_a_fact_about_someone_else_is_refused(self):
         self.source.save_memory('profile.home_city', 'Seoul')
         path = self.bundle()
