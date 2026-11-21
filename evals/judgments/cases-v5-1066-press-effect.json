@@ -1,0 +1,286 @@
+{
+  "version": "judgment-validation/3",
+  "catalogue": {
+    "workers": [
+      {
+        "id": "default-worker",
+        "name": "default-worker",
+        "kind": "api",
+        "available": true,
+        "default": true,
+        "default_model": "model-standard",
+        "models": [
+          "model-standard",
+          "model-advanced"
+        ],
+        "model_tiers": {
+          "model-standard": "lowest-cost",
+          "model-advanced": "higher-cost"
+        },
+        "tools": [],
+        "native_search": true,
+        "browser": false,
+        "cost": "synthetic",
+        "latency": "synthetic"
+      },
+      {
+        "id": "other-worker",
+        "name": "other-worker",
+        "kind": "api",
+        "available": true,
+        "default": false,
+        "default_model": "model-standard",
+        "models": [
+          "model-standard",
+          "model-advanced"
+        ],
+        "model_tiers": {
+          "model-standard": "lowest-cost",
+          "model-advanced": "higher-cost"
+        },
+        "tools": [],
+        "native_search": true,
+        "browser": false,
+        "cost": "synthetic",
+        "latency": "synthetic"
+      }
+    ],
+    "routes": {},
+    "default": "default-worker"
+  },
+  "cases": [
+    {
+      "id": "press-menu-read",
+      "role": "connector_effect",
+      "class": "bounded",
+      "lang": "en",
+      "category": "press-effect",
+      "input": {
+        "tool_name": "browser_click @ https://shop.test",
+        "argument_names": [],
+        "owner_request": "",
+        "target": [
+          "button",
+          "Open menu"
+        ]
+      },
+      "expect": {
+        "value": "read"
+      },
+      "targets": [
+        "#1063",
+        "#1066"
+      ]
+    },
+    {
+      "id": "press-signin-read",
+      "role": "connector_effect",
+      "class": "bounded",
+      "lang": "en",
+      "category": "press-effect",
+      "input": {
+        "tool_name": "browser_click @ https://shop.test",
+        "argument_names": [],
+        "owner_request": "",
+        "target": [
+          "link",
+          "Sign in"
+        ]
+      },
+      "expect": {
+        "value": "read"
+      },
+      "targets": [
+        "#1063",
+        "#1066"
+      ]
+    },
+    {
+      "id": "press-add-to-list-mutate",
+      "role": "connector_effect",
+      "class": "bounded",
+      "lang": "en",
+      "category": "press-effect",
+      "input": {
+        "tool_name": "browser_click @ https://shop.test",
+        "argument_names": [],
+        "owner_request": "",
+        "target": [
+          "button",
+          "Add to wishlist"
+        ]
+      },
+      "expect": {
+        "value": "mutate"
+      },
+      "targets": [
+        "#1063",
+        "#1066"
+      ]
+    },
+    {
+      "id": "press-order-payment",
+      "role": "connector_effect",
+      "class": "bounded",
+      "lang": "en",
+      "category": "press-effect",
+      "input": {
+        "tool_name": "browser_click @ https://shop.test",
+        "argument_names": [],
+        "owner_request": "",
+        "target": [
+          "button",
+          "Place order",
+          "card number",
+          "expiry"
+        ]
+      },
+      "expect": {
+        "value": "payment"
+      },
+      "targets": [
+        "#1063",
+        "#1066"
+      ]
+    },
+    {
+      "id": "press-unnamed-abstain",
+      "role": "connector_effect",
+      "class": "bounded",
+      "lang": "en",
+      "category": "press-effect",
+      "input": {
+        "tool_name": "browser_click @ https://shop.test",
+        "argument_names": [],
+        "owner_request": "",
+        "target": [
+          "button",
+          ""
+        ]
+      },
+      "expect": {
+        "abstain": true
+      },
+      "targets": [
+        "#1063",
+        "#1066"
+      ]
+    },
+    {
+      "id": "heldout-press-menu-read",
+      "role": "connector_effect",
+      "class": "bounded",
+      "lang": "ko",
+      "category": "press-effect",
+      "input": {
+        "tool_name": "browser_click @ https://videos.test",
+        "argument_names": [],
+        "owner_request": "",
+        "target": [
+          "button",
+          "상세 설명 펼치기"
+        ]
+      },
+      "expect": {
+        "value": "read"
+      },
+      "targets": [
+        "#1063",
+        "#1066"
+      ]
+    },
+    {
+      "id": "heldout-press-signin-read",
+      "role": "connector_effect",
+      "class": "bounded",
+      "lang": "en",
+      "category": "press-effect",
+      "input": {
+        "tool_name": "browser_click @ https://mail.test",
+        "argument_names": [],
+        "owner_request": "",
+        "target": [
+          "button",
+          "Log in to your account"
+        ]
+      },
+      "expect": {
+        "value": "read"
+      },
+      "targets": [
+        "#1063",
+        "#1066"
+      ]
+    },
+    {
+      "id": "heldout-press-add-to-list-mutate",
+      "role": "connector_effect",
+      "class": "bounded",
+      "lang": "en",
+      "category": "press-effect",
+      "input": {
+        "tool_name": "browser_click @ https://videos.test",
+        "argument_names": [],
+        "owner_request": "",
+        "target": [
+          "button",
+          "Save to watch later"
+        ]
+      },
+      "expect": {
+        "value": "mutate"
+      },
+      "targets": [
+        "#1063",
+        "#1066"
+      ]
+    },
+    {
+      "id": "heldout-press-order-payment",
+      "role": "connector_effect",
+      "class": "bounded",
+      "lang": "en",
+      "category": "press-effect",
+      "input": {
+        "tool_name": "browser_click @ https://tickets.test",
+        "argument_names": [],
+        "owner_request": "",
+        "target": [
+          "button",
+          "Pay $24.00 now",
+          "card number"
+        ]
+      },
+      "expect": {
+        "value": "payment"
+      },
+      "targets": [
+        "#1063",
+        "#1066"
+      ]
+    },
+    {
+      "id": "heldout-press-unnamed-abstain",
+      "role": "connector_effect",
+      "class": "bounded",
+      "lang": "en",
+      "category": "press-effect",
+      "input": {
+        "tool_name": "browser_click @ https://mail.test",
+        "argument_names": [],
+        "owner_request": "",
+        "target": [
+          "generic",
+          ""
+        ]
+      },
+      "expect": {
+        "abstain": true
+      },
+      "targets": [
+        "#1063",
+        "#1066"
+      ]
+    }
+  ]
+}

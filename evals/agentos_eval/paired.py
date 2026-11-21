@@ -47,8 +47,8 @@ from . import judgments as j
 from .paths import REPO, eval_home
 from .sandbox import Sandbox
 
-PARTNER_FILE = 'evals/judgments/heldout-partners-v4.json'
-PARTNER_VERSION = 'judgment-heldout-partners/4'
+PARTNER_FILE = 'evals/judgments/heldout-partners-v5.json'
+PARTNER_VERSION = 'judgment-heldout-partners/5'
 NOT_RUN_REASON = 'no runner for this set in paired.py; run it with its own runner'
 PER_CALL_CEILING_SECONDS = 120
 
@@ -106,7 +106,7 @@ def _case_data(data, root):
 
 def validate_partners(data, *, root=REPO):
     """Every case has one split; every dev has a partner or an explicit reason."""
-    if data.get('version') not in ('judgment-heldout-partners/1', 'judgment-heldout-partners/2', 'judgment-heldout-partners/3', PARTNER_VERSION) or not data.get('case_sets') or not data.get('roles'):
+    if data.get('version') not in ('judgment-heldout-partners/1', 'judgment-heldout-partners/2', 'judgment-heldout-partners/3', 'judgment-heldout-partners/4', PARTNER_VERSION) or not data.get('case_sets') or not data.get('roles'):
         raise PairedError('Unsupported or empty partner mapping')
     cases, _, _ = _case_data(data, root)
     assigned = set()

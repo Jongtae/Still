@@ -319,6 +319,30 @@ class JudgmentTests(unittest.TestCase):
         self.assertNotIn('PRIVATE', json.dumps(rows))
         self.assertTrue(audit)
 
+    def test_1066_press_cases_reach_the_press_effect_question_and_score_by_oracle(self):
+        cases = j.load_cases(ROOT / 'evals/judgments/cases-v5-1066-press-effect.json')
+        self.assertTrue(all(c['input'].get('target') for c in cases['cases'] if 'abstain' not in c['expect']))
+        rows, transport, _ = self.measure(cases)
+        self.assertEqual([(r['id'], r['error']) for r in rows if not r['semantic_correct']], [])
+        # The runner also measures the qualification suite; only the case calls are ours.
+        prompts = [c['input'][-1]['content'] for c in transport.calls]
+        pressed = [p for p in prompts if 'press-effect' in p]
+        self.assertEqual(len(pressed), len(cases['cases']))
+        for prompt, case in zip(pressed, cases['cases']):
+            self.assertIn('element_name: ' + case['input']['target'][1], prompt)
+            self.assertNotIn('tool_name', prompt)
+
+    def test_1066_target_must_be_a_list_of_text(self):
+        cases = j.load_cases(ROOT / 'evals/judgments/cases-v5-1066-press-effect.json')
+        for bad in ('Open menu', [1]):
+            broken = copy.deepcopy(cases)
+            broken['cases'][0]['input']['target'] = bad
+            with tempfile.TemporaryDirectory() as tmp:
+                path = Path(tmp) / 'c.json'
+                path.write_text(json.dumps(broken))
+                with self.assertRaises(j.CaseError):
+                    j.load_cases(path)
+
     def test_both_reversibility_labels_retain_the_ordinary_mutation_rubric(self):
         for choice in ('reversible', 'irreversible'):
             with self.subTest(choice=choice):
