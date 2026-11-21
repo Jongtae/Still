@@ -83,6 +83,28 @@ process.stdout.write(effectiveJudgmentText(JSON.parse(process.argv[3])));
         self.assertIn('candidate 2 of 3, claude-haiku-4-5: case 2 of 11', out)
         self.assertNotIn('후보', out)
 
+    def test_the_check_started_notice_clears_once_the_check_has_run(self):
+        """#1069: the notice belongs to a running check and goes once the result is in."""
+        out = node_run(r"""
+const fs=require('node:fs'),app=fs.readFileSync(process.argv[1],'utf8'),start=app.indexOf('function judgmentCheckNoticeDone(');
+const make=new Function('let judgmentCheckNotice=null;'+app.slice(start,app.indexOf('\nfunction ',start))+
+ ';return {start:at=>{judgmentCheckNotice={started:at,seen:false};},done:route=>judgmentCheckNoticeDone(route)};');
+const old={active:{qualification:{at:100}},follow_check:{checked_at:100}},checking={...old,effective:{state:'checking'}};
+const runThrough=make();runThrough.start(200);
+const queuedGap=runThrough.done(old),whileChecking=runThrough.done(checking),afterCheck=runThrough.done(old);
+const fast=make();fast.start(200);
+const fastFinished=fast.done({active:{qualification:{at:205}},effective:{state:'active'}});
+const none=make().done(old);
+process.stdout.write(JSON.stringify({queuedGap,whileChecking,afterCheck,fastFinished,none}));
+""")
+        self.assertEqual(json.loads(out), {
+            'queuedGap': False,      # an earlier result does not end a check that has not shown up yet
+            'whileChecking': False,
+            'afterCheck': True,      # seen running, now finished
+            'fastFinished': True,    # never seen running, but a result newer than the start
+            'none': False,           # no notice showing, nothing to clear
+        })
+
     def test_without_the_catalog_the_screen_still_loads(self):
         out = node_run("const ui=require(process.argv[1]);ui.mergeMessageCatalog(undefined);process.stdout.write(ui.t('AI'))")
         self.assertEqual(out, 'AI')
