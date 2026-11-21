@@ -5514,6 +5514,35 @@ class AgentService:
         return [message for row,message in zip(earlier[-len(shown):] if shown else [],shown)
                 if row.get('job_id') not in document_jobs]
 
+    #: Relations that continue an earlier Work (a cancel link continues nothing).
+    CONTINUING_RELATIONS=('reference','retry','correction','steer')
+    #: How many links back ``linked_work_ids`` follows.
+    LINKED_CHAIN_LIMIT=12
+
+    def followed_up(self, job):
+        """The id of the Work ``job`` was judged to continue, or None."""
+        related=job.get('related_job_id') if job else None
+        return related if job.get('relation_kind') in self.CONTINUING_RELATIONS and isinstance(related,str) and related else None
+
+    def linked_work_ids(self, job):
+        """The Work ``job`` follows up and the chain of Works that one followed up (#1084).
+
+        Only links the follow-up judgment already recorded are read; nothing is judged here.
+        Bounded by ``LINKED_CHAIN_LIMIT`` and safe against a cycle; empty without a link.
+        """
+        linked=set()
+        try:
+            current=self.store.job(job['id']) or job
+            while len(linked)<self.LINKED_CHAIN_LIMIT:
+                related=self.followed_up(current)
+                if not related or related in linked or related==job['id']:break
+                linked.add(related)
+                current=self.store.job(related)
+                if not current:break
+        except Exception:
+            LOG.info('linked Works unavailable job=%s',job.get('id'))
+        return linked
+
     def continued_exchange(self, job):
         """The owner message and final reply of the Work this one follows up, or '' (#980).
 
@@ -5523,8 +5552,8 @@ class AgentService:
         """
         try:
             current=self.store.job(job['id']) or job
-            related=current.get('related_job_id')
-            if current.get('relation_kind') not in ('reference','retry','correction','steer') or not related:return ''
+            related=self.followed_up(current)
+            if not related:return ''
             earlier=self.store.job(related)
             if not earlier:return ''
             # #367: what the owner forgot of that exchange is not continued.
@@ -5590,7 +5619,11 @@ class AgentService:
         except Exception:
             tz=None
         # #275: one line per turn, so the plan call can say how many of them it sent.
-        conversation=[earlier_turn_line(row,message,tz) for row,message in zip(earlier_rows,selected)]
+        # #1084: turns of the linked topic are marked, so an interleaved topic is not read as its subject.
+        linked=self.linked_work_ids(job)
+        linked_turns=[row.get('job_id') in linked for row in earlier_rows]
+        conversation=[earlier_turn_line(row,message,tz,linked=flag)
+                      for row,message,flag in zip(earlier_rows,selected,linked_turns)]
         earlier=earlier_rows
         previous_route=self.previous_work_route(job,rows)
         def event(status,detail):
@@ -5607,6 +5640,7 @@ class AgentService:
             request=str(self.effect_mandate(job,request) or '')+'\n\n'+self.preparation_run_fact(job)
         read_snapshot = self.read_checkpoint_snapshot(job['id'])
         orchestration = Orchestration(self.decision_judge,catalogue,request=request,conversation=conversation,
+                             linked_turns=linked_turns,
                              continues='\n'.join(part for part in (self.continued_exchange(job),
                                                     self.action_continuation_note(job, include_read=False)) if part),
                              sections={**sections,'history':len(earlier)},budget=budget,record=event,state=state,

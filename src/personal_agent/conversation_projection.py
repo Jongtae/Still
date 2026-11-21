@@ -579,18 +579,20 @@ def qualify_transcript(rows):
     return projected
 
 
-def earlier_turn_line(row, message, tz=None):
+def earlier_turn_line(row, message, tz=None, linked=False):
     """One earlier stored turn as the plan call and the outcome judgments read it (#170, #240).
 
     Labelled as an earlier Work with its local time when known, so what happened there is never
-    read as the current Work's own event.
+    read as the current Work's own event.  ``linked`` (#1084) marks a turn of the Work this one
+    was judged to follow up, or of the chain of Works that one followed up, so a topic that
+    interleaves with another in time can still be told apart.
     """
     who='owner' if message.get('role')=='user' else 'assistant'
     when=''
     if tz is not None:
         try:when=' '+datetime.fromtimestamp(float(row.get('created')),tz).strftime('%Y-%m-%d %H:%M')
         except (TypeError,ValueError,OverflowError,OSError):pass
-    return f"[{who}, earlier Work{when}] {message.get('content') or ''}"
+    return f"[{who}, {'linked ' if linked else ''}earlier Work{when}] {message.get('content') or ''}"
 
 
 def earlier_turns_in(turns, window):

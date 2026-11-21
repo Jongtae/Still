@@ -135,6 +135,62 @@ class EarlierWorks(Case):
         self.assertTrue(all(line.startswith(('[owner, earlier Work', '[assistant, earlier Work')) for line in lines), lines)
         self.assertEqual(built.call_args.kwargs['sections']['history'], 2)
 
+    def plan_lines(self, rows):
+        from unittest import mock
+        with mock.patch('personal_agent.quickstart_service.worker_catalogue', return_value=SimpleNamespace(default='w')), \
+                mock.patch('personal_agent.quickstart_service.Orchestration') as built:
+            self.service.work_orchestration(self.store.job(self.job['id']), self.job['message'], rows, {}, None)
+        self.built = built
+        return built.call_args.kwargs['conversation']
+
+    def test_turns_of_the_linked_topic_are_marked_when_another_topic_interleaves(self):
+        """#1084: two topics interleave in time; only the recorded link chain's turns are marked linked."""
+        trip1 = self.store.enqueue('plan a trip to the coast', 'kt1', owner_typed=True)
+        recipe = self.store.enqueue('a soup recipe for tonight', 'kr1', owner_typed=True)
+        trip2 = self.store.enqueue('how long is the drive there', 'kt2', owner_typed=True)
+        self.store.link_work_relation(trip2, trip1, 'reference')
+        self.store.link_work_relation(self.job['id'], trip2, 'reference')
+        rows = []
+        for n, (work, who, text) in enumerate([(trip1, 'user', 'plan a trip'), (trip1, 'assistant', 'trip plan'),
+                                               (recipe, 'user', 'soup recipe'), (recipe, 'assistant', 'boil noodles'),
+                                               (trip2, 'user', 'drive time'), (trip2, 'assistant', 'about an hour')]):
+            rows.append({'role': who, 'content': text, 'created': float(n), 'job_id': work})
+        rows.append({'role': 'user', 'content': 'add these to my calendar', 'created': 9.0, 'job_id': self.job['id']})
+        lines = self.plan_lines(rows)
+        self.assertEqual(self.built.call_args.kwargs['linked_turns'], [True, True, False, False, True, True])
+        marked = [line.split('] ', 1)[1] for line in lines if 'linked earlier Work' in line]
+        self.assertEqual(marked, ['plan a trip', 'trip plan', 'drive time', 'about an hour'], lines)
+        self.assertTrue(any(line.startswith('[assistant, earlier Work') and 'boil noodles' in line for line in lines))
+
+    def test_without_a_link_or_with_a_cancel_link_no_turn_is_marked(self):
+        earlier = self.store.enqueue('plan a trip to the coast', 'kt1', owner_typed=True)
+        rows = [{'role': 'user', 'content': 'plan a trip', 'created': 1.0, 'job_id': earlier},
+                {'role': 'user', 'content': 'add these to my calendar', 'created': 2.0, 'job_id': self.job['id']}]
+        self.assertFalse(any('linked' in line for line in self.plan_lines(rows)))
+        self.store.link_work_relation(self.job['id'], earlier, 'cancel')
+        self.assertFalse(any('linked' in line for line in self.plan_lines(rows)))
+
+    def test_the_plan_is_told_what_linked_means_only_when_a_linked_line_is_sent(self):
+        from personal_agent.orchestrator import LINKED_NOTE, Orchestration
+        catalogue = type('Catalogue', (), {'descriptions': {}})()
+        plain = Orchestration(None, catalogue, request='hi', conversation=['[owner, earlier Work] soup recipe'])
+        self.assertNotIn('conversation_topics', plain._plan_context([]).facts,
+                         'a plan without a recorded link asks exactly as before')
+        turns = ['[owner, earlier Work] soup recipe', '[owner, linked earlier Work] drive time']
+        linked = Orchestration(None, catalogue, request='hi', conversation=turns, linked_turns=[False, True])
+        self.assertEqual(linked._plan_context([]).facts['conversation_topics'], LINKED_NOTE)
+        self.assertNotIn('conversation_topics', Orchestration(None, catalogue, request='hi', conversation=turns,
+                                                              linked_turns=[False, False])._plan_context([]).facts,
+                         'the flag decides, never the line text')
+
+    def test_a_cyclic_link_chain_ends(self):
+        first = self.store.enqueue('one', 'kc1', owner_typed=True)
+        second = self.store.enqueue('two', 'kc2', owner_typed=True)
+        self.store.link_work_relation(first, second, 'reference')
+        self.store.link_work_relation(second, first, 'reference')
+        self.store.link_work_relation(self.job['id'], second, 'reference')
+        self.assertEqual(self.service.linked_work_ids(self.store.job(self.job['id'])), {first, second})
+
 
 class SelfReviewFacts(Case):
     def test_the_review_is_told_what_waited_for_the_owner_and_what_became_of_it(self):
