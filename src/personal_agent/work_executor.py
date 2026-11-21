@@ -14,7 +14,7 @@ import time
 import traceback
 from contextlib import ExitStack
 from .messages import msg
-from .telegram_locale import owner_language
+from .telegram_locale import language, owner_language
 from .work_execution import PROCEED, REDELEGATED, WorkRun
 from .agent_runtime import Capabilities, ToolError, cut_to_fit, loop_definitions, run_agent, STEER_EVENT, steer_note, evidence_summary, turn_context, render_turn_prompt, attachment_facts, context_sections, ENGINE_UNMEDIATED, base_label, WorkLedger, NOTES_SUMMARY_COMMANDS
 from .agent_runtime import effect_continuation_scope, recorded_effects_response, MEMORY_OWNER, SAVED_RESULTS_ROOT
@@ -982,7 +982,12 @@ class WorkExecutor:
                 and not service.store.context_attachment(job['id']) and not run.turn_provenance
                 and not attempt.account_change and not attempt.owner_situation and not attempt.technical_work
                 and not attempt.ask_location and not attempt.preview):
-            if attempt.recall_query:
+            if language(None,job.get('message') or run.prompt)!=language(None,attempt.reply):
+                # #1077: a direct reply pulled into the conversation's language instead of the owner's
+                # words, by the same script rule as owner_language. The prepared worker answers instead.
+                service.record_decision({'purpose':'plan-reply-withheld','kind':'route','route':'plan-reply-withheld',
+                                         'reason':'reply-language','work_id':job['id'],'at':time.time()})
+            elif attempt.recall_query:
                 refresh=service.worker_profile_snapshot(job,attempt,with_items=True)
                 _,items=cut_profile_fact(refresh[0],refresh[2],limit_chars=len(refresh[0]))
                 seen={(item['id'],item['digest']):item for item in run.orchestration.plan_inventory}
