@@ -3960,7 +3960,16 @@ class Capabilities:
     if cached and row_id is not None:self._locally_cached_page_rows.add(row_id)
  def _record_read_result(self,action,result):
   """The service and bridge each keep the reads they actually execute."""
-  if action in READ_RESULT_EXCLUDED_ACTIONS:return
+  if action in READ_RESULT_EXCLUDED_ACTIONS:
+   # Recall and canonical Memory reads are never copied into rows, but what they returned still
+   # joins this attempt's judgment from memory (#1466), as it did before #768.
+   if action in EFFECT_FREE_READS and isinstance(result,(dict,list,str)) and not isinstance(result,_HostOnlyResult):
+    try:
+     visible=observed_part(worker_result(action,result))
+     text=visible if isinstance(visible,str) else json.dumps(visible,ensure_ascii=False,default=str)
+     self._keep_browser_page({'url':f'{action}:{time.time_ns()}','title':f'{action} result','text':text})
+    except Exception as exc:LOG.warning('read result could not be kept (%s)',type(exc).__name__)
+   return
   browser=action in BROWSER_ACTIONS
   if action not in EFFECT_FREE_READS|CODE_ACTIONS|API_ACTIONS:return
   text=None

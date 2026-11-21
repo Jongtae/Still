@@ -294,6 +294,17 @@ class JudgmentTests(ReadResultsBase):
         pages = caps.take_browser_pages()
         self.assertEqual(sum(MARKER in text for _url, _title, text in pages), 1)
 
+    def test_a_recalled_excerpt_joins_this_attempts_judgment_without_a_row(self):
+        earlier, _ids = self.exchange()
+        self.store.record_read_result(earlier, tool='code_run', text=f'{MARKER} recalled', source_kind='outside',
+                                      epoch=None)
+        caps = self.caps()
+        self.assertIn(MARKER, caps.execute('search_conversation', {'work_id': earlier})['read_results'])
+        self.assertEqual(self.rows(caps.job_id), [], 'recall is never copied into a row')
+        pages = caps.take_browser_pages()
+        self.assertTrue(any(MARKER in text for _url, _title, text in pages),
+                        'the judge sees what the worker was shown')
+
     def test_the_judgment_reads_a_live_read_past_the_excerpt_bound(self):
         caps = self.caps()
         caps._api = FakeApi({'filler': 'f' * (READ_RESULT_EXCERPT_CHARS + 1000), 'answer': MARKER})
