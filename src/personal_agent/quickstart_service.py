@@ -305,12 +305,14 @@ def request_prompt_parts(label):
     return title,summary,rest,check,exact
 
 
-def payment_autonomy_notice(authorization):
+def payment_autonomy_notice(authorization, count=1):
     """The owner's notice for one action the payment mode allowed (#777).
 
     A request label reads like its approval prompt (``request_prompt_parts``): the AI's
     description, the values Still checked and the exact request only when a value does not
     check out.  The receipt keeps the whole label; a browser step's short label is shown as is.
+    #782: ``count`` is how many of the Work's receipts are ``authorized``; from the second on,
+    the one status notice of the Work says so and shows the latest request.
     """
     from .quickstart_store import REQUEST_APPROVAL_ACTIONS
     label=authorization['label']
@@ -319,6 +321,7 @@ def payment_autonomy_notice(authorization):
         parts=[part for part in ('\n'.join([summary,*rest]).strip(),check) if part]
         if exact:parts.append(f"{msg('notice.request_raw')}\n{exact}")
         label='\n\n'.join(parts) or label
+    if count>1:return msg('payment_autonomy.status',count=count,label=label)
     return msg('payment_autonomy.notice',label=label)
 
 
@@ -903,6 +906,7 @@ class AgentService:
         self.folder_picker=None
         self._local_selections={}
         self._local_approve_lock=threading.Lock()
+        self._payment_status_lock=threading.Lock()  # #782: one status notice edit at a time
         from .capability_search import CapabilitySearch
         self.capability_search=CapabilitySearch()
 
@@ -7283,10 +7287,9 @@ class AgentService:
             _cfg,_paired,channel=self._notice_channel()
             if job is not None:channel=job['channel']
         if db is None:
-            with self.store.db() as db:self.record_conversation_notice(text,job=job,db=db,channel=channel)
-            return
-        db.execute('INSERT INTO messages(role,content,channel,created,job_id) VALUES (?,?,?,?,?)',
-                   ('assistant',text,channel,time.time(),job['id'] if job else None))
+            with self.store.db() as db:return self.record_conversation_notice(text,job=job,db=db,channel=channel)
+        return db.execute('INSERT INTO messages(role,content,channel,created,job_id) VALUES (?,?,?,?,?)',
+                          ('assistant',text,channel,time.time(),job['id'] if job else None)).lastrowid
 
     #: How much of a tapped message's text its transcript row keeps (#762).
     TAPPED_MESSAGE_CHARS=700
@@ -7643,8 +7646,70 @@ class AgentService:
         receipt=db.execute('INSERT INTO tool_events(job_id,tool,status,detail,created) VALUES (?,?,?,?,?)',
                    (job['id'],'payment_autonomy','authorized',json.dumps({'scope':'payment','effect':'none',
                     'evidence':authorization},ensure_ascii=False),time.time())).lastrowid
-        self.record_conversation_notice(payment_autonomy_notice(authorization),job=job,db=db)
+        self._record_payment_autonomy_status(job,authorization,db)
         return {**authorization,'receipt':receipt}
+
+    #: #782: config key of a Work's one payment-mode status notice: its transcript row and the
+    #: surface message showing it (``deliver_status_notice``).
+    PAYMENT_STATUS_KEY='payment_autonomy_status:'
+
+    @staticmethod
+    def _payment_receipt_counts(db, job_id):
+        rows=db.execute("SELECT status,COUNT(*) AS n FROM tool_events WHERE job_id=? AND tool='payment_autonomy' "
+                        "GROUP BY status",(job_id,)).fetchall()
+        return {row['status']:row['n'] for row in rows}
+
+    def _record_payment_autonomy_status(self, job, authorization, db):
+        """#782: the durable half of the Work's one status notice, in the receipt's transaction.
+
+        The first allowed request adds the notice row; each later one rewrites that same row with
+        the count of ``authorized`` receipts and the latest request.  A row the owner forgot is
+        never rewritten: the next request starts a new one.
+        """
+        key=self.PAYMENT_STATUS_KEY+job['id']
+        count=self._payment_receipt_counts(db,job['id']).get('authorized',0)
+        text=payment_autonomy_notice(authorization,count=count)
+        held=self.store.config(key,{},db=db) or {}
+        row=held.get('row')
+        if isinstance(row,int) and not db.execute('SELECT 1 FROM forgotten_messages WHERE message_id=?',(row,)).fetchone() \
+                and db.execute("UPDATE messages SET content=? WHERE id=? AND job_id=? AND role='assistant'",
+                               (text,row,job['id'])).rowcount==1:
+            return
+        row=self.record_conversation_notice(text,job=job,db=db)
+        # A new row is a new bubble: the message showing the old one is not edited into it.
+        self.store.put(key,{'row':row},db=db)
+
+    def payment_autonomy_closing(self, job_id):
+        """#782: one closing line for a Work the payment mode allowed requests in, or None.
+
+        Derived only from Still's own records of this Work: its payment-mode receipts (allowed,
+        and released before dispatch) and its recorded calls by their effect class
+        (``record_effect``): a change that ended ``succeeded`` is observed, one that ended
+        otherwise failed, and an ``unknown`` effect or a change still running is unknown.
+        """
+        from .agent_runtime import EFFECT_CHANGED, EFFECT_UNKNOWN, _effect_call_history
+        with self.store.db() as db:
+            receipts=self._payment_receipt_counts(db,job_id)
+            if not receipts.get('authorized'):return None
+            calls,_unscoped=_effect_call_history(db,job_id)
+        observed=failed=unknown=0
+        for work,_action,effect,status,_detail in calls:
+            if work!=job_id:continue
+            if effect==EFFECT_UNKNOWN or (effect==EFFECT_CHANGED and status=='running'):unknown+=1
+            elif effect==EFFECT_CHANGED and status=='succeeded':observed+=1
+            elif effect==EFFECT_CHANGED:failed+=1
+        line=msg('payment_autonomy.closing',allowed=receipts['authorized'],observed=observed,failed=failed,unknown=unknown)
+        if receipts.get('not_run'):line+=' '+msg('payment_autonomy.closing_stopped',stopped=receipts['not_run'])
+        return line
+
+    def _with_payment_autonomy_closing(self, job_id, text):
+        """``text`` followed by the payment-mode closing line when the Work has one (#782)."""
+        try:line=self.payment_autonomy_closing(job_id)
+        except Exception as exc:  # noqa: BLE001 - a summary line never fails the Work's finish
+            LOG.warning('payment autonomy closing line not built work=%s kind=%s',job_id,type(exc).__name__)
+            return text
+        if not line:return text
+        return f'{text}\n\n{line}' if text else line
 
     def _release_payment_autonomy(self, job, authorization):
         """Mark a mode receipt ``not_run`` when the final recheck stopped its step before dispatch.
@@ -7666,10 +7731,32 @@ class AgentService:
                 if on_failure is not None:on_failure()
 
     def _deliver_payment_autonomy_notice(self, job, authorization):
+        """#782: show the Work's one status notice on its surface, edited in place when it can be.
+
+        The text is the durable row's (``_record_payment_autonomy_status``), so the bubble reads
+        what the transcript reads; without a row it is this authorization's own notice.
+        """
         surface=self.surface_of(job)
-        if surface is not None:
-            self._deliver_authority_notice(surface, lambda: payment_autonomy_notice(authorization),
-                                           lambda: LOG.warning('payment autonomy notice delivery failed'))
+        if surface is None:return
+        key=self.PAYMENT_STATUS_KEY+job['id']
+        with self._payment_status_lock:
+            try:
+                with self.store.db() as db:
+                    held=self.store.config(key,{},db=db) or {}
+                    row=db.execute('SELECT content FROM messages WHERE id=? AND job_id=?',
+                                   (held.get('row'),job['id'])).fetchone() if isinstance(held.get('row'),int) else None
+                text=row['content'] if row and row['content'] else payment_autonomy_notice(authorization)
+                shown=held.get('shown')
+                if isinstance(shown,dict) and shown.get('text')==hashlib.sha256(text.encode()).hexdigest():return
+                shown=surface.deliver_status_notice(text,shown)
+                if isinstance(shown,dict):
+                    with self.store.db() as db:
+                        db.execute('BEGIN IMMEDIATE')
+                        current=self.store.config(key,{},db=db) or {}
+                        if current.get('row')==held.get('row'):
+                            self.store.put(key,{**current,'shown':{**shown,'text':hashlib.sha256(text.encode()).hexdigest()}},db=db)
+            except Exception:
+                LOG.warning('payment autonomy notice delivery failed')
 
     def browser_approvals_for(self, job):
         """The runtime's per-step approval surface for one Work: consume or request."""

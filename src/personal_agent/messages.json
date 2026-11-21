@@ -11128,6 +11128,24 @@
   "ja": "自律決済モードで、下のリクエストを承認なしで許可しました。実際に処理されたかはこの作業の返信に出ます。\n\n{label}",
   "zh": "自主付款模式已无需确认地允许了下面的请求。是否实际完成会在这项工作的回复中说明。\n\n{label}"
  },
+ "payment_autonomy.status": {
+  "ko": "자율 결제 모드로 이 작업에서 요청 {count}건을 승인 없이 허용했어요. 실제로 처리됐는지는 이 작업의 답변에 나와요. 가장 최근 요청이에요.\n\n{label}",
+  "en": "Payment autonomy has allowed {count} requests in this Work without asking. Whether each went through is in this Work's reply. The latest one:\n\n{label}",
+  "ja": "自律決済モードで、この作業のリクエスト{count}件を承認なしで許可しました。実際に処理されたかはこの作業の返信に出ます。最新のリクエストです。\n\n{label}",
+  "zh": "自主付款模式已在这项工作中无需确认地允许了 {count} 个请求。是否实际完成会在这项工作的回复中说明。最新的请求：\n\n{label}"
+ },
+ "payment_autonomy.closing": {
+  "ko": "자율 결제 모드로 이 작업에서 요청 {allowed}건을 허용했어요. Still 기록으로는 변경 확인 {observed}건, 실패 {failed}건, 결과 모름 {unknown}건이에요.",
+  "en": "Payment autonomy allowed {allowed} requests in this Work. Still's records show {observed} changes observed, {failed} failed and {unknown} with an unknown result.",
+  "ja": "自律決済モードで、この作業のリクエスト{allowed}件を許可しました。Stillの記録では、変更の確認{observed}件、失敗{failed}件、結果不明{unknown}件です。",
+  "zh": "自主付款模式在这项工作中允许了 {allowed} 个请求。Still 的记录显示：已确认变更 {observed} 个，失败 {failed} 个，结果未知 {unknown} 个。"
+ },
+ "payment_autonomy.closing_stopped": {
+  "ko": "보내기 전에 멈춘 요청은 {stopped}건이에요.",
+  "en": "{stopped} stopped before they were sent.",
+  "ja": "送信前に止まったリクエストは{stopped}件です。",
+  "zh": "有 {stopped} 个请求在发送前停止。"
+ },
  "payment_autonomy.local_only": {
   "ko": "자율 결제 모드는 이 컴퓨터의 Still 설정에서만 바꿀 수 있어요.",
   "en": "Payment autonomy can be switched only in Still's Settings on this computer.",
