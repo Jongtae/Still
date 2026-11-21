@@ -1128,9 +1128,12 @@ class QuickStore:
         """Recover the owner-facing blocked-turn projection from its transcript row."""
         return self.projected_delivery_reply(job_id,'blocked-turn')
 
+    # The newest Works the owner's Activity view lists (#1073: the home attention state reads the same window).
+    JOBS_WINDOW = 40
+
     def jobs(self):
         with self.db() as db:
-            return [dict(r) for r in db.execute('SELECT * FROM jobs ORDER BY created DESC LIMIT 40')]
+            return [dict(r) for r in db.execute('SELECT * FROM jobs ORDER BY created DESC LIMIT ?', (self.JOBS_WINDOW,))]
 
     def job(self, job_id):
         with self.db() as db:
@@ -2946,16 +2949,21 @@ class QuickStore:
         found=self.config('last_recovery',{}) or {}
         return {key:int(found.get(key) or 0) for key in ('interrupted_jobs','uncertain_deliveries','uncertain_notifications')}
 
-    def recovery_summary(self):
-        """Return counts only; recovery guidance must never reveal task content."""
+    def recovery_summary(self, *, recent=False):
+        """Return counts only; recovery guidance must never reveal task content.
+
+        ``recent`` counts only the Works in the Activity window (``jobs()``), so a
+        state derived from it names only rows the owner can open (#1073).
+        """
         # #842: an uncertainty the owner was told about in the conversation (its Work's
         # ``delivery_unknown`` notice sent) is settled for the owner; a cut-off prompt offered
         # again is no longer ``unknown``.  The rows themselves keep ``unknown``.
         told="NOT EXISTS (SELECT 1 FROM telegram_notifications t WHERE t.job_id=%s AND t.kind='delivery_unknown' AND t.state='sent')"
+        window=f" AND {{column}} IN (SELECT id FROM jobs ORDER BY created DESC LIMIT {int(self.JOBS_WINDOW)})" if recent else ''
         with self.db() as db:
-            interrupted=db.execute("SELECT count(*) FROM jobs WHERE status='interrupted'").fetchone()[0]
-            uncertain=db.execute("SELECT count(*) FROM jobs WHERE delivery='unknown' AND "+told%'jobs.id').fetchone()[0]
+            interrupted=db.execute("SELECT count(*) FROM jobs WHERE status='interrupted'"+window.format(column='jobs.id')).fetchone()[0]
+            uncertain=db.execute("SELECT count(*) FROM jobs WHERE delivery='unknown' AND "+told%'jobs.id'+window.format(column='jobs.id')).fetchone()[0]
             notifications=db.execute("SELECT count(*) FROM telegram_notifications n WHERE n.state='unknown' AND "
-                                     +told%'n.job_id').fetchone()[0]
+                                     +told%'n.job_id'+window.format(column='n.job_id')).fetchone()[0]
         return {'interrupted_jobs':interrupted, 'uncertain_deliveries':uncertain,
                 'uncertain_notifications':notifications}
