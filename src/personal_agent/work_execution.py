@@ -80,6 +80,7 @@ class WorkRun:
         self.image_inputs = None
         self.continued = None
         self.continuity = None
+        self.related_work_id = None
         #: #172: the owner's judged answer to one open item (``owner_acts.read``), or None.
         self.owner_act = None
         #: What that settlement tells the owner when it was the whole turn; None when the turn goes on.
