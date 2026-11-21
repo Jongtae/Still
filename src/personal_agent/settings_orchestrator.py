@@ -280,6 +280,14 @@ DIRECT_REQUEST_SETTINGS = frozenset({
     ('browser', 'close_login'), ('browser', 'use_mobile'), ('connections', 'disconnect'),
     # #705: a presentation preference only.
     ('developer_mode', 'enabled')})
+#: #36: changes whose exact prior value one later ``settings_change`` with ``undo`` can restore: one switch or
+#: value, set back through its own setter.  A disconnect, removal, reservation operation or trust decision has
+#: its own reversal path (or none) and is not undone here.
+UNDOABLE_SETTINGS = frozenset({
+    ('scheduled_work', 'daily_calls'), ('current_context', 'enabled'), ('current_context', 'timezone'),
+    ('owner_model', 'enabled'), ('owner_model', 'daily_calls'), ('owner_model', 'dream'),
+    ('main_ai', 'model'), ('judgment_ai', 'model'), ('developer_mode', 'enabled'),
+    ('payment_autonomy', 'enabled'), ('skills', 'enabled'), ('browser', 'provider_sign_in')})
 #: #717: what a scheduled run may do to its own preparation: cancel, pause, or narrow its schedule.
 SELF_NARROWING = frozenset({("preparations", "cancel"), ("preparations", "pause"), ("preparations", "edit")})
 #: #619: what the worker reads when a scheduled run (no owner present) asks for a settings change.
@@ -725,7 +733,10 @@ class SettingsOrchestrator:
         models = known_models(current, self._model_lists()) if selectable else []
         return {"route": self._row("route", current, names.get(current) or (msg('label.other_connection') if current else msg('label.none')), options,
                                    note=msg('settings_orchestrator.main_route_note')),
-                "model": self._row("model", model, model or msg('label.default_model'), self._options(models))}
+                # #36 review: a subscription CLI's own default ('') is a choice too, so undo can return to it.
+                "model": self._row("model", model, model or msg('label.default_model'),
+                                   ([{"value": "", "label": msg('label.default_model')}] if current in SUBSCRIPTION_ROUTES
+                                    and selectable else []) + self._options(models))}
 
     @staticmethod
     def _category_line(category, row):
@@ -1055,11 +1066,13 @@ class SettingsOrchestrator:
             body["recovery_of"] = row["recovery_of"]
         if "observe_only" in row:
             body["observe_only"] = row["observe_only"]
+        if "undo_of" in row:
+            body["undo_of"] = row["undo_of"]
         if "continuation" in row:
             body.update(work_id=row.get("work_id"), continuation=row["continuation"])
         return hashlib.sha256(json.dumps(body, sort_keys=True, ensure_ascii=False).encode()).hexdigest()
 
-    def propose(self, owner, channel, category, setting, value, reason=None, work_id=None, *, continue_work=False, _recovery_of=None, _observe_only=False, required_skill=None):
+    def propose(self, owner, channel, category, setting, value, reason=None, work_id=None, *, continue_work=False, _recovery_of=None, _observe_only=False, required_skill=None, _undo_of=None):
         """A digest-bound draft of one owner setting change; applies nothing (#814)."""
         if not isinstance(owner, str) or not owner or not isinstance(channel, str) or not channel:
             raise SettingsError(msg('settings_orchestrator.check_owner_channel'))
@@ -1207,6 +1220,9 @@ class SettingsOrchestrator:
             draft['recovery_of'] = _recovery_of
         if _observe_only:
             draft['observe_only'] = True
+        if _undo_of is not None:
+            draft['undo_of'] = _undo_of
+            draft['effect'] = summary = msg('settings_orchestrator.undo_change_summary', effect=summary)
         if self.service is not None:
             if (category, setting) == ('api_connections', 'connect'):
                 from .api_input import guard, before as api_before
@@ -1467,8 +1483,77 @@ class SettingsOrchestrator:
         response = (FOLLOW_REQUESTED_MESSAGE
                     if outcome == "requested" else msg('settings_orchestrator.changed_receipt', effect=row['effect']))
         response = self.__dict__.get("_apply_text", {}).pop(row["id"], None) or response
+        undoable = outcome == 'applied' and self.undoable(row)
+        if undoable:
+            response += ' ' + msg('settings_orchestrator.undo_offer')
         return {"state": outcome, "draft_id": row["id"], "target": row["target"], "before": row["before"],
-                "after": row["after"], "response": response}
+                "after": row["after"], "response": response, "undoable": undoable}
+
+    @staticmethod
+    def undoable(row):
+        """#36: whether an applied change can be set back exactly (an undo itself is not undone again)."""
+        return (row.get('category'), row.get('setting')) in UNDOABLE_SETTINGS and 'undo_of' not in row
+
+    def _mark_undo(self, draft_id, undo_id):
+        """Record on the applied draft which draft sets it back (one at a time)."""
+        with self._confirming:
+            with self.store.db() as db:
+                db.execute('BEGIN IMMEDIATE')
+                found = db.execute("SELECT value FROM config WHERE key='settings_change_drafts'").fetchone()
+                rows = json.loads(found['value']) if found else {}
+                if draft_id in rows:
+                    rows[draft_id]['undone_by'] = undo_id
+                    db.execute('UPDATE config SET value=? WHERE key=?', (json.dumps(rows), 'settings_change_drafts'))
+
+    def undo(self, owner, channel, draft_id, reason=None, work_id=None):
+        """#36: a draft that sets one applied change of this conversation back to its exact prior value.
+
+        It is an ordinary draft (digest, stale check, audit, receipt) whose ``before`` is the applied
+        value: a later change of the same setting makes it stale instead of being overwritten.  The
+        first undo of a change is the only one; asking again returns that undo, never a second draft.
+        """
+        if not isinstance(draft_id, str) or not draft_id:
+            raise SettingsError(msg('settings_orchestrator.undo_unavailable'))
+        with self._confirming:
+            original = self._owned(owner, channel, draft_id)
+            if original.get('state') != 'applied' or not self.undoable(original):
+                raise SettingsError(msg('settings_orchestrator.undo_unavailable'))
+            earlier = self._drafts().get(original.get('undone_by') or '')
+            category, setting = original['category'], original['setting']
+            prior = self._shown_before(category, setting, original['before'])
+            _after, row = self._normalized(category, setting, prior, work_id=work_id)
+            now_before = self._before(category, setting, prior, row)
+            now_shown = self._shown_before(category, setting, now_before)
+            if earlier and earlier.get('state') == 'unknown' and now_shown in (prior, original['after']):
+                # A restart cut the undo off: the value now says whether it landed.
+                earlier = earlier if now_shown == prior else None
+                if earlier:
+                    return {'state': 'already_undone', 'draft_id': earlier['id'], 'applied': True,
+                            'idempotent': True, 'response': msg('settings_orchestrator.undo_already')}
+            if earlier and earlier.get('state') == 'applied':
+                return {'state': 'already_undone', 'draft_id': earlier['id'], 'applied': True,
+                        'idempotent': True, 'response': msg('settings_orchestrator.undo_already')}
+            if earlier and earlier.get('state') in ('applying', 'requested', 'unknown'):
+                # #36 review P1: no second undo runs, and the receipt says only what was observed.
+                return {'state': earlier['state'], 'draft_id': earlier['id'], 'applied': False, 'idempotent': True,
+                        'response': IN_DOUBT_MESSAGE.format(effect=earlier['effect']) if earlier['state'] == 'unknown'
+                        else msg('settings_orchestrator.undo_applying')}
+            if earlier and earlier.get('state') == 'awaiting-confirmation' and not self.expired(earlier):
+                return {'state': 'awaiting-confirmation', 'draft_id': earlier['id'], 'digest': earlier['digest'],
+                        'category': earlier['category'], 'setting': earlier['setting'], 'before': earlier['before'],
+                        'after': earlier['after'], 'summary': earlier['effect'], 'note': earlier.get('note') or '',
+                        'requires_owner_confirmation': True, 'applied': False, 'idempotent': True,
+                        'continues_work': False, 'undo_of': draft_id,
+                        'response': earlier['effect'] + '\n' + msg('settings_orchestrator.confirmation_required')}
+            # Only the value this change set is set back: a later change since is the owner's and stays.
+            changed_since = now_shown != original['after']
+            if (category, setting) in MODEL_SETTINGS:
+                changed_since = changed_since or now_before.split(MODEL_ROUTE_SEP, 1)[1:] != original['before'].split(MODEL_ROUTE_SEP, 1)[1:]
+            if changed_since:
+                raise SettingsError(msg('settings_orchestrator.undo_changed_since'))
+            draft = self.propose(owner, channel, category, setting, prior, reason, work_id, _undo_of=draft_id)
+            self._mark_undo(draft_id, draft['draft_id'])
+        return {**draft, 'undo_of': draft_id}
 
     def _admit(self, row, digest):
         """Check one draft is still confirmable and move it to ``applying``, in flight (exactly once)."""
@@ -1878,12 +1963,16 @@ class SettingsOrchestrator:
                 return {"state": "not_proposed", "unattended": True, "category": args.get("category"),
                         "setting": args.get("setting"), "applied": False,
                         "next_step": UNATTENDED_SETTINGS_TEXT}
-            if not draft_only:
-                own = self._own_proposal_edit(args, work_id)
-                if own is not None:
-                    return own
-            draft = self.propose(owner, channel, args.get("category"), args.get("setting"), args.get("value"),
-                                 args.get("reason"), work_id, continue_work=args.get("continue_work") == "yes", required_skill=args.get("required_skill"))
+            if args.get("undo"):
+                # #36: the exact prior value of one change applied in this conversation, never a value the model names.
+                draft = self.undo(owner, channel, args.get("undo"), args.get("reason"), work_id)
+                if draft.get("state") != "awaiting-confirmation":
+                    return {key: value for key, value in draft.items() if key != "digest"}
+            elif not draft_only and (own := self._own_proposal_edit(args, work_id)) is not None:
+                return own
+            else:
+                draft = self.propose(owner, channel, args.get("category"), args.get("setting"), args.get("value"),
+                                     args.get("reason"), work_id, continue_work=args.get("continue_work") == "yes", required_skill=args.get("required_skill"))
             if (not draft_only and callable(owner_request) and args.get("continue_work", "no") == "no"
                     and direct_request_setting(draft["category"], draft["setting"], draft["after"])):
                 applied = self._apply_owner_request(owner, channel, draft, owner_request)
@@ -2002,12 +2091,14 @@ class SettingsOrchestrator:
         self._audit({"id": draft["draft_id"], "target": f"{draft['category']}.{draft['setting']}",
                      "before": draft["before"], "after": draft["after"]}, "owner-request")
         state = result.get("state")
+        undo = (f" If the owner asks to undo it, call settings_change with undo=\"{draft['draft_id']}\": Still sets back "
+                "exactly the prior value." if result.get("undoable") else "")
         return {"state": state, "draft_id": draft["draft_id"], "category": draft["category"],
                 "setting": draft["setting"], "before": draft["before"], "after": draft["after"],
                 "summary": draft["summary"], "applied": state == "applied", "owner_request": True,
-                "response": result.get("response"),
+                "response": result.get("response"), "undoable": bool(result.get("undoable")),
                 "next_step": ("The owner's own message asked for exactly this change, so Still applied it without a "
-                              "second confirmation. Tell the owner what changed, in their terms.")}
+                              "second confirmation. Tell the owner what changed, in their terms." + undo)}
 
     def _audit(self, row, terminal, error_class=None):
         with self._confirming:

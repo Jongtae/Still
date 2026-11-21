@@ -4973,6 +4973,42 @@
   "ja": "{effect} に変更しました。",
   "zh": "已更改为 {effect}。"
  },
+ "settings_orchestrator.undo_change_summary": {
+  "ko": "되돌리기: {effect}",
+  "en": "Undo: {effect}",
+  "ja": "元に戻す: {effect}",
+  "zh": "撤销：{effect}"
+ },
+ "settings_orchestrator.undo_offer": {
+  "ko": "되돌리고 싶으면 알려 주세요.",
+  "en": "Say so if you want it undone.",
+  "ja": "元に戻したい場合はお知らせください。",
+  "zh": "如需撤销，请告诉我。"
+ },
+ "settings_orchestrator.undo_applying": {
+  "ko": "이 변경을 되돌리는 중이에요. 끝나면 결과를 알려 드릴게요.",
+  "en": "This change is being undone; the result follows when it finishes.",
+  "ja": "この変更を元に戻しています。終わったら結果をお知らせします。",
+  "zh": "正在撤销此更改，完成后会告知结果。"
+ },
+ "settings_orchestrator.undo_unavailable": {
+  "ko": "이 대화에서 적용한 설정 변경 중 그대로 되돌릴 수 있는 것이 아니에요.",
+  "en": "That is not a settings change applied in this conversation that can be set back exactly.",
+  "ja": "この会話で適用した設定変更のうち、そのまま元に戻せるものではありません。",
+  "zh": "这不是本对话中已应用且可原样撤销的设置更改。"
+ },
+ "settings_orchestrator.undo_already": {
+  "ko": "이 변경은 이미 되돌렸어요.",
+  "en": "That change was already undone.",
+  "ja": "この変更はすでに元に戻しました。",
+  "zh": "该更改已撤销。"
+ },
+ "settings_orchestrator.undo_changed_since": {
+  "ko": "그 뒤에 이 설정이 다시 바뀌어서 되돌리지 않았어요. 지금 값은 그대로예요.",
+  "en": "This setting changed again since, so it was not set back; its current value stays.",
+  "ja": "その後この設定が再び変更されたため、元に戻しませんでした。現在の値はそのままです。",
+  "zh": "此设置之后又被更改，因此未撤销；当前值保持不变。"
+ },
  "settings_orchestrator.draft_already_applied": {
   "ko": "이미 적용한 설정 초안이에요.",
   "en": "This settings draft has already been applied.",
