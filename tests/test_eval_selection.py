@@ -136,12 +136,16 @@ def test_every_prompt_file_selects_cases_by_path(path):
     assert not result['unmatched']
 
 
-@pytest.mark.parametrize('role', ['answers_open_question', 'followup_relation', 'owner_act_answer',
+#: #1087: the follow-up judgment also answers the former open-question cases.
+_ROLES_OF_PROMPT = {'followup_relation': ('followup_relation', 'answers_open_question')}
+
+
+@pytest.mark.parametrize('role', ['followup_relation', 'owner_act_answer',
                                  'parked_work_withdrawn', 'steers_running_work'])
 def test_extracted_role_prompt_path_selects_its_judgments(role, entries):
     result = selection.select({'paths': [f'src/personal_agent/prompts/{role}.md']})
     assert {r['id'] for r in result['selected'] if r['set'] == 'judgments'} == {
-        e['id'] for e in entries if e['role'] == role}
+        e['id'] for e in entries if e['role'] in _ROLES_OF_PROMPT.get(role, (role,))}
 
 
 @pytest.mark.parametrize('path', ['skills/map-directions/SKILL.md',

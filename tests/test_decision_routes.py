@@ -50,12 +50,21 @@ def oracle(purpose, facts, kind, options):
         return [label for label in options if any(ch.isdigit() for ch in terms.get(label, ''))], 0.9
     if kind == 'judge':
         return ('취소' in message or '안 해도' in message), 0.9
-    if purpose in ('conversation-followup', 'decision-route-probe'):
-        value = {'다시 해봐': 'retry', '아니 4시로': 'correction', '그거 저장해': 'reference'}.get(message, NO_CANDIDATE)
+    if purpose == 'decision-route-probe':
+        value = {'다시 해봐': 'retry'}.get(message, NO_CANDIDATE)
+    elif purpose == 'conversation-followup':
+        # #1087: a relation and the Work it is about; the interleaved case is about the earlier candidates.
+        relation = {'다시 해봐': 'retry', '아니 4시로': 'correction', '그거 저장해': 'reference',
+                    '그 두 번째 후보는 지원 기간이 얼마야?': 'reference'}.get(message)
+        about = next((n for n in range(1, 6) if '후보' in facts.get(f'w{n}_owner_message', '')), 1) \
+            if '후보' in message else 1
+        value = f'{relation} w{about}' if relation else NO_CANDIDATE
         # A reference needs a result to refer to. The old oracle hid the
         # qualification fixture's missing history by matching the words alone.
-        if value == 'reference' and not (facts.get('previous_owner_message') and facts.get('previous_reply')):
+        if relation == 'reference' and not (facts.get(f'w{about}_owner_message') and facts.get(f'w{about}_reply')):
             value = NO_CANDIDATE
+        if value not in options and relation in options:
+            value = relation  # a direct choose over bare relations (an adapter-level case)
     elif purpose == 'unsupported-capability':
         value = 'mail-send' if '보내' in message else NO_CANDIDATE
     elif purpose == 'conversation-projection':
@@ -292,13 +301,15 @@ class AdapterParityTests(Temp):
         # qualification must supply facts rather than reward guessing history.
         for name, engine in self.engines().items():
             with self.subTest(route=name):
-                judged = ConversationJudgments(engine).followup_relation('그거 저장해', 'research', 'succeeded')
+                judged = ConversationJudgments(engine).followup_relation(
+                    '그거 저장해', [{'intent': 'research', 'status': 'succeeded'}])
                 self.assertEqual(judged.outcome, JUDGMENT_NO)
 
     def test_the_caller_gets_identical_typed_answers_from_every_route(self):
         answers = set()
         for name, engine in self.engines().items():
-            judged = ConversationJudgments(engine).followup_relation('다시 해봐', 'research', 'failed')
+            judged = ConversationJudgments(engine).followup_relation(
+                '다시 해봐', [{'intent': 'research', 'status': 'failed'}])
             answers.add((judged.outcome, judged.value))
             withdrawn = ConversationJudgments(engine).parked_work_withdrawn('그건 취소해줘', ('google-gmail-read',))
             answers.add(('withdrawn', withdrawn.outcome))
@@ -336,11 +347,11 @@ class SubscriptionCliTests(Temp):
         for call in self.runner.calls[:4]:
             purpose, facts = parse_prompt(call['argv'][-1])
             self.assertEqual(purpose, 'conversation-followup')
-            self.assertTrue(facts['previous_owner_message'])
-            self.assertTrue(facts['previous_reply'])
-            self.assertEqual(facts['previous_request_at'], 'just now')
-            self.assertEqual(facts['previous_reply_at'], 'just now')
-        self.assertEqual(SUITE_VERSION, 'decision-qualification/4')
+            self.assertTrue(facts['w1_owner_message'])
+            self.assertTrue(facts['w1_reply'])
+            self.assertEqual(facts['w1_owner_message_at'], 'just now')
+            self.assertEqual(facts['w1_reply_at'], 'just now')
+        self.assertEqual(SUITE_VERSION, 'decision-qualification/5')
 
     def test_recorded_codex_0164_routing_failure_is_unavailable(self):
         # Captured from the real CLI with synthetic qualification input and
@@ -704,7 +715,7 @@ class ServiceFixture(Temp):
         return service.decision_routes.status()
 
     def judge(self, service):
-        return service.decision_judge.followup_relation('다시 해봐', 'research', 'failed')
+        return service.decision_judge.followup_relation('다시 해봐', [{'intent': 'research', 'status': 'failed'}])
 
 
 class ServiceRouteSelectionTests(ServiceFixture):
@@ -1027,7 +1038,7 @@ class ServiceRouteSelectionTests(ServiceFixture):
         self.assertEqual({key: tried[0][key] for key in ('ran', 'failure', 'failed_case', 'failed_outcome',
                                                          'failed_answer', 'failed_confidence')},
                          {'ran': 2, 'failure': 'case-failed', 'failed_case': 'correction-replaces-parameters',
-                          'failed_outcome': 'yes', 'failed_answer': 'retry', 'failed_confidence': 0.95})
+                          'failed_outcome': 'yes', 'failed_answer': 'retry w1', 'failed_confidence': 0.95})
         self.assertEqual(tried[1]['failure'], '')
         self.assertNotIn('failed_case', tried[1])
         models = [call['argv'][call['argv'].index('--model') + 1] for call in self.runner.calls if '--model' in call['argv']]

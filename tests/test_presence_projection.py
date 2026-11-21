@@ -319,7 +319,7 @@ class ContinuityTests(ProjectionTestCase):
 
     def retry_engine(self):
         engine = FixtureDecisionEngine(choose=lambda context, candidates, question: SelectionDecision(
-            OUTCOME_DECIDED, FOLLOWUP_RETRY, candidates, fixture_confidence())
+            OUTCOME_DECIDED, FOLLOWUP_RETRY + ' w1', candidates, fixture_confidence())
             if context.purpose == 'conversation-followup' else None)
         self.service.use_decision_engine(engine)
         return engine
@@ -343,9 +343,9 @@ class ContinuityTests(ProjectionTestCase):
         self.assertEqual(facts['owner_message'], '자 다시 되니?')
         # #173 slice B: the judgment reads the focused Work in context - its request and
         # reply, when each was made, and the kinds of what waits for the owner.
-        self.assertEqual(facts['previous_owner_message'], '원래 요청을 처리해줘')
-        self.assertTrue(facts['previous_reply'])
-        self.assertIn(facts['previous_request_at'], ('just now', '1 minutes ago'))
+        self.assertEqual(facts['w1_owner_message'], '원래 요청을 처리해줘')
+        self.assertTrue(facts['w1_reply'])
+        self.assertIn(facts['w1_owner_message_at'], ('just now', '1 minutes ago'))
         self.assertEqual(facts['awaiting_owner'], 'nothing')
         event = next(item for item in self.store.task_events(retried['id'])
                      if item['tool'] == 'conversation_continuity')
@@ -624,7 +624,9 @@ class ConversationContinuityTests(ProjectionTestCase):
             if context.purpose == 'conversation-followup':
                 return SelectionDecision(
                     OUTCOME_DECIDED,
-                    mapping.get(context.facts.get('owner_message'), 'none-of-these'),
+                    # #1087: the relation to the latest Work (w1).
+                    mapping[context.facts.get('owner_message')] + ' w1'
+                    if context.facts.get('owner_message') in mapping else 'none-of-these',
                     candidates,
                     fixture_confidence(),
                 )
@@ -661,7 +663,7 @@ class ConversationContinuityTests(ProjectionTestCase):
         ))
         asked = [item for item in engine.asked
                  if item[0] == 'choose' and item[1].purpose == 'conversation-followup']
-        self.assertEqual(asked[-1][1].facts['previous_status'], 'failed')
+        self.assertEqual(asked[-1][1].facts['w1_status'], 'failed')
 
     def test_retry_chain_always_replays_the_oldest_canonical_request(self):
         first, _ = self.turn('원래 요청')
@@ -748,7 +750,7 @@ class ConversationContinuityTests(ProjectionTestCase):
         self.assertEqual((related['relation'], related['previous']['id']), (FOLLOWUP_REFERENCE, first['id']))
         [asked] = [item for item in engine.asked
                    if item[0] == 'choose' and item[1].purpose == 'conversation-followup']
-        self.assertEqual(asked[1].facts['previous_owner_message'], '이전 요청')
+        self.assertEqual(asked[1].facts['w1_owner_message'], '이전 요청')
 
     def test_package_write_alias_blocks_retry_by_recorded_host_action(self):
         first, _ = self.turn('원래 요청')

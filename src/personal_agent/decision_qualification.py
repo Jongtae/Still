@@ -29,7 +29,7 @@ from .conversation_handoff import (FOLLOWUP_CORRECTION, FOLLOWUP_REFERENCE, FOLL
                                    ConversationJudgments)
 from .decision import NO_CANDIDATE, DecisionContext, DecisionPolicy
 
-SUITE_VERSION = 'decision-qualification/4'
+SUITE_VERSION = 'decision-qualification/5'
 #: Every case must pass.  The suite is small and each case guards a
 #: truth/continuity property, so a partial pass does not qualify.
 PASS_THRESHOLD = 1.0
@@ -43,20 +43,23 @@ _REFERENT_QUESTION = ('The owner said "그거 저장해" (save that). Which earl
                       'Choose none-of-these when more than one result fits equally well.')
 
 
-def _followup(utterance, intent, status, expected, *, previous_request, previous_reply):
+def _work(intent, status, request, reply):
+    return {'intent': intent, 'status': status, 'request': request, 'reply': reply,
+            'request_at': 'just now', 'reply_at': 'just now'}
+
+
+def _followup(utterance, works, expected, work=0):
+    """``works`` most recent first; ``expected`` the relation to ``works[work]`` (#1087)."""
     def run(engine, policy):
-        judged = ConversationJudgments(engine, policy).followup_relation(
-            utterance, intent, status, previous_request=previous_request, previous_reply=previous_reply,
-            previous_request_at='just now', previous_reply_at='just now')
-        return judged.outcome == JUDGMENT_YES and judged.value == expected, judged.outcome
+        judged = ConversationJudgments(engine, policy).followup_relation(utterance, works)
+        return (judged.outcome == JUDGMENT_YES and judged.value == expected and judged.work == work,
+                judged.outcome)
     return run
 
 
-def _followup_none(utterance, intent, status, *, previous_request, previous_reply):
+def _followup_none(utterance, works):
     def run(engine, policy):
-        judged = ConversationJudgments(engine, policy).followup_relation(
-            utterance, intent, status, previous_request=previous_request, previous_reply=previous_reply,
-            previous_request_at='just now', previous_reply_at='just now')
+        judged = ConversationJudgments(engine, policy).followup_relation(utterance, works)
         # A confident none-of-these; "unavailable" here would hide an engine failure.
         return judged.outcome == JUDGMENT_NO, judged.outcome
     return run
@@ -97,18 +100,23 @@ CASES = (
     # /4: #173 made the production question depend on the previous request
     # and reply. Intent/status alone leave "that" without an observed referent.
     # Supply synthetic conversation facts, never an expected relation label.
-    ('retry-after-failed-work', _followup('다시 해봐', 'research', 'failed', FOLLOWUP_RETRY,
-        previous_request='두 후보의 장단점을 비교해줘.',
-        previous_reply='자료를 가져오다가 오류가 나서 비교를 마치지 못했어요.')),
-    ('correction-replaces-parameters', _followup('아니 4시로', 'calendar-create', 'succeeded', FOLLOWUP_CORRECTION,
-        previous_request='내일 오후 3시에 팀 회의 잡아줘.',
-        previous_reply='내일 오후 3시에 팀 회의를 잡았어요.')),
-    ('reference-to-previous-result', _followup('그거 저장해', 'research', 'succeeded', FOLLOWUP_REFERENCE,
-        previous_request='두 후보의 장단점을 비교해줘.',
-        previous_reply='비교 결과: 후보 A는 비용이 적고, 후보 B는 지원 기간이 길어요.')),
-    ('new-topic-is-not-a-followup', _followup_none('오늘 저녁 메뉴 추천해줘', 'calendar-create', 'succeeded',
-        previous_request='내일 오후 3시에 팀 회의 잡아줘.',
-        previous_reply='내일 오후 3시에 팀 회의를 잡았어요.')),
+    # /5 (#1087): the judgment chooses the Work among the chat's recent Works
+    # and the relation together; one case links past an interleaved topic.
+    ('retry-after-failed-work', _followup('다시 해봐', [_work('research', 'failed',
+        '두 후보의 장단점을 비교해줘.', '자료를 가져오다가 오류가 나서 비교를 마치지 못했어요.')], FOLLOWUP_RETRY)),
+    ('correction-replaces-parameters', _followup('아니 4시로', [_work('calendar-create', 'succeeded',
+        '내일 오후 3시에 팀 회의 잡아줘.', '내일 오후 3시에 팀 회의를 잡았어요.')], FOLLOWUP_CORRECTION)),
+    ('reference-to-previous-result', _followup('그거 저장해', [_work('research', 'succeeded',
+        '두 후보의 장단점을 비교해줘.', '비교 결과: 후보 A는 비용이 적고, 후보 B는 지원 기간이 길어요.')],
+        FOLLOWUP_REFERENCE)),
+    ('reference-past-an-interleaved-topic', _followup('그 두 번째 후보는 지원 기간이 얼마야?', [
+        _work('', 'succeeded', '오늘 저녁 메뉴 추천해줘.', '된장찌개와 생선구이를 추천해요.'),
+        _work('research', 'succeeded', '노트북 후보 두 개 비교해줘.',
+              '후보 A는 가볍고, 후보 B는 배터리가 오래가요. 어느 쪽이 더 궁금하세요?')],
+        FOLLOWUP_REFERENCE, work=1)),
+    ('new-topic-is-not-a-followup', _followup_none('오늘 저녁 메뉴 추천해줘', [
+        _work('calendar-create', 'succeeded', '내일 오후 3시에 팀 회의 잡아줘.', '내일 오후 3시에 팀 회의를 잡았어요.'),
+        _work('research', 'succeeded', '두 후보의 장단점을 비교해줘.', '후보 A는 비용이 적어요.')])),
     ('ambiguous-referent-abstains', _choose(
         'conversation-referent',
         {'owner_message': '그거 저장해',

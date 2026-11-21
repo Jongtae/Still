@@ -30,7 +30,10 @@ class JudgedContinuityTests(_Case):
         """A scripted engine: the follow-up relation from ``mapping`` (else none-of-these)."""
         def choose(context, candidates, question):
             if context.purpose == 'conversation-followup':
-                return SelectionDecision(OUTCOME_DECIDED, mapping.get(context.facts['owner_message'], 'none-of-these'),
+                # #1087: the relation to the candidate that is the earlier request (w1 when it is the latest).
+                text = context.facts['owner_message']
+                about = next((n for n in range(1, 6) if context.facts.get(f'w{n}_owner_message') == EARLIER), 1)
+                return SelectionDecision(OUTCOME_DECIDED, f'{mapping[text]} w{about}' if text in mapping else 'none-of-these',
                                          candidates, fixture_confidence())
             return None
 
@@ -67,9 +70,10 @@ class JudgedContinuityTests(_Case):
         # The judgment read the focused Work in context, not the message alone.
         facts = self.followup_facts()[-1]
         self.assertEqual(facts['owner_message'], '4시로 해 줘')
-        self.assertEqual(facts['previous_owner_message'], EARLIER)
-        self.assertEqual(facts['previous_reply'], EARLIER_REPLY)
-        self.assertEqual((facts['previous_request_at'], facts['previous_reply_at']), ('just now', 'just now'))
+        # The first message, still queued in this chat, is the latest candidate; the earlier request is next.
+        self.assertEqual((facts['w1_owner_message'], facts['w2_owner_message']), ('아니 4시로', EARLIER))
+        self.assertEqual(facts['w2_reply'], EARLIER_REPLY)
+        self.assertEqual((facts['w2_owner_message_at'], facts['w2_reply_at']), ('just now', 'just now'))
         self.assertEqual(facts['awaiting_owner'], 'nothing')
 
     def test_a_cue_word_in_an_unrelated_message_makes_no_relation(self):
@@ -109,7 +113,7 @@ class JudgedContinuityTests(_Case):
         self.relate('다시 해줘')
         [facts] = self.followup_facts()
         self.assertNotIn(secret, repr(facts))
-        self.assertLessEqual(len(facts['previous_reply']), 600)
+        self.assertLessEqual(len(facts['w1_reply']), 600)
 
     def test_a_judged_correction_runs_the_owner_words_and_is_recorded(self):
         earlier = self.earlier_work()

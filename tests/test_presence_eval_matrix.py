@@ -224,7 +224,8 @@ class PresenceEval(unittest.TestCase):
         """The scripted DecisionEngine: it answers only what the fixture tables say."""
         def choose(context, candidates, question):
             if context.purpose == 'conversation-followup':
-                answer = self.relations.get(context.facts.get('owner_message'), 'none-of-these')
+                text = context.facts.get('owner_message')
+                answer = self.relations[text] + ' w1' if text in self.relations else 'none-of-these'
                 return SelectionDecision(OUTCOME_DECIDED, answer, candidates, fixture_confidence())
             if context.purpose == 'capability-need':
                 answer = self.capability_needs.get(context.facts.get('owner_message'), 'none-of-these')

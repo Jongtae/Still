@@ -73,7 +73,7 @@ from .calendar import CALENDAR_CONNECTOR_ID, CALENDAR_WRITE_CONNECTOR_ID
 from .google_drive_read import DRIVE_CONNECTOR_ID
 from .conversation_handoff import (CONNECTOR_LABELS, JUDGMENT_NO, JUDGMENT_YES,
                                    FOLLOWUP_CANCEL, FOLLOWUP_CORRECTION, FOLLOWUP_REFERENCE,
-                                   FOLLOWUP_RETRY, eligible_for_followup_judgment,
+                                   FOLLOWUP_RECENT_WORKS, FOLLOWUP_RETRY, eligible_for_followup_judgment,
                                    ConversationJudgments, TelegramChannel, telegram_request_json,
                                    telegram_request_file, telegram_request_multipart,
                                    ConnectorHandoff,
@@ -395,7 +395,6 @@ BROWSER_LEGACY_KEY='browser_legacy_profile_removed_at'
 #: not safe to replay: the owner's current message ran instead, as a fresh Work.
 RETRY_REFUSED_RAN_CURRENT='retry-refused-ran-current'
 #: #1519: how far back an answer may reach a question asked before an interleaved request.
-OPEN_QUESTION_SECONDS=900
 EFFECT_RETRY_REFUSAL=msg('service.the_previous_request_attempted_an_action')
 #: #618 E2: the reasons the one continuation rule gives (``continuation_reasons``), strongest first.
 #: #627: ``limit`` - the request reached its one continuation count (``MAX_CONTINUATIONS``).
@@ -3023,35 +3022,63 @@ class AgentService:
                                                focus=self.conversation_focus.current())
 
     def continuity_relation(self, prompt, connector_owner=None, current_work_id=None):
-        """Resolve a short follow-up against the one focused Work, if any.
+        """Resolve a short follow-up against the recent Works of this chat, if any (#1087).
 
         RULES-OUT-01 (#173 slice B): no lexical skip decides whether a message
-        is a follow-up (the memory-save and file-save word checks are gone);
-        the follow-up judgment reads it with the focused Work's request and
-        reply, their times and what still waits for the owner
-        (``followup_context``).  Explicit commands keep their own dedicated state machines.
+        is a follow-up; the follow-up judgment reads it with each candidate's
+        request and reply, their times and what still waits for the owner
+        (``followup_context``).  #1087: the candidates are the last few Works of
+        the same chat plus the focused Work, and the judgment chooses the Work
+        and the relation together, so a message about a topic two turns back
+        in an interleaved chat can link to it (this replaces the #1519
+        open-question special case).  Explicit commands keep their own state machines.
         """
         if not eligible_for_followup_judgment(prompt):
             return None
         if self.intent_classifier.has_local_candidate(prompt):
             return None
-        focus=self.conversation_focus.current()
-        previous_id=focus.get('work_id')
-        if previous_id == current_work_id:
+        candidates=self.followup_candidates(current_work_id)
+        if not candidates:
             return None
-        previous=self.store.job(previous_id) if isinstance(previous_id,str) else None
-        if not previous:
-            return None
-        judged=self.decision_judge.followup_relation(prompt,focus.get('intent'),previous.get('status'),
-                                                     **self.followup_context(previous,current_work_id))
-        if judged.outcome==JUDGMENT_NO:
-            # #1519: not about the last Work; it may answer what the one before asked.
-            return self.open_question_link(prompt,previous,current_work_id)
+        works,awaiting=self.followup_context(candidates,current_work_id)
+        judged=self.decision_judge.followup_relation(prompt,works,awaiting_owner=awaiting)
         if judged.outcome!=JUDGMENT_YES or judged.value not in {
             FOLLOWUP_RETRY,FOLLOWUP_REFERENCE,FOLLOWUP_CANCEL,FOLLOWUP_CORRECTION,
-        }:
+        } or not isinstance(judged.work,int) or not 0<=judged.work<len(candidates):
             return None
-        return {'relation':judged.value,'previous':previous,'source':judged.source}
+        return {'relation':judged.value,'previous':candidates[judged.work],'source':judged.source}
+
+    def followup_candidates(self, current_work_id):
+        """The Works a short follow-up may continue, most recent first (#1087).
+
+        The last ``FOLLOWUP_RECENT_WORKS`` Works of the current Work's chat made
+        within ``ConversationFocus.TTL_SECONDS`` before it, and the focused Work
+        when it is not among them.  The current Work is never its own candidate.
+        A failure leaves the chat's Works out; the focused Work is still offered.
+        """
+        focus=self.conversation_focus.current()
+        found={}
+        focused=focus.get('work_id')
+        if isinstance(focused,str) and focused!=current_work_id:
+            work=self.store.job(focused)
+            if work:
+                found[work['id']]=dict(work,intent=focus.get('intent'))
+        current=self.store.job(current_work_id) if isinstance(current_work_id,str) else None
+        if current and current.get('channel') and current.get('created') is not None:
+            try:
+                with self.store.db() as db:
+                    rows=db.execute('SELECT id FROM jobs WHERE channel=? AND chat_id IS ? AND id!=? AND created<=? '
+                                    'AND created>=? ORDER BY created DESC LIMIT ?',
+                                    (current['channel'],current.get('chat_id'),current['id'],current['created'],
+                                     float(current['created'])-ConversationFocus.TTL_SECONDS,
+                                     FOLLOWUP_RECENT_WORKS)).fetchall()
+                for row in rows:
+                    if row['id'] not in found:
+                        work=self.store.job(row['id'])
+                        if work:found[work['id']]=work
+            except Exception:
+                LOG.info('follow-up candidates unavailable job=%s',current_work_id)
+        return sorted(found.values(),key=lambda work:float(work.get('created') or 0),reverse=True)
 
     @staticmethod
     def _minutes_ago(now, moment):
@@ -3062,68 +3089,39 @@ class AgentService:
             return 'unknown'
         return 'just now' if minutes<1 else f'{minutes} minutes ago'
 
-    def followup_context(self, previous, current_work_id):
-        """What the follow-up judgment reads besides the message (#173 slice B).
+    def followup_context(self, candidates, current_work_id):
+        """What the follow-up judgment reads besides the message (#173 slice B, #1087).
 
-        The focused Work's request and its last reply (the judgment bounds and
-        redacts both), when each was made, and the kinds of the items still
-        waiting for the owner in this conversation (``owner_acts.open_items``;
-        kinds only, no content).  Read from stores; a failure leaves a fact out.
+        For each candidate Work: its request and last reply (the judgment bounds
+        and redacts both), when each was made, its status, and which candidate it
+        was linked to; and the kinds of the items still waiting for the owner in
+        this conversation (``owner_acts.open_items``; kinds only, no content).
+        Read from stores; a failure leaves a fact out.
         """
         now=time.time()
-        # #367: a request or reply the owner forgot is not read back to the judgment.
-        context={'previous_request':'' if self.store.work_request_forgotten(previous['id']) else previous.get('message') or '',
-                 'previous_request_at':self._minutes_ago(now,previous.get('created'))}
-        try:
-            reply=self.store.last_reply(previous['id'],with_created=True)
-            if reply:
-                context.update(previous_reply=reply['content'] or '',
-                               previous_reply_at=self._minutes_ago(now,reply['created']))
-        except Exception:
-            LOG.info('follow-up reply unavailable job=%s',previous.get('id'))
+        labels={work['id']:f'w{number}' for number,work in enumerate(candidates,1)}
+        works=[]
+        for work in candidates:
+            # #367: a request or reply the owner forgot is not read back to the judgment.
+            entry={'request':'' if self.store.work_request_forgotten(work['id']) else work.get('message') or '',
+                   'request_at':self._minutes_ago(now,work.get('created')),
+                   'status':work.get('status') or '','intent':work.get('intent') or '',
+                   'linked_to':labels.get(work.get('related_job_id'))}
+            try:
+                reply=self.store.last_reply(work['id'],with_created=True)
+                if reply:
+                    entry.update(reply=reply['content'] or '',reply_at=self._minutes_ago(now,reply['created']))
+            except Exception:
+                LOG.info('follow-up reply unavailable job=%s',work.get('id'))
+            works.append(entry)
+        awaiting=()
         current=self.store.job(current_work_id) if isinstance(current_work_id,str) else None
         if current:
             try:
-                context['awaiting_owner']=tuple(item['kind'] for item in self.owner_acts.open_items(current))
+                awaiting=tuple(item['kind'] for item in self.owner_acts.open_items(current))
             except Exception:
                 LOG.info('open items unavailable job=%s',current_work_id)
-        return context
-
-    def open_question_link(self, prompt, focused, current_work_id):
-        """A reference to the Work just before ``focused`` when ``prompt`` answers what its reply asked (#1519).
-
-        Live 2026-10-14: "언제인가요?" was asked, an order request came in between, and the
-        answer ran as its own Work read as being about the order.  Only the one Work before
-        the focused one, in the same chat, within ``OPEN_QUESTION_SECONDS`` and not already
-        followed up, is offered; the DecisionEngine judges whether its reply asked something
-        this message answers.  None otherwise.
-        """
-        current=self.store.job(current_work_id) if isinstance(current_work_id,str) else None
-        if not current or not focused.get('created'):
-            return None
-        try:
-            with self.store.db() as db:
-                row=db.execute('SELECT id FROM jobs WHERE channel=? AND chat_id IS ? AND created<? AND id NOT IN (?,?) '
-                               'ORDER BY created DESC LIMIT 1',
-                               (current.get('channel'),current.get('chat_id'),focused['created'],
-                                current['id'],focused['id'])).fetchone()
-                earlier=self.store.job(row['id']) if row else None
-                if not earlier or float(current.get('created') or 0)-float(earlier.get('created') or 0)>OPEN_QUESTION_SECONDS:
-                    return None
-                if db.execute('SELECT 1 FROM jobs WHERE related_job_id=? AND id!=? AND relation_kind!=?',
-                              (earlier['id'],current['id'],'steer')).fetchone():
-                    return None
-            # #367: a forgotten request or reply is no open question to answer.
-            reply=None if self.store.work_request_forgotten(earlier['id']) else self.store.last_reply(earlier['id'])
-        except Exception:
-            LOG.info('open question lookup unavailable job=%s',current_work_id)
-            return None
-        if not reply or not reply['content']:
-            return None
-        judged=self.decision_judge.answers_open_question(earlier.get('message') or '',reply['content'],prompt)
-        if judged.outcome!=JUDGMENT_YES:
-            return None
-        return {'relation':FOLLOWUP_REFERENCE,'previous':earlier,'source':judged.source}
+        return works,awaiting
 
     @staticmethod
     def _unknown_effect(value):

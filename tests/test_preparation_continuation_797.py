@@ -23,9 +23,9 @@ class PreparationContinuationTests(_Case):
 
         def choose(context, candidates, _question):
             if context.purpose == 'conversation-followup':
-                self.assertEqual(context.facts['previous_owner_message'], request)
-                self.assertEqual(context.facts['previous_reply'], '몇 시에 시작할까요?')
-                return SelectionDecision(OUTCOME_DECIDED, FOLLOWUP_REFERENCE, candidates, fixture_confidence())
+                self.assertEqual(context.facts['w1_owner_message'], request)
+                self.assertEqual(context.facts['w1_reply'], '몇 시에 시작할까요?')
+                return SelectionDecision(OUTCOME_DECIDED, FOLLOWUP_REFERENCE + ' w1', candidates, fixture_confidence())
             return None
 
         def judge(context, proposition):

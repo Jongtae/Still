@@ -70,9 +70,9 @@ class ForgetTranscript(unittest.TestCase):
                               'FROM jobs WHERE id=?', (job,)).fetchone()
         self.assertEqual((copy['message'], copy['response']), ('', ''), 'the Work copies are withheld too')
         service = AgentService(self.store)
-        follow = service.followup_context(self.store.job(job), None)
-        self.assertEqual(follow['previous_request'], '')
-        self.assertNotIn('previous_reply', follow)
+        [follow], _awaiting = service.followup_context([self.store.job(job)], None)
+        self.assertEqual(follow['request'], '')
+        self.assertNotIn('reply', follow)
         later = self.store.enqueue('그거 다시 알려줘', 'later')
         with self.store.db() as db:
             db.execute("UPDATE jobs SET relation_kind='reference',related_job_id=? WHERE id=?", (job, later))

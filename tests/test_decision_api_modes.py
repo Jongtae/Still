@@ -200,7 +200,7 @@ class ApiModeTests(JobFixture):
         self.assertEqual(service.decision_routes.engine().strongest_model, 'gpt-6.1-terra')
         service.decision_judge.goal_reached('Find the date.', 'web_search: found it', answer='It is Sunday.')
         self.assertEqual(self.turns[-1]['model'], 'gpt-6.1-terra')
-        service.decision_judge.followup_relation('다시 해봐', 'research', 'failed')
+        service.decision_judge.followup_relation('다시 해봐', [{'intent': 'research', 'status': 'failed'}])
         self.assertEqual(self.turns[-1]['model'], fast)
 
     def test_refuses_unknown_and_unsupported_api_effort_without_a_model_call(self):

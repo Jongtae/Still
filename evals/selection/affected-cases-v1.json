@@ -2,12 +2,6 @@
   "version": "affected-cases/1",
   "rules": [
     {
-      "id": "role-answers_open_question",
-      "match": {"propositions": ["answers_open_question", "OPEN_QUESTION_PROPOSITION"], "prompt_fragments": ["answers_open_question"], "paths": ["src/personal_agent/prompts/answers_open_question.md"]},
-      "select": [{"set": "judgments", "roles": ["answers_open_question"]}],
-      "reason": "This instruction or proposition is exercised by the answers_open_question judgment cases."
-    },
-    {
       "id": "role-connector_effect",
       "match": {"propositions": ["connector_effect", "CONNECTOR_EFFECT_QUESTION"], "prompt_fragments": ["connector_effect"], "paths": ["src/personal_agent/prompts/connector_effect.md"]},
       "select": [{"set": "judgments", "roles": ["connector_effect"]}],
@@ -22,8 +16,8 @@
     {
       "id": "role-followup_relation",
       "match": {"propositions": ["followup_relation", "FOLLOWUP_QUESTION"], "prompt_fragments": ["followup_relation"], "paths": ["src/personal_agent/prompts/followup_relation.md"]},
-      "select": [{"set": "judgments", "roles": ["followup_relation"]}, {"set": "qualification", "ids": ["qualification-retry-after-failed-work", "qualification-correction-replaces-parameters", "qualification-reference-to-previous-result", "qualification-new-topic-is-not-a-followup", "qualification-ambiguous-referent-abstains"]}],
-      "reason": "This instruction or proposition is exercised by the followup_relation judgment cases. The qualification definitions also exercise this proposition."
+      "select": [{"set": "judgments", "roles": ["followup_relation", "answers_open_question"]}, {"set": "qualification", "ids": ["qualification-retry-after-failed-work", "qualification-correction-replaces-parameters", "qualification-reference-to-previous-result", "qualification-reference-past-an-interleaved-topic", "qualification-new-topic-is-not-a-followup", "qualification-ambiguous-referent-abstains"]}],
+      "reason": "This instruction or proposition is exercised by the followup_relation judgment cases and, since #1087, the answers_open_question cases it now answers. The qualification definitions also exercise this proposition."
     },
     {
       "id": "role-goal_reached",
