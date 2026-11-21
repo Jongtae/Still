@@ -733,7 +733,10 @@ class SettingsOrchestrator:
         models = known_models(current, self._model_lists()) if selectable else []
         return {"route": self._row("route", current, names.get(current) or (msg('label.other_connection') if current else msg('label.none')), options,
                                    note=msg('settings_orchestrator.main_route_note')),
-                "model": self._row("model", model, model or msg('label.default_model'), self._options(models))}
+                # #36 review: a subscription CLI's own default ('') is a choice too, so undo can return to it.
+                "model": self._row("model", model, model or msg('label.default_model'),
+                                   ([{"value": "", "label": msg('label.default_model')}] if current in SUBSCRIPTION_ROUTES
+                                    and selectable else []) + self._options(models))}
 
     @staticmethod
     def _category_line(category, row):
@@ -1219,7 +1222,7 @@ class SettingsOrchestrator:
             draft['observe_only'] = True
         if _undo_of is not None:
             draft['undo_of'] = _undo_of
-            draft['effect'] = summary = msg('settings_orchestrator.undo_summary', effect=summary)
+            draft['effect'] = summary = msg('settings_orchestrator.undo_change_summary', effect=summary)
         if self.service is not None:
             if (category, setting) == ('api_connections', 'connect'):
                 from .api_input import guard, before as api_before
@@ -1516,9 +1519,25 @@ class SettingsOrchestrator:
             if original.get('state') != 'applied' or not self.undoable(original):
                 raise SettingsError(msg('settings_orchestrator.undo_unavailable'))
             earlier = self._drafts().get(original.get('undone_by') or '')
-            if earlier and earlier.get('state') in ('applied', 'applying', 'requested', 'unknown'):
-                return {'state': 'already_undone', 'draft_id': earlier['id'], 'applied': earlier['state'] == 'applied',
+            category, setting = original['category'], original['setting']
+            prior = self._shown_before(category, setting, original['before'])
+            _after, row = self._normalized(category, setting, prior, work_id=work_id)
+            now_before = self._before(category, setting, prior, row)
+            now_shown = self._shown_before(category, setting, now_before)
+            if earlier and earlier.get('state') == 'unknown' and now_shown in (prior, original['after']):
+                # A restart cut the undo off: the value now says whether it landed.
+                earlier = earlier if now_shown == prior else None
+                if earlier:
+                    return {'state': 'already_undone', 'draft_id': earlier['id'], 'applied': True,
+                            'idempotent': True, 'response': msg('settings_orchestrator.undo_already')}
+            if earlier and earlier.get('state') == 'applied':
+                return {'state': 'already_undone', 'draft_id': earlier['id'], 'applied': True,
                         'idempotent': True, 'response': msg('settings_orchestrator.undo_already')}
+            if earlier and earlier.get('state') in ('applying', 'requested', 'unknown'):
+                # #36 review P1: no second undo runs, and the receipt says only what was observed.
+                return {'state': earlier['state'], 'draft_id': earlier['id'], 'applied': False, 'idempotent': True,
+                        'response': IN_DOUBT_MESSAGE.format(effect=earlier['effect']) if earlier['state'] == 'unknown'
+                        else msg('settings_orchestrator.undo_applying')}
             if earlier and earlier.get('state') == 'awaiting-confirmation' and not self.expired(earlier):
                 return {'state': 'awaiting-confirmation', 'draft_id': earlier['id'], 'digest': earlier['digest'],
                         'category': earlier['category'], 'setting': earlier['setting'], 'before': earlier['before'],
@@ -1526,12 +1545,8 @@ class SettingsOrchestrator:
                         'requires_owner_confirmation': True, 'applied': False, 'idempotent': True,
                         'continues_work': False, 'undo_of': draft_id,
                         'response': earlier['effect'] + '\n' + msg('settings_orchestrator.confirmation_required')}
-            category, setting = original['category'], original['setting']
-            prior = self._shown_before(category, setting, original['before'])
-            _after, row = self._normalized(category, setting, prior, work_id=work_id)
-            now_before = self._before(category, setting, prior, row)
             # Only the value this change set is set back: a later change since is the owner's and stays.
-            changed_since = self._shown_before(category, setting, now_before) != original['after']
+            changed_since = now_shown != original['after']
             if (category, setting) in MODEL_SETTINGS:
                 changed_since = changed_since or now_before.split(MODEL_ROUTE_SEP, 1)[1:] != original['before'].split(MODEL_ROUTE_SEP, 1)[1:]
             if changed_since:

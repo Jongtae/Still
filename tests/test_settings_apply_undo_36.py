@@ -129,6 +129,32 @@ class ApplyAndUndo(_Case):
                          'turning payment autonomy on always waits for the exact draft confirmation')
         self.assertEqual(autonomy(), 'off')
 
+    def test_an_interrupted_undo_reports_only_what_the_value_shows(self):
+        tools = self.tools(asked=False)
+        applied = self.change(self.tools(), category='current_context', setting='timezone', value='Asia/Tokyo')
+        waiting = self.change(tools, category='current_context', setting='timezone', value='', undo=applied['draft_id'])
+        row = self.settings._drafts()[waiting['draft_id']]
+        self.settings._admit(row, row['digest'])  # applying, then cut off before its setter ran
+        repeat = self.change(tools, category='current_context', setting='timezone', value='', undo=applied['draft_id'])
+        self.assertEqual((repeat['state'], repeat['applied']), ('applying', False))
+        self.assertNotIn('이미 되돌렸어요', repeat['response'])
+        self.settings._in_flight.clear()
+        self.settings.reconcile()
+        self.assertEqual(self.settings._drafts()[waiting['draft_id']]['state'], 'unknown')
+        again = self.change(self.tools(), category='current_context', setting='timezone', value='', undo=applied['draft_id'])
+        self.assertEqual((again['state'], again['applied']), ('applied', True), 'the value showed it had not landed')
+        self.assertNotEqual(self.timezone(), 'Asia/Tokyo')
+
+    def test_a_subscription_cli_default_model_is_a_choice_undo_can_restore(self):
+        from unittest import mock
+        status = {'current': 'claude-code', 'routes': [{'id': 'claude-code', 'name': 'Claude Code', 'ready': True,
+                                                        'model': 'opus', 'model_selectable': True}]}
+        with mock.patch.object(self.service.main_ai, 'status', return_value=status):
+            options = self.settings._main_ai()['model']['options']
+            self.assertEqual(options[0]['value'], '', 'the CLI default leads the model choices')
+            value, _row = self.settings._normalized('main_ai', 'model', '')
+        self.assertEqual(value, '')
+
     def test_owner_confirmed_change_offers_the_same_undo(self):
         draft = self.draft('current_context', 'enabled', 'on')
         applied = self.settings.confirm('owner', 'http', draft['draft_id'], draft['digest'])

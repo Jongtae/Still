@@ -4973,17 +4973,23 @@
   "ja": "{effect} に変更しました。",
   "zh": "已更改为 {effect}。"
  },
- "settings_orchestrator.undo_summary": {
+ "settings_orchestrator.undo_change_summary": {
   "ko": "되돌리기: {effect}",
   "en": "Undo: {effect}",
   "ja": "元に戻す: {effect}",
   "zh": "撤销：{effect}"
  },
  "settings_orchestrator.undo_offer": {
-  "ko": "되돌리고 싶으면 말씀해 주세요.",
+  "ko": "되돌리고 싶으면 알려 주세요.",
   "en": "Say so if you want it undone.",
   "ja": "元に戻したい場合はお知らせください。",
   "zh": "如需撤销，请告诉我。"
+ },
+ "settings_orchestrator.undo_applying": {
+  "ko": "이 변경을 되돌리는 중이에요. 끝나면 결과를 알려 드릴게요.",
+  "en": "This change is being undone; the result follows when it finishes.",
+  "ja": "この変更を元に戻しています。終わったら結果をお知らせします。",
+  "zh": "正在撤销此更改，完成后会告知结果。"
  },
  "settings_orchestrator.undo_unavailable": {
   "ko": "이 대화에서 적용한 설정 변경 중 그대로 되돌릴 수 있는 것이 아니에요.",
