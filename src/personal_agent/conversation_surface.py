@@ -178,6 +178,15 @@ class ConversationSurface(ABC):
     def deliver_conversation_notice(self, text):
         """Best effort: one conversation notice to the paired owner."""
 
+    def deliver_status_notice(self, text, shown=None):
+        """Best effort: show or refresh one updating notice (#782); the handle showing it, or None.
+
+        ``shown`` is the handle an earlier call returned.  A surface that cannot edit a sent
+        message sends ``text`` as a new notice each time and keeps no handle.
+        """
+        self.deliver_conversation_notice(text)
+        return None
+
     def show_wait_status(self, job, state, text, now):
         """Best effort wait line, or None to suppress it. Called under the delivery lock."""
         return False
