@@ -168,6 +168,16 @@ class EarlierWorks(Case):
         self.store.link_work_relation(self.job['id'], earlier, 'cancel')
         self.assertFalse(any('linked' in line for line in self.plan_lines(rows)))
 
+    def test_the_plan_is_told_what_linked_means_only_when_a_linked_line_is_sent(self):
+        from personal_agent.orchestrator import LINKED_NOTE, Orchestration
+        catalogue = type('Catalogue', (), {'descriptions': {}})()
+        plain = Orchestration(None, catalogue, request='hi', conversation=['[owner, earlier Work] soup recipe'])
+        self.assertNotIn('conversation_topics', plain._plan_context([]).facts,
+                         'a plan without a recorded link asks exactly as before')
+        linked = Orchestration(None, catalogue, request='hi',
+                               conversation=['[owner, earlier Work] soup recipe', '[owner, linked earlier Work] drive time'])
+        self.assertEqual(linked._plan_context([]).facts['conversation_topics'], LINKED_NOTE)
+
     def test_a_cyclic_link_chain_ends(self):
         first = self.store.enqueue('one', 'kc1', owner_typed=True)
         second = self.store.enqueue('two', 'kc2', owner_typed=True)

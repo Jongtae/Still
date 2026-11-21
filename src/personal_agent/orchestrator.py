@@ -115,6 +115,11 @@ CONVERSATION_CHARS = GOAL_CONVERSATION_CHARS
 AWAITING_OWNER_CHARS = 600
 #: #980: the earlier exchange the follow-up judgment linked this message to.
 CONTINUES_CHARS = 1200
+#: #1084: how a recent_conversation line of the followed-up topic is labelled, and what the plan is told about it.
+LINKED_LABEL = 'linked earlier Work'
+LINKED_NOTE = ('Lines of recent_conversation marked "linked earlier Work" belong to the exchange in continues and the '
+               'earlier exchanges it continued. Unmarked lines may be another topic interleaved in time; words the '
+               'owner message shares with them do not make them its subject.')
 #: #501: the lines of the current-context section that say what the worker can reach now: the browser
 #: sign-ins, the API slots and the code-run secret sets (#983) with what each can and cannot do.  They come after the snapshot, so the
 #: snapshot's cut dropped them first; the plan reads them as their own ``connections`` fact.
@@ -1273,6 +1278,9 @@ class Orchestration:
                  'tool_descriptions': tools_text,
                  'budget': self._budget_text(),
                  'previous_attempts': self._redact(self._attempts_text())}
+        if LINKED_LABEL in facts['recent_conversation']:
+            # #1084: only when a linked line was sent, so a plan without a recorded link asks exactly as before.
+            facts['conversation_topics'] = LINKED_NOTE
         if getattr(self, 'corrections', ()):
             # #428: only when the owner corrected this Work, so an uncorrected plan asks exactly as before.
             facts['owner_corrections'] = '\n'.join(f'- {text}' for text in self.corrections)
