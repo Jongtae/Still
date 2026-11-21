@@ -22,6 +22,10 @@ Two steps:
    Codex login file and one ``[mcp_servers.world]`` table, and an empty
    ``HOME``.  The eval plays the owner's setup of that one server in the
    sandbox store (``worlds/owner_setup.py``) before the server starts.
+4. A browser-world run (#1122, ``worlds/shop.py``) gets no engine home: its
+   server environment carries the world's exact loopback origins, so the
+   import guard enables the embedded browser on the slot's fresh profile and
+   lets it load those origins only (``sandbox_site/eval_browser_reach.py``).
 
 Secrets are copied file-to-file between owner-private (0600/0700) folders and
 are never printed, logged or written into the repository.
@@ -225,11 +229,13 @@ def free_port(start=18900, end=19900, taken=()):
         return reservation.port
 
 
-def sandbox_environment(data, base=None, src=SRC, telegram_root=None, engine_home=None):
+def sandbox_environment(data, base=None, src=SRC, telegram_root=None, engine_home=None, browser_origins=()):
     """The minimal environment of one sandbox server: no AgentOS_* or connector settings inherited.
 
     ``telegram_root`` is the eval's loopback Bot API stand-in (``fake_telegram``), when the run uses one.
     ``engine_home`` (``world_engine_home``) replaces ``HOME`` and ``CODEX_HOME`` for a world run.
+    ``browser_origins`` (#1122): a browser world's exact loopback origins, for the import guard
+    (``sandbox_site/eval_browser_reach.py``); the embedded browser is enabled only with them.
     """
     base = os.environ if base is None else base
     env = {name: base[name] for name in PASS_ENV if base.get(name)}
@@ -244,6 +250,8 @@ def sandbox_environment(data, base=None, src=SRC, telegram_root=None, engine_hom
         env['AGENTOS_EVAL_TELEGRAM_ROOT'] = telegram_root
     if engine_home:
         env.update(HOME=engine_home['HOME'], CODEX_HOME=engine_home['CODEX_HOME'])
+    if browser_origins:
+        env['AGENTOS_EVAL_BROWSER_ORIGINS'] = ','.join(browser_origins)
     return env
 
 
@@ -426,6 +434,8 @@ class Sandbox:
         self.world = world
         self.engine_home = None
         self.world_setup = None
+        #: #1122: a browser world's origins; the sandbox browser may load these and nothing local else.
+        self.browser_origins = ()
         self._port_reservation = None
         self.cache_applied = False
         self._pending_judgment = None
@@ -473,7 +483,13 @@ class Sandbox:
                 if not (self.data / 'private' / 'quickstart.db').is_file():
                     initialize_store(self.data, self.python, src=self.src, timeout=self.start_timeout)
                 self.telegram.chat_id = pair_fake_telegram(self.data, TOKEN)
-            if self.world is not None:
+            from .worlds import browser_origins
+            if self.world is not None and browser_origins(self.world['world']):
+                # #1122: a browser world needs no engine home or MCP setup: the owner's request
+                # reaches it through Still's embedded browser on the sandbox's own fresh profile.
+                self.browser_origins = browser_origins(self.world['world'])
+                self.world_setup = {'browser_origins': list(self.browser_origins)}
+            elif self.world is not None:
                 world = self.world['world']
                 self.engine_home = world_engine_home(self.data, world.mcp_server())
                 spec = world_owner_spec(world.operations(), self.world.get('approvals') or {}, self.world.get('money'))
@@ -484,7 +500,7 @@ class Sandbox:
             self.log = open(self.data / 'server.log', 'ab')
             env = sandbox_environment(self.data, src=self.src,
                                       telegram_root=self.telegram.root if self.telegram is not None else None,
-                                      engine_home=self.engine_home)
+                                      engine_home=self.engine_home, browser_origins=self.browser_origins)
             self.process = subprocess.Popen(argv, cwd=str(self.data), env=env,
                                             stdin=subprocess.DEVNULL, stdout=self.log, stderr=subprocess.STDOUT,
                                             start_new_session=True)
