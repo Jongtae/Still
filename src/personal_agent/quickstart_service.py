@@ -5621,8 +5621,9 @@ class AgentService:
         # #275: one line per turn, so the plan call can say how many of them it sent.
         # #1084: turns of the linked topic are marked, so an interleaved topic is not read as its subject.
         linked=self.linked_work_ids(job)
-        conversation=[earlier_turn_line(row,message,tz,linked=row.get('job_id') in linked)
-                      for row,message in zip(earlier_rows,selected)]
+        linked_turns=[row.get('job_id') in linked for row in earlier_rows]
+        conversation=[earlier_turn_line(row,message,tz,linked=flag)
+                      for row,message,flag in zip(earlier_rows,selected,linked_turns)]
         earlier=earlier_rows
         previous_route=self.previous_work_route(job,rows)
         def event(status,detail):
@@ -5639,6 +5640,7 @@ class AgentService:
             request=str(self.effect_mandate(job,request) or '')+'\n\n'+self.preparation_run_fact(job)
         read_snapshot = self.read_checkpoint_snapshot(job['id'])
         orchestration = Orchestration(self.decision_judge,catalogue,request=request,conversation=conversation,
+                             linked_turns=linked_turns,
                              continues='\n'.join(part for part in (self.continued_exchange(job),
                                                     self.action_continuation_note(job, include_read=False)) if part),
                              sections={**sections,'history':len(earlier)},budget=budget,record=event,state=state,

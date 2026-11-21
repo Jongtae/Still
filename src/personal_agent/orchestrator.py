@@ -115,8 +115,7 @@ CONVERSATION_CHARS = GOAL_CONVERSATION_CHARS
 AWAITING_OWNER_CHARS = 600
 #: #980: the earlier exchange the follow-up judgment linked this message to.
 CONTINUES_CHARS = 1200
-#: #1084: how a recent_conversation line of the followed-up topic is labelled, and what the plan is told about it.
-LINKED_LABEL = 'linked earlier Work'
+#: #1084: what the plan is told when a turn of the followed-up topic is sent.
 LINKED_NOTE = ('Lines of recent_conversation marked "linked earlier Work" belong to the exchange in continues and the '
                'earlier exchanges it continued. Unmarked lines may be another topic interleaved in time; words the '
                'owner message shares with them do not make them its subject.')
@@ -1004,8 +1003,10 @@ class Orchestration:
     def __init__(self, judgments, catalogue, *, request, conversation='', continues='', sections=None, budget=None,
                  record=None, state=None, work_id=None, policy=None, qualifying=None, can_ask_location=False,
                  can_preview=False, attachments='', awaiting_conversation='', awaiting_work=None, previous_route='',
-                 effort_timing=''):
+                 effort_timing='', linked_turns=()):
         self.judgments, self.catalogue = judgments, catalogue
+        # #1084: per ``conversation`` turn, whether it belongs to the followed-up topic.
+        self.linked_turns = [bool(flag) for flag in linked_turns]
         self.previous_route = str(previous_route or '')
         #: What each effort level has cost a worker turn on this installation (observed medians), so the
         #: plan weighs a raised level against the owner's wait as data, not a rule.
@@ -1179,6 +1180,7 @@ class Orchestration:
         for name in ('profile','current_context','prepared'):
             if name in context:self.sections[name]=context[name] if context.get('mode')!='bare-request' else ''
         self.turns = [earlier_turn_line(row, row) for row in context['conversation']]
+        self.linked_turns = []  # #1084: the worker-selected history carries no topic marks
         self.conversation = '\n'.join(self.turns)
         if self.attempts:
             self.attempts[-1].context_digest = self._revision_context_digest()
@@ -1278,7 +1280,7 @@ class Orchestration:
                  'tool_descriptions': tools_text,
                  'budget': self._budget_text(),
                  'previous_attempts': self._redact(self._attempts_text())}
-        if LINKED_LABEL in facts['recent_conversation']:
+        if self._linked_turn_sent(facts['recent_conversation']):
             # #1084: only when a linked line was sent, so a plan without a recorded link asks exactly as before.
             facts['conversation_topics'] = LINKED_NOTE
         if getattr(self, 'corrections', ()):
@@ -1402,6 +1404,12 @@ class Orchestration:
         if data is None:
             return None, FALLBACK_UNCONFIDENT
         return data, ''
+
+    def _linked_turn_sent(self, window):
+        """#1084: whether a turn of the followed-up topic is inside the plan's cut window."""
+        sent = self._turns_in(window) if self.turns is not None else 0
+        flags = self.linked_turns[-len(self.turns):] if self.turns is not None else []
+        return bool(sent) and any(flags[-sent:])
 
     def _turns_in(self, window):
         """#275: how many earlier turns the plan's cut ``recent_conversation`` reached, newest first.

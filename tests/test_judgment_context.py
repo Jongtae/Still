@@ -140,6 +140,7 @@ class EarlierWorks(Case):
         with mock.patch('personal_agent.quickstart_service.worker_catalogue', return_value=SimpleNamespace(default='w')), \
                 mock.patch('personal_agent.quickstart_service.Orchestration') as built:
             self.service.work_orchestration(self.store.job(self.job['id']), self.job['message'], rows, {}, None)
+        self.built = built
         return built.call_args.kwargs['conversation']
 
     def test_turns_of_the_linked_topic_are_marked_when_another_topic_interleaves(self):
@@ -156,6 +157,7 @@ class EarlierWorks(Case):
             rows.append({'role': who, 'content': text, 'created': float(n), 'job_id': work})
         rows.append({'role': 'user', 'content': 'add these to my calendar', 'created': 9.0, 'job_id': self.job['id']})
         lines = self.plan_lines(rows)
+        self.assertEqual(self.built.call_args.kwargs['linked_turns'], [True, True, False, False, True, True])
         marked = [line.split('] ', 1)[1] for line in lines if 'linked earlier Work' in line]
         self.assertEqual(marked, ['plan a trip', 'trip plan', 'drive time', 'about an hour'], lines)
         self.assertTrue(any(line.startswith('[assistant, earlier Work') and 'boil noodles' in line for line in lines))
@@ -174,9 +176,12 @@ class EarlierWorks(Case):
         plain = Orchestration(None, catalogue, request='hi', conversation=['[owner, earlier Work] soup recipe'])
         self.assertNotIn('conversation_topics', plain._plan_context([]).facts,
                          'a plan without a recorded link asks exactly as before')
-        linked = Orchestration(None, catalogue, request='hi',
-                               conversation=['[owner, earlier Work] soup recipe', '[owner, linked earlier Work] drive time'])
+        turns = ['[owner, earlier Work] soup recipe', '[owner, linked earlier Work] drive time']
+        linked = Orchestration(None, catalogue, request='hi', conversation=turns, linked_turns=[False, True])
         self.assertEqual(linked._plan_context([]).facts['conversation_topics'], LINKED_NOTE)
+        self.assertNotIn('conversation_topics', Orchestration(None, catalogue, request='hi', conversation=turns,
+                                                              linked_turns=[False, False])._plan_context([]).facts,
+                         'the flag decides, never the line text')
 
     def test_a_cyclic_link_chain_ends(self):
         first = self.store.enqueue('one', 'kc1', owner_typed=True)
