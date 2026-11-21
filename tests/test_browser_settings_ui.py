@@ -160,7 +160,13 @@ const checks=[];
  group.open=true;group.ontoggle();render(available({sessions:many.map(row=>({...row,cookies:2}))}));group=descendants($('browser-status')).find(node=>node.className==='settings-disclosure browser-visited');
  assert.equal(group.open,true,'the visited group stays open across polling');filter=descendants(group).find(node=>node.name==='browser-visited-filter');assert.equal(filter.value,'visit3');
  assert.equal(rowsOf(group).filter(row=>!row.hidden).length,1,'the filter still applies after a re-render');
- filter.value='';filter.oninput();group.open=false;group.ontoggle();render(available({sessions:rowsWithSignIn}));
+ // A deletion that drops the list under the filter threshold keeps the filter while a query is active.
+ render(available({sessions:many.slice(2)}));group=descendants($('browser-status')).find(node=>node.className==='settings-disclosure browser-visited');
+ filter=descendants(group).find(node=>node.name==='browser-visited-filter');assert(filter,'an active query keeps its filter');assert.equal(filter.value,'visit3');
+ filter.value='';filter.oninput();assert.equal(rowsOf(group).filter(row=>!row.hidden).length,8,'clearing the query shows every remaining site');
+ group.open=false;group.ontoggle();render(available({sessions:many.slice(2).map(row=>({...row,cookies:3}))}));
+ assert(!descendants($('browser-status')).some(node=>node.name==='browser-visited-filter'),'with no query and eight sites there is no filter');
+ render(available({sessions:rowsWithSignIn}));
  assert(!text().includes('저장됨'),'a stored cookie is no longer called a saved sign-in');
  const loginButton=site=>buttons().find(node=>node.dataset.focusKey==='browser-login:'+site);
  assert.equal(loginButton('shop.test').textContent,'다시 로그인');assert.equal(loginButton('news.test').textContent,'로그인');assert.equal(loginButton('mail.test').textContent,'로그인');
