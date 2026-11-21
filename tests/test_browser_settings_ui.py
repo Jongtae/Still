@@ -145,8 +145,22 @@ const checks=[];
   {site:'news.test',cookies:1,last_used:null,sign_in:'none',login_url:'https://news.test/'},{site:'mail.test',cookies:2,last_used:null,sign_in:'refresh_refused',signed_in_at:1,login_url:'https://mail.test/'}];
  render(available({sessions:rowsWithSignIn}));
  assert(text().includes('로그인됨'));assert(text().includes('직접 로그인했습니다'));
- assert(text().includes('로그인 안 됨'));assert(text().includes('직접 로그인한 기록이 없습니다'));
+ // #1088: a site with only visit cookies is not listed among sign-ins; it sits in the collapsed visited group, which says why.
+ const visitedGroup=descendants($('browser-status')).find(node=>node.className==='settings-disclosure browser-visited');
+ assert(visitedGroup,'visit-only sites are grouped');assert(descendants(visitedGroup).some(node=>node.textContent==='news.test'));
+ assert(!descendants(visitedGroup).some(node=>node.textContent==='shop.test'||node.textContent==='mail.test'),'sign-ins stay outside the visited group');
+ assert(descendants(visitedGroup).some(node=>node.textContent==='작업 중 방문만 한 사이트 1곳'));assert(descendants(visitedGroup).some(node=>String(node.textContent).includes('직접 로그인한 적이 없는 사이트입니다')));
  assert(text().includes('세션 연장을 거부했습니다'));assert(text().includes('다시 로그인 권장'));
+ // #1088: a long visit history is searchable; the filter and the group's open state survive a re-render.
+ const many=Array.from({length:10},(_,index)=>({site:'visit'+index+'.test',cookies:1,last_used:null,sign_in:'none',login_url:'https://visit'+index+'.test/'}));
+ render(available({sessions:many}));let group=descendants($('browser-status')).find(node=>node.className==='settings-disclosure browser-visited');
+ let filter=descendants(group).find(node=>node.name==='browser-visited-filter');assert(filter,'ten visited sites get a filter');
+ filter.value='visit3';filter.oninput();const rowsOf=g=>descendants(g).filter(node=>node.className==='settings-row');
+ assert.deepEqual(rowsOf(group).filter(row=>!row.hidden).map(row=>row.dataset.site),['visit3.test']);
+ group.open=true;group.ontoggle();render(available({sessions:many.map(row=>({...row,cookies:2}))}));group=descendants($('browser-status')).find(node=>node.className==='settings-disclosure browser-visited');
+ assert.equal(group.open,true,'the visited group stays open across polling');filter=descendants(group).find(node=>node.name==='browser-visited-filter');assert.equal(filter.value,'visit3');
+ assert.equal(rowsOf(group).filter(row=>!row.hidden).length,1,'the filter still applies after a re-render');
+ filter.value='';filter.oninput();group.open=false;group.ontoggle();render(available({sessions:rowsWithSignIn}));
  assert(!text().includes('저장됨'),'a stored cookie is no longer called a saved sign-in');
  const loginButton=site=>buttons().find(node=>node.dataset.focusKey==='browser-login:'+site);
  assert.equal(loginButton('shop.test').textContent,'다시 로그인');assert.equal(loginButton('news.test').textContent,'로그인');assert.equal(loginButton('mail.test').textContent,'로그인');
