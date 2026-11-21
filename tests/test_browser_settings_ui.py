@@ -36,6 +36,7 @@ class Element {
  append(...nodes){this.children.push(...nodes);} replaceChildren(...nodes){this._text='';this.children=[];this.append(...nodes);}
  setAttribute(key,value){this.attrs[key]=value;} focus(){if(!this.disabled)document.activeElement=this;} get isConnected(){return true;}
  contains(node){return node===this||descendants(this).includes(node);}
+ setSelectionRange(start,end,direction){this.selectionStart=start;this.selectionEnd=end;this.selectionDirection=direction;}
  get classList(){const node=this;return {toggle(name,on){node._cls=Boolean(on);},add(){},remove(){},contains:()=>Boolean(node._cls)};}
  querySelector(selector){return descendants(this).find(node=>selector[0]==='.'?node.className.split(' ').includes(selector.slice(1)):node.tag===selector.replace(/\[.*$/,''))||null;}
  querySelectorAll(selector){return descendants(this).filter(node=>selector==='[data-focus-key]'?Boolean(node.dataset.focusKey):node.tag===selector);}
@@ -145,8 +146,33 @@ const checks=[];
   {site:'news.test',cookies:1,last_used:null,sign_in:'none',login_url:'https://news.test/'},{site:'mail.test',cookies:2,last_used:null,sign_in:'refresh_refused',signed_in_at:1,login_url:'https://mail.test/'}];
  render(available({sessions:rowsWithSignIn}));
  assert(text().includes('로그인됨'));assert(text().includes('직접 로그인했습니다'));
- assert(text().includes('로그인 안 됨'));assert(text().includes('직접 로그인한 기록이 없습니다'));
+ // #1088: a site with only visit cookies is not listed among sign-ins; it sits in the collapsed visited group, which says why.
+ const visitedGroup=descendants($('browser-status')).find(node=>node.className==='settings-disclosure browser-visited');
+ assert(visitedGroup,'visit-only sites are grouped');assert(descendants(visitedGroup).some(node=>node.textContent==='news.test'));
+ assert(!descendants(visitedGroup).some(node=>node.textContent==='shop.test'||node.textContent==='mail.test'),'sign-ins stay outside the visited group');
+ assert(descendants(visitedGroup).some(node=>node.textContent==='작업 중 방문만 한 사이트 1곳'));assert(descendants(visitedGroup).some(node=>String(node.textContent).includes('직접 로그인한 적이 없는 사이트입니다')));
  assert(text().includes('세션 연장을 거부했습니다'));assert(text().includes('다시 로그인 권장'));
+ // #1088: a long visit history is searchable; the filter and the group's open state survive a re-render.
+ const many=Array.from({length:10},(_,index)=>({site:'visit'+index+'.test',cookies:1,last_used:null,sign_in:'none',login_url:'https://visit'+index+'.test/'}));
+ render(available({sessions:many}));let group=descendants($('browser-status')).find(node=>node.className==='settings-disclosure browser-visited');
+ let filter=descendants(group).find(node=>node.name==='browser-visited-filter');assert(filter,'ten visited sites get a filter');
+ filter.value='visit3';filter.oninput();const rowsOf=g=>descendants(g).filter(node=>node.className==='settings-row');
+ assert.deepEqual(rowsOf(group).filter(row=>!row.hidden).map(row=>row.dataset.site),['visit3.test']);
+ group.open=true;group.ontoggle();render(available({sessions:many.map(row=>({...row,cookies:2}))}));group=descendants($('browser-status')).find(node=>node.className==='settings-disclosure browser-visited');
+ assert.equal(group.open,true,'the visited group stays open across polling');filter=descendants(group).find(node=>node.name==='browser-visited-filter');assert.equal(filter.value,'visit3');
+ assert.equal(rowsOf(group).filter(row=>!row.hidden).length,1,'the filter still applies after a re-render');
+ // Polling while the owner edits the filter keeps the caret and selection where they were.
+ filter.focus();filter.setSelectionRange(1,4,'backward');render(available({sessions:many.map(row=>({...row,cookies:5}))}));
+ const refocused=document.activeElement;assert.notEqual(refocused,filter,'the filter was rebuilt');assert.equal(refocused.name,'browser-visited-filter');
+ assert.deepEqual([refocused.selectionStart,refocused.selectionEnd,refocused.selectionDirection],[1,4,'backward']);
+ group=descendants($('browser-status')).find(node=>node.className==='settings-disclosure browser-visited');filter=refocused;document.activeElement=null;
+ // A deletion that drops the list under the filter threshold keeps the filter while a query is active.
+ render(available({sessions:many.slice(2)}));group=descendants($('browser-status')).find(node=>node.className==='settings-disclosure browser-visited');
+ filter=descendants(group).find(node=>node.name==='browser-visited-filter');assert(filter,'an active query keeps its filter');assert.equal(filter.value,'visit3');
+ filter.value='';filter.oninput();assert.equal(rowsOf(group).filter(row=>!row.hidden).length,8,'clearing the query shows every remaining site');
+ group.open=false;group.ontoggle();render(available({sessions:many.slice(2).map(row=>({...row,cookies:3}))}));
+ assert(!descendants($('browser-status')).some(node=>node.name==='browser-visited-filter'),'with no query and eight sites there is no filter');
+ render(available({sessions:rowsWithSignIn}));
  assert(!text().includes('저장됨'),'a stored cookie is no longer called a saved sign-in');
  const loginButton=site=>buttons().find(node=>node.dataset.focusKey==='browser-login:'+site);
  assert.equal(loginButton('shop.test').textContent,'다시 로그인');assert.equal(loginButton('news.test').textContent,'로그인');assert.equal(loginButton('mail.test').textContent,'로그인');

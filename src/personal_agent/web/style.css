@@ -756,3 +756,53 @@ details.technical details>summary{color:var(--muted)}
    breaks (overflow-wrap). Japanese and Chinese keep their own line breaking. */
 html:lang(ko){word-break:keep-all;overflow-wrap:break-word}
 .settings-state:empty{display:none}
+/* #1088 External connections: a jump bar to the pane's groups, then each service shows who/what it is and its
+   state first; everything that changes it sits in one 관리 disclosure under that row. */
+.pane-jump{position:sticky;top:0;z-index:2;display:flex;flex-wrap:wrap;gap:6px;margin:-8px 0 var(--sp-5);padding:8px 0;background:var(--canvas)}
+.pane-jump button{min-height:30px;padding:0 12px;border:1px solid var(--line);border-radius:999px;background:var(--surface);color:var(--ink-2);font-size:var(--fs-2);font-weight:500}
+.pane-jump button:hover{border-color:var(--accent);color:var(--accent);background:var(--surface)}
+.pane-jump+.settings-group,.pane-jump+.settings-section[hidden]+.settings-group{margin-top:0}
+.settings-pane .settings-group,.settings-pane .settings-section,.settings-pane #company-network{scroll-margin-top:56px}
+.channel-manage{margin-top:8px;min-width:0}
+.channel-manage>summary{display:flex;align-items:center;gap:8px;min-height:32px;font-size:var(--fs-2);font-weight:600;color:var(--accent);cursor:pointer}
+.channel-manage>summary:hover{color:var(--accent-hover)}
+.channel-manage-body{display:grid;gap:var(--sp-3);margin-top:6px;padding:12px 14px;border:1px solid var(--line);border-radius:10px;background:var(--surface);min-width:0}
+.channel-manage-body>.button-row:not(:has(button:not([hidden]))){display:none}
+.channel-manage-body>.settings-editor{margin:0;padding:0;border:0}
+.channel-manage-body>.settings-editor>summary{min-height:32px;font-size:var(--fs-2);font-weight:600;color:var(--ink-2)}
+.channel-manage-body>.pref-list{margin:0}
+.summary-current{font-weight:400;color:var(--muted);overflow-wrap:anywhere}
+.summary-current:not(:empty)::before{content:"· ";}
+/* Google: the connection methods are one level below the service rows */
+.settings-methods.channel-manage{margin-top:var(--sp-3);padding-top:10px;border-top:1px solid var(--line)}
+.settings-methods .channel-manage-body>.settings-list{margin-top:0}
+.settings-methods .channel-manage-body .settings-row:first-child{border-top:0;padding-top:4px}
+/* a row whose control needs the row's full width (a select with long option labels) */
+.settings-row>.settings-row-field{grid-column:1/-1;margin-top:0;max-width:560px}
+.settings-row-field>select{width:100%;min-width:0}
+.settings-lines{display:grid;gap:2px}
+.settings-lines>span{display:block}
+/* Browser: login entry first, sites you signed in to, then the collapsed visited-only group */
+.browser-login-entry{margin-top:10px}
+.browser-login-entry:not(:has(>:not([hidden]))){display:none}
+.browser-login-entry>.folder-add{margin:0}
+.browser-group-heading{margin:12px 0 0;border-bottom:0;padding-bottom:0}
+.browser-visited{margin-top:10px;padding-top:10px;border-top:1px solid var(--line)}
+.browser-visited>summary{min-height:32px;font-size:var(--fs-2);font-weight:600;color:var(--ink-2)}
+.browser-visited>.field-hint{margin:4px 0 8px}
+.browser-visited-filter{width:100%;max-width:320px;margin:0 0 6px}
+.browser-visited-list{max-height:min(60vh,520px);overflow:auto;overscroll-behavior:contain;border:1px solid var(--line);border-radius:10px;background:var(--surface);padding:0 12px}
+.browser-visited-list>.settings-row{padding:8px 0;gap:4px var(--sp-3)}
+.browser-visited-list>.settings-row:first-child{border-top:0}
+.browser-visited-list>.settings-row[hidden]{display:none}
+.browser-visited-list>.settings-empty{padding:10px 0;border-top:0}
+.browser-visited-list>.settings-empty[hidden]{display:none}
+@media(max-width:620px){
+ .pane-jump{flex-wrap:nowrap;overflow-x:auto;margin-inline:-16px;padding-inline:16px;scrollbar-width:none}
+ .pane-jump button{flex:none;min-height:36px}
+ .channel-manage>summary,.browser-visited>summary{min-height:44px}
+ .browser-visited-filter{max-width:none}
+}
+.settings-pane #telegram-status{margin:4px 0 0}
+.channel-manage-body>.button-row{margin:0;padding:0}
+.browser-visited-list .settings-row-title{font-weight:600;color:var(--ink)}
