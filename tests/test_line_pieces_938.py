@@ -508,7 +508,7 @@ class OwnerView(_PieceCase):
         with self.store.db() as db:
             db.execute('UPDATE preparations SET state=? WHERE id=?', (prep.STATE_DELIVERED, root['id']))
         entry = self.service.preparations_service.line_entry(self.service.lines.current(self.line_id))
-        self.assertEqual(entry['next'], prep.local_text(piece['due_at'], piece['timezone']))
+        self.assertEqual(entry['next'], prep.local_text(piece['due_at'], piece['timezone'], self.service.home_zone()))
         self.assertNotIn('next_is_account', entry)
 
     def test_the_account_counts_the_pieces_of_its_period_and_names_the_next_one(self):

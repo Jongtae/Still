@@ -584,7 +584,12 @@ class OwnerConfirmedSettings(_Store):
     def test_adding_a_skill_is_a_pinned_draft_the_owner_confirms(self):
         draft = self.settings.propose('owner', 'web', 'skills', 'add', f'https://github.com/{UPSTREAM}/tree/main/skills/internal-comms')
         self.assertEqual(draft['after'], ADDRESS, 'the branch was pinned to its commit in the draft itself')
-        self.assertIn(COMMIT[:7], draft['summary'])
+        self.assertNotIn(COMMIT[:7], draft['summary'])
+        row = self.settings.pending_for_conversation('owner', 'web')[0]
+        summary, exact = self.settings.confirmation_text([row], folded=True).split('<blockquote expandable>')
+        self.assertIn('internal-comms', summary)
+        self.assertNotIn(COMMIT, summary)
+        self.assertIn(ADDRESS, exact)
         self.assertEqual(self.service.skill_library().installed(), [], 'nothing installed before confirmation')
         applied = self.confirm(draft)
         self.assertIn('internal-comms', applied['response'])

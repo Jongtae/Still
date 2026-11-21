@@ -360,7 +360,10 @@ class TelegramSurface(ConversationSurface):
                             if notification['kind']=='browser_approval_needed' else
                             # #393: a proposal reads its offer first; each run's brief is folded.
                             service.preparation_proposal_html(bound)
-                            if notification['kind']=='preparation_proposed' else None)
+                            if notification['kind']=='preparation_proposed' else
+                            service.settings_orchestrator.confirmation_text(bound['settings_drafts'], folded=True)
+                            if notification['kind']=='settings_change_proposed'
+                            and any(row.get('exact_values') for row in bound['settings_drafts']) else None)
                     if folded and len(folded)<=3800:
                         try:
                             result=service.telegram.send_message(notification['chat_id'],folded,reply_markup,parse_mode='HTML')
@@ -373,13 +376,18 @@ class TelegramSurface(ConversationSurface):
                         if notification['kind'] in ('browser_approval_needed','settings_change_proposed') and len(text)>1900:
                             # Preserve every parameter. Only the last part carries
                             # approval controls, after earlier parts were delivered.
-                            parts=[text[offset:offset+1900] for offset in range(0,len(text),1900)]
+                            from .telegram_locale import owner_language, translate
+                            locale=owner_language(service.store)
+                            localized=translate(text, locale)
+                            lang=locale or 'ko'
+                            parts=[localized[offset:offset+1900] for offset in range(0,len(localized),1900)]
                             # #945: a settings draft is applied, not approved; its parts say so.
                             heading='settings' if notification['kind']=='settings_change_proposed' else 'approval'
                             for index,part in enumerate(parts[:-1],1):
-                                service.telegram.send_message(notification['chat_id'],msg(f'telegram_surface.{heading}_part', index=index, total=len(parts), part=part))
+                                service.telegram.send_message(notification['chat_id'],ai_text(msg(
+                                    f'telegram_surface.{heading}_part', lang, index=index, total=len(parts), part=part)))
                                 sent_part=True
-                            text=msg(f'telegram_surface.{heading}_final', total=len(parts), part=parts[-1])
+                            text=ai_text(msg(f'telegram_surface.{heading}_final', lang, total=len(parts), part=parts[-1]))
                         elif notification['kind']==om.RESTORED_NOTICE_KIND:
                             # Twenty full lessons can exceed a Telegram message. Allow room for the localized header.
                             while len(text)>3800:

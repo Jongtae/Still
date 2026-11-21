@@ -53,7 +53,10 @@ from .quickstart_service import (BROWSER_APPROVAL_PROMPT,
                                  PAYMENT_APPROVAL_SECONDS,
                                  UNATTENDED_APPROVAL_TEXT,
                                  UNKNOWN_EFFECT_RETRY_REFUSAL,
-                                 request_prompt_parts)
+                                 approval_exact_html,
+                                 approval_exact_text,
+                                 request_prompt_parts,
+                                 split_approval_preview)
 
 
 class BrowserSignin:
@@ -66,9 +69,16 @@ class BrowserSignin:
         service=self.service
         status=service.browser_profile.status()
         status['legacy_profile_removed_at']=service.store.config(BROWSER_LEGACY_KEY)
-        status['pending_steps']=[{'work_id':row['work_id'],'action':row['action'],'label':row.get('label',''),
-                                  'host':row.get('host',''),'state':row.get('state'),'requested_at':row.get('requested_at'),'digest':row.get('offer_digest')}
-                                 for row in service.browser_step_requests()]
+        from .quickstart_store import REQUEST_APPROVAL_ACTIONS
+        status['pending_steps']=[]
+        for row in service.browser_step_requests():
+            label = row.get('label', '')
+            summary, exact = ((label, '') if row['action'] in REQUEST_APPROVAL_ACTIONS else split_approval_preview(label))
+            status['pending_steps'].append({
+                'work_id':row['work_id'],'action':row['action'],'label':summary,'exact_values':exact,
+                'host':row.get('host',''),'state':row.get('state'),'requested_at':row.get('requested_at'),
+                'digest':row.get('offer_digest'),
+            })
         # #709: logins waiting for the owner (host and times only); decided at /api/browser/login/decision.
         # #749: the Settings login window's observed outcome after its request answered ``opening``.
         settings_login=service._settings_login or {}
@@ -334,8 +344,13 @@ class BrowserSignin:
             # #1470: a request is shown as written (the AI's description first, when given).
             title,summary,rest,check,exact=request_prompt_parts(label)
             lines=[title]+([summary+('\n'+'\n'.join(rest) if rest else '')] if summary else [])+([check] if check else [])
-            return '\n\n'.join(lines+([f"{msg('notice.request_raw')}\n{exact}"] if exact else [])+[msg('notice.approval_answer_hint')])
-        return msg('quickstart_service.browser_step_prompt', prompt=BROWSER_APPROVAL_PROMPT, label=label)+"\n\n"+msg('notice.approval_answer_hint')
+            text='\n\n'.join(lines)
+            if exact:text+='\n\n'+approval_exact_text(exact, 'notice.request_raw')
+        else:
+            summary,exact=split_approval_preview(label)
+            text=(summary+'\n\n'+BROWSER_APPROVAL_PROMPT+'\n\n'+approval_exact_text(exact) if exact
+                  else msg('quickstart_service.browser_step_prompt', prompt=BROWSER_APPROVAL_PROMPT, label=summary))
+        return text+'\n\n'+msg('notice.approval_answer_hint')
 
     def browser_step_prompt_html(self, work_id):
         """#1472: the request prompt with the exact request folded (Telegram expandable quote), or None.
@@ -347,16 +362,21 @@ class BrowserSignin:
         from .quickstart_store import REQUEST_APPROVAL_ACTIONS
         row=service._browser_request(work_id) or {}
         label=row.get('label') or ''
-        if row.get('action') not in REQUEST_APPROVAL_ACTIONS or not label:return None
+        if not label:return None
+        if row.get('action') not in REQUEST_APPROVAL_ACTIONS:
+            summary,exact=split_approval_preview(label)
+            if not exact:return None
+            prompt=summary+'\n\n'+BROWSER_APPROVAL_PROMPT
+            return escape(prompt, quote=False)+'\n\n'+approval_exact_html(exact)+'\n\n'+escape(msg('notice.approval_answer_hint'))
         # Owner choice 2026-10-14 (mockup C): title, the summary's key line in bold, Still's check of its
         # numbers against the exact request, the exact request folded, a one-line answer hint.
         title,summary,rest,check,exact=request_prompt_parts(label)
         parts=[f'<b>{escape(title)}</b>']
         if summary:parts.append(f'<b>{escape(summary)}</b>'+''.join('\n'+escape(line) for line in rest))
         if check:parts.append(escape(check))
-        if exact:parts.append(f"<blockquote expandable>{escape(msg('notice.request_raw'))}\n{escape(exact)}</blockquote>")
-        parts.append(escape(msg('notice.approval_answer_hint')))
-        return '\n\n'.join(parts)
+        text='\n\n'.join(parts)
+        if exact:text+='\n\n'+approval_exact_html(exact, 'notice.request_raw')
+        return text+'\n\n'+escape(msg('notice.approval_answer_hint'))
 
     def browser_step_decision(self, body):
         """The owner's web decision on one pending browser step."""

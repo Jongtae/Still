@@ -1314,7 +1314,7 @@ class PreparationManagementConversation(_Case):
         row = self.settings._drafts()[draft['draft_id']]
         for current in (row, self.settings._renew('owner', 'http', row)):
             text = self.settings.confirmation_text([current])
-            for part in ('Example watch', '20:10', '9'):
+            for part in ('Example watch', '07:10', '9'):  # 20:10 in Seoul, shown in the home zone (New York)
                 self.assertIn(part, text)
             for leaked in ('{', watch['id'], 'max_runs', 'bound_timezone', '+09:00'):
                 self.assertNotIn(leaked, text)

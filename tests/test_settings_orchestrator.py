@@ -127,6 +127,27 @@ class ServiceSettingsProjectionTests(unittest.TestCase):
 
     def tearDown(self): self.temp.cleanup()
 
+    def test_connection_card_folds_the_complete_api_setup(self):
+        service = AgentService(self.store)
+        settings = service.settings_orchestrator
+        work_id = self.store.enqueue('Connect the records service', 'records-setup')
+        owner = service.settings_owner(self.store.job(work_id))
+        probe = 'https://records.example/check'
+        token = 'https://issuer.example/access'
+        data = {'name': 'records', 'hosts': ['records.example'], 'header': 'Authorization', 'scheme': 'Bearer',
+                'money': True, 'note': 'Account records', 'subject_field': '$.account', 'subject_value': 'owner-account',
+                'probe': {'url': probe, 'required_fields': ['$.result']},
+                'oauth': {'token_url': token, 'client_auth': 'basic', 'scope': ['records.read']}}
+        draft = settings.propose(owner, 'web', 'api_connections', 'connect', json.dumps(data), work_id=work_id)
+        row = settings.pending_for_conversation(owner, 'web')[0]
+        summary, exact = settings.confirmation_text([row], folded=True).split('<blockquote expandable>')
+        self.assertIn('records', summary)
+        self.assertIn('매번 직접 승인', summary)
+        for value in (probe, token):
+            self.assertNotIn(value, summary)
+            self.assertIn(value, exact)
+        self.assertEqual(json.loads(row['exact_values']), json.loads(draft['after']))
+
     def test_many_preparations_keep_full_details_once_and_option_ids(self):
         service = AgentService(self.store)
         service.preparations.clock = lambda: 1000

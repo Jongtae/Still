@@ -20,7 +20,7 @@ from types import SimpleNamespace
 import hashlib
 from urllib.parse import urlsplit
 from .messages import LANGUAGES, msg
-from .telegram_locale import ai_text, owner_language
+from .telegram_locale import ai_text, owner_language, translate
 from .prompt_files import prompt
 from .local_tools import LocalTools
 from functools import cached_property
@@ -252,6 +252,22 @@ OVERLONG_MESSAGE_NOTE = ('\n\n[Still observation, not an owner instruction] This
                          'Still kept only the first {kept}. Tell the owner the rest was not read when it matters.')
 
 
+def split_approval_preview(label):
+    from .code_run import APPROVAL_EXACT_LABEL
+    summary, _, exact = label.partition(f'\n\n{APPROVAL_EXACT_LABEL} ')
+    return summary, exact
+
+
+def approval_exact_text(exact, heading='notice.exact_values'):
+    from .telegram_locale import Text
+    return Text(((msg(heading) + '\n', True), (exact, False)))
+
+
+def approval_exact_html(exact, heading='notice.exact_values'):
+    from html import escape
+    return '<blockquote expandable>' + approval_exact_text(escape(exact), heading) + '</blockquote>'
+
+
 def request_prompt_parts(label):
     """``(title, summary, rest, check, exact)`` of one request-approval label (owner choice 2026-10-14, mockup C).
 
@@ -260,8 +276,8 @@ def request_prompt_parts(label):
     other lines; ``check`` says whether every number in ``summary`` occurs in the exact request,
     so a summary can never quietly differ from what is approved.  No service, field or unit is named.
     """
-    from .code_run import APPROVAL_EXACT_LABEL, APPROVAL_MONEY_LINE
-    note,_sep,exact=label.partition(f'\n\n{APPROVAL_EXACT_LABEL} ')
+    from .code_run import APPROVAL_MONEY_LINE
+    note,exact=split_approval_preview(label)
     if not exact:note,exact='',label
     money=APPROVAL_MONEY_LINE in note
     # Owner choice 2026-10-14 (clear signing): labelled values Still checked against the exact request.
@@ -1901,7 +1917,7 @@ class AgentService:
         return self.preparations_service.preparation_history(job)
 
     def home_zone(self):
-        """#393: the owner's time zone, so a proposal names a zone only when it differs."""
+        """The time zone for owner-facing schedule text, if configured."""
         return self.preparations_service.home_zone()
 
     def preparation_proposal_html(self, bound):
@@ -3984,7 +4000,6 @@ class AgentService:
             task['budget_continue']=None
             offer=self.budget_continue_offer(job['id'])
             if self.budget_continue_current(job,offer):
-                from .telegram_locale import translate
                 task['budget_continue']={'nonce':offer['nonce'],'text':offer['text'],
                     'texts':{lang:translate(offer['text'],lang) for lang in ('en','ja','zh')},
                     'labels':{lang:msg('button.continue',lang) for lang in ('ko','en','ja','zh')}}
@@ -3996,7 +4011,12 @@ class AgentService:
             task['waiting_for']=list(waiting_for)
             # #855: the settings drafts this Work still offers the owner (id and wording only; no digest).
             task['settings_drafts']=[{'id':row['id'],'effect':row['effect'],'note':row.get('note'),'reason':row.get('reason'),
+                                      'exact_values':row.get('exact_values'),
                                       'expires_at':row.get('expires_at')} for row in awaiting_drafts.get(job['id'],())]
+            for draft in task['settings_drafts']:
+                if draft['exact_values']:
+                    draft['texts']={lang:{key:translate(draft[key],lang) for key in ('effect','note')}
+                                    for lang in ('en','ja','zh')}
             # #845/#477: the transient bubble shares the /dev worker gate.
             # Read model only, computed per poll; never stored.
             if kind=='active':task['step_line']=self._draft_step_text(job,SimpleNamespace(scrubbed=None)) or ''

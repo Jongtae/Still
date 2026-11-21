@@ -1158,7 +1158,7 @@ class PreparationsService:
         return rows
 
     def home_zone(self):
-        """#393: the owner's time zone, so a proposal names a zone only when it differs."""
+        """The time zone for owner-facing schedule text, if configured."""
         service=self.service
         try:return service.context_observations.settings().get('timezone') or None
         except Exception:return None
@@ -1432,6 +1432,7 @@ class PreparationsService:
     def preparations_status(self):
         """The Settings 준비해 둔 일 list: owner's own view (#659)."""
         service=self.service
+        home_zone=service.home_zone()
         rows=[]
         lines={brief['line_id']:brief['task'] for brief in service.lines.lines()}
         # #1005: a line's finished pieces come back once per line in ``piece_groups``.
@@ -1448,8 +1449,9 @@ class PreparationsService:
                          'title':row.get('title_text'),'offer':row.get('offer_text'),
                          # #581: native form values are local wall times; parse_due owns zone resolution.
                          'due_local_input':datetime.fromtimestamp(row['due_at'],prep.zone(row['timezone'])).strftime('%Y-%m-%dT%H:%M'),
-                         'due':row['due_at'],'due_iso':datetime.fromtimestamp(row['due_at'],prep.zone(row['timezone'])).isoformat(),'due_local':prep.local_text(row['due_at'],row['timezone']),
-                         'recurrence_labels':{lang:prep.rule_text(row['recurrence'],lang) for lang in LANGUAGES} if str(row['recurrence'] or '').startswith('RRULE:') else None,
+                         'due':row['due_at'],'due_iso':datetime.fromtimestamp(row['due_at'],prep.zone(row['timezone'])).isoformat(),'due_local':prep.local_text(row['due_at'],row['timezone'],home_zone),
+                         'recurrence_labels':{lang:prep.rule_text(row['recurrence'],lang,timezone_name=row['timezone'],home_zone=row['timezone'])
+                                              for lang in LANGUAGES} if str(row['recurrence'] or '').startswith('RRULE:') else None,
                          'timezone':row['timezone'],'recurrence':row['recurrence'],'delivery':service.preparation_delivery(row),
                          'accepted_by':row['accepted_by'],'last_outcome':row['last_outcome'],'last_work_id':row['last_run_job_id'],
                          'last_status':row.get('last_status'),'last_delivery':row.get('last_delivery'),
@@ -1458,7 +1460,7 @@ class PreparationsService:
                          # #719: the watch window, its bound and the last typed decision.
                          'every_minutes':(row['every_seconds']//60) if row.get('every_seconds') else None,
                          'until_local_input':datetime.fromtimestamp(row['until_at'],prep.zone(row['timezone'])).strftime('%Y-%m-%dT%H:%M') if row.get('until_at') else None,
-                         'until_local':prep.local_text(row['until_at'],row['timezone']) if row.get('until_at') else None,
+                         'until_local':prep.local_text(row['until_at'],row['timezone'],home_zone) if row.get('until_at') else None,
                          'until':datetime.fromtimestamp(row['until_at'],prep.zone(row['timezone'])).isoformat() if row.get('until_at') else None,
                          'max_runs':row.get('max_runs'),'run_count':row.get('run_count') or 0,
                          'max_window_runs':prep.MAX_DAILY_WINDOW_RUNS * (1 if terms.get('recurrence') else prep.MAX_WINDOW_SECONDS // 86400),
@@ -1473,7 +1475,7 @@ class PreparationsService:
             if row.get('check_spec'):
                 try:
                     view=checks.owner_view(service.store,row)
-                    labels={lang:service._redact_known_secrets(prep.schedule_text(row,service.home_zone(),lang))
+                    labels={lang:service._redact_known_secrets(prep.schedule_text(row,home_zone,lang))
                             for lang in LANGUAGES}
                 except CredentialError:
                     view={'code':'[redacted]'}
@@ -1503,7 +1505,7 @@ class PreparationsService:
             group['rows']=[self.settings_decision(piece) for piece in group['rows']]
             groups.append({'line_id':line_id,'line_task':lines.get(line_id),'count':group['count'],'states':group['states'],
                            'pieces':[{'id':piece['id'],'state':piece['state'],'goal':piece['goal_text'],
-                                      'due_local':prep.local_text(piece['due_at'],piece['timezone']),
+                                      'due_local':prep.local_text(piece['due_at'],piece['timezone'],home_zone),
                                       'last_work_id':piece['last_run_job_id'],'last_decision':piece.get('last_decision'),
                                       'last_decision_reason':piece.get('last_decision_reason'),
                                       'last_result':self.short_result(piece.get('last_response'))}
@@ -2258,7 +2260,8 @@ class PreparationsService:
         """One line as the list answer shows it: task, promise, last delivered report, next run or blocker."""
         service=self.service
         rows=self.line_rows(brief['line_id'])
-        zone=service.home_zone() or (rows[0]['timezone'] if rows else None)
+        home_zone=service.home_zone()
+        zone=home_zone or (rows[0]['timezone'] if rows else None)
         delivered=[item for item in self.line_outcomes(brief['line_id'],limit=el.OUTCOMES_SHOWN)
                    if item['outcome']==el.OUTCOME_DELIVERED]
         entry={'line_id':brief['line_id'],'version':brief['version'],'state':brief['state'],'task':brief['task'],
@@ -2282,7 +2285,7 @@ class PreparationsService:
         account=[row for row in active if row['state']==prep.STATE_SCHEDULED and row.get('origin')==prep.ORIGIN_LINE_ACCOUNT]
         following=min(work or account,key=lambda row:row['due_at'],default=None)
         if following:
-            entry['next']=prep.local_text(following['due_at'],following['timezone'])
+            entry['next']=prep.local_text(following['due_at'],following['timezone'],home_zone)
             if not work:entry['next_is_account']=True
         elif any(row['state']==prep.STATE_PAUSED for row in active):
             entry['blocked']=msg('settings_orchestrator.paused')

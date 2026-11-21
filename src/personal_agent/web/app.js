@@ -727,6 +727,12 @@ function settingsAction(label,onClick,extraClass=''){const button=element('butto
 // #474: a row for something not set up yet. A pane shows only what is on; the add dialog shows the rest.
 function inactive(row,off=true){if(off)row.dataset.inactive='';return row;}
 function settingsDisclosure(summary,lines){const details=element('details',undefined,'settings-disclosure'),label=element('summary',summary);details.append(label);for(const line of lines)details.append(element('span',line,'settings-technical-line'));return details;}
+function exactValuesDisclosure(text){
+ if(!text)return null;
+ const details=settingsDisclosure(t('정확한 값'),text.split('\n'));
+ details.classList.add('approval-exact-values');
+ return details;
+}
 // Polling re-renders lists; the owner's keyboard focus must survive it.
 function rememberFocus(container){const active=document.activeElement;if(!active||active===document.body||!container||!container.contains(active))return '';return active.dataset.focusKey||(active.id?'#'+active.id:'');}
 function restoreFocus(container,key){if(!key||!container)return;const node=key.startsWith('#')?document.getElementById(key.slice(1)):[...container.querySelectorAll('[data-focus-key]')].find(item=>item.dataset.focusKey===key);if(node&&node!==document.activeElement)node.focus({preventScroll:true});}
@@ -1631,7 +1637,12 @@ function minuteNode(value){const parts=formatTimeParts(value),node=element('time
 // The owner's next typed message ("응", "아니") answers it too; no command is shown.
 function budgetContinueActions(task){const offer=task.budget_continue,lang=currentLanguage==='zh-CN'?'zh':currentLanguage,box=element('div',undefined,'turn-recovery'),button=element('button',offer.labels[lang],'small'),feedback=element('p',undefined,'field-feedback');box.append(renderRichText(offer.texts[lang]||offer.text));button.type='button';button.onclick=()=>busy(button,async()=>{try{const result=await api('/api/work/continue',{work_id:task.id,nonce:offer.nonce});feedback.textContent=result.response;await refresh();}catch(error){feedback.textContent=error.message;}});box.append(button,feedback);return box;}
 function settingsDraftActions(task){const box=element('div',undefined,'turn-settings-draft');box.append(element('p',t('적용을 누르거나 그렇게 하라고 답하기 전에는 아무것도 바뀌지 않습니다.'),'muted'));
- for(const draft of task.settings_drafts)box.append(element('p','· '+draft.effect+(draft.note?' ('+draft.note+')':'')+(draft.reason?' - '+draft.reason:'')));
+ const lang=currentLanguage==='zh-CN'?'zh':currentLanguage;
+ for(const draft of task.settings_drafts){
+  const {effect,note}=draft.texts?.[lang]||draft;
+  box.append(element('p','· '+effect+(note?' ('+note+')':'')+(draft.reason?' - '+draft.reason:'')));
+  const exact=exactValuesDisclosure(draft.exact_values);if(exact)box.append(exact);
+ }
  const actions=element('div',undefined,'button-row'),feedback=element('p',undefined,'field-feedback');feedback.id='settings-draft-'+task.id;feedback.setAttribute('role','status');
  const act=(label,action)=>{const button=element('button',t(label),'small');button.type='button';button.dataset.focusKey='settings-draft:'+task.id+':'+action;button.onclick=()=>busy(button,async()=>{try{const result=await api('/api/tasks/'+encodeURIComponent(task.id)+'/settings-draft',{action});setFeedback(feedback.id,result.response||t('처리했습니다.'));await refresh();}catch(error){feedback.textContent=error.message;}});return button;};
  actions.append(act('적용','confirm'),act('바꾸지 않음','cancel'));box.append(actions,feedback);return box;}
@@ -1919,8 +1930,9 @@ function renderScheduledBudget(){
  input.max=String(scheduledBudget.max);$('scheduled-budget-label').textContent=preparationLabel('budget_label');$('scheduled-budget-help').textContent=preparationLabel('budget_help');$('scheduled-budget-save').textContent=preparationLabel('save');
 }
 function preparationDescription(row){
- if(row.check)return row.recurrence_labels?.[currentLanguage==='zh-CN'?'zh':currentLanguage]||row.recurrence_labels?.ko||'';
- const active=PREPARATION_ACTIVE.includes(row.state),parts=[row.kind==='reminder'?t('알림'):t('미리 준비'),row.recurrence==='window'?preparationWindowLabel(row):row.recurrence_labels?.[currentLanguage]||preparationRepeatLabel(row.recurrence),active?t('{time} 예정',{time:row.due_local}):row.due_local,preparationDeliveryLabel(row.delivery)];
+ const recurrence=row.recurrence_labels?.[currentLanguage==='zh-CN'?'zh':currentLanguage];
+ if(row.check)return recurrence||row.recurrence_labels?.ko||'';
+ const active=PREPARATION_ACTIVE.includes(row.state),parts=[row.kind==='reminder'?t('알림'):t('미리 준비'),row.recurrence==='window'?preparationWindowLabel(row):recurrence||preparationRepeatLabel(row.recurrence),active?t('{time} 예정',{time:row.due_local}):row.due_local,preparationDeliveryLabel(row.delivery)];
  if(row.last_decision)parts.push(preparationDecisionLabel(row));
  if(row.last_result)parts.push(t('마지막 결과: {text}',{text:row.last_result}));return parts.join(' · ');}
 function renderPreparations(){renderScheduledBudget();const list=$('preparations-list');if(!list||!preparationRows)return;const fingerprint=JSON.stringify([preparationRows,preparationGroups,preparationDeletePending,preparationEditPending,preparationLabels,currentLanguage]);if(list.dataset.state===fingerprint)return;list.dataset.state=fingerprint;const focusKey=rememberFocus(list);list.replaceChildren();
@@ -2396,7 +2408,7 @@ function renderBrowser(status){const box=$('browser-status'),form=$('browser-log
  // #488: only a sign-in whose cookies are still stored is shown as signed in; other rows offer the login window for that site.
  const signInState={signed_in:[t('로그인됨'),'active'],refresh_refused:[t('다시 로그인 권장'),'neutral'],expired:[t('다시 로그인 필요'),'neutral'],checking:[t('확인 중…'),'neutral'],unknown:[t('확인 필요'),'neutral'],none:[t('로그인 안 됨'),'neutral']};
  for(const step of (status.pending_steps||[]).filter(step=>step.state==='requested')){const decide=decision=>async event=>busy(event.currentTarget,async()=>{try{await api('/api/browser/approval',{work_id:step.work_id,decision,digest:step.digest});setFeedback('browser-feedback',decision==='approve'?t('이 단계를 승인했습니다. 요청을 한 번만 이어서 처리합니다.'):t('이 단계를 허용하지 않았습니다.'));await refresh();}catch(error){setError('browser-feedback',error);}});
-  box.append(settingsRow(t('승인 대기 단계'),String(step.label||''),t('승인 필요'),'attention',[focusKey(settingsAction(t('이 단계 승인'),decide('approve')),'browser-approve:'+step.work_id),focusKey(settingsAction(t('허용 안 함'),decide('deny'),'destructive'),'browser-deny:'+step.work_id)]));}
+  box.append(settingsRow(t('승인 대기 단계'),String(step.label||''),t('승인 필요'),'attention',[focusKey(settingsAction(t('이 단계 승인'),decide('approve')),'browser-approve:'+step.work_id),focusKey(settingsAction(t('허용 안 함'),decide('deny'),'destructive'),'browser-deny:'+step.work_id)],exactValuesDisclosure(step.exact_values)));}
  const sessionRow=(session,compact)=>{const site=String(session.site||''),signin=signInState[session.sign_in]?session.sign_in:'none',when=session.signed_in_at?formatTimeParts(session.signed_in_at).relative:'';
   const lines=[signin==='none'?t('직접 로그인한 기록이 없습니다. 작업 중 방문하며 남은 쿠키만 있습니다.'):signin==='expired'?t('{time}에 직접 로그인했지만, 그 로그인 쿠키는 만료되었거나 더 이상 저장되어 있지 않습니다.',{time:when}):t('{time}에 직접 로그인했습니다.',{time:when}),signin==='refresh_refused'?t('사이트가 세션 연장을 거부했습니다. 다시 로그인해야 할 수 있습니다.'):signin==='checking'?t('로그인 쿠키가 아직 저장되어 있는지 확인하고 있습니다.'):signin==='unknown'?t('저장된 로그인 세션을 읽지 못해 로그인이 남아 있는지 확인하지 못했습니다.'):'',[t('마지막 사용: {time}',{time:formatTimeParts(session.last_used).relative}),t('쿠키 {count}개',{count:Number(session.cookies)||0})].join(' · ')].filter(Boolean);
   const loginAction=session.login_url?focusKey(settingsAction(signin==='signed_in'?t('다시 로그인'):t('로그인'),event=>startBrowserLogin(event.currentTarget,String(session.login_url))),'browser-login:'+site):null;if(loginAction)loginAction.disabled=windowBusy;

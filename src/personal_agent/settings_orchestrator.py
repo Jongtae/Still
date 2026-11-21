@@ -592,7 +592,9 @@ class SettingsOrchestrator:
         """One reservation as the owner reads it: the full summary, or (#904) its title and schedule."""
         from . import preparations as prep
         from .current_context import redact_known_secrets
-        text = prep.proposal_summary(row) if full else ' · '.join((prep.owner_title(row), prep.schedule_text(row)))
+        home_zone = self.service.home_zone()
+        text = (prep.proposal_summary(row, home_zone) if full
+                else ' · '.join((prep.owner_title(row), prep.schedule_text(row, home_zone))))
         return f"{redact_known_secrets(self.store, text)} ({self._preparation_states().get(row['state'], row['state'])})"
 
     def _preparations(self):
@@ -1090,6 +1092,7 @@ class SettingsOrchestrator:
         before = self._before(category, setting, after, row)
         if after == self._shown_before(category, setting, before):
             raise SettingsError(msg('settings_orchestrator.setting_unchanged', label=_CHANGE_LABELS[category, setting], value=self._describe(category, setting, after, row)))
+        exact_values = ''
         if (category, setting) == ("skills", "add"):
             from .skills import parse_source
             source = parse_source(after)
@@ -1098,10 +1101,9 @@ class SettingsOrchestrator:
                             for row in self.service.skills_status().get("skills") or ())
             summary = (msg(
                 'settings_orchestrator.skill_replace_summary' if replacing else 'settings_orchestrator.skill_add_summary',
-                repo=source['repo'],
-                path=source['path'],
-                revision=source['revision'][:7],
+                name=name,
             ))
+            exact_values = after
             if not self.service.skills_status().get("enabled"):
                 summary = msg('settings_orchestrator.skill_enable_summary', summary=summary)
 
@@ -1153,23 +1155,13 @@ class SettingsOrchestrator:
                 lines.append(msg('settings_orchestrator.api_money' if data['money'] else 'settings_orchestrator.api_no_money'))
                 summary = '\n'.join(lines)
             else:
-                summary = (msg(
-                    'settings_orchestrator.api_connect_summary',
-                    name=data['name'],
-                    hosts=', '.join(data['hosts']),
-                    probe_url=data['probe']['url'],
-                    subject=data['subject_value'] or msg('settings_orchestrator.subject_not_set'),
-                    money=msg('settings_orchestrator.yes') if data['money'] else msg('settings_orchestrator.no'),
-                ))
-            if data.get('oauth'):
-                summary += "\n" + msg(
-                    'settings_orchestrator.oauth_destination',
-                    token_url=data['oauth']['token_url'],
-                    scope=', '.join(data['oauth']['scope']) or msg('settings_orchestrator.default_scope'),
-                )
+                summary = msg('settings_orchestrator.api_short', name=data['name'])
+                summary += '\n' + msg('settings_orchestrator.api_money' if data['money'] else 'settings_orchestrator.api_no_money')
+                exact_values = json.dumps(data, ensure_ascii=False, indent=2)
         elif (category, setting) == ("ai_connections", "connect"):
             data = json.loads(after)
-            summary = '\n'.join((
+            summary = msg('settings_orchestrator.mcp_connect_summary', name=data['name'])
+            exact_values = '\n'.join((
                 msg('settings_orchestrator.mcp_connect_line', engine=data['engine'], name=data['name'], url=data['url']),
                 msg('settings_orchestrator.mcp_connect_source', source=data['source'], publisher=data['publisher'],
                     licence=data['licence']),
@@ -1202,6 +1194,8 @@ class SettingsOrchestrator:
                  "reason": redact_known_secrets(self.store, reason), "work_id": work_id if isinstance(work_id, str) else None,
                  "created_at": now, "expires_at": now + self.TTL_SECONDS if self.TTL_SECONDS else None,
                  "state": "awaiting-confirmation"}
+        if exact_values:
+            draft['exact_values'] = exact_values
         if _recovery_of is not None:
             draft['recovery_of'] = _recovery_of
         if _observe_only:
@@ -1233,11 +1227,14 @@ class SettingsOrchestrator:
         with self._confirming:
             self._put_drafts({draft["id"]: draft})
             self._audit(draft, "drafted")
+        response = summary + (f"\n{note}" if note else "")
+        if exact_values:
+            response += f"\n\n{msg('notice.exact_values')}\n{exact_values}"
         return {"state": "awaiting-confirmation", "draft_id": draft["id"], "digest": draft["digest"],
                 "category": category, "setting": setting, "before": before, "after": after, "summary": summary,
                 "note": note, "expires_at": draft["expires_at"], "requires_owner_confirmation": True, "applied": False,
                 "continues_work": bool(draft.get("continuation")),
-                "response": summary + (f"\n{note}" if note else "") + "\n" + msg('settings_orchestrator.confirmation_required')}
+                "response": response + "\n" + msg('settings_orchestrator.confirmation_required')}
 
     def _apply(self, row):
         """Run the service's own setter; ``applied``, or ``requested`` when it only queued the change."""
@@ -1815,17 +1812,25 @@ class SettingsOrchestrator:
         return hashlib.sha256(json.dumps(body).encode()).hexdigest()
 
     @staticmethod
-    def confirmation_text(rows):
-        lines = [msg('settings_orchestrator.this_settings_change_was_requested_in')]
+    def confirmation_text(rows, *, folded=False):
+        from html import escape
+        from .quickstart_service import approval_exact_html, approval_exact_text
+
+        text = msg('settings_orchestrator.this_settings_change_was_requested_in')
         for row in rows:
             # #511: catalog lines, so each surface shows them in its language.
             # #675: keep multiline catalog blocks intact so surfaces can translate the whole template.
-            lines.append(row['effect'] if '\n' in row['effect'] and not row.get('note') else
+            line = (row['effect'] if '\n' in row['effect'] and not row.get('note') else
                          msg('settings_orchestrator.draft_line_with_note', effect=row['effect'], note=row['note'])
                          if row.get("note") else msg('settings_orchestrator.draft_line', effect=row['effect']))
+            text += '\n' + (escape(line, quote=False) if folded else line)
             if row.get("reason"):
-                lines.append("  " + msg('settings_orchestrator.draft_reason', reason=row['reason']))
-        return "\n".join(lines)
+                reason = "  " + msg('settings_orchestrator.draft_reason', reason=row['reason'])
+                text += '\n' + (escape(reason) if folded else reason)
+            if row.get('exact_values'):
+                exact = row['exact_values']
+                text += '\n' + (approval_exact_html(exact) if folded else approval_exact_text(exact))
+        return text
 
     def work_tools(self, owner, channel, work_id, telegram=False, *, unattended=False, owner_request=None,
                    own_preparation=None, own_goal=None):
