@@ -474,3 +474,33 @@ class StructuredOptionalFields(unittest.TestCase):
         transport=ScriptedTransport(openai_tool_reply({'result':'ok','confidence':0.9}))
         engine,_=engine_for(transport)
         self.assertEqual(engine.structured(DecisionContext('fixture'),'question',dict(schema)).outcome,OUTCOME_MALFORMED)
+
+
+class StructuredQuotedEmpty(unittest.TestCase):
+    def test_a_field_written_as_a_pair_of_quote_marks_is_empty(self):
+        # #1093: a plan wrote ask_location '""' for none; Still sent '""' to the owner and ran no worker.
+        schema={'type':'object','additionalProperties':False,
+                'properties':{'question':{'type':'string'},'brief':{'type':'object','properties':{'notes':{'type':'string'}}},
+                              'steps':{'type':'array','items':{'type':'string'}}},
+                'required':['question','brief','steps']}
+        seen=[]
+        for written in ('""',"''",' "" ','\u201c\u201d'):
+            with self.subTest(written=written):
+                transport=ScriptedTransport(openai_tool_reply(
+                    {'question':written,'brief':{'notes':written},'steps':[written,'look it up'],'confidence':0.9}))
+                engine,_=engine_for(transport)
+                decision=engine.structured(DecisionContext('fixture'),'question',schema,
+                                           lambda data:seen.append(data['question']) or True)
+                self.assertEqual(decision.outcome,OUTCOME_DECIDED)
+                self.assertEqual(decision.data,{'question':'','brief':{'notes':''},'steps':['','look it up']})
+                self.assertEqual(seen[-1],'','the caller\'s shape check sees the same reading')
+
+    def test_text_that_contains_quotes_is_kept(self):
+        schema={'type':'object','additionalProperties':False,'properties':{'question':{'type':'string'}},
+                'required':['question']}
+        for written in ('"현재 위치"를 공유해 주세요','""?','"'):
+            with self.subTest(written=written):
+                transport=ScriptedTransport(openai_tool_reply({'question':written,'confidence':0.9}))
+                engine,_=engine_for(transport)
+                self.assertEqual(engine.structured(DecisionContext('fixture'),'question',schema).data,
+                                 {'question':written})
