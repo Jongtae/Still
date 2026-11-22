@@ -40,6 +40,10 @@ OWNER_STATE_ACTIONS=('forget','delete','undo','revert')
 READ_RESULT_EXCERPT_CHARS = 4000
 READ_RESULTS_PER_WORK = 24
 READ_RESULT_RETENTION_SECONDS = 30 * 86400
+#: #307: the rows a later Work can find by what they said: public page reads that name their address.
+#: A browser view may be a signed-in page, so it is not indexed (signed-in pages are a separate decision).
+READ_PAGE_ROW_SQL = "({row}.source_kind='public' AND {row}.page_url IS NOT NULL)"
+READ_PAGES_FOUND = 5
 _ANY_READ_RESULT_EPOCH = object()
 _READ_CHECKPOINT_WRITER = ContextVar('read_checkpoint_writer', default=None)
 
@@ -300,6 +304,7 @@ class QuickStore:
             for column in ('page_url', 'page_title'):
                 if column not in read_result_columns:
                     db.execute(f'ALTER TABLE work_read_results ADD COLUMN {column} TEXT')
+            self._setup_read_pages_search(db)
             columns={row['name'] for row in db.execute('PRAGMA table_info(messages)')}
             if 'workspace_id' not in columns: db.execute('ALTER TABLE messages ADD COLUMN workspace_id TEXT')
             if 'job_id' not in columns: db.execute('ALTER TABLE messages ADD COLUMN job_id TEXT')
@@ -2737,6 +2742,75 @@ class QuickStore:
                          'SELECT id FROM work_read_results WHERE job_id=? ORDER BY id DESC LIMIT -1 OFFSET ?)',
                          (job_id, READ_RESULTS_PER_WORK))
             return row_id
+
+    @staticmethod
+    def _setup_read_pages_search(db):
+        """#307: an FTS5 index of the public pages a Work read, so a later Work can find one by what it said.
+
+        Adopts the #221 FTS5 pattern, with the index holding its own copy of the already redacted
+        address, title and excerpt (not external content): only public page rows are indexed, and a
+        delete of any ``work_read_results`` row (cap, expiry, forget, export, restore) deletes its
+        entry by rowid.  Without FTS5 the lookup finds nothing.  The portable copy and restore also
+        rebuild the index after dropping the rows (``portable_state``).
+        """
+        try:
+            existed = db.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='read_pages_search'").fetchone()
+            db.execute("CREATE VIRTUAL TABLE IF NOT EXISTS read_pages_search USING fts5("
+                       "page_title, page_url, excerpt, tokenize='unicode61')")
+            # A deleted row's terms leave the index too (FTS5 secure-delete, SQLite 3.42+), so a
+            # forgotten or expired page is gone from the file, not only from results.
+            try:
+                db.execute("INSERT INTO read_pages_search(read_pages_search,rank) VALUES('secure-delete',1)")
+            except sqlite3.OperationalError:
+                pass
+            db.executescript(f'''
+                CREATE TRIGGER IF NOT EXISTS read_pages_search_ai AFTER INSERT ON work_read_results
+                WHEN {READ_PAGE_ROW_SQL.format(row='new')} BEGIN
+                  INSERT INTO read_pages_search(rowid,page_title,page_url,excerpt)
+                  VALUES(new.id,COALESCE(new.page_title,''),new.page_url,new.excerpt);
+                END;
+                CREATE TRIGGER IF NOT EXISTS read_pages_search_ad AFTER DELETE ON work_read_results BEGIN
+                  DELETE FROM read_pages_search WHERE rowid=old.id;
+                END;
+            ''')
+            if not existed:
+                db.execute("INSERT INTO read_pages_search(rowid,page_title,page_url,excerpt) "
+                           "SELECT id,COALESCE(page_title,''),page_url,excerpt FROM work_read_results r "
+                           f"WHERE {READ_PAGE_ROW_SQL.format(row='r')}")
+        except sqlite3.OperationalError:
+            pass
+
+    def find_read_pages(self, query, *, exclude_work_id=None, before=None, after=None, limit=READ_PAGES_FOUND, now=None):
+        """#307: public pages earlier owner-typed Works read, best match first, one entry per address.
+
+        Pointers only (Work, address, title, when it was read); the excerpt stays behind
+        ``search_conversation(work_id=...)``.  Unexpired rows of followable Works only.
+        """
+        expression = fts_prefix_expression(query) if isinstance(query, str) else ''
+        if not expression:
+            return []
+        cutoff = (time.time() if now is None else now) - READ_RESULT_RETENTION_SECONDS
+        documents = set(self.config('file_workspace_document_jobs', []) or [])
+        try:
+            with self.db() as db:
+                hits = db.execute(f"""SELECT r.job_id,r.page_url,r.page_title,r.created FROM read_pages_search s
+                    JOIN work_read_results r ON r.id=s.rowid JOIN jobs j ON j.id=r.job_id
+                    WHERE read_pages_search MATCH ? AND r.created>? AND {OWNER_WORDS_SQL}
+                    AND (? IS NULL OR r.job_id<>?) AND (? IS NULL OR r.created<?) AND (? IS NULL OR r.created>=?)
+                    ORDER BY bm25(read_pages_search),r.id DESC LIMIT 60""",
+                    (expression, cutoff, exclude_work_id, exclude_work_id, before, before, after, after)).fetchall()
+        except sqlite3.OperationalError:
+            return []
+        found, seen = [], set()
+        for hit in hits:
+            if hit['page_url'] in seen or hit['job_id'] in documents:
+                continue
+            seen.add(hit['page_url'])
+            found.append({'work_id': hit['job_id'], 'url': hit['page_url'], 'title': hit['page_title'] or '',
+                          'read_at': hit['created']})
+            if len(found) >= limit:
+                break
+        return found
 
     def read_results(self, job_id, *, epoch=_ANY_READ_RESULT_EPOCH, after_id=0, now=None):
         """Unexpired result rows, newest first. An explicit None matches only ledgerless reads."""
