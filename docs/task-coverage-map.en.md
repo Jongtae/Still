@@ -335,7 +335,7 @@ The C16 work list: remove Still blockers so the owner's AI can do the work. Coun
 | atus-2025:0602 |  |  |
 | atus-2025:0603 |  |  |
 | atus-2025:0604 |  |  |
-| atus-2025:0701 | [scenario:skill-add-reference-by-name](../evals/scenarios/skills.json) |  |
+| atus-2025:0701 | [scenario:skill-add-reference-by-name](../evals/scenarios/skills.json), [scenario:world-shop-clear-then-add](../evals/scenarios/world-shop.json), [scenario:world-shop-outside-then-add](../evals/scenarios/world-shop.json), [scenario:world-shop-recipe-to-cart](../evals/scenarios/world-shop.json), [scenario:world-shop-signin-wall](../evals/scenarios/world-shop.json) |  |
 | atus-2025:0702 | [scenario:line-change-stock-time](../evals/scenarios/continuity-experiments.json), [scenario:new-request-after-lunch-topic](../evals/scenarios/topic-shift.json), [scenario:new-request-after-travel-topic](../evals/scenarios/topic-shift.json), [scenario:shopping-followup-constraint](../evals/scenarios/shopping.json), [scenario:shopping-lookup-compare](../evals/scenarios/shopping.json), [scenario:standing-wish-is-not-a-memory](../evals/scenarios/watches.json) | [judgment:escalation-en](../evals/judgments/cases-v1.json), [judgment:escalation-ko](../evals/judgments/cases-v1.json), [judgment:goal-partial](../evals/judgments/cases-v1.json), [judgment:goal-partial-ko](../evals/judgments/cases-v1.json), [judgment:open-question-true-en](../evals/judgments/cases-v1.json), [judgment:open-question-true-ko](../evals/judgments/cases-v1.json) |
 | atus-2025:0703 |  |  |
 | atus-2025:0801 |  |  |

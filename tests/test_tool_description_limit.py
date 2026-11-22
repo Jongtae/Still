@@ -18,7 +18,7 @@ from unittest import mock
 from urllib.error import HTTPError
 
 from personal_agent import providers
-from personal_agent.agent_runtime import (CONNECTOR_PERMISSION_DEFINITION, DEFINITIONS, FINISH_DEFINITION,
+from personal_agent.agent_runtime import (CONNECTOR_APPROVAL_NOTE_DEFINITION, CONNECTOR_PERMISSION_DEFINITION, DEFINITIONS, FINISH_DEFINITION,
                                           TOOL_DESCRIPTION_LIMIT, Capabilities, model_facing_text)
 from personal_agent.bounded_execution import (BOUNDED_PROFILE, CLI_PROFILES, ISOLATED_PROFILE, AgentOSMcpTools,
                                               ReadOnlyAgentOSMcpTools, profile_mcp_tools)
@@ -99,6 +99,7 @@ class EveryRouteFitsTheLimit(Wired):
         self.assert_fits(native, 'native')
         self.assert_fits([definition['function'] for definition in DEFINITIONS], 'declared')
         self.assert_fits([CONNECTOR_PERMISSION_DEFINITION['function']], 'connector permission')
+        self.assert_fits([CONNECTOR_APPROVAL_NOTE_DEFINITION['function']], 'connector approval note')
 
     def test_the_mcp_tools_a_cli_route_lists(self):
         caps = self.caps()

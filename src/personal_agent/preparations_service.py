@@ -758,10 +758,15 @@ class PreparationsService:
             elif schedule.get('run_return_state') == prep.STATE_PAUSED or schedule.get('state') == prep.STATE_PAUSED:
                 text += '\n' + msg('preparations.self_change_pause', lang)
             return text
-        text = msg('preparations.self_change_notice', lang, id=event['preparation_id'],
+        # #1097: named by its title (its schedule added when another row shares it), the same
+        # name the owner may say back to undo; the id stays out of the owner's text.
+        name = prep.owner_name({**row, 'id': event['preparation_id']},
+                               self.service.preparations.rows(finished_pieces=False),
+                               self.service.home_zone(), lang)
+        text = msg('preparations.self_change_notice', lang, name=name,
                    change=msg('preparations.self_change_' + operation, lang), before=summary('before'),
                    after=summary('after'), reason=excerpt(event['reason']) if hunks else event['reason'],
-                   undo=msg('button.restore_reservation', lang))
+                   undo=msg('button.undo', lang))
         if event.get('outside_content'):
             text += '\n' + msg('preparations.self_change_outside', lang)
         if shortened:
@@ -1325,6 +1330,27 @@ class PreparationsService:
     def preparation_restore_markup(self, notification_id):
         """Undo only the cancellations recorded on this message."""
         return {'inline_keyboard':[[{'text':msg('button.restore_reservation'),'callback_data':f"p7p:{notification_id}:restore"}]]}
+
+    def undo_self_change(self, fingerprint):
+        """#1097: the self-change notice's button: undo exactly the run whose receipt it shows.
+
+        True when undone; False when the row changed since (owner edit, another run, an
+        earlier undo), so a stale button never reverts a later change.
+        """
+        service=self.service
+        with service.store.db() as db:
+            receipt=db.execute("SELECT detail FROM tool_events WHERE tool='preparation_self_change' "
+                               "AND json_extract(detail,'$.fingerprint')=?",(fingerprint,)).fetchone()
+        if not receipt:return False
+        event=json.loads(receipt['detail'])
+        row=service.preparations.get(event['preparation_id'])
+        current=json.loads((row or {}).get('self_change') or '{}')
+        if (not row or current.get('run_key')!=event.get('run_key') or not any(
+                prep.Preparations.self_undoable(row,operation) for operation in prep.SELF_CHANGE_OPERATIONS)):
+            return False
+        try:service.preparations.restore(row['id'])
+        except prep.PreparationRefusal:return False
+        return True
 
     def restore_preparation(self, preparation_id, *, cancelled_at=None):
         """Restore future runs without reopening a cancelled run's input requests."""

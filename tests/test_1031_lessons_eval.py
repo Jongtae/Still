@@ -127,6 +127,54 @@ def test_after_the_lessons_migration_carried_is_the_working_lessons_block(store)
     assert (report['learned'], report['carried']) == (3, 3)
 
 
+@pytest.mark.parametrize('delete', [False, True])
+def test_a_restored_lesson_the_owner_forgot_is_not_counted_as_learned_or_lost(store, delete):
+    """A lesson item the owner forgot after the migration is not one the assistant should carry (#1031)."""
+    from personal_agent.agent_runtime import MEMORY_OWNER
+    from personal_agent.owner_forget import OwnerForget
+    from personal_agent.owner_model import WorkingLessons
+    collapse_store(store)
+    assert WorkingLessons(store).migrated()
+    [gone] = [lesson for lesson in WorkingLessons(store).current() if lesson['text'] == LESSON_B]
+    OwnerForget(store).forget(MEMORY_OWNER, gone['ref'], delete=delete)
+    report = le.retention_report(store)
+    assert (report['learned'], report['owner_forgot'], report['carried']) == (2, 1, 2)
+    assert (report['lost'], report['retention']) == (0, 1.0)
+    assert [row['text'] for row in le.learned_lessons(store)] == [LESSON_A, LESSON_C]
+
+
+def test_a_lesson_the_assistant_removed_still_counts_as_lost(store):
+    """Only the owner's forget excludes a lesson; the assistant's own remove is a loss the metric shows."""
+    from personal_agent import owner_model as om
+    collapse_store(store)
+    lessons = om.WorkingLessons(store)
+    assert lessons.migrated()
+    [gone] = [lesson for lesson in lessons.current() if lesson['text'] == LESSON_B]
+    remove = {'op': 'remove', 'id': gone['id'], 'text': '', 'why': '', 'reason': 'no longer holds'}
+    kept, change, _blocker, _dropped = om.validate_lessons(
+        {'lessons': [remove], 'change': 'c', 'blocker': ''}, {l['id']: l['text'] for l in lessons.current()})
+    assert lessons.apply(kept, change, None, origin=om.ORIGIN_SELF_REVIEW)['applied']
+    report = le.retention_report(store)
+    assert (report['learned'], report['owner_forgot'], report['carried'], report['lost']) == (3, 0, 2, 1)
+
+
+def test_a_lesson_the_assistant_reworded_by_an_update_counts_as_updated_not_lost(store):
+    """An explicit update keeps the lesson's key, so a rewording sharing few words is still retained."""
+    from personal_agent import owner_model as om
+    collapse_store(store)
+    lessons = om.WorkingLessons(store)
+    assert lessons.migrated()
+    [target] = [lesson for lesson in lessons.current() if lesson['text'] == LESSON_B]
+    update = {'op': 'update', 'id': target['id'], 'text': 'Answer briefly by default; expand only on request',
+              'why': 'a later correction refined it', 'reason': ''}
+    kept, change, _blocker, _dropped = om.validate_lessons(
+        {'lessons': [update], 'change': 'c', 'blocker': ''}, {l['id']: l['text'] for l in lessons.current()})
+    assert lessons.apply(kept, change, None, origin=om.ORIGIN_SELF_REVIEW)['applied']
+    report = le.retention_report(store)
+    assert report['retained'] == {'exact': 2, 'reworded': 0, 'updated': 1, 'total': 3}
+    assert (report['lost'], report['retention']) == (0, 1.0)
+
+
 def test_carried_is_empty_without_notes(store):
     assert le.carried_lessons(store) == []
     assert le.learned_lessons(store) == []
@@ -138,7 +186,7 @@ def test_retention_of_a_collapse_counts_the_lost_lessons(store):
     collapse_store(store)
     report = le.retention_report(store)
     assert (report['learned'], report['carried']) == (3, 1)
-    assert report['retained'] == {'exact': 1, 'reworded': 0, 'total': 1}
+    assert report['retained'] == {'exact': 1, 'reworded': 0, 'updated': 0, 'total': 1}
     assert report['lost'] == 2
     assert report['retention'] == pytest.approx(1 / 3)
     assert report['versions'] == 2
@@ -164,8 +212,8 @@ def test_reworded_lesson_matches_above_the_threshold_only(store):
     strict = le.retention_report(store, threshold=1.0)
     loose = le.retention_report(store, threshold=0.8)
     # Strict: the reworded point is a lesson of its own. Loose: it is LESSON_A reworded, so LESSON_A is still carried.
-    assert strict['learned'] == 4 and strict['retained'] == {'exact': 2, 'reworded': 0, 'total': 2}
-    assert loose['learned'] == 3 and loose['retained'] == {'exact': 1, 'reworded': 1, 'total': 2}
+    assert strict['learned'] == 4 and strict['retained'] == {'exact': 2, 'reworded': 0, 'updated': 0, 'total': 2}
+    assert loose['learned'] == 3 and loose['retained'] == {'exact': 1, 'reworded': 1, 'updated': 0, 'total': 2}
     assert loose['threshold'] == 0.8
 
 
@@ -531,7 +579,7 @@ def test_threshold_one_disables_token_set_matches(store):
     commit_versions(store, [notes('alpha beta'), notes('beta alpha')])
     report = le.retention_report(store, threshold=1.0)
     assert report['learned'] == 2
-    assert report['retained'] == {'exact': 1, 'reworded': 0, 'total': 1}
+    assert report['retained'] == {'exact': 1, 'reworded': 0, 'updated': 0, 'total': 1}
 
 
 def test_pairs_stop_at_the_first_nonforgotten_version_after_the_lesson(store):

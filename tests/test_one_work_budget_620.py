@@ -19,13 +19,13 @@ from personal_agent import browser_session as bs
 from personal_agent.agent_runtime import (CLI_TURN_WIND_DOWN_SECONDS, LAST_TURN_TEXT, WIND_DOWN_TEXT, WORK_JUDGMENT_RESERVE, Capabilities, LoopGuard,
                                           ToolError, WorkBudget, WorkLedger, loop_outcome, path_key, remaining_budget,
                                           run_agent)
-from personal_agent.cli_browser_relay import BrowserRelay
 from personal_agent.mcp_bridge import _with_remaining, tool_error_result
 from personal_agent.providers import ModelAdapter
 from personal_agent.quickstart_store import QuickStore
 
 from test_agency_loop import CFG, Network, Script, call, judgments
 from test_browser_session import ORIGIN, Approvals, FakeDriver
+from test_peer_cli_relay import InProcessRelay
 
 
 def tool_replies(body):
@@ -230,7 +230,7 @@ class LoopGuardUnit(unittest.TestCase):
         timeout = {'code': 'browser_timeout', 'effect': 'none'}
         self.assertEqual(loop_outcome('browser_click', {'effect': 'navigate'}, timeout), 'transient')
         self.assertEqual(loop_outcome('browser_click', {'effect': 'mutate'}, timeout), 'failed')
-        self.assertEqual(loop_outcome('browser_click', {'effect': 'mutate'}, {**timeout, 'ran': False}), 'transient')
+        self.assertEqual(loop_outcome('browser_click', {'effect': 'mutate'}, {**timeout, 'ran': False}), 'not_run')
         self.assertEqual(loop_outcome('web_search', {}, {'code': 'transient_failure', 'effect': 'none'}), 'transient')
         self.assertEqual(loop_outcome('web_search', {}, {'code': 'transient_failure', 'effect': 'unknown'}), 'failed')
         self.assertEqual(loop_outcome('web_search', {}, {'code': 'tool_failed', 'effect': 'none'}), 'failed')
@@ -299,8 +299,10 @@ class RelayLoopGuard(unittest.TestCase):
                 if isinstance(outcome, Exception):
                     raise outcome
                 return outcome
-        relay = BrowserRelay(Tools())
-        self.addCleanup(relay.close)
+        fixture = InProcessRelay(Tools())
+        self.addCleanup(fixture.close)
+        relay = fixture.relay
+        relay._guard = LoopGuard()
         relay._page = 'page-digest'
         return relay, Tools.calls
 

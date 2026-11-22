@@ -336,6 +336,19 @@ class Brief(Store):
         self.assertNotIn('omitted', block)
         self.assertEqual(om.WorkingLessons(self.store).block(''), block)
 
+    def test_a_removed_or_updated_lesson_leaves_the_brief(self):
+        """An invalidated lesson leaves use: the brief carries only current wording."""
+        before = self.seed('요약은 세 줄로', '링크는 맨 끝에', '비교는 표로')
+        self.apply(remove(before['요약은 세 줄로']['id'], 'the owner now wants full summaries'))
+        self.apply(update(before['링크는 맨 끝에']['id'], '링크는 본문 바로 아래에'))
+        block = self.lessons.block('요약 링크 비교')
+        for gone in ('요약은 세 줄로', '링크는 맨 끝에'):
+            self.assertNotIn(gone, block)
+            self.assertNotIn(before[gone]['ref'], block)
+        self.assertIn('링크는 본문 바로 아래에', block)
+        self.assertIn(before['비교는 표로']['ref'], block)
+        self.assertNotIn('omitted', block)
+
     def test_no_lessons_is_no_block(self):
         self.assertEqual(self.lessons.block('anything'), '')
 

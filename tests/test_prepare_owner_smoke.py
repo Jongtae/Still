@@ -490,7 +490,9 @@ class ProbeRecordLoopIntegrationTests(unittest.TestCase):
         harness.addCleanup = self.addCleanup
         network = loop.ProviderNetwork({'default': loop.UNRELATED, 'other': loop.MATCHING})
         script = loop.Script({'tool_calls': [loop.call('1', 'web_search', query='When Leaders Make the Difference')]},
+                             # #1111: one identical repeat is a new observation; the next one meets the same result.
                              {'tool_calls': [loop.call('2', 'web_search', query='when leaders make the difference')]},
+                             {'tool_calls': [loop.call('2b', 'web_search', query='When leaders make the difference')]},
                              {'tool_calls': [loop.call('3', 'web_search', query='When Leaders Make the Difference',
                                                        provider='other')]},
                              # The provider assigns the call ids; the claim cites the refs it was shown.
@@ -501,11 +503,11 @@ class ProbeRecordLoopIntegrationTests(unittest.TestCase):
         record = smoke.record_probe(harness._store.root, row['id'], 'D', AT)
         calls = record['tool_calls']
         self.assertEqual([(c.get('status'), c.get('code')) for c in calls],
-                         [('succeeded', None), ('failed', 'repeat_path'), ('succeeded', None)])
-        self.assertEqual((calls[0]['provider'], calls[2]['provider'], calls[2]['alternative']),
+                         [('succeeded', None), ('succeeded', None), ('failed', 'repeat_path'), ('succeeded', None)])
+        self.assertEqual((calls[0]['provider'], calls[3]['provider'], calls[3]['alternative']),
                          ('default', 'other', 'provider_switch'))
-        self.assertEqual(record['finish']['evidence_refs'], [calls[0]['call_id'], calls[2]['call_id']])
-        self.assertEqual(record['finish']['cited'][1]['evidence']['sources'], ['https://books.example/item/42'])
+        self.assertEqual(record['finish']['evidence_refs'], [calls[0]['call_id'], calls[1]['call_id'], calls[3]['call_id']])
+        self.assertEqual(record['finish']['cited'][2]['evidence']['sources'], ['https://books.example/item/42'])
         self.assertEqual((record['goal_judgment'], record['final_outcome']), ('yes', 'succeeded'))
         self.assertEqual(record['alternatives_tried']['kinds'], {'provider_switch': 1})
         self.assertTrue(record['report']['reply'].startswith('2판을 찾았습니다'))

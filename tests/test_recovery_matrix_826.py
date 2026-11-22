@@ -91,7 +91,7 @@ def _telegram(case, status='succeeded', delivery='pending'):
 def _payment(case):
     c = case(effects.EffectBoundary)
     trust_record.set_money(c.store, c.target, True)
-    assert c.call()['behavior'] == 'deny'
+    assert c.offer()['behavior'] == 'deny'
     c.partial()
     return c
 

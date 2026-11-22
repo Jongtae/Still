@@ -16,7 +16,7 @@ import uuid
 
 from mcp_types.version import HANDSHAKE_PROTOCOL_VERSIONS, LATEST_HANDSHAKE_VERSION
 
-from .agent_runtime import (ENGINE_UNMEDIATED, OWNER_STATE_ACTIONS,
+from .agent_runtime import (CONNECTOR_APPROVAL_NOTE, CONNECTOR_APPROVAL_NOTE_DEFINITION, ENGINE_UNMEDIATED, OWNER_STATE_ACTIONS,
                             Capabilities, LedgerSuperseded, ToolError, WorkBudget, WorkLedger, attempted_outbound, classify_failure, declared_effect,
                             call_target_field, claim_owner_steers, evidence_summary, lookup_sources, outbound_evidence, executed_field, observed_field, progress_step, ran_field, worker_result,
                             recorded_private_sources, split_status, work_source_records,
@@ -456,7 +456,7 @@ def relay_store_redaction(store, relay):
 
 def serve(data, job_id, provenance=(), native_search=False, profile=BOUNDED_PROFILE, browser_relay=None,
           search_off_reason='', relay_browser=True, skills=(), ai_connections=False, connection_slots=(),
-          session_steers=False, peer_relay=None, turn_deadline=None):
+          session_steers=False, peer_relay=None, turn_deadline=None, connector_permission_prompt=True):
     """Serve one Work's Still tools over stdio for the route profile the host named (#701).
 
     ``profile`` is ``trusted-local`` or ``strict-isolated``; anything else
@@ -569,13 +569,18 @@ def serve(data, job_id, provenance=(), native_search=False, profile=BOUNDED_PROF
         elif method == 'tools/list':
             from .agent_runtime import CONNECTOR_PERMISSION_DEFINITION
             from .bounded_execution import mcp_tool
-            # Never read-only: a client must not auto-approve a direct call to it (review on #1197).
-            extra = [mcp_tool(CONNECTOR_PERMISSION_DEFINITION, 'bounded_write', profile)] if ai_connections and relay else []
+            extra = []
+            if ai_connections and relay:
+                # The permission prompt is only for the CLI that invokes it outside the model's allowlist.
+                if connector_permission_prompt:
+                    extra.append(mcp_tool(CONNECTOR_PERMISSION_DEFINITION, 'bounded_write', profile))
+                extra.append(mcp_tool(CONNECTOR_APPROVAL_NOTE_DEFINITION, 'bounded_write', profile))
             result = {'tools': tools.definitions() + extra}
             # #825: the definitions this bridge actually served, on the host's turn record.
             with served_workers_lock:
                 served_workers.append(record_served(store, job_id, result['tools'], 'still-host-mcp:bridge'))
-        elif method == 'tools/call' and ai_connections and relay and (params or {}).get('name') == CONNECTOR_PERMISSION:
+        elif (method == 'tools/call' and ai_connections and relay and connector_permission_prompt
+              and (params or {}).get('name') == CONNECTOR_PERMISSION):
             # #1197: the service decides (reads allowed, everything else refused for now)
             # and records the call; nothing here is shown to the model as a tool result.
             arguments = (params or {}).get('arguments') or {}
@@ -587,6 +592,14 @@ def serve(data, job_id, provenance=(), native_search=False, profile=BOUNDED_PROF
             if not isinstance(decision, dict) or decision.get('behavior') not in ('allow', 'deny'):
                 decision = {'behavior': 'deny', 'message': 'Still could not decide this action, so it was not run.'}
             return _permission_text(decision)
+        elif method == 'tools/call' and ai_connections and relay and (params or {}).get('name') == CONNECTOR_APPROVAL_NOTE:
+            try:
+                if not _work_running(store, job_id):
+                    raise ToolError(WORK_NOT_RUNNING, 'stopped', ran=False)
+                value = relay.call(CONNECTOR_APPROVAL_NOTE, params.get('arguments', {}))
+            except (ValueError, OSError) as exc:
+                return tool_error_result(exc, CONNECTOR_APPROVAL_NOTE, capabilities.secret_redactor)[0]
+            return {'content': [{'type': 'text', 'text': value}]}
         elif method == 'tools/call':
             params = params or {}; name = params.get('name')
             # Host-generated identity pairs durable start/terminal events across
@@ -708,6 +721,7 @@ if __name__ == '__main__':
     parser.add_argument('--relay-no-browser',action='store_true')
     parser.add_argument('--skill',action='append',default=[])
     parser.add_argument('--ai-connections',action='store_true')
+    parser.add_argument('--no-connector-permission-prompt',action='store_true')
     parser.add_argument('--connection-slot',action='append',default=[])
     # #308 S2: the host's Claude Code session takes the owner's steers on its own stdin.
     parser.add_argument('--session-steers',action='store_true')
@@ -715,5 +729,6 @@ if __name__ == '__main__':
     serve(args.data, args.job, args.provenance, native_search=args.native_search, profile=args.profile,
           browser_relay=args.browser_relay, search_off_reason=args.search_off_reason,
           relay_browser=not args.relay_no_browser, skills=args.skill, ai_connections=args.ai_connections,
+          connector_permission_prompt=not args.no_connector_permission_prompt,
           connection_slots=args.connection_slot, session_steers=args.session_steers, peer_relay=args.peer_relay,
           turn_deadline=args.turn_deadline)

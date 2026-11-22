@@ -98,7 +98,7 @@ class SelfChanges(sn._Case):
         self.assertEqual(self.notices(), [])
         [visible] = self.service.preparations_status()['preparations']
         self.assertIn('The source is no longer useful.', visible['last_result'])
-        self.assertIn(msg('button.restore_reservation'), visible['last_result'])
+        self.assertIn(msg('button.undo'), visible['last_result'])
         self.assertEqual(self.preps.restore(row['id'])['max_runs'], 8)
 
     def test_notice_uses_human_schedule_and_local_undo(self):
@@ -107,7 +107,7 @@ class SelfChanges(sn._Case):
         text = self.service.preparations_service.status_notice_text(self.notices()[0])
         for raw in ('until_at', 'max_runs', str(self.clock[0] + 1200), 'restore', 'resume'):
             self.assertNotIn(raw, text)
-        self.assertIn(msg('button.restore_reservation'), text)
+        self.assertIn(msg('button.undo'), text)
         self.assertIn(prep.proposal_summary(row, self.service.home_zone(), brief=False), text)
 
     def test_english_owner_gets_english_schedule_and_undo(self):
@@ -117,7 +117,7 @@ class SelfChanges(sn._Case):
         self.change(row, run, changes={'max_runs': 3})
         text = self.service.preparations_service.status_notice_text(self.notices()[0])
         self.assertIn(prep.schedule_text(row, self.service.home_zone(), lang='en'), text)
-        self.assertIn(msg('button.restore_reservation', 'en'), text)
+        self.assertIn(msg('button.undo', 'en'), text)
         self.assertNotIn('max_runs', text)
 
     def test_budget_skip_keeps_narrowing_receipt_and_consumed_count_on_undo(self):

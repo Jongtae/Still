@@ -156,7 +156,9 @@ class SelfNarrowing(_Case):
                 bound = notice_binding(self.service, notice)
                 text = notice_text(self.service, notice, bound)
                 self.assertIn(event['reason'], text)
-                self.assertIn(row['id'], text)
+                # #1097: named by its title (its goal, with none), never by its id.
+                self.assertIn(prep.owner_title(row), text)
+                self.assertNotIn(row['id'], text)
                 # Owner settings confirm is the existing command path, including while Work runs.
                 undo = 'resume' if operation == 'pause' else 'restore'
                 draft = self.settings.propose('owner', 'http', 'preparations', undo, row['id'])
@@ -181,7 +183,8 @@ class SelfNarrowing(_Case):
                 self.assertTrue(self.change(row, run, 'cancel')['applied'])
                 self.assertTrue(self.service.deliver_notification())
                 sent = [body for method, body in self.telegram if method == 'sendMessage']
-                self.assertIn(row['id'], sent[-1]['text'])
+                self.assertIn(prep.owner_title(row), sent[-1]['text'])
+                self.assertNotIn(row['id'], sent[-1]['text'])
                 self.assertIn('The source is no longer useful.', sent[-1]['text'])
                 count = len(sent)
                 self.change(row, run, 'cancel')

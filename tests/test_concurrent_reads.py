@@ -228,10 +228,11 @@ class ConcurrentReadTests(unittest.TestCase):
         self.assertEqual([status for tool, status, _id, _scope in self.tool_events() if tool == 'public_page_read'],
                          ['running', 'succeeded'])
 
-    def test_a_duplicate_read_is_never_sent(self):
+    def test_same_read_is_polled_once_before_unchanged_results_block_it(self):
         wire = Wire()
-        self.run_turn([call('1', 'web_search', query='alpha'), call('2', 'web_search', query='alpha')], wire)
-        self.assertEqual([entry for entry in wire.log if entry[0] == 'start'], [('start', 'alpha')])
+        self.run_turn([call(str(i), 'web_search', query='alpha') for i in range(3)], wire,
+                      after=[finish('f', '0', '1', summary='끝')])
+        self.assertEqual(wire.log, [('start', 'alpha'), ('end', 'alpha')] * 2)
         refused = [detail for tool, status, detail in self.events if status == 'failed' and tool != 'model']
         self.assertEqual([row['code'] for row in refused], ['repeat_path'])
 
@@ -321,9 +322,9 @@ class ConcurrentReadTests(unittest.TestCase):
                        call('2', 'api_request', slot='test', method='POST', url='https://example.com/', effect='read')):
             calls = [call('1', 'drive_search', query='alpha'), middle,
                      call('3', 'mail_search', query='beta')]
-            self.assertEqual([row[0] for row in overlap.group(calls, 0, {}, LoopGuard())], ['1'])
+            self.assertEqual([row[0] for row in overlap.group(calls, 0, LoopGuard())], ['1'])
         calls[1] = call('2', 'api_request', slot='test', method='GET', url='https://example.com/', effect='read')
-        self.assertEqual([row[0] for row in overlap.group(calls, 0, {}, LoopGuard())], ['1', '2', '3'])
+        self.assertEqual([row[0] for row in overlap.group(calls, 0, LoopGuard())], ['1', '2', '3'])
 
     def test_private_evidence_and_records_replay_in_one_order(self):
         from personal_agent.agent_runtime import EvidenceLog
@@ -437,7 +438,7 @@ class ConcurrentReadTests(unittest.TestCase):
         caps.evidence = []
         specs = {d['function']['name']: d['function']['parameters'] for d in caps.definitions()}
         overlap = ReadOverlap(caps, specs)
-        overlap.start([call('1', 'list_memory'), call('2', 'list_notes')], 0, {}, LoopGuard())
+        overlap.start([call('1', 'list_memory'), call('2', 'list_notes')], 0, LoopGuard())
         self.assertEqual(overlap.started, {})
         self.assertEqual(caps.record, self.record)
 

@@ -414,10 +414,11 @@ class NoDuplicateEffect(Base):
         result = self.caps().execute('api_request', READ)
         self.assertEqual((len(self.api.calls), result['provenance']['attempts']), (2, 2))
 
-    def test_the_same_read_twice_in_one_work_runs_once(self):
-        result, _script = self.work({'tool_calls': [tool_call('c1', 'api_request', **READ)]},
-                                   {'tool_calls': [tool_call('c2', 'api_request', **READ)]}, summary_from_tool)
-        self.assertEqual(len(self.api.calls), 1)
+    def test_the_third_read_is_refused_after_two_identical_observations(self):
+        _, script = self.work(*({'tool_calls': [tool_call(f'c{i}', 'api_request', **READ)]} for i in range(3)),
+                              summary_from_tool)
+        self.assertEqual(len(self.api.calls), 2)
+        self.assertEqual(tool_results(script.bodies[-1])[-1]['code'], 'duplicate_call')
 
     def test_an_approved_order_is_sent_once_with_an_idempotency_key_and_never_replayed(self):
         caps = self.caps()

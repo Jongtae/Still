@@ -159,7 +159,7 @@ def test_same_run_exact_payment_approval_allows_one_effect_under_race():
     case.setUp()
     try:
         trust_record.set_money(case.store, case.target, True)
-        assert case.call()['behavior'] == 'deny'
+        assert case.offer()['behavior'] == 'deny'
         assert case.approve()['resumed']
         results = race(case.call, case.call)
         # This is the actual permission/approval CAS, not a mocked payment guard.
@@ -616,7 +616,7 @@ def test_approval_settlement_finishes_before_same_conversation_effect():
         with store.db() as db:
             db.execute("UPDATE jobs SET owner_typed=1 WHERE id=?", (case.job['id'],))
         trust_record.set_money(store, case.target, True)
-        assert case.call()['behavior'] == 'deny'
+        assert case.offer()['behavior'] == 'deny'
         case.partial()
         settler = enqueue(store, 'settler')
         assert service._claim_queued_work()['id'] == settler
