@@ -4754,7 +4754,7 @@ class Capabilities:
    from .api_requests import ApiError
    try:result=self.api().call(args)
    except ApiError as exc:
-    error=ToolError(str(exc),exc.code,requires=exc.requires)
+    error=ToolError(str(exc),exc.code,requires=exc.requires,ran=getattr(exc,'ran',None))
     if exc.effect:error.effect=exc.effect
     if getattr(exc,'dispatch_event',None):error.dispatch_event=exc.dispatch_event
     # #618 E1: the service refused the request before executing it (``rejected`` dispatch).
@@ -6031,7 +6031,8 @@ FINISH_DEFINITION={'type':'function','function':{'name':FINISH_ACTION,
                 'ref values of the tool results (their tool call ids) that show what you claim. summary is your answer to the owner in the owner\'s language. '
                 'failed and unknown list what did not work and what you could not verify; next is the concrete step you propose '
                 'when not done. Before finishing short of done, try a different path: another provider, a rewritten query, '
-                'the site\'s own search, another result or another route. Never repeat the same call with the same input.'),
+                'the site\'s own search, another result or another route. Repeat a read only to check for a changed result. '
+                'Never repeat a state-changing call once it was sent.'),
  'parameters':{'type':'object','properties':{
   'status':{'type':'string','enum':list(FINISH_STATUSES)},
   'evidence_refs':{'type':'array','items':{'type':'string'}},
@@ -6137,55 +6138,66 @@ TRANSIENT_RETRIES=1
 LOOP_GUARD_CODES=frozenset({'repeat_path','duplicate_call'})
 
 def loop_outcome(action,args,observation):
- """What one failed call tells the loop guard (#620): ``transient`` or ``failed``.
+ """Settle a failed call as ``not_run``, ``transient`` or ``failed`` (#620, #1111).
 
- ``transient`` only for a ``TRANSIENT_STEP_CODES`` failure whose repeat cannot
- duplicate an effect: an effect-free read, a page step declared ``read`` or
- ``navigate``, or a call Still refused before it ran.  Anything else -
- including a click or typing that may have acted, and every unknown effect -
- is ``failed``: the same input is not run again (C8).
+ A pre-dispatch refusal leaves no attempt. A transient failure permits a
+ bounded retry for a read or a page load. Unknown effects keep their attempt.
  """
  observation=observation if isinstance(observation,dict) else {}
+ if observation.get('ran') is False:return 'not_run'
  if observation.get('code') not in TRANSIENT_STEP_CODES or observation.get('effect')=='unknown':return 'failed'
  declared=args.get('effect') if isinstance(args,dict) else None
- if (action in EFFECT_FREE_READS or observation.get('ran') is False
+ if (action in EFFECT_FREE_READS or concurrent_read(action,args)
      or action in PAGE_STEP_ACTIONS and declared in PAGE_LOAD_EFFECTS):return 'transient'
  return 'failed'
 
-def loop_keys(capabilities,guard,attempts,name,args,action,page):
- """One validated call's loop-guard admission (#657, #620), as the loop and its read prediction apply it.
+def loop_observation(action,result):
+ """Digest the observed data, ignoring the read's retrieval bookkeeping (#1111)."""
+ view=observed_part(result)
+ if isinstance(view,dict):
+  view={key:value for key,value in view.items() if key not in ('retrieved_at','contacted','cached')}
+  # The call's own input echo (query, sent) is already in the canonical path key.
+  if action in SEARCH_BACKED_ACTIONS:view.pop('query',None);view.pop('sent',None)
+  provenance=view.get('provenance')
+  if isinstance(provenance,dict):
+   provenance={key:value for key,value in provenance.items() if key not in ('retrieved_at','age_seconds','attempts')}
+   if provenance.get('as_of_source')=='live-record':provenance.pop('as_of',None)
+   view['provenance']=provenance
+ return hashlib.sha256(json.dumps(view,sort_keys=True,ensure_ascii=False,default=str).encode()).hexdigest()
 
- ``(memo_key, keys, attempt, keyed, read, refusal)``; ``refusal`` is None or the
- guard's error: ``repeat_path`` for a search or page step (``path_key``), ``duplicate_call``
- for an exact repeat of another read that already met its observation, and
- for any exact repeat of a call that may change state (no duplicate effect).
- #627: a weather(location_ref) repeat is keyed on the resolved source revision.
- #657: omitted search selectors are the owner's current default.
+def loop_keys(capabilities,guard,name,args,action,page):
+ """Check admission without consuming an attempt (#657, #620, #1111).
+
+ Return the exact key, guard keys, next attempt number, canonical args,
+ read and refresh flags, and any refusal. Refreshing bypasses the memo.
+ A dispatched write reserves its exact key, and browser steps use page paths.
+ Source revisions and canonical search selectors stay part of the keys.
  """
  revision=capabilities.source_revision(action,args) if hasattr(capabilities,'source_revision') else None
  cache_key=json.dumps([name,args] if revision is None else [name,args,revision],sort_keys=True)
  stateful=action in BROWSER_ACTIONS
  read=not stateful and (action in EFFECT_FREE_READS or concurrent_read(action,args))
- memo_key=guard.scoped(cache_key,read)
- attempts[memo_key]=attempts.get(memo_key,0)+1;attempt=attempts[memo_key]
+ exact=guard.scoped(cache_key,read)
+ attempt=len(guard.history.get(exact,()))+1
+ # Checkpoint previews are local. A sandbox run can broker writes, so it keeps its existing memo policy.
+ refresh=read and action not in CODE_ACTIONS and not (action=='public_download' and args.get('operation')=='preview') and (
+     action=='calendar_query' or HOST_TOOLS[action].open_world)
  keyed=canonical_search_args(args,capabilities.default_search_provider()) if action in SEARCH_BACKED_ACTIONS else args
  path=guard.scoped(path_key(action,keyed,page),read)
  refusal=None
  if guard.refused(path):refusal=repeat_path_error(action)
- elif not stateful and (guard.refused(memo_key) if read else attempt>1):
-  refusal=ToolError(msg('agent_runtime.duplicate_tool_call'),'duplicate_call')
- return memo_key,(path,memo_key if read else None),attempt,keyed,read,refusal
+ elif not stateful and (guard.refused(exact) if read else attempt>1):
+  refusal=ToolError(msg('agent_runtime.duplicate_tool_call'),'duplicate_call',ran=False)
+ return exact,(path,exact),attempt,keyed,read,refresh,refusal
 
 class LoopGuard:
  """One run's stuck detector (#620), adopting OpenHands' ``StuckDetector``.
 
- A loop is the same action meeting the same observation again, not merely the
- same path.  Keys are ``path_key`` / exact-call keys.  A key is refused when
- it is in flight in this turn, when it already produced its observation (a
- successful read: Still knows what it returns; a page step on the same page),
- or when it failed on its own terms.  After a ``transient`` failure the same
- call may run ``TRANSIENT_RETRIES`` more time.  A read's key is scoped to the
- writes before it (``wrote``): re-reading after a write is a new observation.
+ An external read may run again until two successive observations match.
+ Pending calls, observed local reads and page steps on the same page remain
+ guarded. Only bounded transient retries are allowed after dispatch failures.
+ A refusal before dispatch releases the key and leaves read scope intact.
+ A write that ran or may have run advances that scope.
  """
  def __init__(self,history=None,writes=0):
   self.history={key:list(value) for key,value in (history or {}).items()};self.writes=writes
@@ -6201,17 +6213,28 @@ class LoopGuard:
   if key is None:return False
   seen=self.history.get(key)
   if not seen:return False
-  return not (seen[-1]=='transient' and seen.count('transient')<=TRANSIENT_RETRIES)
+  return not (seen[-1].startswith('observation:') or
+              seen[-1]=='transient' and seen.count('transient')<=TRANSIENT_RETRIES)
 
  def admit(self,*keys):
   for key in keys:
    if key is not None:self.history.setdefault(key,[]).append('pending')
 
- def settle(self,outcome,*keys):
-  """Record one admitted call's outcome: ``seen``, ``transient`` or ``failed``."""
+ def settle(self,outcome,*keys,write=False,observation=None):
+  """Settle pending keys and advance read scope only for a write that may have run."""
+  settled=False
   for key in keys:
    seen=self.history.get(key) if key is not None else None
-   if seen and seen[-1]=='pending':seen[-1]=outcome
+   if not seen or seen[-1]!='pending':continue
+   settled=True
+   if outcome=='not_run':
+    seen.pop()
+    if not seen:del self.history[key]
+   elif observation is not None:
+    current='observation:'+observation
+    seen[-1]='seen' if seen[-2:-1]==[current] else current
+   else:seen[-1]=outcome
+  if settled and write and outcome!='not_run':self.wrote()
 
  def wrote(self):
   self.writes+=1
@@ -6514,11 +6537,10 @@ class ReadOverlap:
   self.capabilities,self.specs=capabilities,specs
   self.started={};self.reached=set();self.sink=None;self.local=threading.local()
 
- def admitted(self,call,attempts,guard):
+ def admitted(self,call,guard):
   """``(name, args)`` when the loop would send this call as an effect-free read, else None.
 
-  The same checks, in the same order, as ``run_agent``; ``attempts`` and
-  ``guard`` (``LoopGuard``) are copies the prediction advances as the loop would.
+  The prediction advances a copy of the loop's guard with pending calls.
   """
   function=call.get('function') if isinstance(call,dict) and isinstance(call.get('function'),dict) else {}
   name=function.get('name')
@@ -6533,16 +6555,16 @@ class ReadOverlap:
   tool=self.capabilities.tools.get(name) or {}
   action=tool.get('host_action')
   if not concurrent_read(action,args):return None
-  cache_key,guarded,_attempt,_keyed,_read,refusal=loop_keys(self.capabilities,guard,attempts,name,args,action,None)
-  if refusal is not None or cache_key in self.capabilities.memo:return None
+  memo_key,guarded,_attempt,_keyed,_read,refresh,refusal=loop_keys(self.capabilities,guard,name,args,action,None)
+  if refusal is not None or not refresh and memo_key in self.capabilities.memo:return None
   guard.admit(*guarded)
   return name,args,action
 
- def group(self,calls,index,attempts,guard):
+ def group(self,calls,index,guard):
   """The consecutive effect-free reads from ``index`` the loop would send, as ``(call_id, name, args)``."""
-  attempts,guard=dict(attempts),guard.copy();members=[];searched=False
+  guard=guard.copy();members=[];searched=False
   for call in calls[index:]:
-   plan=self.admitted(call,attempts,guard)
+   plan=self.admitted(call,guard)
    if plan is None:break
    name,args,action=plan
    if reads_search_results(action) and searched:break
@@ -6560,10 +6582,10 @@ class ReadOverlap:
   searches=sum(1 for _id,_name,_args,action in members if action in SEARCH_BACKED_ACTIONS)
   return budget.turn_limit()-budget.turns_used>=2*searches
 
- def start(self,calls,index,attempts,guard):
+ def start(self,calls,index,guard):
   """At the walk's ``index``: start the group of reads that begins here, if any."""
   if index in self.reached:return
-  members=self.group(calls,index,attempts,guard)
+  members=self.group(calls,index,guard)
   self.reached.update(range(index,index+max(1,len(members))))
   if len(members)<2 or not isinstance(self.capabilities.evidence,EvidenceLog) or not self.covered(members):return
   if self.sink is None:
@@ -6656,7 +6678,7 @@ def run_agent(adapter,config,key,history,system,capabilities,record,scope='main'
  conversation='\n'.join(conversation_turns)
  judged=0;nudges=0;nudged=False;checked_completion=False;draft=None
  budget=capabilities.budget
- active_config=dict(config);rerouted=False;checked_direct=False;attempts={};actual=None
+ active_config=dict(config);rerouted=False;checked_direct=False;actual=None
 
  read_snapshot=None
  def checkpoint_progress():
@@ -6885,7 +6907,7 @@ def run_agent(adapter,config,key,history,system,capabilities,record,scope='main'
      continue
     # #16: the consecutive public reads that begin here are sent together; each is still
     # admitted, recorded and judged below, in this order.
-    overlap.start(calls,index,attempts,guard)
+    overlap.start(calls,index,guard)
     name='unknown';validated=False;attempt=0;args={};action=None;ran=False;dispatched=False;failed_before=len(failures);advisory=False;dispatch_ref={}
     try:
      name=function.get('name')
@@ -6902,12 +6924,8 @@ def run_agent(adapter,config,key,history,system,capabilities,record,scope='main'
      check_arguments(spec,args)
      validated=True
      action=capabilities.tools[name]['host_action']
-     # #657/#620: the loop guard (OpenHands' stuck detector): the same call meeting the same
-     # observation again is refused, not re-run; a retry after a transient failure is not.
-     cache_key,guarded,attempt,keyed,read,refusal=loop_keys(capabilities,guard,attempts,name,args,action,page)
+     memo_key,guarded,attempt,keyed,read,refresh,refusal=loop_keys(capabilities,guard,name,args,action,page)
      if refusal is not None:raise refusal
-     # #656: a browser call reads or changes page state, so the same call may run again.
-     stateful=action in BROWSER_ACTIONS
      if action in API_ACTIONS|CODE_ACTIONS:dispatch_ref={'effect_call_ref':secrets.token_hex(16)}
      kind=alternative_kind(action,keyed,last_search,bool(trail) and trail[-1][1] in ('failed','incomplete'))
      if action in SEARCH_BACKED_ACTIONS:last_search=keyed
@@ -6920,17 +6938,16 @@ def run_agent(adapter,config,key,history,system,capabilities,record,scope='main'
       alternatives.append({'kind':kind,'action':action});running['alternative']=kind
      record(name,'running',json.dumps(running,ensure_ascii=False))
      guard.admit(*guarded)
-     # #620: a call that may change state makes every later read a new observation.
-     if not read:guard.wrote()
      dispatched=True
-     if stateful:result=capabilities.execute(name,args)
+     if action in BROWSER_ACTIONS:result=capabilities.execute(name,args)
+     elif not refresh and memo_key in capabilities.memo:result=capabilities.memo[memo_key]
      else:
-      if cache_key not in capabilities.memo:
-       with effect_call_ref(dispatch_ref.get('effect_call_ref')):
-        capabilities.memo[cache_key]=overlap.result(call['id'],name,args)
-      result=capabilities.memo[cache_key]
+      with effect_call_ref(dispatch_ref.get('effect_call_ref')):
+       result=overlap.result(call['id'],name,args)
+      # Connector handoff also reads the latest results from this memo.
+      capabilities.memo[memo_key]=result
      ran=True
-     guard.settle('seen',*guarded)
+     guard.settle('seen',*guarded,write=not read,observation=loop_observation(action,result) if refresh else None)
      executions.append((name,result))
      if name in ('find_files','read_file','list_notes','list_memory','search_memory','save_memory','calendar_query','drive_search','drive_read','mail_search','mail_read'):capabilities.evidence.append({'tool':name,'result':result})
      invalid_calls.discard(name)
@@ -6980,7 +6997,7 @@ def run_agent(adapter,config,key,history,system,capabilities,record,scope='main'
      result=_error_observation(exc,validated,action)
      # #819: the worker reads the error as it was, after the stored-secret pass (a failing pass withholds it).
      if callable(getattr(capabilities,'judgment_text',None)):result['error']=capabilities.judgment_text(result['error'])
-     if dispatched:guard.settle(loop_outcome(action,args,result),*guarded)
+     if dispatched:guard.settle(loop_outcome(action,args,result),*guarded,write=not read)
      # #617: an advisory call (a method_gap note) that fails is recorded and answered, but is no
      # failed step of the Work: it neither lowers the outcome nor asks for a different path.
      advisory=validated and action in ADVISORY_ACTIONS

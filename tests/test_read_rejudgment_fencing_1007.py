@@ -807,7 +807,7 @@ def test_child_publication_keeps_epoch_captured_at_dispatch(case, dispatch, monk
             monkeypatch.setattr(overlap, 'group', lambda *_: calls)
             monkeypatch.setattr(overlap, 'covered', lambda *_: True)
             monkeypatch.setattr(caps, 'execute', write)
-            overlap.start([], 0, {}, None)
+            overlap.start([], 0, None)
             result = lambda: overlap.result('one', 'read_file', {})
     try:
         assert entered.wait(10)
