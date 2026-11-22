@@ -6,6 +6,9 @@ set's hosts) and may send only reads.  No service is named: the fixtures are a
 synthetic API at example hosts.
 """
 import json
+import os
+from pathlib import Path
+import tempfile
 import types
 import unittest
 from unittest import mock
@@ -358,6 +361,26 @@ class Storage(unittest.TestCase):
         self.assertEqual(seen[2], '{}')
         api_requests.remove_slot(self.store, 'example-broker')
         self.assertEqual(self.store.secret_items('api_credential_state:'), {})
+
+    def test_a_run_state_linked_to_a_host_file_is_never_read(self):
+        # #1126 review: the unsandboxed host reads the state file the code left, so it must not follow a link.
+        self.save()
+        outside = Path(tempfile.mkdtemp()) / 'host.json'
+        outside.write_text(json.dumps({'host_only': 'host-file-value-the-sandbox-cannot-read'}), encoding='utf-8')
+
+        for link in (os.symlink, os.link):
+            class Linker(FakeProcess):
+                def _lines(inner):
+                    path = inner.config['env']['EXAMPLE_BROKER_STATE_FILE']
+                    os.remove(path)
+                    link(outside, path)
+                    yield from FakeProcess._lines(inner)
+
+            with self.subTest(link=link.__name__):
+                result = self.runner(Linker(result={'stdout': '', 'stderr': ''})).run(
+                    {'code': 'print(1)', 'secrets': 'example-broker'})
+                self.assertEqual(result['state_saved'], {'example-broker': False})
+                self.assertEqual(self.store.secret_items('api_credential_state:'), {})
 
     def test_an_unknown_set_asks_for_setup(self):
         with self.assertRaises(CodeRunError) as caught:

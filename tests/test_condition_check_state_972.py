@@ -3,6 +3,7 @@
 Real SQLite, scheduler and secret store; injected sandbox processes and a fake clock.
 """
 import json
+import os
 from pathlib import Path
 
 import pytest
@@ -19,9 +20,9 @@ from test_condition_checks_972 import ARGS, HOST, SECRET, case, current, finish,
 class StateProcess(FakeProcess):
     """Sees the state the host gave the run, then rewrites it as the check code would."""
 
-    def __init__(self, write=None, **kwargs):
+    def __init__(self, write=None, link=None, **kwargs):
         super().__init__(**kwargs)
-        self.write_state, self.seen = write, None
+        self.write_state, self.link, self.seen = write, link, None
 
     def _lines(self):
         name = self.config['env'].get(checks.STATE_ENV)
@@ -30,6 +31,9 @@ class StateProcess(FakeProcess):
             self.seen = path.read_text()
             if self.write_state is not None:
                 path.write_text(self.write_state)
+            if self.link is not None:
+                path.unlink()
+                self.link[0](self.link[1], path)
         yield from super()._lines()
 
 
@@ -39,8 +43,8 @@ def keyed(case):  # noqa: F811
     return case
 
 
-def run(c, write=None, stdout=''):
-    process = StateProcess(write, result={'stdout': stdout})
+def run(c, write=None, stdout='', link=None):
+    process = StateProcess(write, link, result={'stdout': stdout})
     c.processes.append(process)
     assert c.checks.run_due()
     c.clock[0] += 15
@@ -231,3 +235,19 @@ def test_a_stop_between_settling_and_saving_repeats_rather_than_loses_the_hit(ke
     run(c, json.dumps({'reported': True}), stdout='hit')
     assert wake_job(c, row)
     assert saved(c, row) == ''
+
+
+@pytest.mark.parametrize('link', [os.symlink, os.link], ids=['symlink', 'hard-link'])
+def test_a_state_file_linked_to_a_host_file_is_never_read(keyed, tmp_path, link):
+    # #1126 review: the host reads what the sandboxed code left, so a link cannot reach an ungranted file.
+    c = keyed
+    row = prepared(c)
+    value = 'host-file-value-the-sandbox-cannot-read'
+    outside = tmp_path / 'host.json'
+    outside.write_text(json.dumps({'host_only': value}), encoding='utf-8')
+    run(c, link=(link, outside), stdout='crossed')
+    handoff = checks.handoff_event(c.store, wake_job(c, row))['trace']
+    assert checks.STATE_ENV in handoff['output']
+    assert saved(c, row) == ''
+    assert value not in handoff['output']
+    assert not c.store.secret_items(CHECK_STATE_PREFIX)

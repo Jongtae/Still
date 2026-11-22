@@ -30,6 +30,7 @@ import queue
 import re
 import shlex
 import shutil
+import stat
 import subprocess
 import sys
 import tarfile
@@ -263,6 +264,37 @@ def private_roots():
     roots = {os.path.realpath(os.path.expanduser('~'))}
     roots.update(path for path in ('/Users', '/home', '/root', '/var/root') if os.path.isdir(path))
     return sorted(roots)
+
+
+def read_run_file(path, limit):
+    """#1126 review: a file the sandboxed code left in its run directory, read by the unsandboxed host.
+
+    The code controls that directory, so a symlink or hard link there could point the host at a file the
+    sandbox may not read.  The file is opened without following a link, and only a regular file with a single
+    link is read, at most ``limit + 1`` bytes.  Returns ``''`` when the file is absent and ``None`` when it is
+    not a plain file or cannot be read; a longer text is returned so its own size rule refuses it.
+    """
+    path = Path(path)
+    try:
+        directory = os.open(path.parent, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
+    except OSError:
+        return None
+    try:
+        fd = os.open(path.name, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK, dir_fd=directory)
+    except FileNotFoundError:
+        return ''
+    except OSError:
+        return None
+    finally:
+        os.close(directory)
+    with os.fdopen(fd, 'rb') as source:
+        info = os.fstat(source.fileno())
+        if not stat.S_ISREG(info.st_mode) or info.st_nlink != 1:
+            return None
+        try:
+            return source.read(limit + 1).decode('utf-8')
+        except (OSError, UnicodeDecodeError):
+            return None
 
 
 def _host(value):
@@ -906,13 +938,10 @@ class CodeRunner:
         return states
 
     def _save_states(self, states):
-        from .api_credentials import ApiCredentials, secret_state_values
+        from .api_credentials import MAX_STATE_BYTES, ApiCredentials, secret_state_values
         saved, scratch_secrets = {}, set()
         for name, (slot, path) in states.items():
-            try:
-                text = path.read_text(encoding='utf-8') if path.is_file() else ''
-            except (OSError, UnicodeDecodeError):
-                text = None
+            text = read_run_file(path, MAX_STATE_BYTES)
             if not self.persist_states:
                 try:
                     scratch_secrets.update(secret_state_values(text))

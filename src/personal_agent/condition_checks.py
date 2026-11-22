@@ -11,7 +11,7 @@ import time
 
 from . import preparations as prep
 from .api_credentials import MAX_STATE_BYTES, ApiCredentials, CredentialError, secret_state_values
-from .code_run import CodeRunError, CodeRunner, _arguments, check_arguments_digest
+from .code_run import CodeRunError, CodeRunner, _arguments, check_arguments_digest, read_run_file
 from .current_context import redact_known_secrets
 from .direct_message_surface import redact_provenance_values
 from .messages import msg
@@ -138,10 +138,7 @@ class CheckRunner(CodeRunner):
         if self._check_file:
             path, original = self._check_file
             self._check_file = None
-            try:
-                text = path.read_text(encoding='utf-8') if path.is_file() else ''
-            except (OSError, UnicodeDecodeError):
-                text = None
+            text = read_run_file(path, MAX_STATE_BYTES)
             try:
                 # The values this run wrote are redacted from its own output before the store's pass sees them.
                 scratch_secrets.update(secret_state_values(text))
