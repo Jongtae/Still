@@ -209,11 +209,14 @@ class _Decision:
 
 
 class BinaryDecision(_Decision):
-    __slots__ = ('answer', 'gap', 'note', 'dimensions', 'retry_warranted', 'not_done')
+    __slots__ = ('answer', 'gap', 'note', 'dimensions', 'retry_warranted', 'not_done', 'abstains')
 
     def __init__(self, outcome, answer=None, confidence=None, gap='', note=None, dimensions=None, retry_warranted=None,
-                 not_done=None):
+                 not_done=None, abstains=False):
         super().__init__(outcome, confidence)
+        #: #1124: the question offered an explicit undecided answer (``answer: null``), so a decided
+        #: true/false is the engine's verdict rather than a forced choice (``DecisionPolicy.binary``).
+        self.abstains = bool(abstains)
         #: #674: from ``judge_explained`` only: what the gap and note report as not done (``recorded_effects``
         #: ids and ``other``); None when the engine did not answer it.
         self.not_done = (tuple(str(item) for item in not_done) if isinstance(not_done, (list, tuple)) else None) \
@@ -467,9 +470,27 @@ class DecisionPolicy:
         """True when a decided selection met the threshold (whatever was chosen)."""
         return decision.decided and self._confident(decision, self.selection_threshold)
 
+    def _binary_decided(self, decision):
+        """Whether a binary answer is a verdict policy may act on (#1124).
+
+        A judgment whose answer space has an explicit undecided answer (``decision.abstains``)
+        says undecided itself, so its decided true/false is taken at its word: the verbalized
+        confidence is the model's own number, not calibrated across routes, and one fixed
+        threshold discarded one route's decided answers.  Only an answer its own number does
+        not favour (one half or less) is not a verdict.  A judgment forced to pick true or
+        false has no other way to abstain, so it keeps ``binary_threshold``.
+        """
+        if not decision.decided or decision.answer is None:
+            return False
+        if getattr(decision, 'abstains', False):
+            probability = decision.confidence.probability
+            return (isinstance(probability, (int, float)) and not isinstance(probability, bool)
+                    and probability > 0.5)
+        return self._confident(decision, self.binary_threshold)
+
     def binary(self, decision):
-        """'yes' / 'no' when decided with enough confidence, else 'unknown'."""
-        if not decision.decided or decision.answer is None or not self._confident(decision, self.binary_threshold):
+        """'yes' / 'no' when the answer is a verdict (``_binary_decided``), else 'unknown'."""
+        if not self._binary_decided(decision):
             return 'unknown'
         return 'yes' if decision.answer else 'no'
 
@@ -574,7 +595,7 @@ class SchemaDecisionEngine(DecisionEngine):
         return BinaryDecision(outcome, data.get('answer'), confidence, gap=' '.join(str(data.get('gap') or '').split()),
                               note=' '.join(note.split()) if isinstance(note, str) else None,
                               dimensions=data.get('dimensions'), retry_warranted=data.get('retry_warranted'),
-                              not_done=data.get('not_done'))
+                              not_done=data.get('not_done'), abstains=True)
 
     def choose(self, context, candidates, question):
         options = [*dict.fromkeys(str(c) for c in candidates), NO_CANDIDATE]
