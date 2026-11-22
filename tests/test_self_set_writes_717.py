@@ -424,6 +424,7 @@ class Writes(_Runs):
         target=trust_record.connection('codex','owner-mcp','synthetic')
         trust_record.set_operation(self.store,target,'apply_change','mutate')
         args={'engine':'codex','tool_name':ACTION,'input':INPUT}
+        self.service.connector_approval_note(job,{**args,'approval_note':'Apply the requested change.'})
         with mock.patch.object(self.service.decision_judge,'connector_effect',return_value='irreversible') as judge:
             self.assertEqual(self.service.connector_permission(job,args)['behavior'],'deny')
             self.assertEqual(judge.call_args.args[1],sorted(INPUT))
@@ -638,6 +639,7 @@ console.log(JSON.stringify([run(false,'post',false),run(true,'get',false),run(tr
         set_allowance(self.service,connection,True,0,'owner')
         owner_mcp.set_confirmed(self.store,'codex',[])
         owner_mcp.set_confirmed(self.store,'codex',['synthetic'])
+        self.service.connector_approval_note(job,{'tool_name':ACTION,'input':INPUT,'approval_note':'Apply the requested change.'})
         with mock.patch.object(self.service.decision_judge,'connector_effect',return_value='irreversible'):
             result=self.service.connector_permission(job,{'engine':'codex','tool_name':ACTION,'input':INPUT})
         self.assertEqual(result['behavior'],'deny')

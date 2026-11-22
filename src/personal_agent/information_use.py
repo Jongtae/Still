@@ -316,6 +316,8 @@ def _event_items(action, evidence):
             *(f"earlier exchange {ref['work_id']} (messages {','.join(str(i) for i in ref['message_ids'])})"
               for ref in evidence.get('exchange_refs') or []),
             *(f"an earlier Work's read results {work_id}" for work_id in evidence.get('read_result_work_ids') or []),
+            *(f"a page an earlier Work read {_text(ref.get('work_id'), 40)}: {_text(ref.get('url'), 200)}"
+              for ref in evidence.get('read_page_refs') or () if isinstance(ref, dict)),
         ]
     if action == 'list_memory':
         keys = [_text(key, 80) for key in evidence.get('memory_keys') or ()]

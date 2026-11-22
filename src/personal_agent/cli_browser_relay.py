@@ -42,7 +42,7 @@ import socketserver
 import tempfile
 import threading
 
-from .agent_runtime import (BROWSER_ACTIONS, HOST_RELAYED_ACTIONS, LoopGuard, ToolError,
+from .agent_runtime import (BROWSER_ACTIONS, CONNECTOR_APPROVAL_NOTE, HOST_RELAYED_ACTIONS, LoopGuard, ToolError,
                             classify_failure, concurrent_read, executed_field, loop_outcome, not_executed, not_run, observed_field,
                             observed_value, path_key, ran_field, repeat_path_error, result_page_digest)
 
@@ -237,16 +237,16 @@ class BrowserRelay:
                 return {'ok': redact_known_secrets(self.tools.capabilities.store, text)}
             except Exception:
                 return {'error': {'kind': 'tool', 'message': RELAY_UNAVAILABLE_TEXT, 'code': 'redaction_unavailable'}}
-        if name == 'connector_permission':
-            # #1197: the turn's connector permission decision, made by the service.
-            decide = getattr(self.tools, 'connector_permission', None)
-            if not callable(decide) or not isinstance(arguments, dict):
+        if name in ('connector_permission', CONNECTOR_APPROVAL_NOTE):
+            # Both the permission decision and its display note belong to the host Work.
+            handler = getattr(self.tools, name, None)
+            if not callable(handler) or not isinstance(arguments, dict):
                 return {'error': {'kind': 'invalid_arguments', 'message': ''}}
             with self._lock:
                 if self._closed:
                     return {'error': {'kind': 'tool', 'message': RELAY_UNAVAILABLE_TEXT, 'code': 'stopped'}}
                 try:
-                    return {'ok': decide(arguments)}
+                    return {'ok': handler(arguments)}
                 except Exception as exc:
                     return {'error': _error_payload(exc)}
         tools = getattr(self.tools.capabilities, 'tools', {}) or {}

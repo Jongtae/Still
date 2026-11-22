@@ -402,7 +402,7 @@ class ProviderNetwork:
 
     def execute(self, plan):
         self.plans.append(plan)
-        provider = plan.get('provider') or 'default'
+        provider = plan.get('provider') or (self.providers.default() if hasattr(self, 'providers') else 'default')
         rows = self.answers[provider]
         return {'tool': 'web_search', 'query': plan['query'], 'provider': provider, 'retrieved_at': 1,
                 'results': rows, 'sources': [row['url'] for row in rows]}
@@ -451,29 +451,29 @@ class AlternativesAndCompletionTests(unittest.TestCase):
     def tool_reply(body, ident):
         return next(json.loads(m['content']) for m in body['messages'] if m.get('tool_call_id') == ident)
 
-    def test_irrelevant_results_then_the_same_search_is_refused_and_a_provider_switch_runs(self):
+    def test_unchanged_search_results_stop_repeats_and_a_provider_switch_runs(self):
         network = ProviderNetwork({'default': UNRELATED, 'other': MATCHING})
         script = Script({'tool_calls': [call('1', 'web_search', query='When Leaders Make the Difference')]},
                         # The model repeats the same path: case and spacing do not make it new.
                         {'tool_calls': [call('2', 'web_search', query='  when leaders   make the DIFFERENCE ')]},
+                        {'tool_calls': [call('unchanged', 'web_search', query='When Leaders Make the Difference')]},
                         {'tool_calls': [call('3', 'web_search', query='When Leaders Make the Difference', provider='other')]},
                         finish('f', '3', summary='2판 하드커버를 찾았습니다: https://books.example/item/42'))
         result, _caps = self.run_script(script, network)
         self.assertEqual(result.outcome, 'succeeded')
-        # The repeat never reached the wire; the switched provider did.
-        self.assertEqual([plan.get('provider') for plan in network.plans], [None, 'other'])
+        self.assertEqual([plan.get('provider') for plan in network.plans], [None, None, 'other'])
         self.assertEqual(self.failed_codes(), ['repeat_path'])
-        refusal = self.tool_reply(script.bodies[2], '2')
+        refusal = self.tool_reply(script.bodies[3], 'unchanged')
         self.assertEqual((refusal['code'], refusal['retry'], refusal.get('ran')), ('repeat_path', 'permanent', False))
         # #620: the loop guard's own refusal ran nothing and already asks for a different path, so it
         # earns no separate "different path" turn.
-        self.assertEqual(script.bodies[2]['messages'][-1]['role'], 'tool')
+        self.assertEqual(script.bodies[3]['messages'][-1]['role'], 'tool')
         self.assertFalse(any(m['role'] == 'system' and m['content'].startswith('Path check')
-                             for m in script.bodies[2]['messages']))
+                             for m in script.bodies[3]['messages']))
         # Evidence: one alternative, its kind, and the claim with its ref.
         self.assertEqual(result.alternatives, [{'kind': 'provider_switch', 'action': 'web_search'}])
         running = [json.loads(detail) for tool, status, detail in self.events if status == 'running']
-        self.assertEqual([row.get('alternative') for row in running], [None, 'provider_switch'])
+        self.assertEqual([row.get('alternative') for row in running], [None, None, 'provider_switch'])
         self.assertEqual(self.concluded()['alternatives_tried'], {'count': 1, 'kinds': {'provider_switch': 1}})
         self.assertEqual(self.concluded()['claim'], {'status': 'done', 'evidence_refs': ['3']})
         self.assertEqual(self.concluded()['judgment'], 'yes')
@@ -723,11 +723,12 @@ class AlternativesAndCompletionTests(unittest.TestCase):
         network.providers = Registry()
         script = Script({'tool_calls': [call('1', 'web_search', query='leaders')]},
                         {'tool_calls': [call('2', 'web_search', query='leaders', provider='alpha', locale='')]},
+                        {'tool_calls': [call('unchanged', 'web_search', query='leaders')]},
                         {'tool_calls': [call('3', 'web_search', query='leaders', provider='beta')]},
                         finish('f', '3'))
         result, _caps = self.run_script(script, network)
         self.assertEqual(self.failed_codes(), ['repeat_path'])
-        self.assertEqual(len(network.plans), 2)
+        self.assertEqual([plan.get('provider') for plan in network.plans], [None, 'alpha', 'beta'])
         # The refused call is no alternative; the real switch is one.
         self.assertEqual(result.alternatives, [{'kind': 'provider_switch', 'action': 'web_search'}])
 

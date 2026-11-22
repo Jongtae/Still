@@ -40,6 +40,8 @@ def _portable_db(source, target, redaction=((), None)):
         if 'work_read_checkpoints' in tables:copy.execute("DELETE FROM work_read_checkpoints")
         if 'work_read_judgments' in tables:copy.execute("DELETE FROM work_read_judgments")
         if 'work_read_results' in tables:copy.execute("DELETE FROM work_read_results")
+        # #307: the page index's segments are rebuilt from its (now empty) rows, so no term remains.
+        if 'read_pages_search' in tables:copy.execute("INSERT INTO read_pages_search(read_pages_search) VALUES('rebuild')")
         copy.executemany("DELETE FROM config WHERE key=?", ((key,) for key in _RESET_CONFIG))
         # Grants and result paths are valid only in the original runtime. Keep
         # durable result IDs/provenance as owner work evidence, but detach each
@@ -311,6 +313,8 @@ def restore_owner_state(archive, data):
             if not db.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='config'").fetchone(): raise ValueError("Invalid owner-state database.")
             if db.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='work_read_results'").fetchone():
                 if db.execute("DELETE FROM work_read_results").rowcount:
+                    if db.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='read_pages_search'").fetchone():
+                        db.execute("INSERT INTO read_pages_search(read_pages_search) VALUES('rebuild')")
                     db.commit()
                     db.execute("VACUUM")
         if data.exists():

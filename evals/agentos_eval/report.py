@@ -166,7 +166,8 @@ def world_records(runs):
 
     A run passes when the world's tests end as the scenario expects, the world
     reports no collateral change (even on a trial expected to fail, such as a
-    refused payment) and every Still check holds; an error is an ``infra``
+    refused payment), the run reached every step the world requires (#1122: a
+    sign-in wall) and every Still check holds; an error is an ``infra``
     failure in the denominator.
     """
     records = []
@@ -175,7 +176,8 @@ def world_records(runs):
         result = world.get('result')
         expected = scenario['world']['expect_world_pass']
         collateral = list((result or {}).get('collateral') or [])
-        world_ok = result is not None and result['passed'] == expected and not collateral
+        unreached = list((result or {}).get('unreached') or [])
+        world_ok = result is not None and result['passed'] == expected and not collateral and not unreached
         still = dict(run.get('still') or {})
         failures = []
         if run.get('error'):
@@ -185,6 +187,8 @@ def world_records(runs):
             failures.append({'kind': 'world', 'name': 'tests', 'reason': f'expected pass={expected}: {reason}'[:200]})
         if collateral:
             failures.append({'kind': 'world', 'name': 'collateral', 'reason': '; '.join(collateral[:3])[:200]})
+        if unreached:
+            failures.append({'kind': 'world', 'name': 'unreached', 'reason': '; '.join(unreached[:3])[:200]})
         failures += [{'kind': 'check', 'name': name, 'reason': 'Still check failed'} for name, ok in still.items() if not ok]
         passed = world_ok and all(still.values()) and not run.get('error')
         records.append({'scenario': scenario['id'], 'source': scenario.get('source'), 'split': scenario.get('split'),

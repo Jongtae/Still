@@ -188,30 +188,41 @@ def _write(log, run, folder=None):
 
 
 def run_world_sweep(args, run_scenario=None, pool_factory=None, folder=None):
-    """``sweep --world``: each scenario × epoch in a fresh world and a fresh sandbox, on Codex; no judge (#484)."""
+    """``sweep --world``: each scenario × epoch in a fresh world and a fresh sandbox; no judge (#484).
+
+    MCP worlds run on Codex only; a browser world (#1122) names its routes (``World.workers``), so
+    ``--worker both`` runs each scenario once per route.
+    """
     from .runner import USAGE_LIMIT, run_world_scenario
     from .sandbox import SandboxPool
-    from .worlds import EVIDENCE_CLASS
+    from .worlds import EVIDENCE_CLASS, WorldError, workers
     notice = 'World sweep is checks only; the eval judge is not used.'
     if selected_judge(getattr(args, 'judge', '')) != 'none':
         notice += ' The named judge is ignored for world sweeps.'
     print(notice)
-    if args.worker != WORLD_WORKER:
-        raise SystemExit('A world sweep runs on the Codex worker only.')
+    try:
+        supported = workers(args.world)
+    except WorldError as exc:
+        raise SystemExit(str(exc)) from None
+    chosen = supported if args.worker == 'both' else (args.worker,)
+    if any(worker not in supported for worker in chosen):
+        raise SystemExit(f'The {args.world} world runs on: {", ".join(supported)}.'
+                         if supported != (WORLD_WORKER,) else 'A world sweep runs on the Codex worker only.')
     ids = [item for item in args.scenarios.split(',') if item]
     loaded = scenario_module.load(include_local=not args.no_local, split=args.split or None, ids=ids or None,
                                   world=args.world)
     if not loaded:
         raise SystemExit(f'No {args.world} world scenarios to run.')
     seed = resolve_seed(args.seed)
-    run = {'id': run_id(), 'started': time.time(), 'git_head': git_head(), 'worker': WORLD_WORKER,
+    run = {'id': run_id(), 'started': time.time(), 'git_head': git_head(), 'worker': ','.join(chosen),
            'instances': args.instances, 'epochs': args.epochs, 'judge': 'none', 'world': args.world,
            'evidence_class': EVIDENCE_CLASS, 'seed': seed.name if seed else 'fresh',
            'judgment_timeout': getattr(args, 'judgment_timeout', JUDGMENT_TIMEOUT)}
     pool = (pool_factory or SandboxPool)(size=args.instances, seed=seed, keep=args.keep_sandboxes)
     run_scenario = run_scenario or run_world_scenario
-    jobs = [(scenario, epoch) for epoch in range(1, args.epochs + 1) for scenario in loaded][:args.limit]
-    run['scenario_ids'] = sorted({scenario['id'] for scenario, _ in jobs})
+    jobs = [(scenario, epoch, worker) for epoch in range(1, args.epochs + 1) for scenario in loaded
+            for worker in chosen][:args.limit]
+    run['scenario_ids'] = sorted({job[0]['id'] for job in jobs})
     tripped = threading.Event()
 
     def one(job):
@@ -219,7 +230,8 @@ def run_world_sweep(args, run_scenario=None, pool_factory=None, folder=None):
         if tripped.is_set():
             return None
         record = run_scenario(job[0], pool, turn_timeout=args.turn_timeout,
-                              judgment_timeout=run['judgment_timeout'])
+                              judgment_timeout=run['judgment_timeout'],
+                              **({'worker': job[2]} if job[2] != WORLD_WORKER else {}))
         if any(turn.get('failure_class') == USAGE_LIMIT for turn in record.get('turns') or ()):
             tripped.set()
         return job[0], record, job[1]

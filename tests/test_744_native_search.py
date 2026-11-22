@@ -152,6 +152,8 @@ def test_connector_mutate_waits_but_reviewed_read_does_not(host, engine):
     trust_record.set_operation(store, target, 'apply_change', 'mutate')
     trust_record.set_operation(store, target, 'list_items', 'read')
     tool = 'mcp__synthetic__apply_change'
+    service.connector_approval_note(job, {'tool_name': tool, 'input': {'item': 'a'},
+                                          'approval_note': 'Apply the requested change.'})
     search = next(event for e, event, _ in EVENTS if e == engine)
     with barrier.call(tool, {'item': 'a'}), delayed_stream(barrier, reader,
             [search, start(engine, tool, {'item': 'a'})]) as waited:
