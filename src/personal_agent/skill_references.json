@@ -19,5 +19,8 @@
    "address": "github.com/Jongtae/Still/tree/main/skills/source-cross-check"},
   {"name": "first-conversations",
    "description": "Opening a first conversation with what you are good at and one easy start, and learning a fact about the owner only when a request needs it, with one gentle question.",
-   "address": "github.com/Jongtae/Still/tree/main/skills/first-conversations"}
+   "address": "github.com/Jongtae/Still/tree/main/skills/first-conversations"},
+  {"name": "trading-costs",
+   "description": "Before a buy or sell order: whether the expected gain survives commission, tax and spread, telling the owner instead of ordering when it does not, and profit and loss reported net of costs. A cost check, not trading advice.",
+   "address": "github.com/Jongtae/Still/tree/main/skills/trading-costs"}
 ]

@@ -13,5 +13,6 @@ They are not bundled into Still. The owner adds one in conversation ("add a shop
 | `claim-analysis` | A method for analysing claims and opinions: support, counter-evidence, disagreement, uncertainty and a justified conclusion |
 | `source-cross-check` | A method for checking a fact across sources: the original, independent confirmation, dates and definitions, and an honest report of agreement or conflict |
 | `first-conversations` | A method for first conversations and missing owner facts: open with what the AI is good at and one easy start, use the best evidence it has as a stated assumption, and ask one gentle, task-framed question only when a request needs it |
+| `trading-costs` | A method for trading costs: before an order, check that the expected gain survives commission, tax and spread, tell the owner instead of ordering when it does not, and report profit and loss net of costs. It names no asset, entry or trade, so it is not advice |
 
 Site hints are observations, not guarantees. Pages change, and the method tells the AI to check each hint on the page.
