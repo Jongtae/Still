@@ -605,6 +605,22 @@ class SettingsOrchestrator:
                 else ' · '.join((prep.owner_title(row), prep.schedule_text(row, home_zone))))
         return f"{redact_known_secrets(self.store, text)} ({self._preparation_states().get(row['state'], row['state'])})"
 
+    def _preparation_named(self, value, allowed):
+        """#1097: a reservation the owner names as its notice does, resolved to the one id it fits.
+
+        Only among the rows this operation offers now; a name two of them share is refused
+        with both listed, so the owner says which (or uses the notice's button).
+        """
+        from . import preparations as prep
+        rows = [row for row in (self.service.preparations.get(item) for item in dict.fromkeys(allowed)) if row]
+        matches = prep.named(rows, value, self.service.home_zone())
+        if len(matches) == 1:
+            return matches[0]['id']
+        if len(matches) > 1:
+            listed = '; '.join(f"{self._preparation_label(row, full=False)} = {row['id']}" for row in matches)
+            raise SettingsError(msg('settings_orchestrator.preparation_name_ambiguous', listed=listed))
+        return value
+
     def _preparations(self):
         """Active reservations and owner schedule operations (#1455, #575)."""
         from . import preparations as prep
@@ -840,6 +856,8 @@ class SettingsOrchestrator:
             preparations = self.service.preparations
             if preparations.owns_running(preparations.get(value), self.store.job(work_id)):
                 allowed.append(value)
+        if category == 'preparations' and value not in allowed:
+            value = self._preparation_named(value, allowed)
         if value not in allowed:
             listed = ", ".join(allowed) or msg('settings_orchestrator.none_available_now')
             raise SettingsError(msg('settings_orchestrator.invalid_choice', label=_CHANGE_LABELS[category, setting], listed=listed))

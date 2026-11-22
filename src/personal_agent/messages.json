@@ -4649,6 +4649,12 @@
   "ja": "{label} は次から選んでください: {listed}。何も変更していません。",
   "zh": "{label}只能选择以下值之一：{listed}。未作任何更改。"
  },
+ "settings_orchestrator.preparation_name_ambiguous": {
+  "ko": "그 이름의 준비가 여럿이에요: {listed}. 어느 것인지 id로 고르거나 주인에게 물어보세요. 아무것도 바꾸지 않았어요.",
+  "en": "Several preparations have that name: {listed}. Choose one by its id, or ask the owner which one. Nothing was changed.",
+  "ja": "その名前の準備が複数あります: {listed}。idで選ぶか、オーナーにどれか尋ねてください。何も変更していません。",
+  "zh": "有多个同名的准备事项：{listed}。请按 id 选择，或询问主人是哪一个。未作任何更改。"
+ },
  "settings_orchestrator.invalid_servers_format": {
   "ko": "AI|서버 이름 형식으로 주세요(AI는 claude-code 또는 codex). 아무것도 바꾸지 않았어요.",
   "en": "Use AI and server names separated by a vertical bar (AI must be claude-code or codex). Nothing was changed.",
@@ -11927,10 +11933,22 @@
   "zh": "Still 已在设置中记录更改和撤销方法，并在有配对会话时排队发送通知。请在运行答复中说明更改。"
  },
  "preparations.self_change_notice": {
-  "en": "Preparation {id}: its scheduled run {change}. Before: {before}. After: {after}. Reason stated by the run: {reason}. To undo, ask Still for “{undo}” for preparation {id}. This reverses all changes made by this run. The run will not change this preparation again after you undo it.",
-  "ko": "준비 {id}: 예약 실행이 {change}. 변경 전: {before}. 변경 후: {after}. 실행이 밝힌 이유: {reason}. 되돌리려면 Still에 준비 {id}의 “{undo}”를 요청하세요. 이 실행이 바꾼 내용을 모두 처음 상태로 되돌려요. 되돌린 뒤에는 예약 실행이 이 준비를 다시 변경하지 못해요.",
-  "ja": "準備 {id}: 予約実行が{change}。変更前: {before}。変更後: {after}。実行が述べた理由: {reason}。元に戻すには、Stillに準備 {id} の「{undo}」を依頼してください。この実行が行った変更をすべて元に戻します。元に戻した後は予約実行がこの準備を再変更することはありません。",
-  "zh": "准备事项 {id}：定时运行已{change}。更改前：{before}。更改后：{after}。运行所述理由：{reason}。要撤销，请让 Still 对准备事项 {id} 执行“{undo}”。这会撤销本次运行所做的所有更改。撤销后，定时运行将不能再次更改此准备事项。"
+  "en": "Preparation “{name}”: its scheduled run {change}. Before: {before}. After: {after}. Reason stated by the run: {reason}. To undo, ask Still to undo this change to “{name}”, or use {undo}. This reverses all changes made by this run. The run will not change this preparation again after you undo it.",
+  "ko": "준비 “{name}”: 예약 실행이 {change}. 변경 전: {before}. 변경 후: {after}. 실행이 밝힌 이유: {reason}. 되돌리려면 “{name}”의 이 변경을 되돌려 달라고 하거나 {undo}를 누르세요. 이 실행이 바꾼 내용을 모두 처음 상태로 되돌려요. 되돌린 뒤에는 예약 실행이 이 준비를 다시 변경하지 못해요.",
+  "ja": "準備「{name}」: 予約実行が{change}。変更前: {before}。変更後: {after}。実行が述べた理由: {reason}。元に戻すには、「{name}」のこの変更を元に戻すよう頼むか、{undo}を押してください。この実行が行った変更をすべて元に戻します。元に戻した後は予約実行がこの準備を再変更することはありません。",
+  "zh": "准备事项“{name}”：定时运行已{change}。更改前：{before}。更改后：{after}。运行所述理由：{reason}。要撤销，请让 Still 撤销“{name}”的这次更改，或点击{undo}。这会撤销本次运行所做的所有更改。撤销后，定时运行将不能再次更改此准备事项。"
+ },
+ "preparations.self_change_undone": {
+  "ko": "이 실행이 바꾼 내용을 되돌렸어요.",
+  "en": "The changes this run made are undone.",
+  "ja": "この実行が行った変更を元に戻しました。",
+  "zh": "已撤销本次运行所做的更改。"
+ },
+ "preparations.self_change_undo_stale": {
+  "ko": "그 뒤에 이 준비가 다시 바뀌어서 되돌리지 않았어요.",
+  "en": "This preparation changed again since, so nothing was undone.",
+  "ja": "その後この準備が再び変わったため、元に戻していません。",
+  "zh": "此后该准备事项又有变化，因此没有撤销。"
  },
  "preparations.self_change_cancel": {
   "en": "cancelled future runs",

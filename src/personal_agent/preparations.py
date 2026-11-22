@@ -1214,6 +1214,33 @@ def owner_title(row, limit=120):
     return goal[:limit] + ('…' if len(goal) > limit else '')
 
 
+def name_key(text):
+    """#1097: how two owner-facing names compare: case and spacing aside."""
+    return ' '.join(str(text or '').split()).casefold()
+
+
+def owner_name(row, others, home_zone=None, lang='ko'):
+    """#1097: the name a notice gives a preparation, which the owner may say back.
+
+    Its title (or goal cut short, ``owner_title``); with its schedule, as Settings lists it,
+    when another row is known by the same title.
+    """
+    title = owner_title(row)
+    if any(other['id'] != row['id'] and name_key(owner_title(other)) == name_key(title) for other in others):
+        return ' · '.join((title, schedule_text(row, home_zone, lang)))
+    return title
+
+
+def named(rows, name, home_zone=None):
+    """#1097: the rows an owner's name for a preparation fits: its title, or title and schedule."""
+    from .messages import LANGUAGES
+    wanted = name_key(name)
+    if not wanted:
+        return []
+    return [row for row in rows if wanted == name_key(owner_title(row)) or any(
+        wanted == name_key(' · '.join((owner_title(row), schedule_text(row, home_zone, lang)))) for lang in LANGUAGES)]
+
+
 def brief_preview(row):
     """#766: the run's brief as a proposal card folds it, cut to ``BRIEF_PREVIEW_CHARS``."""
     goal = str(row.get('goal_text') or '')
