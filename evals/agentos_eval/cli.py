@@ -115,6 +115,21 @@ def judge_totals_line(judge, records):
           f"output tokens: {totals['output_tokens']}; settled USD: {totals['usd']}.")
 
 
+def worker_api_totals_line(records):
+    """#545: what the API-key Claude Code worker spent in this sweep (nothing printed when unused)."""
+    rows = [row['worker_api'] for row in records if isinstance(row.get('worker_api'), dict)]
+    if not rows:
+        return None
+    totals = {'launches': sum(r.get('launches', 0) for r in rows), 'settled': sum(r.get('settled', 0) for r in rows),
+              'refused': sum(r.get('refused', 0) for r in rows),
+              'usd': round(sum(float(r.get('usd') or 0) for r in rows), 6)}
+    models = sorted({name for r in rows for name in (r.get('models') or {})})
+    print(f"Claude Code worker (API key) totals: launches: {totals['launches']} (cost reported for "
+          f"{totals['settled']}); refused by the cap: {totals['refused']}; USD {totals['usd']}; "
+          f"models: {', '.join(models) or 'none reported'}.")
+    return totals
+
+
 def resolve_seed(value):
     if not value:
         return None
@@ -237,6 +252,7 @@ def cmd_sweep(args, folder=None, inspect_eval=None, task_factory=None, key_loade
     key_source = judge_notice(judge, key_loader)
     seed = resolve_seed(args.seed)
     run = {'id': run_id(), 'started': time.time(), 'git_head': git_head(), 'worker': args.worker,
+           **({'claude_auth': getattr(args, 'claude_auth', 'api')} if args.worker != 'codex' else {}),
            'instances': args.instances, 'epochs': args.epochs, 'judge': judge, 'judge_key': key_source,
            'judgment_timeout': getattr(args, 'judgment_timeout', JUDGMENT_TIMEOUT),
            'seed': seed.name if seed else 'fresh', **({'arm': args.arm} if getattr(args, 'arm', '') else {})}
@@ -249,7 +265,8 @@ def cmd_sweep(args, folder=None, inspect_eval=None, task_factory=None, key_loade
                              **({'arm': args.arm} if getattr(args, 'arm', '') else {}),
                              include_local=not args.no_local,
                              keep_sandboxes=args.keep_sandboxes, measures=getattr(args, 'measures', ''),
-                             sample_limit=args.limit, judge_notice=False)
+                             sample_limit=args.limit, judge_notice=False,
+                             **({'claude_auth': getattr(args, 'claude_auth', 'api')} if args.worker != 'codex' else {}))
     if 'scenario_ids' in (getattr(task, 'metadata', None) or {}):
         run['scenario_ids'] = task.metadata['scenario_ids']
     if getattr(args, 'continuity', None) and getattr(task, 'metadata', None) is not None:
@@ -262,7 +279,9 @@ def cmd_sweep(args, folder=None, inspect_eval=None, task_factory=None, key_loade
     try:
         report = _write(logs[0], run, folder)
     finally:
-        judge_totals_line(judge, records_from_samples(getattr(logs[0], 'samples', None)))
+        records = records_from_samples(getattr(logs[0], 'samples', None))
+        judge_totals_line(judge, records)
+        worker_api_totals_line(records)
     if usage_limit_stops(logs[0]):
         return 2
     return 1 if report['trend']['regressions'] else 0
@@ -515,7 +534,12 @@ def main(argv=None):
     sweep.add_argument('--arm', default='', help='candidate reporting form for progress-update scenarios (evals/progress-update-arms.json)')
     sweep.add_argument('--max-judge-calls', type=int, default=None,
                        help='call cap for --judge subscription-cli:codex[:model] (default 400)')
-    sweep.add_argument('--cap-usd', type=float, default=None, help='daily judge spend cap (default 10)')
+    sweep.add_argument('--cap-usd', type=float, default=None,
+                       help='daily eval spend cap: judge and API-key worker together (default 10)')
+    sweep.add_argument('--claude-auth', choices=('api', 'subscription'), default='api',
+                       help="Claude Code worker credential (#545): 'api' (default) runs it on the Keychain "
+                            "agentos-evals/anthropic API key, counted against the daily cap; 'subscription' "
+                            "uses the owner's Claude subscription")
     sweep.add_argument('--turn-timeout', type=int, default=900)
     sweep.add_argument('--judgment-timeout', type=int, default=JUDGMENT_TIMEOUT, help='seconds to wait for Judgment AI qualification')
     sweep.add_argument('--limit', type=int, default=None)

@@ -125,10 +125,32 @@ def secretary(judge='none', budget_path=None, seed=None, measures=''):
     return score
 
 
+def claude_worker_api(worker, claude_auth='api', key_loader=None, budget_path=None):
+    """#545: the API-key setup for Claude Code sandboxes, or None (Codex only, or the subscription chosen)."""
+    if 'claude-code' not in workers_for(worker):
+        return None
+    if claude_auth not in ('api', 'subscription'):
+        raise ValueError(f"claude_auth must be 'api' or 'subscription' (got {claude_auth!r})")
+    if claude_auth == 'subscription':
+        print("Claude Code worker: the owner's Claude subscription (--claude-auth subscription).")
+        return None
+    from agentos_eval.paths import eval_home
+    from agentos_eval.worker_key import WorkerApi, WorkerKeyError, load_worker_key
+    try:
+        key = (key_loader or load_worker_key)()
+    except WorkerKeyError as exc:
+        raise SystemExit(str(exc)) from None
+    api = WorkerApi.from_environ(key, budget_path or eval_home() / 'judge-budget.json')
+    print(f"Claude Code worker: Anthropic API key from {'Keychain' if key.source == 'keychain' else key.source}, "
+          f"worker process only; counted against the daily eval cap USD {api.cap_usd:g} "
+          f"(reserve USD {api.reserve_usd:g} per launch, settled to the CLI's per-model cost).")
+    return api
+
+
 @task
 def agentos_secretary(scenarios='', split='', worker='codex', instances=3, seed='', judge='',
                       turn_timeout=900, judgment_timeout=300, include_local=True, keep_sandboxes=False, measures='',
-                      sample_limit=None, judge_notice=True, arm=''):
+                      sample_limit=None, judge_notice=True, arm='', claude_auth='api'):
     """Multi-turn owner scenarios against fresh Still sandboxes, on Codex and/or Claude Code."""
     seed = seed or os.environ.get('AGENTOS_EVAL_SEED', '')
     from agentos_eval.cli import judge_notice as announce_judge, task_judge_settings
@@ -136,7 +158,8 @@ def agentos_secretary(scenarios='', split='', worker='codex', instances=3, seed=
     if announce:
         announce_judge(judge)
     pool = SandboxPool(size=int(instances), seed=Path(seed).expanduser() if seed else None,
-                       keep=str(keep_sandboxes).lower() in ('1', 'true', 'yes'))
+                       keep=str(keep_sandboxes).lower() in ('1', 'true', 'yes'),
+                       worker_api=claude_worker_api(worker, claude_auth))
     include_local = str(include_local).lower() not in ('0', 'false', 'no')
     selected = dataset(scenarios, split, worker, include_local, arm)
     if sample_limit is not None:
