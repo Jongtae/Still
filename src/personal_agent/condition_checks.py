@@ -10,7 +10,7 @@ from pathlib import Path
 import time
 
 from . import preparations as prep
-from .api_credentials import ApiCredentials, CredentialError, secret_state_values
+from .api_credentials import MAX_STATE_BYTES, ApiCredentials, CredentialError, secret_state_values
 from .code_run import CodeRunError, CodeRunner, _arguments, check_arguments_digest
 from .current_context import redact_known_secrets
 from .direct_message_surface import redact_provenance_values
@@ -27,6 +27,16 @@ SWEEP_SECONDS = 60
 #: this name: a set named ``check`` keeps its ``CHECK_STATE_FILE`` (#972 review).
 STATE_ENV = 'CHECKSTATEFILE'
 PAUSED_NOTICE = prep.BLOCKED_NOTICE_PREFIX + 'check:'
+
+
+def _state_acceptable(text):
+    """``write_check_state``'s own rule: empty (discard) or a JSON object of at most ``MAX_STATE_BYTES``."""
+    if not text.strip():
+        return True
+    try:
+        return len(text.encode()) <= MAX_STATE_BYTES and isinstance(json.loads(text), dict)
+    except ValueError:
+        return False
 
 
 def _redact(store, value):
@@ -109,6 +119,8 @@ class CheckRunner(CodeRunner):
         # (check id, check digest): the state is bound to the exact check code (D4).
         self.check_state = check_state
         self.check_state_saved = None
+        #: The state this run left, saved only once its result is accepted (``ConditionChecks._commit_state``).
+        self.check_state_text = None
         self._check_file = None
 
     def _load_states(self, names, workdir, env):
@@ -136,8 +148,10 @@ class CheckRunner(CodeRunner):
             except ValueError:
                 pass
             if text != original:
-                self.check_state_saved = text is not None and ApiCredentials(self.store).write_check_state(
-                    *self.check_state, text)
+                # #1126 review: a report-once state must not outlive a hit that was never handed off, so the
+                # state is only checked here and saved after the result settles.
+                self.check_state_saved = text is not None and _state_acceptable(text)
+                self.check_state_text = text if self.check_state_saved else None
         return saved, scratch_secrets
 
     def _libraries(self, names, proposed):
@@ -244,8 +258,19 @@ class ConditionChecks:
             except CredentialError:
                 # An unavailable key can prevent even the redactor from running.
                 result = {'pause': 'setup_missing'}
-        self._settle(row, result, claimed_at=claimed_at)
+        state = result.pop('state', None) if result else None
+        if self._settle(row, result, claimed_at=claimed_at) and state is not None:
+            self._commit_state(row, json.loads(row['check_spec'])['digest'], state)
         return True
+
+    def _commit_state(self, row, digest, text):
+        """Save the state after its run's result was accepted, outside any SQLite transaction.
+
+        A stop between the two leaves the earlier state, so the next run sees the condition again: a
+        repeated report, never a lost one (D5).
+        """
+        if not ApiCredentials(self.store).write_check_state(row['id'], digest, text):
+            LOG.warning('condition check state not saved')
 
     def _run(self, row, spec, pending=None):
         from .agent_runtime import outside_result_source
@@ -311,6 +336,9 @@ class ConditionChecks:
         if kind == 'failure':
             tail = handoff['output'][-600:]
             handoff['output'] = '\n'.join(part for part in (failure_reason, tail) if part)
+        if getattr(runner, 'check_state_text', None) is not None:
+            # Never stored with the result (a pending hit is kept in SQLite); taken off before settling.
+            handoff['state'] = runner.check_state_text
         return handoff
 
     @staticmethod
@@ -371,6 +399,8 @@ class ConditionChecks:
                 status.update(last_result=kind, last_run_at=now,
                               failures=status.get('failures', 0) + 1 if kind == 'failure' else 0)
             failed = status['failures'] >= FAILURE_LIMIT
+            # Whether this result is kept: counted, handed off, or held for a retry (``_commit_state``).
+            accepted = True
             if not pause and (kind == 'hit' or failed):
                 slot = pending['slot'] if pending else row['check_next_at']
                 wake = {'handoff': {key: value for key, value in result.items() if key != 'outside'},
@@ -390,7 +420,11 @@ class ConditionChecks:
                 elif wake.get('budget_refused') or status['wakes'] >= DAILY_WAKES:
                     if pending:
                         status['pending'] = {'slot': slot, 'result': result}
+                    else:
+                        accepted = False
                     next_at = self._next_day(now, db)
+                else:
+                    accepted = False
             if pause:
                 status['paused'] = pause
                 scrubbed = result.get('scrubbed_spec')
@@ -399,6 +433,7 @@ class ConditionChecks:
                            (prep.STATE_PAUSED, now, spec, row['id']))
                 self._notice(db, row, title, pause, now, status_destination)
             self._advance(db, row, next_at, status)
+        return accepted
 
     def _notice(self, db, row, title, pause, now, destination):
         notice = f"check:{row['id']}:{row['check_next_at']}"

@@ -13,7 +13,7 @@ from personal_agent.api_requests import save_slot
 from personal_agent.browser_jar import MemoryKey
 from personal_agent.current_context import redact_known_secrets
 from test_code_run import FakeProcess
-from test_condition_checks_972 import ARGS, HOST, SECRET, case, current, prepared, prove, schedule, status, wake_job  # noqa: F401
+from test_condition_checks_972 import ARGS, HOST, SECRET, case, current, finish, prepared, prove, schedule, status, wake_job  # noqa: F401
 
 
 class StateProcess(FakeProcess):
@@ -185,3 +185,49 @@ def test_a_set_named_check_keeps_its_own_state_variable(keyed):
     assert env['CHECK_STATE_FILE'] != env[checks.STATE_ENV]
     assert Path(env['CHECK_STATE_FILE']).name == 'state-check.json'
     assert process.seen == '{}'
+
+
+def test_a_hit_refused_by_the_budget_leaves_the_earlier_state(keyed):
+    # #1126 review: a report-once state saved with a hit that was never handed off would hide it for good.
+    c = keyed
+    row = prepared(c)
+    run(c, json.dumps({'reported': False}))
+    c.preps.set_budget(1)
+    run(c, stdout='first hit')
+    assert wake_job(c, row)
+    finish(c, row)
+    first = current(c, row)['last_run_job_id']
+    run(c, json.dumps({'reported': True}), stdout='second hit')
+    assert current(c, row)['last_run_job_id'] == first
+    assert 'pending' not in status(c, row)
+    assert json.loads(saved(c, row)) == {'reported': False}
+    # The window is shorter than a day here: lift the budget and make the check due again.
+    c.preps.set_budget(0)
+    with c.store.db() as db:
+        db.execute('UPDATE preparations SET check_next_at=? WHERE id=?', (c.clock[0], row['id']))
+    again = run(c, json.dumps({'reported': True}), stdout='second hit')
+    assert json.loads(again.seen) == {'reported': False}
+    assert current(c, row)['last_run_job_id'] != first
+    assert json.loads(saved(c, row)) == {'reported': True}
+
+
+def test_a_hit_held_for_a_full_queue_saves_its_state_and_never_stores_it_in_sqlite(keyed):
+    c = keyed
+    row = prepared(c)
+    for i in range(99):
+        c.store.enqueue('Queue filler', f'queued:{i}')
+    marker = 'state-marker-that-must-not-reach-sqlite-01'
+    run(c, json.dumps({'reported': True, 'marker': marker}), stdout='held hit')
+    assert status(c, row)['pending']['result']['output'] == 'held hit'
+    assert json.loads(saved(c, row))['reported'] is True
+    with c.store.db() as db:
+        assert marker not in json.dumps([dict(item) for item in db.execute('SELECT * FROM preparations')])
+
+
+def test_a_stop_between_settling_and_saving_repeats_rather_than_loses_the_hit(keyed, monkeypatch):
+    c = keyed
+    row = prepared(c)
+    monkeypatch.setattr(c.checks, '_commit_state', lambda *args: None)
+    run(c, json.dumps({'reported': True}), stdout='hit')
+    assert wake_job(c, row)
+    assert saved(c, row) == ''
