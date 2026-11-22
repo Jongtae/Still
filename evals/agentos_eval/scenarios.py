@@ -60,8 +60,9 @@ RUBRIC = {
     # #943: ISO 24495-1 (reader, document type, plain words) and voice.md's reader-and-form rule (#941).
     'reader_form': 'Fits the reader and the kind of text: a document of a settled kind (minutes, a status '
                    'report, a formal request) takes its field\'s form and usual detail; text written for someone '
-                   'else takes that reader\'s register and manners; what is said to the owner stays in plain '
-                   'words, with field terms explained, and shows no raw data or system names.',
+                   'else takes that reader\'s register and manners, in one register throughout; what is said to the owner '
+                   'stays in plain words, with field terms explained within their field\'s own meaning (a source it '
+                   'names is linked), and shows no raw data or system names.',
     # #1036: one update in a series (BLUF / SITREP order, exception-based reporting; #1035's rules).
     'progress_update': 'Reads as one update in a series: the conclusion for the owner\'s goal first, then what changed '
                        'since the last update (a line when nothing did); leaves out what the owner already has; keeps '
