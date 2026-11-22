@@ -23,7 +23,9 @@ DAILY_WAKES, FAILURE_LIMIT = 24, 3
 #: How often states of checks that ended are discarded (D4: discarded when the check is replaced or ends).
 SWEEP_SECONDS = 60
 #: D4: the check's own state between its runs, for hold durations and edge triggering in the AI's code.
-STATE_ENV = 'CHECK_STATE_FILE'
+#: Without an underscore, so no secret set's ``<SET>_<FIELD>`` variable (``api_requests.env_name``) can be
+#: this name: a set named ``check`` keeps its ``CHECK_STATE_FILE`` (#972 review).
+STATE_ENV = 'CHECKSTATEFILE'
 PAUSED_NOTICE = prep.BLOCKED_NOTICE_PREFIX + 'check:'
 
 

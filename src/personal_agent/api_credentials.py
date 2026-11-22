@@ -20,7 +20,7 @@ PREFIX = 'api_credential:'
 #: encrypted with the same key and bound to the set's exact metadata.
 STATE_PREFIX = 'api_credential_state:'
 MAX_STATE_BYTES = 16 * 1024
-#: #972: a condition check's own state between its runs (``CHECK_STATE_FILE``), bound to the check's digest.
+#: #972: a condition check's own state between its runs (``CHECKSTATEFILE``), bound to the check's digest.
 CHECK_STATE_PREFIX = STATE_PREFIX + 'check:'
 #: State strings at least this long (tokens) are redacted; shorter ones (dates, times) are not.
 STATE_REDACT_CHARS = 24

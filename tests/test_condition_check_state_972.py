@@ -1,4 +1,4 @@
-"""#972 D4: a check's own state between its runs (``CHECK_STATE_FILE``).
+"""#972 D4: a check's own state between its runs (``CHECKSTATEFILE``).
 
 Real SQLite, scheduler and secret store; injected sandbox processes and a fake clock.
 """
@@ -9,9 +9,11 @@ import pytest
 
 from personal_agent import condition_checks as checks, preparations as prep
 from personal_agent.api_credentials import CHECK_STATE_PREFIX, MAX_STATE_BYTES, ApiCredentials
+from personal_agent.api_requests import save_slot
 from personal_agent.browser_jar import MemoryKey
+from personal_agent.current_context import redact_known_secrets
 from test_code_run import FakeProcess
-from test_condition_checks_972 import ARGS, case, current, prepared, prove, schedule, status, wake_job  # noqa: F401
+from test_condition_checks_972 import ARGS, HOST, SECRET, case, current, prepared, prove, schedule, status, wake_job  # noqa: F401
 
 
 class StateProcess(FakeProcess):
@@ -150,7 +152,7 @@ def test_a_state_that_cannot_be_saved_is_reported_to_the_ai(keyed, write):
     handoff = checks.handoff_event(c.store, wake_job(c, row))['trace']
     assert handoff['kind'] == 'hit'
     assert handoff['output'].startswith('crossed\n')
-    assert 'CHECK_STATE_FILE' in handoff['output']
+    assert checks.STATE_ENV in handoff['output']
 
 
 def test_clearing_the_file_discards_the_state(keyed):
@@ -161,3 +163,25 @@ def test_clearing_the_file_discards_the_state(keyed):
     run(c, '')
     assert saved(c, row) == ''
     assert status(c, row)['last_result'] == 'quiet'
+
+
+def test_a_saved_check_state_is_redacted_store_wide_without_any_api_credential(keyed):
+    c = keyed
+    prepared(c)
+    token = 'opaque-check-state-token-value-0002'
+    run(c, json.dumps({'token': token}))
+    assert not c.store.secret_items('api_credential:')
+    assert redact_known_secrets(c.store, f'later {token}') == 'later [redacted]'
+
+
+def test_a_set_named_check_keeps_its_own_state_variable(keyed):
+    c = keyed
+    args = dict(ARGS, secrets=['check'])
+    save_slot(c.store, 'check', [HOST], {'TOKEN': SECRET}, encrypted=True, code={'fields': ['TOKEN']})
+    prove(c, args)
+    schedule(c, args)
+    process = run(c, json.dumps({'level': 2}))
+    env = process.config['env']
+    assert env['CHECK_STATE_FILE'] != env[checks.STATE_ENV]
+    assert Path(env['CHECK_STATE_FILE']).name == 'state-check.json'
+    assert process.seen == '{}'

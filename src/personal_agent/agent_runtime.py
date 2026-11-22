@@ -466,7 +466,7 @@ SCHEDULE_PREPARATION_ARGUMENTS={
  'title':'For kind prepare, what the owner reads for the scheduled preparation or proposal (#393, #755), apart from goal: a short name in the owner\'s language (at most 60 characters).',
  'check':('A JSON object with the proven code_run code, hosts, secrets and timeout_seconds, plus every_seconds '
   '(minimum 15, default 60). For prepare windows with until. Output wakes the AI; use no packages. '
-  'Print nothing when the condition is not met. In a check run, CHECK_STATE_FILE is a JSON object (at most 16 KB) kept '
+  'Print nothing when the condition is not met. In a check run, CHECKSTATEFILE is a JSON object (at most 16 KB) kept '
   'between its runs and absent while you prove the code, so keep a hold duration or report-once state there.'),
  'replaces':('The id (from settings_read preparations) of an active preparation this one takes the place of, when the owner changes what an existing watch or schedule does (another target, a new plan, a different time) (#766). '
   'In a Work the owner started, Still stops it once this one is scheduled, so the two never run side by side and the new one need not wait for the old to end; say in your answer what was stopped. '

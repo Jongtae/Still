@@ -435,9 +435,10 @@ def encrypted_secret_values(store, *, fresh=False):
     from .api_credentials import ApiCredentials, CredentialError, PREFIX, STATE_PREFIX
     reader = getattr(store, 'secret_items', None)
     records = reader(PREFIX) if callable(reader) else {}
-    if not records:
+    # #972 review: a condition check's state exists without any API credential, so states are read either way.
+    states = reader(STATE_PREFIX) if callable(reader) else {}
+    if not records and not states:
         return ()
-    states = reader(STATE_PREFIX)
     with _REDACTION_LOCK:
         credentials = ApiCredentials(store)
         provider = getattr(store, 'api_slot_key', None)
