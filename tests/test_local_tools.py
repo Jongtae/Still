@@ -20,6 +20,40 @@ class LocalToolTests(unittest.TestCase):
     def test_unknown_tool_rejected(self):
         with self.assertRaises(ValueError):LocalTools().execute({'tool':'shell','command':'bad'})
 
+    def _geocoding_tools(self, known):
+        """A LocalTools whose requests are served from ``known`` (a geocoding name -> results); no network."""
+        calls = []
+        tools = LocalTools()
+
+        def request(url, timeout, first=False):
+            from urllib.parse import urlparse, parse_qs
+            query = parse_qs(urlparse(url).query)
+            if 'geocoding' in url:
+                calls.append(query['name'][0])
+                return {'results': known.get(query['name'][0], [])} if known.get(query['name'][0]) else {}
+            return {'timezone': 'UTC', 'current': {}}
+        tools._public_request = request
+        return tools, calls
+
+    def test_weather_shortens_a_multi_word_place_the_geocoder_cannot_match_whole(self):
+        # #1125: the geocoder matches one name, not a phrase; a saved place is often a district + neighbourhood.
+        town = {'name': 'Fooville', 'latitude': 1.0, 'longitude': 2.0, 'country': 'Testland', 'country_code': 'TL', 'admin1': 'North'}
+        tools, calls = self._geocoding_tools({'Fooville': [town]})
+        result = tools.weather('Fooville Eastdistrict Hilltop')
+        self.assertEqual(calls, ['Fooville Eastdistrict Hilltop', 'Fooville Eastdistrict', 'Fooville'])
+        self.assertEqual(result['location']['name'], 'Fooville')
+
+    def test_weather_still_refuses_a_place_no_shortening_finds(self):
+        tools, calls = self._geocoding_tools({})
+        with self.assertRaises(ValueError):tools.weather('Nowhere Land Region')
+        self.assertEqual(calls, ['Nowhere Land Region', 'Nowhere Land', 'Nowhere'])
+
+    def test_weather_does_not_retry_a_name_that_matched(self):
+        town = {'name': 'Barton', 'latitude': 1.0, 'longitude': 2.0, 'country': 'Testland', 'country_code': 'TL', 'admin1': 'North'}
+        tools, calls = self._geocoding_tools({'Barton': [town]})
+        tools.weather('Barton')
+        self.assertEqual(calls, ['Barton'])
+
     def test_dead_duplicate_loops_are_removed(self):
         # #606 T7: the native loop in agent_runtime is the only tool loop.
         import personal_agent.local_tools as module
