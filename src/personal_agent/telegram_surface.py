@@ -341,6 +341,9 @@ class TelegramSurface(ConversationSurface):
             return {'inline_keyboard':[[{'text':msg('button.line_stop'),'callback_data':f"p7k:{nid}:stop"}]]}
         if kind.startswith((entrusted_lines.NOTICE_RULE, entrusted_lines.NOTICE_PLAN)):
             return {'inline_keyboard':[[{'text':msg('button.undo'),'callback_data':f"p7k:{nid}:undo"}]]}
+        # #1097: a preparation's self-change receipt carries its undo, as a line's restatement does.
+        if kind.startswith(prep.SELF_CHANGE_NOTICE_PREFIX):
+            return {'inline_keyboard':[[{'text':msg('button.undo'),'callback_data':f"p7k:{nid}:undo"}]]}
         # #1472 (owner choice 2026-10-13): a step approval has no buttons; the owner answers with a
         # reaction or a reply.  Working notes have none either (#996).
         return None
@@ -1006,6 +1009,18 @@ class TelegramSurface(ConversationSurface):
                                                                {'inline_keyboard':[]})
                         except ProviderError:pass
                         changed=True
+                elif exact and parts[2]=='undo' and notification['kind'].startswith(prep.SELF_CHANGE_NOTICE_PREFIX):
+                    undone=service.preparations_service.undo_self_change(notification['fingerprint'])
+                    LOG.info('preparation self-change undo by owner button undone=%s',undone)
+                    if undone:
+                        service.store.update_notification(notification['id'],'self_change_undone')
+                        try:service.telegram.edit_message_text(sender,notification['message_id'],
+                                                               service._redact_known_secrets(msg('preparations.self_change_undone')),
+                                                               {'inline_keyboard':[]})
+                        except ProviderError:pass
+                        changed=True
+                    else:
+                        alert=(msg('preparations.self_change_undo_stale'),False)
                 elif exact and parts[2]=='undo' and notification['kind'].startswith((entrusted_lines.NOTICE_RULE, entrusted_lines.NOTICE_PLAN)) and version.isdigit():
                     try:
                         brief=service.preparations_service.undo_line_version(line_id,int(version))
