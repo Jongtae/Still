@@ -148,6 +148,30 @@ def _openai_input(messages):
     return items
 
 
+#: JSON-schema keywords Anthropic strict tool use does not accept.  As the official SDKs do, they leave
+#: the wire schema and stay checked locally (the DecisionEngine's own shape check).
+_STRICT_UNSUPPORTED=frozenset({'minimum','maximum','exclusiveMinimum','exclusiveMaximum','multipleOf',
+                               'minLength','maxLength','pattern','minItems','maxItems','uniqueItems'})
+
+def _strict_schema(schema):
+    """#1117: a schema Anthropic strict tool use accepts: every object closed, unsupported keywords dropped."""
+    if isinstance(schema,list):return [_strict_schema(item) for item in schema]
+    if not isinstance(schema,dict):return schema
+    out={}
+    for key,value in schema.items():
+        if key in ('properties','$defs','definitions') and isinstance(value,dict):
+            out[key]={name:_strict_schema(item) for name,item in value.items()}  # names, not keywords
+        elif key not in _STRICT_UNSUPPORTED:
+            out[key]=_strict_schema(value)
+    if out.get('type')=='object':out['additionalProperties']=False
+    return out
+
+def _anthropic_tools(tools,strict):
+    """Anthropic tool definitions; ``strict`` guarantees the input matches its schema (structured outputs)."""
+    return [{'name':t['function']['name'],'description':t['function']['description'],
+             **({'input_schema':_strict_schema(t['function']['parameters']),'strict':True} if strict
+                else {'input_schema':t['function']['parameters']})} for t in tools]
+
 def _openai_tools(tools):
     return [{'type': 'function', 'name': tool['function']['name'],
              'description': tool['function']['description'], 'parameters': tool['function']['parameters'],
@@ -300,8 +324,10 @@ class ModelAdapter:
                 # Always `auto`: current Claude models (Opus 5.5, Sonnet 5.5)
                 # reject a forced `any`/`tool` choice with a 400, and every
                 # caller that needs a call checks the returned call itself (#1047).
+                # #1117: a caller that requires the call (a judgment) gets strict tool use, so the
+                # arguments match the schema instead of failing the caller's shape check.
                 choice={'type':'auto'}
-                data=self._send(cfg['endpoint']+'/v1/messages',{'model':cfg['model'],'system':'\n'.join(system),'messages':converted,'tools':[{'name':t['function']['name'],'description':t['function']['description'],'input_schema':t['function']['parameters']} for t in tools],'max_tokens':ANTHROPIC_MAX_TOKENS,'tool_choice':choice,**({'output_config':{'effort':cfg['effort']}} if cfg.get('effort') else {})},{'x-api-key':key,'anthropic-version':'2023-06-01'},timeout)
+                data=self._send(cfg['endpoint']+'/v1/messages',{'model':cfg['model'],'system':'\n'.join(system),'messages':converted,'tools':_anthropic_tools(tools,tool_choice=='required'),'max_tokens':ANTHROPIC_MAX_TOKENS,'tool_choice':choice,**({'output_config':{'effort':cfg['effort']}} if cfg.get('effort') else {})},{'x-api-key':key,'anthropic-version':'2023-06-01'},timeout)
                 message={'role':'assistant','content':'\n'.join(c['text'] for c in data['content'] if c['type']=='text')}
                 calls=[{'id':c['id'],'type':'function','function':{'name':c['name'],'arguments':json.dumps(c['input'])}} for c in data['content'] if c['type']=='tool_use']
                 if calls:message['tool_calls']=calls
