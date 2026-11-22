@@ -20,6 +20,8 @@ PREFIX = 'api_credential:'
 #: encrypted with the same key and bound to the set's exact metadata.
 STATE_PREFIX = 'api_credential_state:'
 MAX_STATE_BYTES = 16 * 1024
+#: #972: a condition check's own state between its runs (``CHECK_STATE_FILE``), bound to the check's digest.
+CHECK_STATE_PREFIX = STATE_PREFIX + 'check:'
 #: State strings at least this long (tokens) are redacted; shorter ones (dates, times) are not.
 STATE_REDACT_CHARS = 24
 #: #778: the run state's top-level key for values the code declares not secret (paths, ids, a record of
@@ -215,14 +217,17 @@ class ApiCredentials:
 
     def read_state(self, name, slot):
         """The set's saved run state text, or '' when none, unreadable or saved for other metadata."""
-        token = self.store.secret(STATE_PREFIX + name)
+        return self._read_bound(STATE_PREFIX + name, fingerprint(name, slot))
+
+    def _read_bound(self, key, binding):
+        token = self.store.secret(key)
         if not token:
             return ''
         try:
             payload = json.loads(self._cipher().decrypt(token.encode()))
         except Exception:
             return ''
-        if not isinstance(payload, dict) or payload.get('version') != 1 or payload.get('binding') != fingerprint(name, slot):
+        if not isinstance(payload, dict) or payload.get('version') != 1 or payload.get('binding') != binding:
             return ''
         state = payload.get('state')
         return state if isinstance(state, str) else ''
@@ -241,31 +246,59 @@ class ApiCredentials:
 
         Raises when the saved state cannot be read, so its ciphertext is never dropped unretired.
         """
-        return self.store.swap_secret(STATE_PREFIX + name, None, self._state_strings, origin='state')
+        return self._discard_bound(STATE_PREFIX + name)
+
+    def _discard_bound(self, key):
+        return self.store.swap_secret(key, None, self._state_strings, origin='state')
 
     def write_state(self, name, slot, text):
         """Save the run state (a JSON object of at most ``MAX_STATE_BYTES``); False when refused."""
+        return self._write_bound(STATE_PREFIX + name, lambda: fingerprint(name, slot), text,
+                                 lambda: self.assert_current(name, slot))
+
+    def _write_bound(self, key, binding, text, current=lambda: None):
         if not isinstance(text, str) or not text.strip():
             try:
-                self.discard_state(name)
+                self._discard_bound(key)
             except Exception:
                 return False  # Codex review on #259: an unreadable state is kept, never dropped unretired
             return True
         try:
             if len(text.encode()) > MAX_STATE_BYTES or not isinstance(json.loads(text), dict):
                 return False
-            self.assert_current(name, slot)
-            payload = {'version': 1, 'binding': fingerprint(name, slot), 'state': text}
+            current()
+            payload = {'version': 1, 'binding': binding(), 'state': text}
             encoded = json.dumps(payload, separators=(',', ':')).encode()
             # The old state's values are retired and the new state written under one lock (Codex review).
             # #778: a value the new state declares plain is not retired, and its earlier mark is dropped.
             plain = set(plain_state_values(text))
-            self.store.swap_secret(STATE_PREFIX + name, self._cipher(create=True).encrypt(encoded).decode(),
+            self.store.swap_secret(key, self._cipher(create=True).encrypt(encoded).decode(),
                                    lambda old: [value for value in self._state_strings(old) if value not in plain],
                                    release=sorted(plain), origin='state')
         except Exception:
             return False
         return True
+
+    # -- #972: a condition check's own state between its runs -----------------------------
+    # Kept under the run-state namespace, so the store-wide redaction pass covers it like a set's state.
+    # A set name never contains ':' (``api_requests.NAME``), so the two cannot collide.
+
+    def read_check_state(self, check_id, digest):
+        """The check's saved state, or '' when none, unreadable or saved for other check code."""
+        return self._read_bound(CHECK_STATE_PREFIX + check_id, {'check': check_id, 'digest': digest})
+
+    def write_check_state(self, check_id, digest, text):
+        """Save the check's state under the same rules as a set's run state; False when refused."""
+        return self._write_bound(CHECK_STATE_PREFIX + check_id, lambda: {'check': check_id, 'digest': digest}, text)
+
+    def discard_check_state(self, check_id):
+        """Remove the check's state after retiring its values; raises when it cannot be read."""
+        return self._discard_bound(CHECK_STATE_PREFIX + check_id)
+
+    def check_state_ids(self):
+        """The checks that have a saved state."""
+        records = self.store.secret_items(CHECK_STATE_PREFIX) if callable(getattr(self.store, 'secret_items', None)) else {}
+        return [key[len(CHECK_STATE_PREFIX):] for key in records]
 
     def state_values(self):
         """String values in every saved run state, for the redaction boundary (tokens, keys)."""

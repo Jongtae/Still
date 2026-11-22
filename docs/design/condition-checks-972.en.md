@@ -262,6 +262,8 @@ Proposed, for the owner to accept or change:
 
 ## Implementation slices
 
+Delivered so far: slice 1 without the check state ([#1021](https://github.com/Jongtae/Still/pull/1021)), then the check state of D4 (`CHECK_STATE_FILE`) and the worker guidance sentence of slice 2. Replacing a check from the woken run (D6) and the owner view (D7) remain.
+
 1. **Check runner and setup.** D1 to D5, D8 to D11: storage, the proving rule, the runner thread, the `CodeRunner` seam, the wake transaction, stop and forget, the negative tests, the contract amendments and the escalated review.
 2. **Replacing a check from the woken run** (D6) and the worker guidance as message content: one general sentence in the `schedule_preparation` description on writing a check (silence is quiet, keep hold and edge state in `CHECK_STATE_FILE`, prove it first). It names no task, site or domain (C16).
 3. **Owner view** (D7): the setup notice line, the Settings entry, and the counts in the line's periodic account.

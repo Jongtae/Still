@@ -53,6 +53,12 @@
   "ja": "チェック内に直接記述された認証情報が見つかりました。",
   "zh": "检查中包含直接写入的凭据。"
  },
+ "checks.state_refused": {
+  "ko": "검사 상태를 저장하지 못했어요. CHECK_STATE_FILE에는 16 KB 이하의 JSON 객체만 저장돼요.",
+  "en": "The check state was not saved. CHECK_STATE_FILE keeps only a JSON object of at most 16 KB.",
+  "ja": "チェックの状態を保存できませんでした。CHECK_STATE_FILE には 16 KB 以下の JSON オブジェクトだけが保存されます。",
+  "zh": "未能保存检查状态。CHECK_STATE_FILE 只保存不超过 16 KB 的 JSON 对象。"
+ },
  "checks.code": {
   "ko": "조건 검사 코드",
   "en": "Condition check code",
