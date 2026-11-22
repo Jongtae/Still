@@ -328,11 +328,14 @@ def test_registered_surface_identity_reads_need_only_store_config():
                'mattermost': {'enabled': True, 'owner_user_id': 'mm', 'generation': 'mg'},
                'slack': {'enabled': True, 'owner_user_id': 'sl', 'generation': 'sg'},
                # #438: an enabled terminal row (a crash leaves one) adds no paired source identity.
-               'terminal': {'enabled': True, 'owner_user_id': 'owner', 'channel_id': 'tty', 'generation': '3'}}
+               'terminal': {'enabled': True, 'owner_user_id': 'owner', 'channel_id': 'tty', 'generation': '3'},
+               # #1141: an iMessage pairing names its handle-keyed owner.
+               'imessage': {'enabled': True, 'owner_user_id': 'handle:+15550000', 'handle': '+15550000',
+                            'channel_id': '+15550000', 'generation': 'ig'}}
     service = SimpleNamespace(store=SimpleNamespace(config=lambda key, default=None: configs.get(key, default)))
     assert [(surface.paired_connector_owner(), surface.owner_generation())
             for surface in registered_surfaces(service)] == [('telegram:77', 'tg'), ('mattermost:mm', 'mg'), ('slack:sl', 'sg'),
-                                                                 (None, '3')]
+                                                                 (None, '3'), ('imessage:handle:+15550000', 'ig')]
 
 
 @pytest.mark.parametrize('wiring', ['constructor', 'installer'])

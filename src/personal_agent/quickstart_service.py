@@ -5004,6 +5004,12 @@ class AgentService:
         from .mattermost_surface import MattermostSurface
         return MattermostSurface(self)
 
+    @cached_property
+    def imessage_surface(self):
+        """The owner's iMessage conversation (#1141), idle until paired."""
+        from .imessage_surface import IMessageSurface
+        return IMessageSurface(self)
+
     def mattermost_status(self):
         return self.mattermost_surface.status()
 
@@ -6697,7 +6703,7 @@ class AgentService:
 
     @property
     def surfaces(self):
-        """The owner conversation surfaces this service composes (#212): Telegram, Mattermost (#213), Slack (#214) and the terminal (#438)."""
+        """The registered owner conversation surfaces this service composes (#212)."""
         return tuple(getattr(self, name+'_surface') for name in SURFACE_NAMES)
 
     def surface_of(self, job):

@@ -284,6 +284,13 @@ class QuickStore:
             # #213: the owner's Mattermost post each Work answers, Still's reply post, and what it replied to.
             db.execute('CREATE TABLE IF NOT EXISTS mattermost_turns(job_id TEXT PRIMARY KEY, owner TEXT NOT NULL, '
                        'source_post_id TEXT, reply_post_id TEXT, reply_to_post_id TEXT, created REAL NOT NULL)')
+            # #1141: iMessage GUIDs and sends awaiting a Messages echo.
+            db.execute('CREATE TABLE IF NOT EXISTS imessage_turns(job_id TEXT PRIMARY KEY, owner TEXT NOT NULL, '
+                       'source_post_id TEXT, reply_post_id TEXT, reply_to_post_id TEXT, created REAL NOT NULL)')
+            db.execute('CREATE TABLE IF NOT EXISTS imessage_events(guid TEXT PRIMARY KEY, created REAL NOT NULL)')
+            db.execute('CREATE TABLE IF NOT EXISTS imessage_sends(id TEXT PRIMARY KEY, job_id TEXT, notification_id TEXT, '
+                       'generation TEXT NOT NULL, handle TEXT NOT NULL, text_digest TEXT NOT NULL, '
+                       'state TEXT NOT NULL, created REAL NOT NULL, settled REAL)')
             # #214: the same for Slack (message ts), and the Socket Mode events and button presses already taken.
             db.execute('CREATE TABLE IF NOT EXISTS slack_turns(job_id TEXT PRIMARY KEY, owner TEXT NOT NULL, '
                        'source_post_id TEXT, reply_post_id TEXT, reply_to_post_id TEXT, created REAL NOT NULL)')
@@ -3110,6 +3117,11 @@ class QuickStore:
                 interrupted-=len(resumes)
             uncertain=db.execute("UPDATE jobs SET delivery='unknown' WHERE delivery='sending'").rowcount
             notifications=db.execute("UPDATE telegram_notifications SET state='unknown' WHERE state='sending'").rowcount
+            # iMessage notices may already be marked sent by the shared notice path, before their echo.
+            notifications += db.execute("UPDATE telegram_notifications SET state='unknown' "
+                                        "WHERE surface='imessage' AND state IN ('sent','memory_listed') AND id IN "
+                                        "(SELECT notification_id FROM imessage_sends WHERE state='sending')").rowcount
+            db.execute("UPDATE imessage_sends SET state='unknown',settled=? WHERE state='sending'", (time.time(),))
             db.execute("UPDATE telegram_task_cards SET message_id=-2,state='unknown',created=? WHERE message_id=-1",(time.time(),))
             self.telegram.delete_interrupted_task_cards(db)
             for work_id in replies:

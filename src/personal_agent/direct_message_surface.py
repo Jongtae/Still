@@ -309,6 +309,8 @@ class DirectMessageSurface(ConversationSurface):
     MESSAGES = ''
     #: The surface's errors: ``NOT_SENT`` means the request never reached the server.
     NOT_SENT = ERROR = ProviderError
+    #: Delivery status after a successful terminal post. Some transports confirm it asynchronously.
+    POST_REPLY_STATUS = 'sent'
     #: What the owner does at the Mac for a notice kind this surface has no way to answer.
     AT_THE_MAC = {}
 
@@ -646,7 +648,7 @@ class DirectMessageSurface(ConversationSurface):
             post_id = None
             try:
                 post_id = self._post_reply(cfg, text, job)
-                status = 'sent'
+                status = self.POST_REPLY_STATUS
             except self.NOT_SENT:
                 with service.store.db() as db:
                     db.execute("UPDATE jobs SET delivery='pending' WHERE id=? AND delivery='sending'", (job['id'],))
