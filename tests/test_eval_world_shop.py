@@ -482,6 +482,7 @@ def test_a_shop_sweep_with_both_runs_each_scenario_on_each_route(tmp_path):
                           'evidence_class': 'sandbox-world',
                           'result': {'passed': True, 'num_tests': 4, 'failures': [], 'collateral': [], 'unreached': []}}}
 
+    args.claude_auth = 'subscription'
     assert cli.run_world_sweep(args, run_scenario=fake_run, pool_factory=lambda **kw: None,
                                folder=tmp_path / 'reports') == 0
     assert sorted(ran) == [('world-shop-clear-then-add', 'claude-code'), ('world-shop-clear-then-add', 'codex')]

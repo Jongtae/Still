@@ -187,7 +187,7 @@ def _write(log, run, folder=None):
     return report
 
 
-def run_world_sweep(args, run_scenario=None, pool_factory=None, folder=None):
+def run_world_sweep(args, run_scenario=None, pool_factory=None, folder=None, worker_key_loader=None):
     """``sweep --world``: each scenario × epoch in a fresh world and a fresh sandbox; no judge (#484).
 
     MCP worlds run on Codex only; a browser world (#1122) names its routes (``World.workers``), so
@@ -218,7 +218,14 @@ def run_world_sweep(args, run_scenario=None, pool_factory=None, folder=None):
            'instances': args.instances, 'epochs': args.epochs, 'judge': 'none', 'world': args.world,
            'evidence_class': EVIDENCE_CLASS, 'seed': seed.name if seed else 'fresh',
            'judgment_timeout': getattr(args, 'judgment_timeout', JUDGMENT_TIMEOUT)}
-    pool = (pool_factory or SandboxPool)(size=args.instances, seed=seed, keep=args.keep_sandboxes)
+    # #545: a browser world's Claude Code route honours --claude-auth like a scenario sweep.
+    from .worker_key import select_worker_api
+    claude_auth = getattr(args, 'claude_auth', 'api')
+    worker_api = select_worker_api(chosen, claude_auth, key_loader=worker_key_loader)
+    if 'claude-code' in chosen:
+        run['claude_auth'] = claude_auth
+    pool = (pool_factory or SandboxPool)(size=args.instances, seed=seed, keep=args.keep_sandboxes,
+                                         worker_api=worker_api)
     run_scenario = run_scenario or run_world_scenario
     jobs = [(scenario, epoch, worker) for epoch in range(1, args.epochs + 1) for scenario in loaded
             for worker in chosen][:args.limit]
@@ -240,10 +247,12 @@ def run_world_sweep(args, run_scenario=None, pool_factory=None, folder=None):
         done = [item for item in executor.map(one, jobs) if item is not None]
     if tripped.is_set():
         run['stopped'] = {'tripped_by': 'world sweep', 'skipped': len(jobs) - len(done)}
-    json_path, md_path, report = write_report(world_records(done), folder or eval_home() / 'reports', run)
+    records = world_records(done)
+    json_path, md_path, report = write_report(records, folder or eval_home() / 'reports', run)
     print(md_path.read_text(encoding='utf-8'))
     print(f'report: {json_path}')
     judge_totals_line('none', [])
+    worker_api_totals_line(records)
     if tripped.is_set():
         return 2
     return 1 if report['trend']['regressions'] else 0

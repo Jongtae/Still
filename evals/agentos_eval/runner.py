@@ -764,6 +764,7 @@ def run_world_scenario(scenario, pool, world_root=None, world_loader=None, clien
               'judgment': None, 'setup': None,
               'world': {'name': spec['name'], 'task_id': spec['task_id'], 'task_set': spec['task_set'],
                         'evidence_class': EVIDENCE_CLASS, 'result': None}}
+    box = None
     try:
         with world_loader(spec['name'], spec['task_id'], Path(world_root or eval_home() / spec['name'])) as world:
             instruction = world.instruction()
@@ -804,7 +805,7 @@ def run_world_scenario(scenario, pool, world_root=None, world_loader=None, clien
         record['error'] = f'{type(exc).__name__}: {exc}'
     record['still'] = world_checks(scenario, record['turns'], record['approvals'], record['decisions'],
                                    record['world']['result'])
-    return record
+    return worker_api_record(record, pool, box)
 
 
 def work_measurements(data, task_ids):

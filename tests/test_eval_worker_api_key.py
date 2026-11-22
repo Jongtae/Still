@@ -225,3 +225,42 @@ def test_task_selects_the_api_key_only_for_claude_code(tmp_path):
     assert api.key.reveal() == SENTINEL
     with pytest.raises(SystemExit):
         claude_worker_api('claude-code', key_loader=lambda: (_ for _ in ()).throw(WorkerKeyError('none')))
+
+
+def test_world_sweep_runs_claude_code_on_the_api_key(tmp_path, capsys):
+    """``sweep --world shop --worker claude-code`` takes the same API-key route as a scenario sweep."""
+    from argparse import Namespace
+    from agentos_eval import cli
+    pools, ran = [], []
+
+    def pool_factory(**kw):
+        pools.append(kw)
+        return type('Pool', (), {'worker_api': kw['worker_api']})()
+
+    def fake_run(scenario, pool, turn_timeout, judgment_timeout, worker='codex'):
+        ran.append(worker)
+        box = type('Box', (), {'worker_usage': {'launches': 2, 'settled': 2, 'refused': 0, 'usd': 0.3,
+                                                'models': {'claude-sonnet-5-5': {}}}})()
+        record = {'worker': worker, 'error': None, 'turns': [{'status': 'succeeded', 'answer': SENTINEL}],
+                  'approvals': [], 'decisions': [], 'still': {'reply_matches_world': True},
+                  'world': {'name': 'shop', 'task_id': 'clear-then-add', 'task_set': 'dev',
+                            'evidence_class': 'sandbox-world',
+                            'result': {'passed': True, 'num_tests': 1, 'failures': [], 'collateral': [],
+                                       'unreached': []}}}
+        return worker_api_record(record, pool, box)
+
+    args = Namespace(world='shop', worker='claude-code', scenarios='world-shop-clear-then-add', no_local=True,
+                     split=None, seed='', instances=1, epochs=1, limit=None, turn_timeout=10, keep_sandboxes=False)
+    assert cli.run_world_sweep(args, run_scenario=fake_run, pool_factory=pool_factory, folder=tmp_path / 'reports',
+                               worker_key_loader=lambda: WorkerKey(SENTINEL, 'keychain')) == 0
+    assert ran == ['claude-code'] and pools[0]['worker_api'].key.reveal() == SENTINEL
+    out = capsys.readouterr().out
+    assert 'API key from Keychain' in out and 'USD 0.3' in out
+    report = next((tmp_path / 'reports').rglob('*.json')).read_text()
+    assert SENTINEL not in report
+    # The subscription choice gives the world pool no API worker.
+    args.claude_auth = 'subscription'
+    pools.clear()
+    cli.run_world_sweep(args, run_scenario=fake_run, pool_factory=pool_factory, folder=tmp_path / 'reports2',
+                        worker_key_loader=lambda: pytest.fail('no key for the subscription'))
+    assert pools[0]['worker_api'] is None

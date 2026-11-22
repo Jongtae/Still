@@ -203,6 +203,8 @@ def world_records(runs):
                                   'payments_allowed': sum(1 for row in run.get('decisions') or []
                                                           if row.get('status') == 'allowed' and row.get('effect') == 'payment'),
                                   'status': ((run.get('turns') or [{}])[-1]).get('status'), 'error': run.get('error')}})
+        if isinstance(run.get('worker_api'), dict):
+            records[-1]['worker_api'] = run['worker_api']
     return records
 
 

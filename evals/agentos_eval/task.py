@@ -127,24 +127,8 @@ def secretary(judge='none', budget_path=None, seed=None, measures=''):
 
 def claude_worker_api(worker, claude_auth='api', key_loader=None, budget_path=None):
     """#545: the API-key setup for Claude Code sandboxes, or None (Codex only, or the subscription chosen)."""
-    if 'claude-code' not in workers_for(worker):
-        return None
-    if claude_auth not in ('api', 'subscription'):
-        raise ValueError(f"claude_auth must be 'api' or 'subscription' (got {claude_auth!r})")
-    if claude_auth == 'subscription':
-        print("Claude Code worker: the owner's Claude subscription (--claude-auth subscription).")
-        return None
-    from agentos_eval.paths import eval_home
-    from agentos_eval.worker_key import WorkerApi, WorkerKeyError, load_worker_key
-    try:
-        key = (key_loader or load_worker_key)()
-    except WorkerKeyError as exc:
-        raise SystemExit(str(exc)) from None
-    api = WorkerApi.from_environ(key, budget_path or eval_home() / 'judge-budget.json')
-    print(f"Claude Code worker: Anthropic API key from {'Keychain' if key.source == 'keychain' else key.source}, "
-          f"worker process only; counted against the daily eval cap USD {api.cap_usd:g} "
-          f"(reserve USD {api.reserve_usd:g} per launch, settled to the CLI's per-model cost).")
-    return api
+    from agentos_eval.worker_key import select_worker_api
+    return select_worker_api(workers_for(worker), claude_auth, key_loader=key_loader, budget_path=budget_path)
 
 
 @task

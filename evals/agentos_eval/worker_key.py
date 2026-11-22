@@ -329,6 +329,29 @@ def _local_model(url):
     return host in ('127.0.0.1', 'localhost', '::1')
 
 
+def select_worker_api(workers, claude_auth='api', key_loader=None, budget_path=None):
+    """The API-key setup for the Claude Code sandboxes of a run, or None (no Claude Code worker, or the
+    subscription chosen).  Shared by the scenario task and the world sweep, so ``--claude-auth`` means the
+    same on both routes."""
+    if 'claude-code' not in tuple(workers):
+        return None
+    if claude_auth not in ('api', 'subscription'):
+        raise ValueError(f"claude_auth must be 'api' or 'subscription' (got {claude_auth!r})")
+    if claude_auth == 'subscription':
+        print("Claude Code worker: the owner's Claude subscription (--claude-auth subscription).")
+        return None
+    from .paths import eval_home
+    try:
+        key = (key_loader or load_worker_key)()
+    except WorkerKeyError as exc:
+        raise SystemExit(str(exc)) from None
+    api = WorkerApi.from_environ(key, budget_path or eval_home() / 'judge-budget.json')
+    print(f"Claude Code worker: Anthropic API key from {'Keychain' if key.source == 'keychain' else key.source}, "
+          f"worker process only; counted against the daily eval cap USD {api.cap_usd:g} "
+          f"(reserve USD {api.reserve_usd:g} per launch, settled to the CLI's per-model cost).")
+    return api
+
+
 def _main_thread():
     import threading
     return threading.current_thread() is threading.main_thread()
