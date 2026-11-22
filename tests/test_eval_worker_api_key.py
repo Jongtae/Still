@@ -80,7 +80,8 @@ def test_key_reaches_only_the_worker_cli_and_the_cost_is_charged(tmp_path):
     assert worker['env']['ANTHROPIC_API_KEY'] == SENTINEL
     assert 'CLAUDE_CODE_OAUTH_TOKEN' not in worker['env']
     assert worker['env']['CLAUDE_CODE_SUBPROCESS_ENV_SCRUB'] == '1'
-    assert worker['argv'] == ['-p', '--output-format', 'stream-json']
+    # The CLI itself is bounded to the reservation the ledger admitted.
+    assert worker['argv'] == ['-p', '--output-format', 'stream-json', '--max-budget-usd', '1']
     # The CLI's output reaches Still unchanged, and never carries the key.
     assert [json.loads(line)['type'] for line in done.stdout.decode().splitlines()] == ['system', 'result']
     assert SENTINEL not in done.stdout.decode() + done.stderr.decode()
@@ -108,6 +109,28 @@ def test_model_free_launches_pass_through_without_key_or_charge(tmp_path):
     # A non-loopback base URL is a model launch: the key and the charge apply.
     assert run_wrapper(bin_dir, ['-p'], {'ANTHROPIC_BASE_URL': 'https://api.anthropic.com'}).returncode == 0
     assert json.loads(env_file.read_text())['env']['ANTHROPIC_API_KEY'] == SENTINEL
+
+
+def test_each_launch_is_bounded_to_its_reservation(tmp_path):
+    api, folder, bin_dir, env_file = install(tmp_path, reserve=0.75)
+    assert run_wrapper(bin_dir, ['-p', '--max-budget-usd', '9']).returncode == 0
+    assert json.loads(env_file.read_text())['argv'] == ['-p', '--max-budget-usd', '0.75']
+    assert run_wrapper(bin_dir, ['--print', '--max-budget-usd=0.2']).returncode == 0
+    assert json.loads(env_file.read_text())['argv'] == ['--print', '--max-budget-usd', '0.2']
+
+
+def test_login_check_sees_the_key_and_is_not_charged(tmp_path):
+    """Still's ``claude auth status --json`` must report the API key, and is not a model run."""
+    api, folder, bin_dir, env_file = install(tmp_path, report=False)
+    done = run_wrapper(bin_dir, ['auth', 'status', '--json'])
+    assert done.returncode == 0
+    worker = json.loads(env_file.read_text())
+    assert worker['env']['ANTHROPIC_API_KEY'] == SENTINEL
+    assert 'CLAUDE_CODE_OAUTH_TOKEN' not in worker['env']
+    assert worker['argv'] == ['auth', 'status', '--json']
+    assert JudgeBudget(tmp_path / 'budget.json').status()['usd'] == 0
+    assert usage_totals(folder)['launches'] == 0
+    assert SENTINEL not in done.stdout.decode() + done.stderr.decode() + all_text(folder)
 
 
 def test_cap_refuses_the_launch_before_the_cli_starts(tmp_path):

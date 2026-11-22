@@ -22,9 +22,11 @@ slot (never inside the sandbox data folder), and starts the real CLI with:
   its credentials for its own API calls and strips them from the Bash, hook and
   stdio MCP server environments (the same layer Still's cloud profiles use, #211).
 
-Cost: every model launch first reserves ``reserve_usd`` against the existing
-daily eval budget (``budget.JudgeBudget``, default USD 10 a day, shared with
-the judge); the launch is refused when that would cross the cap.  When the CLI
+Cost: every model launch (a headless ``-p`` run) first reserves ``reserve_usd``
+against the existing daily eval budget (``budget.JudgeBudget``, default USD 10
+a day, shared with the judge); the launch is refused when that would cross the
+cap, and otherwise runs with ``--max-budget-usd`` set to the reservation, so the
+CLI itself stops a run that would spend more than was admitted.  When the CLI
 reports its result, the reservation is settled to the per-model ``costUSD``
 the CLI computes for each model it used (``modelUsage``), falling back to its
 ``total_cost_usd``; a launch whose cost is never reported keeps the reserve.
@@ -33,7 +35,9 @@ Only model names, token counts and USD are written to the usage file.
 A launch that reaches no Anthropic model passes through untouched, with no
 key and no charge: ``--version``/``--help``, and Still's model-free CLI
 qualification, which points the CLI at a local fake model with
-``ANTHROPIC_BASE_URL``.
+``ANTHROPIC_BASE_URL``.  A management launch such as Still's login check
+(``claude auth status --json``) gets the key, so it reports the API key as the
+sign-in, and reserves nothing.
 """
 import json
 import os
@@ -53,6 +57,10 @@ DEFAULT_RESERVE_USD = 1.0
 SUBSCRIPTION_ENV = ('CLAUDE_CODE_OAUTH_TOKEN', 'ANTHROPIC_AUTH_TOKEN')
 #: Invocations that reach no model.
 NO_MODEL_ARGS = frozenset(('--version', '-v', '--help', '-h'))
+#: A headless model run, the only way Still starts Claude Code for model work.  Other launches
+#: (``claude auth status``, the other management subcommands) get the key but reserve nothing.
+PRINT_ARGS = frozenset(('-p', '--print'))
+BUDGET_FLAG = '--max-budget-usd'
 REFUSED_EXIT = 3
 
 
@@ -239,19 +247,28 @@ def wrapper_main(config_path, argv, environ=None, stdout=None, popen=subprocess.
     if NO_MODEL_ARGS.intersection(argv) or _local_model(environ.get('ANTHROPIC_BASE_URL')):
         # No Anthropic model is reached: no key, no charge.
         return popen([binary, *argv], env=environ).wait()
+    for name in SUBSCRIPTION_ENV:
+        environ.pop(name, None)
+    environ['CLAUDE_CODE_SUBPROCESS_ENV_SCRUB'] = '1'
+    if not PRINT_ARGS.intersection(argv):
+        # A management launch such as Still's ``claude auth status --json`` login check: it must
+        # see the API key to report it, and it reaches no model, so nothing is reserved or charged.
+        environ['ANTHROPIC_API_KEY'] = Path(config['key_file']).read_text().strip()
+        child = popen([binary, *argv], env=environ)
+        environ.pop('ANTHROPIC_API_KEY')
+        return child.wait()
     budget = JudgeBudget(config['budget_path'], cap_usd=config['cap_usd'])
     reserved = budget.reserve_usd(config['reserve_usd'], kind='worker')
     if reserved is None:
         _append(config['usage_file'], {'ts': time.time(), 'refused': True})
         sys.stderr.write('Eval worker refused: the daily eval budget (USD %g) is used up.\n' % config['cap_usd'])
         return REFUSED_EXIT
-    for name in SUBSCRIPTION_ENV:
-        environ.pop(name, None)
     environ['ANTHROPIC_API_KEY'] = Path(config['key_file']).read_text().strip()
-    environ['CLAUDE_CODE_SUBPROCESS_ENV_SCRUB'] = '1'
     out = stdout if stdout is not None else sys.stdout.buffer
     usd, models = None, {}
-    child = popen([binary, *argv], env=environ, stdout=subprocess.PIPE)
+    # The CLI itself stops the run at the reserved amount, so one launch cannot spend past what
+    # the daily ledger admitted (the CLI's estimate can overshoot slightly; settlement records it).
+    child = popen([binary, *bounded_argv(argv, reserved)], env=environ, stdout=subprocess.PIPE)
     environ.pop('ANTHROPIC_API_KEY')
 
     def forward(signum, _frame):
@@ -280,6 +297,24 @@ def wrapper_main(config_path, argv, environ=None, stdout=None, popen=subprocess.
         _append(config['usage_file'], {'ts': time.time(), 'usd': settled, 'settled': usd is not None,
                                        'models': models})
     return code
+
+
+def bounded_argv(argv, limit):
+    """``argv`` with ``--max-budget-usd`` set to the lower of ``limit`` and any limit already given."""
+    out, given, items = [], [], iter(argv)
+    for item in items:
+        if item == BUDGET_FLAG:
+            given.append(next(items, ''))
+        elif item.startswith(BUDGET_FLAG + '='):
+            given.append(item.split('=', 1)[1])
+        else:
+            out.append(item)
+    for value in given:
+        try:
+            limit = min(limit, float(value))
+        except ValueError:
+            continue
+    return [*out, BUDGET_FLAG, '%g' % limit]
 
 
 def _local_model(url):
