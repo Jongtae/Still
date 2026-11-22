@@ -14,7 +14,7 @@ The protocol is duck-typed; one instance serves one run::
         def mcp_server(self): ...     # {'command': str, 'args': [str, ...], 'env': {str: str}}
         def instruction(self): ...    # the task's owner request, read from the world at run time
         def operations(self): ...     # {tool name: 'read' | 'mutate'}: every tool the server exposes
-        def evaluate(self): ...       # {'passed', 'num_tests', 'failures', 'collateral'}; no task text
+        def evaluate(self): ...       # {'passed', 'num_tests', 'failures', 'collateral', 'unreached'?}; no task text
         completion_note: str          # optional: how a task ends in this world, added after the instruction
         def __exit__(self, *exc): ... # stops everything it started
 
@@ -139,7 +139,9 @@ def check_result(result):
         return [str(item)[:300] for item in items] if isinstance(items, list) else [str(items)[:300]]
     num = result.get('num_tests')
     return {'passed': result['passed'], 'num_tests': num if isinstance(num, int) and num >= 0 else None,
-            'failures': texts('failures'), 'collateral': texts('collateral')}
+            'failures': texts('failures'), 'collateral': texts('collateral'),
+            # #1122: a step the run had to reach whatever the tests' expected outcome (a sign-in wall).
+            'unreached': texts('unreached')}
 
 
 # -- the fake world (model-free tests) ------------------------------------------------
