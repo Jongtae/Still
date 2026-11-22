@@ -674,6 +674,8 @@ class CodeRunner:
             saved, scratch_secrets = self._save_states(states)
             kept = self._keep_libraries(libraries, workdir, outcome, (node, runtime, prefix, policy, roots, masked, plain))
         result = self._result(code, packages, hosts, outcome, requests, names, scratch_secrets=scratch_secrets)
+        if getattr(self, '_state_unknown', False):
+            result.update(stdout='', stderr=msg('code_run.state_withheld'), output_withheld=True)
         if download is not None:
             result['download_artifact'] = args['download_artifact']
         if saved:
@@ -924,6 +926,7 @@ class CodeRunner:
         """
         from .api_credentials import ApiCredentials
         from .api_requests import env_name, slots
+        self._state_unknown = False
         current, states = slots(self.store), {}
         for name in names:
             slot = current.get(name)
@@ -942,16 +945,29 @@ class CodeRunner:
         saved, scratch_secrets = {}, set()
         for name, (slot, path) in states.items():
             text = read_run_file(path, MAX_STATE_BYTES)
+            self._state_secrets(text, self._state_before[name], scratch_secrets)
             if not self.persist_states:
-                try:
-                    scratch_secrets.update(secret_state_values(text))
-                except ValueError:
-                    pass  # A malformed state is not accepted by the ordinary run either.
                 continue
             saved[name] = text is not None and ApiCredentials(self.store).write_state(name, slot, text)
             if saved[name] and hashlib.sha256(text.encode()).digest() != self._state_before[name]:
                 self.changed_state = True
         return saved, scratch_secrets
+
+    def _state_secrets(self, text, before, scratch_secrets):
+        """#1126 review: the values a run put in a state file are redacted from its output, saved or not.
+
+        A state the run changed but that cannot be read for its values (too large, not JSON, a link) leaves
+        them unknown, so the run's output is withheld rather than handed on unredacted.
+        """
+        from .api_credentials import secret_state_values
+        if text is not None and hashlib.sha256(text.encode()).digest() == before:
+            return
+        try:
+            if text is None:
+                raise ValueError('unreadable state file')
+            scratch_secrets.update(secret_state_values(text))
+        except ValueError:
+            self._state_unknown = True
 
     def _decide(self, message, policy, check=False):
         """Reads only: GET/HEAD to a host this run may reach, or a non-GET request the owner reviewed as a read.

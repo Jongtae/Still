@@ -22,6 +22,9 @@ STATE_PREFIX = 'api_credential_state:'
 MAX_STATE_BYTES = 16 * 1024
 #: #972: a condition check's own state between its runs (``CHECKSTATEFILE``), bound to the check's digest.
 CHECK_STATE_PREFIX = STATE_PREFIX + 'check:'
+#: #1126 review: every namespace this key encrypts.  A check state exists without any credential, so a
+#: guard or reader that looks at credentials alone misses it; both read this one list.
+ENCRYPTED_PREFIXES = (PREFIX, STATE_PREFIX)
 #: State strings at least this long (tokens) are redacted; shorter ones (dates, times) are not.
 STATE_REDACT_CHARS = 24
 #: #778: the run state's top-level key for values the code declares not secret (paths, ids, a record of
@@ -128,7 +131,7 @@ class ApiCredentials:
         if value is None and create:
             # stage calls this inside QuickStore's secret-file lock. Existing
             # ciphertext belongs to a recoverable key, never a replacement key.
-            if self.store.secret_items(PREFIX):
+            if any(self.store.secret_items(prefix) for prefix in ENCRYPTED_PREFIXES):
                 raise CredentialError()
             value = self.key.create()
         if value is None:

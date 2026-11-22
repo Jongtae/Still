@@ -53,6 +53,12 @@
   "ja": "チェック内に直接記述された認証情報が見つかりました。",
   "zh": "检查中包含直接写入的凭据。"
  },
+ "code_run.state_withheld": {
+  "ko": "실행 출력을 보여 주지 않았어요. 실행이 바꾼 상태 파일을 읽을 수 없어 그 안의 값을 가릴 수 없었어요. 상태 파일은 16 KB 이하의 JSON 객체여야 해요.",
+  "en": "The run's output was withheld: a state file it changed could not be read, so the values in it could not be redacted. A state file must be a JSON object of at most 16 KB.",
+  "ja": "実行の出力を表示しませんでした。実行が変更した状態ファイルを読めず、その中の値を伏せられなかったためです。状態ファイルは 16 KB 以下の JSON オブジェクトにしてください。",
+  "zh": "未显示运行输出：无法读取运行更改的状态文件，因此无法遮盖其中的值。状态文件必须是不超过 16 KB 的 JSON 对象。"
+ },
  "checks.state_refused": {
   "ko": "검사 상태를 저장하지 못했어요. CHECKSTATEFILE에는 16 KB 이하의 JSON 객체만 저장돼요.",
   "en": "The check state was not saved. CHECKSTATEFILE keeps only a JSON object of at most 16 KB.",

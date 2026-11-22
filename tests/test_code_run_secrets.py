@@ -382,6 +382,25 @@ class Storage(unittest.TestCase):
                 self.assertEqual(result['state_saved'], {'example-broker': False})
                 self.assertEqual(self.store.secret_items('api_credential_state:'), {})
 
+    def test_a_run_state_whose_values_cannot_be_known_withholds_the_output(self):
+        # #1126 review: a token put in a state too large to save is not a stored value, so it stays unredacted
+        # unless the run's own pass sees it; when it cannot, the output is withheld.
+        self.save()
+        token = 'access-token-' + 'z' * 40
+        for label, state in (('too-large', json.dumps({'access_token': token, 'pad': 'p' * 20000})),
+                             ('not-json', '{"access_token": "' + token + '"')):
+            class Writer(FakeProcess):
+                def _lines(inner):
+                    Path(inner.config['env']['EXAMPLE_BROKER_STATE_FILE']).write_text(state, encoding='utf-8')
+                    yield from FakeProcess._lines(inner)
+
+            with self.subTest(state=label):
+                result = self.runner(Writer(result={'stdout': f'issued {token}', 'stderr': token})).run(
+                    {'code': 'print(1)', 'secrets': 'example-broker'})
+                self.assertTrue(result['output_withheld'])
+                self.assertNotIn(token, json.dumps(result))
+                self.assertEqual(result['state_saved'], {'example-broker': False})
+
     def test_an_unknown_set_asks_for_setup(self):
         with self.assertRaises(CodeRunError) as caught:
             self.runner(FakeProcess()).run({'code': 'print(1)', 'secrets': 'missing-set'})

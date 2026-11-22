@@ -9,7 +9,7 @@ from pathlib import Path
 import pytest
 
 from personal_agent import condition_checks as checks, preparations as prep
-from personal_agent.api_credentials import CHECK_STATE_PREFIX, MAX_STATE_BYTES, ApiCredentials
+from personal_agent.api_credentials import CHECK_STATE_PREFIX, MAX_STATE_BYTES, ApiCredentials, CredentialError
 from personal_agent.api_requests import save_slot
 from personal_agent.browser_jar import MemoryKey
 from personal_agent.current_context import redact_known_secrets
@@ -143,8 +143,7 @@ def test_plain_state_values_stay_readable(keyed):
     assert checks.handoff_event(c.store, wake_job(c, row))['trace']['output'] == f'at {cursor}'
 
 
-@pytest.mark.parametrize('write', ['[1, 2]', 'not json', json.dumps({'x': 'y' * MAX_STATE_BYTES})],
-                         ids=['not-object', 'not-json', 'too-large'])
+@pytest.mark.parametrize('write', ['[1, 2]', json.dumps('a string state')], ids=['list', 'string'])
 def test_a_state_that_cannot_be_saved_is_reported_to_the_ai(keyed, write):
     c = keyed
     row = prepared(c)
@@ -157,6 +156,28 @@ def test_a_state_that_cannot_be_saved_is_reported_to_the_ai(keyed, write):
     assert handoff['kind'] == 'hit'
     assert handoff['output'].startswith('crossed\n')
     assert checks.STATE_ENV in handoff['output']
+
+
+@pytest.mark.parametrize('write', ['{"token": "opaque-check-state-token-value-0003"', None],
+                         ids=['not-json', 'too-large'])
+def test_a_state_whose_values_cannot_be_known_withholds_the_output(keyed, write):
+    # #1126 review: a token put in a state Still cannot parse would otherwise reach the handoff unredacted.
+    c = keyed
+    row = prepared(c)
+    token = 'opaque-check-state-token-value-0003'
+    if write is None:
+        write = json.dumps({'token': token, 'pad': 'y' * MAX_STATE_BYTES})
+    run(c, write, stdout=f'crossed {token}')
+    assert status(c, row)['last_result'] == 'failure'
+    assert saved(c, row) == ''
+    run(c, write, stdout=f'crossed {token}')
+    run(c, write, stdout=f'crossed {token}')
+    with c.store.db() as db:
+        tables = [item[0] for item in db.execute("SELECT name FROM sqlite_master WHERE type='table'")]
+        everything = json.dumps([[list(item) for item in db.execute(f'SELECT * FROM "{name}"')] for name in tables],
+                                default=str)
+    assert token not in everything
+    assert not c.store.secret_path.exists() or token not in c.store.secret_path.read_text()
 
 
 def test_clearing_the_file_discards_the_state(keyed):
@@ -246,8 +267,23 @@ def test_a_state_file_linked_to_a_host_file_is_never_read(keyed, tmp_path, link)
     outside = tmp_path / 'host.json'
     outside.write_text(json.dumps({'host_only': value}), encoding='utf-8')
     run(c, link=(link, outside), stdout='crossed')
-    handoff = checks.handoff_event(c.store, wake_job(c, row))['trace']
-    assert checks.STATE_ENV in handoff['output']
+    assert status(c, row)['last_result'] == 'failure'
     assert saved(c, row) == ''
-    assert value not in handoff['output']
     assert not c.store.secret_items(CHECK_STATE_PREFIX)
+
+
+def test_a_saved_check_state_keeps_its_key_from_being_replaced(keyed):
+    # #1126 review: a check state exists without any credential; a first credential after the key is lost
+    # must not create a new key and orphan it.
+    c = keyed
+    row = prepared(c)
+    run(c, json.dumps({'token': 'opaque-check-state-token-value-0004'}))
+    before = c.store.secret_items(CHECK_STATE_PREFIX)
+    assert before and not c.store.secret_items('api_credential:')
+    c.store.api_slot_key.delete()
+    credentials = ApiCredentials(c.store)
+    with pytest.raises(CredentialError):
+        credentials._cipher(create=True)
+    assert not credentials.write_check_state(row['id'], 'other-check-code', json.dumps({'n': 1}))
+    assert c.store.api_slot_key.get() is None
+    assert c.store.secret_items(CHECK_STATE_PREFIX) == before

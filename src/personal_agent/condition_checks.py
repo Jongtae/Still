@@ -10,7 +10,7 @@ from pathlib import Path
 import time
 
 from . import preparations as prep
-from .api_credentials import MAX_STATE_BYTES, ApiCredentials, CredentialError, secret_state_values
+from .api_credentials import MAX_STATE_BYTES, ApiCredentials, CredentialError
 from .code_run import CodeRunError, CodeRunner, _arguments, check_arguments_digest, read_run_file
 from .current_context import redact_known_secrets
 from .direct_message_surface import redact_provenance_values
@@ -139,11 +139,8 @@ class CheckRunner(CodeRunner):
             path, original = self._check_file
             self._check_file = None
             text = read_run_file(path, MAX_STATE_BYTES)
-            try:
-                # The values this run wrote are redacted from its own output before the store's pass sees them.
-                scratch_secrets.update(secret_state_values(text))
-            except ValueError:
-                pass
+            # The values this run wrote are redacted from its own output; unknown values withhold it.
+            self._state_secrets(text, hashlib.sha256(original.encode()).digest(), scratch_secrets)
             if text != original:
                 # #1126 review: a report-once state must not outlive a hit that was never handed off, so the
                 # state is only checked here and saved after the result settles.
@@ -297,7 +294,9 @@ class ConditionChecks:
         try:
             result = runner.run(args, seconds=spec['every_seconds'])
             outside = outside_result_source('code_run', 'code_run', args)
-            if result.get('exit_status') == 0 and not result.get('timed_out') and not result.get('failed_phase'):
+            if result.get('output_withheld'):
+                kind, output = 'failure', result.get('stderr') or ''
+            elif result.get('exit_status') == 0 and not result.get('timed_out') and not result.get('failed_phase'):
                 output = result.get('stdout') or ''
                 kind = 'hit' if output else 'quiet'
             else:
