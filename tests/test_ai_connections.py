@@ -34,6 +34,7 @@ class LaunchTests(unittest.TestCase):
         self.assertEqual(argv.index('--allowedTools'), len(argv) - 2, '--allowedTools stays last (variadic)')
         self.assertNotIn('claude_ai', allowed, 'no connector tool is pre-approved')
         self.assertNotIn('connector_permission', allowed, 'the model cannot call the permission tool unprompted')
+        self.assertIn('mcp__agentos__connector_approval_note', allowed.split(','))
         env = adapter.environment('claude-code', '/runtime/claude', root, ai_connections=True)
         self.assertEqual(env['HOME'], str(Path.home()))
         self.assertNotIn('CLAUDE_CODE_OAUTH_TOKEN', env)

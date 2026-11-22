@@ -59,7 +59,8 @@ def bridge(monkeypatch):
 
         with mock.patch.object(mcp_bridge, '_serve_stdio', stdio):
             mcp_bridge.serve(str(case.store.root), case.job, browser_relay=relays[-1].address,
-                            connection_slots=('notes',))
+                            connection_slots=('notes',), ai_connections='--ai-connections' in args,
+                            connector_permission_prompt='--no-connector-permission-prompt' not in args)
         return replies
 
     monkeypatch.setattr('personal_agent.work_executor.BrowserRelay', relay_factory)
@@ -91,6 +92,8 @@ def requests_for(case, action):
     target = trust_record.connection('codex', 'owner-mcp', 'synthetic')
     trust_record.set_operation(case.store, target, 'apply_change', 'mutate')
     return (cli._call(3, 'browser_open', url=cli.ORIGIN + '/product', effect='navigate'),
+            cli._call(5, 'connector_approval_note', tool_name='mcp__synthetic__apply_change',
+                      input={'item': 'a'}, approval_note='Apply the requested change.'),
             {'id': 4, 'method': 'fixture/connector', 'params': {
                 'tool_name': 'mcp__synthetic__apply_change', 'input': {'item': 'a'}}})
 

@@ -255,7 +255,7 @@ class ConnectorApprovalBinding(unittest.TestCase):
         self.addCleanup(self.case.doCleanups)
         self.service, self.store = self.case.service, self.case.store
         trust_record.set_money(self.store, self.case.target, True)
-        self.assertEqual(self.case.call()['behavior'], 'deny')
+        self.assertEqual(self.case.offer()['behavior'], 'deny')
         self.assertTrue(self.case.approve()['approved'])
 
     def test_unrelated_connection_state_never_voids_the_approval(self):
@@ -267,7 +267,7 @@ class ConnectorApprovalBinding(unittest.TestCase):
     def test_a_changed_amount_or_payee_voids_it(self):
         for change in ({'amount': '40.00'}, {'account': 'someone-else'}):
             with self.subTest(change=change):
-                self.assertEqual(self.case.call({**INPUT, **change})['behavior'], 'deny')
+                self.assertEqual(self.case.offer({**INPUT, **change})['behavior'], 'deny')
                 pending = self.service._browser_request(self.case.job['id'])
                 self.assertEqual(pending['state'], 'requested', 'the owner is asked again, for the new values')
                 self.assertIn(list(change.values())[0], pending['label'])

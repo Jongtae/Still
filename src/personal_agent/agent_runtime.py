@@ -59,12 +59,20 @@ def model_facing_text(function):
  for name,spec in (function.get('parameters') or function.get('inputSchema') or {}).get('properties',{}).items():
   if isinstance(spec,dict) and spec.get('description'):parts.append(f"{name}: {spec['description']}")
  return '\n'.join(parts)
+#: #953: shared by every state-changing request that asks the owner's approval.
+APPROVAL_NOTE_GUIDANCE=('When the call may change state: one or two short lines in the owner\'s language with the key facts as the request carries them (what, how many, at what price) and when - the owner reads it first, and Still checks its numbers against the exact request they approve. A change that asks the owner\'s approval is not requested without it.')
 #: #1197: the tool Claude Code asks before any of the owner's AI connector tools
 #: runs.  Served by the bridge only with ``--ai-connections``; never offered to a
 #: model as an action and never pre-approved.
 CONNECTOR_PERMISSION_DEFINITION=schema('connector_permission',
  'Still answers Claude Code permission prompts for the owner\'s connected-service tools. Not for direct use.',
  {'tool_name':{'type':'string'},'input':{'type':'object'},'tool_use_id':{'type':'string'}},['tool_name','input'])
+CONNECTOR_APPROVAL_NOTE='connector_approval_note'
+CONNECTOR_APPROVAL_NOTE_DEFINITION=schema(CONNECTOR_APPROVAL_NOTE,
+ 'Before a connected MCP tool call that needs owner approval, record the approval note here, then call the connector with the same input. This records display text only.',
+ described({'tool_name':STRING,'input':{'type':'object'},'approval_note':STRING},
+           {'input':'The exact input to pass to the connector tool.','approval_note':APPROVAL_NOTE_GUIDANCE}),
+ ['tool_name','input','approval_note'])
 #: SEC-BROWSER-01 (#656): actions inside the owner-logged-in browser profile
 #: (``browser_session``).  ``effect`` is the model's declared class; the
 #: deterministic guard there never depends on it.
@@ -97,8 +105,6 @@ CODE_RUN_DESCRIPTION=('Run Python code you wrote in an isolated sandbox on the o
  'their chat; end that attempt and tell the owner what is waiting; after the owner approves, run the same code again '
  'and that exact request (method, path, query and body) is sent once, never twice. Keep its body the same between '
  'the two runs. A non-read request to any other host is refused. Each argument says how to use it.')
-#: #953: required whenever a state change asks the owner's approval; shared by api_request and code_run.
-APPROVAL_NOTE_GUIDANCE=('When the call may change state: one or two short lines in the owner\'s language with the key facts as the request carries them (what, how many, at what price) and when - the owner reads it first, and Still checks its numbers against the exact request they approve. A change that asks the owner\'s approval is not requested without it.')
 CODE_RUN_ARGUMENTS={
  'code':'The Python source to run. Print what you need, never a key: stdout and stderr come back (bounded, stored values redacted), with the requests the code '
  'made and whether each was allowed. Report only what the output shows.',
@@ -3116,7 +3122,7 @@ EFFECT_NONE,EFFECT_DRAFT,EFFECT_CHANGED,EFFECT_UNKNOWN='none','draft','changed',
 #: external effect, and each has its own idempotency (the Work's message limit, one result file per
 #: Work, Memory keys), so none ever blocks continuation.  A location request is not listed: a Work
 #: that already prompted the owner for a location is not replayed (#774).
-OWNER_LOCAL_ACTIONS=frozenset({'tell_owner','save_result','save_memory'})
+OWNER_LOCAL_ACTIONS=frozenset({'tell_owner','save_result','save_memory',CONNECTOR_APPROVAL_NOTE})
 
 def record_effect(action,detail,status):
  """The effect class of one recorded tool call (#1445, #618 E1): the one rule every consumer applies.

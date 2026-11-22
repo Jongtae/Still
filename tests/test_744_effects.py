@@ -91,6 +91,8 @@ def test_mcp_injected_result_requires_source_bound_confirmation(host, tmp_path):
         {'role': 'user', 'content': job['message']},
         {'role': 'tool', 'tool_call_id': 'read', 'content': json.dumps(result)}]})
     call = reply['choices'][0]['message']['tool_calls'][0]['function']
+    service.connector_approval_note(job, {'tool_name': call['name'], 'input': json.loads(call['arguments']),
+                                          'approval_note': 'Add the note.'})
     decision = service.connector_permission(job, {'engine': 'codex', 'tool_name': call['name'],
                                                    'input': json.loads(call['arguments'])})
     if decision['behavior'] == 'allow':

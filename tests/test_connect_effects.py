@@ -30,6 +30,11 @@ class EffectBoundary(unittest.TestCase):
         return self.service.connector_permission(self.job, {'engine': 'codex', 'tool_name': tool,
                     'input': INPUT if values is None else values, 'effect': effect})
 
+    def offer(self, values=None, effect=None, tool=ACTION):
+        self.service.connector_approval_note(self.job, {'tool_name': tool, 'input': INPUT if values is None else values,
+                                                        'approval_note': 'Apply the requested change.'})
+        return self.call(values, effect, tool)
+
     def partial(self):
         with self.store.db() as db:
             db.execute("UPDATE jobs SET status='partial' WHERE id=?", (self.job['id'],))
@@ -53,7 +58,7 @@ class EffectBoundary(unittest.TestCase):
 
     def test_money_floor_waits_then_exact_approval_continues_original_work(self):
         trust_record.set_money(self.store, self.target, True)
-        self.assertEqual(self.call(effect='read')['behavior'], 'deny')
+        self.assertEqual(self.offer(effect='read')['behavior'], 'deny')
         pending = self.service._browser_request(self.job['id'])
         self.assertIsNotNone(pending)
         self.assertEqual(pending['action'], 'connector_call')
@@ -69,7 +74,7 @@ class EffectBoundary(unittest.TestCase):
             with self.subTest(change=change):
                 self.setUp()
                 trust_record.set_money(self.store, self.target, True)
-                self.call()
+                self.offer()
                 self.approve()
                 if change == 'authority':
                     trust_record.set_rung(self.store, self.target, 'approve')
@@ -135,7 +140,7 @@ class EffectBoundary(unittest.TestCase):
             with self.subTest(settlement=settlement):
                 self.setUp()
                 trust_record.set_money(self.store,self.target,True)
-                self.call();self.partial()
+                self.offer();self.partial()
                 first=self.service._browser_request(self.job['id'])
                 if settlement=='deny':
                     self.service.browser_step_decision({'work_id':self.job['id'],'decision':'deny','digest':first['offer_digest']})
@@ -153,12 +158,12 @@ class EffectBoundary(unittest.TestCase):
 
     def test_model_payment_label_can_raise_a_reviewed_mutation(self):
         trust_record.set_operation(self.store, self.target, 'apply_change', 'mutate')
-        self.assertEqual(self.call(effect='payment')['behavior'], 'deny')
+        self.assertEqual(self.offer(effect='payment')['behavior'], 'deny')
         self.assertIsNotNone(self.service._browser_request(self.job['id']))
 
     def test_cancelled_work_and_duplicate_approval_do_not_resume(self):
         trust_record.set_money(self.store, self.target, True)
-        self.call()
+        self.offer()
         with self.store.db() as db:
             db.execute("UPDATE jobs SET status='cancelled' WHERE id=?", (self.job['id'],))
         result = self.service.browser_step_decision({'work_id': self.job['id'], 'decision': 'approve', 'digest': self.service._browser_request(self.job['id'])['offer_digest']})
@@ -167,7 +172,7 @@ class EffectBoundary(unittest.TestCase):
 
     def test_restart_after_dispatch_cannot_replay_an_unobserved_effect(self):
         trust_record.set_money(self.store, self.target, True)
-        self.call()
+        self.offer()
         self.approve()
         self.assertEqual(self.call()['behavior'], 'allow')
         self.service = AgentService(self.store)
@@ -176,9 +181,9 @@ class EffectBoundary(unittest.TestCase):
 
     def test_stale_surface_cannot_approve_replaced_parameters(self):
         trust_record.set_money(self.store,self.target,True)
-        self.call()
+        self.offer()
         original=self.service._browser_request(self.job['id'])['offer_digest']
-        self.call({**INPUT,'quantity':3})
+        self.offer({**INPUT,'quantity':3})
         self.partial()
         with self.assertRaises(ValueError):
             self.service.browser_step_decision({'work_id':self.job['id'],'decision':'approve','digest':original})
@@ -187,7 +192,7 @@ class EffectBoundary(unittest.TestCase):
     def test_expired_offer_does_not_issue_or_resume(self):
         from unittest import mock
         trust_record.set_money(self.store,self.target,True)
-        self.call()
+        self.offer()
         requested=self.service._browser_request(self.job['id'])['requested_at']
         with mock.patch('personal_agent.quickstart_service.time.time',return_value=requested+601):
             self.assertFalse(self.approve()['approved'])
@@ -195,7 +200,7 @@ class EffectBoundary(unittest.TestCase):
 
     def test_cumulative_action_and_settings_continuation_limit_is_explained(self):
         trust_record.set_money(self.store,self.target,True)
-        self.call()
+        self.offer()
         with self.store.db() as db:
             for index in range(8):
                 db.execute('INSERT INTO tool_events(job_id,tool,status,detail,created) VALUES (?,?,?,?,0)',
@@ -209,7 +214,7 @@ class EffectBoundary(unittest.TestCase):
 
     def test_approval_cannot_restart_a_worker_with_unaccounted_host_actions(self):
         trust_record.set_money(self.store,self.target,True)
-        self.call()
+        self.offer()
         with self.store.db() as db:
             db.execute("INSERT INTO tool_events(job_id,tool,status,detail,created) VALUES (?,'subscription_engine','failed',?,0)",
                 (self.job['id'],json.dumps({'continuation_read_only':False,'continuation_accounted':False})))
@@ -223,7 +228,7 @@ class EffectBoundary(unittest.TestCase):
             with self.subTest(changed=changed):
                 self.setUp()
                 trust_record.set_money(self.store,self.target,True)
-                self.call();self.approve()
+                self.offer();self.approve()
                 if changed=='revoked':
                     self.service.set_ai_connections({'enabled':False})
                     self.assertEqual(self.call()['behavior'],'deny')
@@ -235,7 +240,7 @@ class EffectBoundary(unittest.TestCase):
 
     def test_approval_during_worker_return_recovers_once_after_restart(self):
         trust_record.set_money(self.store,self.target,True)
-        self.call()
+        self.offer()
         with self.store.db() as db:db.execute("UPDATE jobs SET status='running' WHERE id=?",(self.job['id'],))
         pending=self.service._browser_request(self.job['id'])
         result=self.service.browser_step_decision({'work_id':self.job['id'],'decision':'approve','digest':pending['offer_digest']})
@@ -253,7 +258,7 @@ class EffectBoundary(unittest.TestCase):
     def test_expiry_settles_issued_wait_without_requeue_or_late_confirmation(self):
         from unittest import mock
         trust_record.set_money(self.store,self.target,True)
-        self.call()
+        self.offer()
         with self.store.db() as db:db.execute("UPDATE jobs SET status='running' WHERE id=?",(self.job['id'],))
         pending=self.service._browser_request(self.job['id'])
         self.service.browser_step_decision({'work_id':self.job['id'],'decision':'approve','digest':pending['offer_digest']})
@@ -273,7 +278,7 @@ class EffectBoundary(unittest.TestCase):
     def test_two_service_approvals_do_not_revoke_the_winning_token(self):
         from concurrent.futures import ThreadPoolExecutor
         trust_record.set_money(self.store,self.target,True)
-        self.call();self.partial()
+        self.offer();self.partial()
         body={'work_id':self.job['id'],'decision':'approve','digest':self.service._browser_request(self.job['id'])['offer_digest']}
         other=AgentService(self.store)
         def approve(service):
@@ -286,7 +291,7 @@ class EffectBoundary(unittest.TestCase):
 
     def test_disconnect_reconnect_same_names_invalidates_approval(self):
         trust_record.set_money(self.store,self.target,True)
-        self.call();self.approve()
+        self.offer();self.approve()
         owner_mcp.set_confirmed(self.store,'codex',[])
         owner_mcp.set_confirmed(self.store,'codex',['synthetic'])
         self.assertEqual(self.call()['behavior'],'deny')
@@ -294,7 +299,7 @@ class EffectBoundary(unittest.TestCase):
     def test_actual_launch_configuration_change_invalidates_approval_without_storing_secrets(self):
         trust_record.set_money(self.store,self.target,True)
         self.service.record_connector_configuration(self.job,'codex',{'synthetic':{'url':'https://old.invalid','token':'private-test-value'}})
-        self.call();self.approve()
+        self.offer();self.approve()
         self.service.record_connector_configuration(self.job,'codex',{'synthetic':{'url':'https://new.invalid','token':'new-private-value'}})
         self.assertEqual(self.call()['behavior'],'deny')
         provenance=json.dumps(self.store.turn_provenance(self.job['id']))
@@ -304,7 +309,7 @@ class EffectBoundary(unittest.TestCase):
     def test_stale_rejection_cannot_remove_concurrently_issued_approval(self):
         from unittest import mock
         trust_record.set_money(self.store,self.target,True)
-        self.call();self.partial()
+        self.offer();self.partial()
         other=AgentService(self.store)
         put=self.service._put_browser_request
         def raced(work_id,row,**kwargs):
@@ -322,13 +327,14 @@ class EffectBoundary(unittest.TestCase):
         other=AgentService(self.store)
         put=self.service._put_browser_request
         newer={**INPUT,'quantity':3}
+        other.connector_approval_note(self.job,{'tool_name':ACTION,'input':newer,'approval_note':'Apply the newer change.'})
         def raced(work_id,row,**kwargs):
             decision=other.connector_permission(self.job,{'engine':'codex','tool_name':ACTION,'input':newer})
             self.assertEqual(decision['behavior'],'deny')
             self.assertTrue(other._decide_browser_step(work_id,True)['resumed'])
             return put(work_id,row,**kwargs)
         with mock.patch.object(self.service,'_put_browser_request',side_effect=raced):
-            self.assertEqual(self.call()['behavior'],'deny')
+            self.assertEqual(self.offer()['behavior'],'deny')
         self.assertEqual(self.service._browser_request(self.job['id'])['state'],'issued')
         self.assertEqual(self.call(newer)['behavior'],'allow')
 
@@ -386,7 +392,7 @@ class EffectBoundary(unittest.TestCase):
         self.assertEqual(self.service.connector_effect_progress(self.job['id'])[1],[])
         self.assertEqual(owner_mcp.confirmed(self.store,'codex'),['synthetic'])
         trust_record.set_operation(self.store,self.target,'finish_change','payment')
-        self.call(tool='mcp__synthetic__finish_change')
+        self.offer(tool='mcp__synthetic__finish_change')
         self.assertTrue(self.approve()['resumed'])
         note=self.service.action_continuation_note(self.job)
         self.assertIn('Observed completed action',note)
@@ -397,7 +403,7 @@ class EffectBoundary(unittest.TestCase):
     def test_full_parameters_are_offered_without_silent_truncation(self):
         trust_record.set_money(self.store, self.target, True)
         values = {**INPUT, 'description': 'x' * 150 + '  two  spaces', 'limit_amount': '987.65'}
-        self.call(values)
+        self.offer(values)
         pending = self.service._browser_request(self.job['id'])
         self.assertIsNotNone(pending)
         self.assertIn('987.65', pending['label'])
@@ -411,7 +417,8 @@ class EffectBoundary(unittest.TestCase):
                 engine=FixtureDecisionEngine(choose=lambda context,candidates,question:
                     SelectionDecision(OUTCOME_DECIDED,choice,candidates,fixture_confidence()))
                 self.service.decision_judge.engine=engine
-                self.assertEqual(self.call()['behavior'],behavior)
+                call = self.offer if choice == 'payment' else self.call
+                self.assertEqual(call()['behavior'],behavior)
                 context=engine.asked[-1][1]
                 self.assertEqual(context.purpose,'connector-effect')
                 self.assertIn('quantity',context.render())

@@ -112,6 +112,7 @@ class DecisionTests(unittest.TestCase):
         trust_record.set_operation(self.store, notes, 'list_notes', 'read')
         self.assertEqual(self.decide(LIST)['behavior'], 'allow', 'decided once, not asked again')
         trust_record.set_operation(self.store, notes, 'save_note', 'mutate')
+        self.service.connector_approval_note(self.job, {'tool_name': SAVE, 'input': {}, 'approval_note': 'Save the note.'})
         self.assertEqual(self.decide(SAVE)['behavior'], 'deny', 'the read marks this Work; a write classification is not consent')
         offered = self.service._browser_request(self.job['id'])
         self.assertEqual((offered['state'], offered['source_action']), ('requested', 'connector_call'))
