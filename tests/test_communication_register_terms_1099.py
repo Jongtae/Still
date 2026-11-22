@@ -23,21 +23,21 @@ sys.path.insert(0, str(ROOT / 'evals'))
 SAMPLED = ('communication-weekly-status-report', 'communication-field-term-plain-words')
 
 
-def bullets(text):
-    return [line[2:] for line in text.splitlines() if line.startswith('- ')]
-
-
-def sentences(bullet):
-    return [part for part in re.split(r'(?<=[.])\s+', bullet) if part]
+def sentences(text):
+    lines = [line[2:] if line.startswith('- ') else line for line in text.splitlines()
+             if line and not line.startswith('#')]
+    return [part for line in lines for part in re.split(r'(?<=[.])\s+', line) if part]
 
 
 class RulesCarryTheProperties(unittest.TestCase):
     def setUp(self):
-        self.voice = prompt_files.prompt('voice')
+        # The worker-only voice text carries the rules, so the planner prompt (and the #921
+        # recall recordings bound to its digest) stays unchanged, as #1036 did.
+        self.voice = prompt_files.prompt('voice') + '\n\n' + prompt_files.prompt('voice_calibration')
 
     def test_text_for_another_reader_keeps_one_register_to_its_end(self):
         """The rule for another reader's register must also bound its extent (the mixed report)."""
-        rule = [s for b in bullets(self.voice) for s in sentences(b)
+        rule = [s for s in sentences(self.voice)
                 if re.search(r'(?i)someone other than the owner', s)]
         self.assertTrue(rule, 'a rule names text written for another reader')
         joined = ' '.join(rule).casefold()
@@ -47,7 +47,7 @@ class RulesCarryTheProperties(unittest.TestCase):
         self.assertRegex(joined, r'voice .*owner')
 
     def test_a_field_term_gloss_is_bounded_by_the_fields_definition_and_a_named_source_is_linked(self):
-        rule = ' '.join(s for b in bullets(self.voice) for s in sentences(b)
+        rule = ' '.join(s for s in sentences(self.voice)
                         if re.search(r'(?i)field term|definition', s)).casefold()
         self.assertIn('plain words', rule)
         self.assertIn('definition', rule)
@@ -69,7 +69,8 @@ class RulesCarryTheProperties(unittest.TestCase):
 
     def test_the_rules_reach_every_worker_once(self):
         from personal_agent.agent_runtime import CORE_INSTRUCTIONS
-        self.assertEqual(CORE_INSTRUCTIONS.count(self.voice), 1)
+        for name in ('voice', 'voice_calibration'):
+            self.assertEqual(CORE_INSTRUCTIONS.count(prompt_files.prompt(name)), 1)
 
 
 class RubricGradesBoth(unittest.TestCase):
