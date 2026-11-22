@@ -309,6 +309,7 @@ class ServiceDecisionTests(unittest.TestCase):
         trust_record.set_money(self.store, notes, True)
         trust_record.set_money(self.store, claude_notes, True)
         trust_record.set_operation(self.store, notes, 'list_notes', 'read')
+        self.service.connector_approval_note(self.job, {'tool_name': LIST, 'input': {}, 'approval_note': 'Run the operation.'})
         decision = self.service.connector_permission(self.job, {'tool_name': LIST, 'input': {}, 'engine': 'claude-code'})
         self.assertEqual(decision['behavior'], 'deny')
         self.assertIn('승인을 기다립니다', decision['message'])
@@ -391,6 +392,8 @@ class CodexWireTests(unittest.TestCase):
                 import tomllib
                 # As Codex does: the TOML handler's command, run through a shell (#222).
                 command = tomllib.loads(hook)['hooks']['PreToolUse'][0]['hooks'][0]['command']
+                if hasattr(self, 'before_hook'):
+                    self.before_hook(kwargs)
                 for tool in getattr(self, 'hook_tools', (LIST, SAVE, 'mcp__agentos__file_read')):
                     done = subprocess.run(['/bin/sh', '-c', command], input=json.dumps({'tool_name': tool, 'tool_input': {'q': 1}}),
                                           capture_output=True, text=True, timeout=30, env=kwargs['env'])
@@ -459,6 +462,13 @@ class CodexWireTests(unittest.TestCase):
         turns=[]
         observed=[]
 
+        def record_note(kwargs):
+            if len(turns)!=1:return
+            config=json.loads((Path(kwargs['cwd'])/'agentos-mcp.json').read_text())
+            directory=next(arg.split('=',1)[1] for arg in config['mcpServers']['agentos']['args'] if arg.startswith('--browser-relay='))
+            RelayClient(directory).call('connector_approval_note',{'tool_name':payment,'input':{'q':1},
+                                                                  'approval_note':'Complete the remaining payment.'})
+
         def reply(argv,kwargs):
             turns.append(kwargs.get('input') or argv[-1])
             records=[]
@@ -489,6 +499,7 @@ class CodexWireTests(unittest.TestCase):
                 {'type':'turn.completed'}])
             return subprocess.CompletedProcess(argv,0,'\n'.join(json.dumps(row) for row in records),'')
 
+        self.before_hook=record_note
         self.after_hook=reply
         with mock.patch.object(type(self.service),'reviewed_connector_reads',staticmethod(lambda:{})):
             self.turn()

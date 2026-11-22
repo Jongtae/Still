@@ -1320,7 +1320,8 @@ def cli_metadata(engine_id, raw, connector_digest=None, answer=None):
     codex_items = {}
     # #372: a Still bridge call is recorded by Still as its own tool event, so the summary only counts
     # it: the cap that makes a summary partial is for the CLI's own actions, which only it reports.
-    bridge = frozenset(profile_actions(BOUNDED_PROFILE))
+    from .agent_runtime import CONNECTOR_APPROVAL_NOTE
+    bridge = frozenset((*profile_actions(BOUNDED_PROFILE), CONNECTOR_APPROVAL_NOTE))
     bridge_calls = []
 
     def bridge_call(entry):
@@ -2559,6 +2560,9 @@ class BoundedExecutionAdapter:
                 argv += ['--tools', *builtins, allowed[0], ','.join(filter(None, (allowed[1], CLAUDE_NATIVE_SEARCH_TOOL)))]
             else:
                 argv += claude_bridge_allowlist(BOUNDED_PROFILE, read_paths=[Path(path).name for path in image_paths])
+            if ai_connections and not strict and cloud is None:
+                from .agent_runtime import CONNECTOR_APPROVAL_NOTE
+                argv[-1] += f',mcp__agentos__{CONNECTOR_APPROVAL_NOTE}'
             return argv
         raise ExecutionError(msg('quickstart_service.select_subscription_engine'))
 
@@ -3440,8 +3444,9 @@ class BoundedExecutionAdapter:
                          *(['--session-steers'] if session_route else []),
                          # #774: the relay serves owner-state tools even when no browser is served.
                          *(['--relay-no-browser'] if relay and not getattr(tools, 'relay_browser', True) else []),
-                         # #1197: the bridge answers Claude Code's permission prompts for connector tools.
-                         *(['--ai-connections'] if ai_connections and engine_id == 'claude-code' else []),
+                         # Claude Code uses a bridge permission prompt; Codex uses the hook.
+                         *(['--ai-connections'] if ai_connections else []),
+                         *(['--no-connector-permission-prompt'] if ai_connections and engine_id != 'claude-code' else []),
                          # #961: the exact skill revisions this Work may load (trusted-local only).
                          *[f'--skill={ref}' for ref in (skill_refs(tools.capabilities) if profile == BOUNDED_PROFILE else ())],
                          # #1325: the Work's Still-held connections, by name, so the bridge offers

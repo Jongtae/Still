@@ -91,6 +91,8 @@ APPROVAL_NOTE_CHARS = 300
 APPROVAL_NOTE_REQUIRED = ('this change needs the owner\'s approval, and an approval request needs approval_note: one or two '
                           'short lines in the owner\'s language saying what it changes (what, how many, at what price, '
                           'when). Nothing was sent and no approval was requested; call again with approval_note.')
+CONNECTOR_APPROVAL_NOTE_SUFFIX = (' For a connector, call mcp__agentos__connector_approval_note with the same tool_name '
+                                  'and exact input plus approval_note, then call the connector tool again unchanged.')
 
 
 def approval_note_text(note):

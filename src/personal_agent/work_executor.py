@@ -1535,6 +1535,7 @@ class WorkExecutor:
                             with barrier.call(arguments.get('tool_name'),arguments.get('input')):
                                 return service.connector_permission(job,{**arguments,'engine':engine},native_intake_wait=barrier.wait)
                         served.connector_permission=connector_permission
+                        served.connector_approval_note=lambda arguments,job=job: service.connector_approval_note(job,arguments)
                     except OSError:
                         LOG.warning('cli browser relay could not start job=%s',job['id'])
                 try:

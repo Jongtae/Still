@@ -30,7 +30,7 @@ from .agent_runtime import (Capabilities, ToolError, not_run, cut_to_fit, run_ag
                             history_provenance, WorkBudget, PresentationBudget, WORK_TOOL_ATTEMPTS, WORK_DEADLINE_SECONDS, EFFECT_FREE_READS, explicit_search_query, outcome_from_events,
                             WORK_STOP_KEY, WORK_STOPPED, work_stop_requested, LedgerSuperseded, WorkLedger, WORK_LEDGER_KEY, goal_summary, work_source_records,
                             backfill_work_sources, recorded_private_sources, NOTES_SUMMARY_COMMANDS, WORK_SOURCES_BACKFILL_KEY, WORK_SOURCES_BACKFILL_VERSION,
-                            progress_step, OWNER_LOCAL_ACTIONS)
+                            progress_step, OWNER_LOCAL_ACTIONS, CONNECTOR_APPROVAL_NOTE)
 from .plugins import PluginRegistry
 from .quickstart_store import INTERIM_PROJECTIONS, PREVIEW_PROJECTION, UPDATE_PROJECTION, QuickStore, copy_read_checkpoint_context, owner_words_work
 from .providers import NOT_REPORTED, ModelAdapter, ProviderError, request_json, validate_model
@@ -3472,7 +3472,7 @@ class AgentService:
         """
         from collections import Counter
         from .bounded_execution import CLAUDE_NATIVE_SEARCH_TOOL
-        bridge=set(profile_actions(BOUNDED_PROFILE))
+        bridge={*profile_actions(BOUNDED_PROFILE),CONNECTOR_APPROVAL_NOTE}
         # #808: an execute that never launched the CLI ran nothing.
         if isinstance(meta,dict) and meta.get('launched') is False:return ()
         calls=meta.get('tool_calls') if isinstance(meta,dict) else None
@@ -8577,6 +8577,44 @@ class AgentService:
         from .browser_session import action_input_safe
         return action_input_safe(self.store,values)
 
+    def connector_approval_note(self, job, arguments):
+        """Keep display text for this Work's exact input without recording the input itself."""
+        from .code_run import approval_note_text
+        if self.work_stopped(job['id']):
+            raise not_run(ToolError(WORK_STOPPED, 'stopped'))
+        if not self.ai_connections_enabled():
+            raise not_run(ToolError('AI connections are off.', 'ai_connections_disabled'))
+        tool=arguments.get('tool_name') if isinstance(arguments,dict) else None
+        if owner_mcp.tool_server(tool) is None or owner_mcp.tool_identity(tool) is None:
+            raise not_run(ToolError('Choose a connected MCP tool.', 'invalid_connector_tool'))
+        values=arguments.get('input')
+        if not isinstance(values,dict) or not self._connector_input_safe(values):
+            raise not_run(ToolError('Pass the exact connector input as an object without credentials.', 'unsafe_connector_input'))
+        note=self._redact_known_secrets(approval_note_text(arguments.get('approval_note')))
+        if not note:
+            raise not_run(ToolError('Provide a short approval_note in the owner\'s language.', 'approval_note_required'))
+        detail={'input_digest':self.connector_input_digest(tool,values),'approval_note':note}
+        budget=self.current_decision_budget() or WorkBudget(ledger=WorkLedger(self.store,job['id']))
+        try:budget.spend_attempt()
+        except ToolError as exc:raise not_run(exc)
+        with self.store.db() as db:
+            db.execute('BEGIN IMMEDIATE')
+            self.store.require_read_checkpoint_writer(db)
+            if self.work_stopped(job['id']):
+                raise not_run(ToolError(WORK_STOPPED, 'stopped'))
+            if not self.ai_connections_enabled():
+                raise not_run(ToolError('AI connections are off.', 'ai_connections_disabled'))
+            db.execute('INSERT INTO tool_events(job_id,tool,status,detail,created) VALUES (?,?,?,?,?)',
+                       (job['id'],CONNECTOR_APPROVAL_NOTE,'recorded',json.dumps(detail,ensure_ascii=False),time.time()))
+        return 'Approval note recorded. Now call the connector tool with the same exact input.'
+
+    def _connector_approval_note(self, job_id, input_digest):
+        with self.store.db() as db:
+            row=db.execute("SELECT detail FROM tool_events WHERE job_id=? AND tool=? AND status='recorded' "
+                           "AND json_extract(detail,'$.input_digest')=? ORDER BY id DESC LIMIT 1",
+                           (job_id,CONNECTOR_APPROVAL_NOTE,input_digest)).fetchone()
+        return json.loads(row['detail'])['approval_note'] if row else ''
+
     def record_connector_configuration(self, job, engine, definitions):
         """Bind approvals to the actual launch definitions without retaining credentials."""
         fingerprints={name:self.connector_input_digest('connection-definition',definition)
@@ -8715,25 +8753,29 @@ class AgentService:
                 return {'behavior':'deny','message':'이 요청의 앞선 동작이 실제로 반영됐는지 아직 확인되지 않았습니다. 결과를 확인하기 전에는 다른 변경이나 반복 실행을 하지 않습니다.'}
             if refusal:
                 return {'behavior':'deny','message':'현재 권한이나 기존 실행 기록이 달라져 실행하지 않았습니다. 권한과 기존 결과를 확인하고 남은 일만 진행하세요.'}
+            from .code_run import APPROVAL_EXACT_LABEL, APPROVAL_NOTE_REQUIRED, CONNECTOR_APPROVAL_NOTE_SUFFIX
+            note=self._connector_approval_note(job['id'],input_digest)
+            note_required=f'approval_note_required: {APPROVAL_NOTE_REQUIRED}{CONNECTOR_APPROVAL_NOTE_SUFFIX}'
             allow=effect=='mutate'
             if allow:
                 if native_intake_wait is not None:native_intake_wait()
                 try:
                     write_ticket=self.self_set_write(job,binding,f'connector:{engine}|{kind}|{identity}',operation,
-                        value_lines(values),(),effect=reversibility or 'irreversible',values=values)
+                        value_lines(values),(),effect=reversibility or 'irreversible',values=values,note=note,require_note=True)
                 except ToolError as exc:
-                    return {'behavior':'deny','message':str(exc)}
+                    return {'behavior':'deny','message':note_required if exc.code=='approval_note_required' else str(exc)}
             if effect=='payment':
                 label=f'{service_name} / {operation}\n'+value_lines(values)  # #945: readable, every value kept
                 autonomy=self._authorize_payment_autonomy(job,binding,label)
                 pending=self._browser_request(job['id']) or {}
                 allow=bool(autonomy) or pending.get('state')=='issued' and pending.get('digest')==self._browser_step_keys(binding)['digest']
                 if not allow:
-                    label=f'{service_name} / {operation}\n'+value_lines(values)  # #945: readable, every value kept
-                    if len(label)>8000 or self._redact_known_secrets(label)!=label:
-                        return {'behavior':'deny','message':'실행 내용을 비밀값 없이 온전히 확인할 수 없어 승인을 요청하지 않았습니다.'}
                     if self.unattended_work(job):return {'behavior':'deny','message':UNATTENDED_APPROVAL_TEXT}  # #619
-                    self._request_browser_step(job,binding,label)
+                    if not note:return {'behavior':'deny','message':note_required}
+                    approval_label=f'{note}\n\n{APPROVAL_EXACT_LABEL} {label}'
+                    if len(approval_label)>8000 or self._redact_known_secrets(approval_label)!=approval_label:
+                        return {'behavior':'deny','message':'실행 내용을 비밀값 없이 온전히 확인할 수 없어 승인을 요청하지 않았습니다.'}
+                    self._request_browser_step(job,binding,approval_label)
         else:
             allow=allow and effect=='read'
         detail={'scope':'ai-connection','host_action':'connector_permission',
