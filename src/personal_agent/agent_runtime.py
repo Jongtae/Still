@@ -20,7 +20,7 @@ from functools import wraps
 import unicodedata
 from collections import namedtuple
 from pathlib import Path
-from .providers import NOT_REPORTED, ModelResult, ProviderError
+from .providers import NOT_REPORTED, STATIC_PREFIX_KEY, ModelResult, ProviderError
 from .local_tools import LocalTools
 from .search_providers import ISO_COUNTRY_CODES, NATIVE_REASONS, describe_options, search_arguments
 from .document_reader import read as read_document, supported as supported_document, MAX_FILE_BYTES
@@ -6673,7 +6673,9 @@ def run_agent(adapter,config,key,history,system,capabilities,record,scope='main'
  judgment reads the same owner model the worker was given; None reads ``none``.
  ``definitions`` (#825) is ``capabilities.definitions()`` as the caller already
  materialised and recorded it, so discovery is not run a second time."""
- messages=[{'role':'system','content':POLICY+'\n'+system},*history]
+ # #1139: POLICY is the same on every Work, so the Anthropic request caches it for an hour;
+ # the owner context after it changes between Works.
+ messages=[{'role':'system','content':POLICY+'\n'+system,STATIC_PREFIX_KEY:len(POLICY)},*history]
  if definitions is None:definitions=capabilities.definitions()
  definitions=loop_definitions(definitions)
  specs={d['function']['name']:d['function']['parameters'] for d in definitions if d is not FINISH_DEFINITION}
@@ -6840,7 +6842,10 @@ def run_agent(adapter,config,key,history,system,capabilities,record,scope='main'
   capabilities.worker_identity={'route':'direct-api','model':requested or '',
                                 'observed_model':actual if actual!=NOT_REPORTED else ''}
   calls=message.get('tool_calls') or []
-  record('model','responded',json.dumps({'scope':scope,'model':actual,'requested_model':requested,'tool_calls':recorded_calls(calls,capabilities.tools,getattr(capabilities,'judgment_text',None)),'has_text':bool(message.get('content'))},ensure_ascii=False))
+  # #1139: the provider's reported token counts for this turn (numbers only), when it reported any.
+  usage=getattr(adapter,'last_usage',None)
+  record('model','responded',json.dumps({'scope':scope,'model':actual,'requested_model':requested,'tool_calls':recorded_calls(calls,capabilities.tools,getattr(capabilities,'judgment_text',None)),'has_text':bool(message.get('content')),
+   **({'usage':usage} if isinstance(usage,dict) and usage else {})},ensure_ascii=False))
   if not calls and not successful and not failed and not proposals and not checked_direct and not last_turn:
    checked_direct=True
    messages.append(message)

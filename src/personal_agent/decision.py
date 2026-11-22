@@ -23,7 +23,7 @@ import json
 import time
 
 from .prompt_files import prompt
-from .providers import NOT_REPORTED, ProviderError, validate_model
+from .providers import NOT_REPORTED, STATIC_PREFIX_KEY, ProviderError, validate_model
 
 class StructuredSchema(dict):
     """A wire schema with locally optional response fields.
@@ -673,7 +673,7 @@ class SchemaDecisionEngine(DecisionEngine):
                      'structured': None}
 
     def _done(self, context, kind, outcome, data, confidence, started, failure='', diagnostics=None, sent=False,
-              timing=None):
+              timing=None, usage=None):
         confidence.elapsed_seconds = round(self.now() - started, 3)
         confidence.sent = bool(sent)
         if self.audit:
@@ -682,6 +682,10 @@ class SchemaDecisionEngine(DecisionEngine):
             if timing is not None:
                 record['cli_timing'] = {key: value for key, value in timing.items()
                                         if value is None or isinstance(value, (int, float)) and not isinstance(value, bool)}
+            # #1139: the provider's reported token counts for this call, numbers only.
+            if usage:
+                record['api_usage'] = {key: value for key, value in usage.items()
+                                       if isinstance(value, (int, float)) and not isinstance(value, bool)}
             self.audit(record)
         return outcome, data if isinstance(data, dict) else {}, confidence
 
@@ -800,7 +804,9 @@ class ModelDecisionEngine(SchemaDecisionEngine):
         rendered = context.render()
         if context.too_large(rendered):
             return self._done(context, kind, OUTCOME_REJECTED, {}, DecisionConfidence(**identity), started)
-        messages = [{'role': 'system', 'content': _SYSTEM},
+        # #1139: the judgment instructions are fixed, so the Anthropic request caches them (and the
+        # tool before them) for an hour.
+        messages = [{'role': 'system', 'content': _SYSTEM, STATIC_PREFIX_KEY: len(_SYSTEM)},
                     {'role': 'user', 'content': f'Purpose: {context.purpose}\n{rendered}\n\n{question}'}]
         tools = [{'type': 'function', 'function': {'name': _DECIDE_TOOL, 'description': 'Record the judgment.',
                                                    'parameters': schema}}]
@@ -829,8 +835,9 @@ class ModelDecisionEngine(SchemaDecisionEngine):
         confidence = DecisionConfidence(data.get('confidence') if isinstance(data, dict) else None,
                                         observed_model=observed if isinstance(observed, str) else '', **identity)
         outcome = self._checked(data, confidence, valid)
+        usage = getattr(self.adapter, 'last_usage', None)
         return self._done(context, kind, outcome, data if outcome == OUTCOME_DECIDED else {}, confidence, started,
-                          sent=True)
+                          sent=True, usage=usage if isinstance(usage, dict) else None)
 
     @staticmethod
     def _arguments(message):

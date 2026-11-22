@@ -841,6 +841,14 @@ def _work_information_use(store, job_id, redact=None, *, compare_held_values=Tru
         sent_to['held_value_comparison_cut'] = [{'kind': kind, 'limit': cuts[kind]} for kind in COMPARISON_CUTS if kind in cuts]
     if connections:sent_to['connections']=list(connections.values())[-MAX_ITEMS:]
     if photo_inputs:sent_to['attachments']=photo_inputs
+    # #1139: the direct-API turns' reported token counts (model events are not task events), as one attempt.
+    direct_usage = {}
+    for trace in (store.model_turn_traces(job_id) if callable(getattr(store, 'model_turn_traces', None)) else ()):
+        for key, value in (reported_usage(trace).get('usage') or {}).items():
+            direct_usage[key] = direct_usage.get(key, 0) + value
+    if direct_usage:
+        attempts.append({'engine': 'direct-api', 'status': 'succeeded', 'usage': direct_usage,
+                         'num_turns': None, 'cost_usd': None, 'cli_tool_calls': None})
     # #467: sums include only reported values, never an inferred zero.
     totals = {'usage': None, 'num_turns': None, 'cost_usd': None, 'cli_tool_calls': None,
               'partial': any(row['usage'] is None for row in attempts)}
