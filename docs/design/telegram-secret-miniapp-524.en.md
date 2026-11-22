@@ -153,6 +153,7 @@ The negative tests hold the threat model above. All run with injected Telegram t
 
 1. **Tunnel for API secrets.** Recommended: when Telegram is paired, the Mini App replaces the tunnel for API secret input, and the tunnel stays only for the Google client page. Alternative: keep the tunnel as a second fallback after the Mini App.
 2. **Bridge script.** Recommended: a pinned, reviewed copy of `telegram-web-app.js` under `site/secret-input/v1/`. Alternative: a minimal inline bridge (Build).
+   *Implemented (2026-11-23):* the pinned upstream file (sha256 `baa788a6f686f4238db1b82ce8e76470930af7411b18b521ebb95a2c1480a267`, Last-Modified 2026-11-09) carries no licence, so it is not vendored. `site/secret-input/v1/page.js` holds the minimal bridge that follows that revision's `postEvent`, with the web client's `postMessage` restricted to `https://web.telegram.org`.
 3. **Forks and self-hosting.** The page URL is fixed to this repository's Pages site, so every install trusts this site. A configurable page base URL would let a fork host its own, but it would make the URL a setting that controls where secrets are typed. Recommended: keep it fixed for now.
 
 ## Non-goals
