@@ -49,7 +49,11 @@ PYTHONPATH=src:evals:evals/lessons python3 evals/lessons/lessons_eval.py retenti
   share that lesson's identity for retention and drop events. The default threshold is `0.8`.
 - **Matching** assigns exact normalized-text matches first. It then assigns each remaining lesson the best unused
   carried point that meets the threshold and counts that match as `reworded`.
-- **Report** (counts only): `learned`, `carried`, `retained` (`exact`, `reworded`), `lost`, `retention` (retained ÷
+- **After the #1031 migration** two more rules apply. A lesson whose item the owner later forgot or deleted is not
+  learned either (`owner_forgot` counts them), by the same test `WorkingLessons` uses to refuse relearning it. A
+  lesson whose item the assistant reworded with an explicit `update` keeps its Memory key, so it is retained as
+  `updated` even when the new wording shares few words with the old. An explicit `remove` still counts as lost.
+- **Report** (counts only): `learned`, `owner_forgot`, `carried`, `retained` (`exact`, `reworded`, `updated`), `lost`, `retention` (retained ÷
   learned), `versions`, points per version, and `drop_events` (version transitions that lost at least one lesson, with
   how many). The tool cannot tell a deliberate removal from an accidental one; `drop_events` is the signal to read next
   to `retention`. `--detail` adds per-lesson rows with a **digest** (never text), first and last version it appeared in,
@@ -88,6 +92,22 @@ PYTHONPATH=src:evals:evals/lessons python3 evals/lessons/lessons_eval.py applica
 Run both metrics on the same snapshot before and after a change, several times: the judge's verdicts vary, so report
 the spread of `follow_rate` over runs and adopt a step only when the gain exceeds it (#1031 criterion). Retention is
 model-free and deterministic, so it needs one run.
+
+## Result after step 1 (2026-11-22, one owner's copy, counts only)
+
+Same retention metric on a fresh read-only snapshot, after #1040 (lessons as items) and #1042 (lessons from
+successes):
+
+| | before step 1 (2026-11-19) | after (2026-11-22) |
+| --- | --- | --- |
+| learned (retained working-notes versions) | 23 | 24 |
+| carried by the brief | 1 | 28 (24 restored, 4 learned since) |
+| retained | 1 (4.3%) | 24 (100%): 23 exact, 1 updated by the assistant |
+| lost | 22 | 0 |
+
+The lost lesson the first version of this metric reported was an explicit `update` that reworded it, which is what
+the `updated` rule above now counts. No lesson was forgotten by the owner. The 4 lessons learned since step 1 (3 from
+self-review, 1 from the dream) are not in `learned`, which reads the old working-notes versions only.
 
 ## Limits (what this is not)
 

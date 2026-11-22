@@ -13,19 +13,21 @@
       "type": "object",
       "additionalProperties": false,
       "required": [
-        "learned", "carried", "retained", "lost", "retention", "threshold",
+        "learned", "owner_forgot", "carried", "retained", "lost", "retention", "threshold",
         "versions", "points_per_version", "drop_events"
       ],
       "properties": {
         "learned": {"$ref": "#/$defs/count"},
+        "owner_forgot": {"$ref": "#/$defs/count"},
         "carried": {"$ref": "#/$defs/count"},
         "retained": {
           "type": "object",
           "additionalProperties": false,
-          "required": ["exact", "reworded", "total"],
+          "required": ["exact", "reworded", "updated", "total"],
           "properties": {
             "exact": {"$ref": "#/$defs/count"},
             "reworded": {"$ref": "#/$defs/count"},
+            "updated": {"$ref": "#/$defs/count"},
             "total": {"$ref": "#/$defs/count"}
           }
         },

@@ -86,9 +86,36 @@ def _learned_from(history, threshold=1.0):
     return list(lessons.values()), presence
 
 
+def owner_forgotten(store, learned):
+    """Digests of learned lessons whose lesson item the owner later forgot or deleted.
+
+    After the #1031 migration each lesson is its own Memory row, and the owner can forget
+    one on its own. Such a lesson is no longer one the assistant should carry, exactly as
+    a lesson found only in a forgotten version, so it never counts as learned. The test
+    is the one ``WorkingLessons`` uses to refuse relearning a forgotten lesson.
+    """
+    if store.config(LESSONS_MIGRATION_KEY) is None:
+        return set()
+    lessons = WorkingLessons(store)
+    owner_key = lessons._owner_key()
+    with store.db() as db:
+        texts = WorkingLessons._forgotten_texts(db, owner_key)
+        return {
+            lesson['digest'] for lesson in learned
+            if lessons._forgotten(db, owner_key, WorkingLessons._new_key(lesson['text'], set()),
+                                  lesson['text'], texts)
+        }
+
+
+def _kept_learned(store, history, threshold):
+    learned, presence = _learned_from(history, threshold)
+    forgotten = owner_forgotten(store, learned)
+    return [lesson for lesson in learned if lesson['digest'] not in forgotten], presence, len(forgotten)
+
+
 def learned_lessons(store):
     """List each distinct lesson in order of its first appearance."""
-    learned, _ = _learned_from(_notes_history(store))
+    learned, _, _ = _kept_learned(store, _notes_history(store), 1.0)
     return learned
 
 
@@ -105,6 +132,20 @@ def carried_lessons(store):
         return [text for ref, text in refs.items() if f'({ref})' in shown]
     current = WorkingNotes(store).current()
     return current['points'] if current else []
+
+
+def carried_by_key(store):
+    """The shown lesson items by Memory key, after the #1031 migration (else empty).
+
+    A lesson's key comes from its first wording (``WorkingLessons._new_key``) and stays
+    when the assistant rewords it with an explicit ``update``. That lets the report tell
+    such an update from a loss even when the new wording shares few words with the old.
+    """
+    if store.config(LESSONS_MIGRATION_KEY) is None:
+        return {}
+    lessons = WorkingLessons(store)
+    shown = lessons.block('')
+    return {lesson['key']: lesson['text'] for lesson in lessons.current() if f"({lesson['ref']})" in shown}
 
 
 def match_lessons(learned, carried, threshold=0.8):
@@ -139,11 +180,15 @@ def match_lessons(learned, carried, threshold=0.8):
 
 def retention_report(store, threshold=0.8, detail=False):
     history = _notes_history(store)
-    learned, presence = _learned_from(history, threshold)
+    learned, presence, owner_forgot = _kept_learned(store, history, threshold)
     carried = carried_lessons(store)
     matches = match_lessons(learned, carried, threshold)
+    by_key = carried_by_key(store)
+    for lesson in learned:
+        if matches[lesson['digest']] is None and WorkingLessons._new_key(lesson['text'], set()) in by_key:
+            matches[lesson['digest']] = 'updated'
     counts = Counter(matches.values())
-    retained = counts['exact'] + counts['reworded']
+    retained = counts['exact'] + counts['reworded'] + counts['updated']
 
     drop_events = []
     for (previous_version, previous), (version, current) in zip(presence, presence[1:]):
@@ -153,8 +198,10 @@ def retention_report(store, threshold=0.8, detail=False):
 
     report = {
         'learned': len(learned),
+        'owner_forgot': owner_forgot,
         'carried': len(carried),
-        'retained': {'exact': counts['exact'], 'reworded': counts['reworded'], 'total': retained},
+        'retained': {'exact': counts['exact'], 'reworded': counts['reworded'], 'updated': counts['updated'],
+                     'total': retained},
         'lost': len(learned) - retained,
         'retention': retained / len(learned) if learned else None,
         'threshold': threshold,
