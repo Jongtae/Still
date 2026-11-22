@@ -132,10 +132,6 @@ class WorkerInterrupted(BaseException):
     pass
 
 
-class DuplicateCallNotDispatched(AssertionError):
-    pass
-
-
 def ask(ref, args):
     return {'tool_calls': [call(ref, 'api_request', **args)]}
 
@@ -346,10 +342,7 @@ def assert_resolution(store, service, work, receipt, resolution, read_ref):
     pytest.param('applied', OPEN, id='applied'),
     pytest.param('not-applied', OPEN, id='not-applied'),
     pytest.param('pending', OPEN, id='pending'),
-    pytest.param('applied', CLOSE, id='applied-after-refused-exit', marks=pytest.mark.xfail(
-        strict=True, raises=DuplicateCallNotDispatched,
-        reason='#1111: agent_runtime.loop_keys refuses an identical exit after reconciliation even though the first exit never ran',
-    )),
+    pytest.param('applied', CLOSE, id='applied-after-refused-exit'),
 ])
 def test_trading_lost_open_waits_for_matching_order_status(scenario, resolution, blocked_effect):
     store, service, wire, script = scenario
@@ -403,11 +396,7 @@ def test_trading_lost_open_waits_for_matching_order_status(scenario, resolution,
     assert_resolution(store, service, work, receipt, resolution, 'authoritative')
     expected = ['open', 'order', 'order', 'order']
     if resolution == 'applied':
-        state, detail = steps['exit']
-        if blocked_effect == CLOSE and detail.get('code') == 'duplicate_call' and detail.get('ran') is False:
-            assert wire.sent == [*expected, 'state']
-            raise DuplicateCallNotDispatched('The exact exit was refused even after the matching read settled the open.')
-        assert state == steps['flat'][0] == 'succeeded'
+        assert steps['exit'][0] == steps['flat'][0] == 'succeeded'
         assert store.job(work)['status'] == 'succeeded' and store.job(work)['goal_outcome'] == 'reached'
         assert wire.state == 'closed'
         expected += ['close', 'state']
@@ -468,10 +457,6 @@ def test_booking_waits_for_admission_then_reconciles_lost_checkout(scenario, res
 
 
 @pytest.mark.parametrize('scenario', [BOOKING], indirect=True)
-@pytest.mark.xfail(
-    strict=True, raises=DuplicateCallNotDispatched,
-    reason='#1111: agent_runtime.loop_keys refuses a later identical queue GET as duplicate_call before transport',
-)
 def test_booking_can_refresh_a_cursorless_waiting_screen(scenario):
     store, service, wire, script = scenario
     wire.cursorless = True
@@ -487,11 +472,8 @@ def test_booking_can_refresh_a_cursorless_waiting_screen(scenario):
     assert service.run_one()
     steps = api_steps(service, work)
     assert steps['first'][0] == 'succeeded'
-    state, detail = steps['second']
-    if wire.sent == ['queue'] and detail.get('code') == 'duplicate_call' and detail.get('ran') is False:
-        raise DuplicateCallNotDispatched('The second GET never reached the changed official waiting screen.')
     assert wire.sent == ['queue', 'queue']
-    assert state == 'succeeded'
+    assert steps['second'][0] == 'succeeded'
     assert result(script.bodies[-1], 'second')['data']['screen']['ahead'] == 3
     assert_outstanding(store, work)
 

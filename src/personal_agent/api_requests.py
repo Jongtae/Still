@@ -104,12 +104,14 @@ UNKNOWN_EFFECT_TEXT = ('상태를 바꾸는 API 요청이 응답 없이 끝나 �
 class ApiError(ValueError):
     """A refusal with a stable ``code``; ``agent_runtime`` turns it into a ``ToolError``."""
 
-    def __init__(self, message, code, requires=None, effect=None, executed=None):
+    def __init__(self, message, code, requires=None, effect=None, executed=None, *, ran=None):
         super().__init__(message)
         self.code, self.requires, self.effect = code, requires, effect
         # #618 E1: ``False`` when the service answered that it did not execute the request
         # (``REFUSED_STATUSES``); ``agent_runtime.not_executed`` carries it to the call's record.
         self.executed = executed
+        if ran is False:
+            self.ran = False
 
 
 # -- slots ----------------------------------------------------------------------------
@@ -1108,9 +1110,9 @@ class ApiRequests:
                         or self.ledger is not None and (chain[0]['status'] != 'running' or self.ledger.lapse(db=db))
                         or callable(current) and not current())
         except ValueError:
-            raise ApiError('현재 작업을 확인할 수 없어 실행하지 않았습니다.', 'api_work_inactive') from None
+            raise ApiError('현재 작업을 확인할 수 없어 실행하지 않았습니다.', 'api_work_inactive', ran=False) from None
         if inactive:
-            raise ApiError('중단되었거나 실행 중이 아닌 작업이라 요청을 보내지 않았습니다.', 'api_work_inactive')
+            raise ApiError('중단되었거나 실행 중이 아닌 작업이라 요청을 보내지 않았습니다.', 'api_work_inactive', ran=False)
         return chain
 
     def _effect_run_current(self):
@@ -1130,7 +1132,7 @@ class ApiRequests:
         before transport. A crash after reservation is conservatively unknown.
         """
         from .agent_runtime import (EFFECT_ROUTE_TEXT, TARGET_API, current_effect_call_ref,
-                                    effect_mutation_refusal, effect_target, external_effect_events)
+                                    effect_mutation_refusal, effect_target, external_effect_events, not_run)
         from .api_credentials import fingerprint
         with self.store.db() as db:
             db.execute('BEGIN IMMEDIATE')
@@ -1138,31 +1140,34 @@ class ApiRequests:
             current = self.slots().get(slot['name'])
             if current is None or fingerprint(slot['name'], current) != fingerprint(slot['name'], slot):
                 raise ApiError('API 연결이 바뀌어 요청을 보내지 않았습니다.', 'needs_setup',
-                               requires=f"api-slot:{slot['name']}")
+                               requires=f"api-slot:{slot['name']}", ran=False)
             target = effect_target(TARGET_API, slot['name'], slot.get('hosts') or ())
             dispatches = external_effect_events(self.store, self.work_id, db=db)
             refusal = effect_mutation_refusal(db, self.store, self.work_id, target,
                                              replay_keys=replay_keys([*dispatches[0], *dispatches[1]]),
                                              dispatches=dispatches, approved_next=approved_next)
             if refusal == 'effect_unknown':
-                raise ApiError(UNKNOWN_EFFECT_TEXT, 'effect_unknown', effect='unknown')
+                raise ApiError(UNKNOWN_EFFECT_TEXT, 'effect_unknown', effect='unknown', ran=False)
             if refusal == 'effect_replayed':
                 raise ApiError('이미 보낸 API 동작이라 반복 실행하지 않았습니다. 기존 결과와 남은 일을 확인하세요.',
-                               'api_effect_replayed')
+                               'api_effect_replayed', ran=False)
             if refusal:
-                raise ApiError(EFFECT_ROUTE_TEXT, refusal)
+                raise ApiError(EFFECT_ROUTE_TEXT, refusal, ran=False)
             if method is None:
                 return None
             # #208 review: asked in the reservation's own transaction, so work mode switched on
             # before it reserves nothing (the switch's write waits for this transaction).
-            refuse_in_work_mode(self.store, f'https://{destination}' if destination else None)
+            try:
+                refuse_in_work_mode(self.store, f'https://{destination}' if destination else None)
+            except ApiError as exc:
+                raise not_run(exc)
             authorization = getattr(self, '_payment_ticket', None)
             if authorization:
                 binding, label, ticket = authorization
                 try:
                     self.approvals.payment_autonomy(binding, label, ticket=ticket, dispatch=True, db=db)
                 except ValueError as exc:
-                    raise ApiError(str(exc), 'payment_autonomy_changed') from None
+                    raise ApiError(str(exc), 'payment_autonomy_changed', ran=False) from None
             detail = {'scope': 'api', 'evidence': {'engine': 'agentos', 'kind': 'api-slot',
                       'identity': slot['name'], 'operation': method, 'effect': effect, 'host': destination,
                       'input_digest': identity, 'revision': slot['revision'], 'registration_id': slot.get('registration_id'),
@@ -1515,7 +1520,7 @@ class ApiRequests:
                     current = self.slots().get(slot['name'])
                     if current is None or fingerprint(slot['name'], current) != fingerprint(slot['name'], slot):
                         raise ApiError('API 연결이 바뀌어 요청을 보내지 않았습니다.', 'needs_setup',
-                                       requires=f"api-slot:{slot['name']}")
+                                       requires=f"api-slot:{slot['name']}", ran=False)
             except Exception:
                 try:
                     cancel_outbound(self.store, reservations)

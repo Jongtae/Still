@@ -479,21 +479,23 @@ class LoopCompletion(unittest.TestCase):
         self.assertEqual(rejected['code'], 'no_evidence')
         self.assertEqual(result.outcome, 'succeeded', 'then answered as conversation, not a failure')
 
-    def test_the_same_ref_is_a_repeat_only_while_its_source_revision_is_unchanged(self):
+    def test_a_new_source_revision_reopens_a_weather_read_after_an_unchanged_poll(self):
         ref = self.share()
         weather = lambda ident: {'tool_calls': [call(ident, 'weather', location_ref=ref)]}  # noqa: E731
 
         def moved(body):
             self.now += 60
             self.share(edit=True)
-            return weather('w3')
-        result, transport = self.loop('여기 비 와?', weather('w1'), weather('w2'), moved,
-                                     finish('f1', 'w1', 'w3'))
+            return weather('w4')
+        result, transport = self.loop('여기 비 와?', weather('w1'), weather('w2'), weather('w3'), moved,
+                                     finish('f1', 'w1', 'w4'))
         second = last_tool(transport.bodies[2])
-        self.assertEqual(second['code'], 'duplicate_call', 'unchanged source: a repeat')
+        self.assertEqual(second['ref'], 'w2', 'first poll observes the unchanged forecast')
         third = last_tool(transport.bodies[3])
-        self.assertEqual(third['ref'], 'w3', 'a new live point: a new path that runs')
-        self.assertEqual(len([plan for plan in self.network.plans if plan['tool'] == 'weather']), 2)
+        self.assertEqual(third['code'], 'duplicate_call', 'two identical observations block another poll')
+        fourth = last_tool(transport.bodies[4])
+        self.assertEqual(fourth['ref'], 'w4', 'a new live point: a new path that runs')
+        self.assertEqual(len([plan for plan in self.network.plans if plan['tool'] == 'weather']), 3)
 
 
 if __name__ == '__main__':

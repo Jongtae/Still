@@ -2146,15 +2146,15 @@ class RelayedWorkMcpTools(StrictIsolatedAgentOSMcpTools):
     def __init__(self, capabilities):
         super().__init__(capabilities)
         from .agent_runtime import LoopGuard
-        self.guard, self.attempts = LoopGuard(), {}
+        self.guard = LoopGuard()
 
     def _offered(self):
         return {row['function']['name']: row for row in self.capabilities.definitions()}
 
     def handle_mcp(self, method, params):
         """#673 owner decision: discover/call only this Work's host capabilities."""
-        from .agent_runtime import (ToolError, evidence_summary, loop_keys, loop_outcome, not_run,
-                                    outbound_evidence, worker_result)
+        from .agent_runtime import (ToolError, evidence_summary, loop_keys, loop_observation, loop_outcome,
+                                    not_run, outbound_evidence, ran_field, worker_result)
         from .mcp_bridge import _with_remaining, tool_error_result, unexpected_error_result
         import uuid
         caps = self.capabilities
@@ -2168,23 +2168,23 @@ class RelayedWorkMcpTools(StrictIsolatedAgentOSMcpTools):
         listed = name if isinstance(name, str) and name in self._offered() else 'unlisted'
         action = (caps.tools.get(listed) or {}).get('host_action')
         trace = {'scope': 'a2a-peer', 'call_id': uuid.uuid4().hex, 'host_action': action}
-        keys, dispatched = (), False
+        dispatched = False
         try:
             if listed == 'unlisted':
                 raise ToolError('Tool is outside peer disclosure scope', 'peer_tool_denied', ran=False)
             args, _definition = self._admit(name, params.get('arguments', {}))
-            memo, keys, _attempt, _keyed, read, refusal = loop_keys(caps, self.guard, self.attempts, name, args, action, None)
+            memo, keys, attempt, _keyed, read, refresh, refusal = loop_keys(caps, self.guard, name, args, action, None)
             if refusal is not None:
                 raise refusal
+            trace['attempt'] = attempt
             caps.record(listed, 'running', json.dumps(trace))
             self.guard.admit(*keys)
-            if not read:
-                self.guard.wrote()
             dispatched = True
             value = caps.execute(name, args)
+            self.guard.settle('seen', *keys, write=not read,
+                              observation=loop_observation(action, value) if refresh else None)
             caps.peer_guard()
             caps.budget.check()
-            self.guard.settle('seen', *keys)
             caps.memo[memo] = value
             caps.evidence.append({'tool': name, 'result': value})
             caps.record(listed, 'succeeded', json.dumps({**trace, 'evidence': {
@@ -2195,8 +2195,9 @@ class RelayedWorkMcpTools(StrictIsolatedAgentOSMcpTools):
                 not_run(exc)
             result, typed = (tool_error_result(exc, action, caps.secret_redactor) if isinstance(exc, (ValueError, TypeError, OSError))
                              else unexpected_error_result(exc, action, caps.secret_redactor))
-            if keys:
-                self.guard.settle(loop_outcome(action, {}, typed), *keys)
+            typed.update(ran_field(exc))
+            if dispatched:
+                self.guard.settle(loop_outcome(action, args, typed), *keys, write=not read)
             caps.record(listed, 'failed', json.dumps({**trace, **typed}))
         _with_remaining(result, caps.budget)
         # A secret-bearing tool result never crosses the relay transport.
