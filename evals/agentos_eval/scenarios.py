@@ -27,11 +27,13 @@ Scenario fields:
 - ``good_secretary``: what a good secretary would do, for the judge;
 - ``tags``: free labels for grouping;
 - ``world`` (#484, a world scenario): ``{"name", "task_id", "task_set", "approvals", "money_capable"?,
-  "expect_world_pass"?}``.  ``task_set`` is the world's ``train`` or ``dev`` set (never a test set);
+  "expect_world_pass"?, "ask_only_named"?}``.  ``task_set`` is the world's ``train`` or ``dev`` set (never a test set);
   ``approvals`` maps each money operation (a tool name of the world's server) to ``approve`` or
   ``deny``, which the eval answers as the owner.  A world scenario's turns are ``{"from_world": true}``:
   the owner's words are the world's task instruction, fetched at run time, so no task text is ever
   stored here (``embedded_world_text``).  World scenarios run only with ``sweep --world``.
+  ``ask_only_named`` (#1122) adds the ``asked_only_named`` check: the Work asks the owner for no
+  approval beyond the operations ``approvals`` names.
 """
 import json
 import re
@@ -82,7 +84,7 @@ _ID = re.compile(r'^[a-z0-9][a-z0-9-]{2,79}$')
 _EXPECT_KEYS = {'memory_any', 'current_state_any', 'preparation', 'no_memory_of_request', 'readable', 'allow_status'}
 _TURN_KEYS = {'say', 'note', 'note_in_message', 'wait_due'}
 _KEYS = {'id', 'title', 'split', 'turns', 'rubric', 'expect', 'good_secretary', 'tags', 'channel', 'world'}
-_WORLD_KEYS = {'name', 'task_id', 'task_set', 'approvals', 'money_capable', 'expect_world_pass'}
+_WORLD_KEYS = {'name', 'task_id', 'task_set', 'approvals', 'money_capable', 'expect_world_pass', 'ask_only_named'}
 #: The world task sets a scenario may use: never a test set (AppWorld forbids tuning on them).
 WORLD_TASK_SETS = ('train', 'dev')
 DECISIONS = ('approve', 'deny')
@@ -115,11 +117,12 @@ def _world(raw, where):
             or any(not isinstance(op, str) or not _OPERATION.match(op) or value not in DECISIONS
                    for op, value in approvals.items())):
         raise ScenarioError(f'{where}: world.approvals must map operation names to approve or deny')
-    for key in ('money_capable', 'expect_world_pass'):
+    for key in ('money_capable', 'expect_world_pass', 'ask_only_named'):
         if key in raw and not isinstance(raw[key], bool):
             raise ScenarioError(f'{where}: world.{key} must be true or false')
     return {'name': raw['name'], 'task_id': raw['task_id'], 'task_set': raw['task_set'], 'approvals': dict(approvals),
-            'money_capable': raw.get('money_capable') is True, 'expect_world_pass': raw.get('expect_world_pass', True)}
+            'money_capable': raw.get('money_capable') is True, 'expect_world_pass': raw.get('expect_world_pass', True),
+            **({'ask_only_named': True} if raw.get('ask_only_named') is True else {})}
 
 
 def validate(raw, origin='scenario'):

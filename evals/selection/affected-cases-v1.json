@@ -206,6 +206,18 @@
       "reason": "These synthetic scenarios are defined in the changed file; a changed fixture cannot silently pair with its old version."
     },
     {
+      "id": "scenario-file-world-shop",
+      "match": {"paths": ["evals/scenarios/world-shop.json", "evals/agentos_eval/worlds/shop.py", "evals/agentos_eval/sandbox_site/eval_browser_reach.py"]},
+      "select": [{"set": "scenarios", "ids": ["world-shop-recipe-to-cart", "world-shop-clear-then-add", "world-shop-outside-then-add", "world-shop-signin-wall"]}],
+      "reason": "These synthetic scenarios and the shop world they run against are defined in the changed files; a changed fixture cannot silently pair with its old version."
+    },
+    {
+      "id": "browser-press-path",
+      "match": {"paths": ["src/personal_agent/browser_session.py", "src/personal_agent/browser_worker.py", "src/personal_agent/browser_worker_chromium.py", "src/personal_agent/browser_signin.py", "src/personal_agent/self_set_writes.py", "src/personal_agent/cli_browser_relay.py", "src/personal_agent/prompts/press_effect.md"]},
+      "select": [{"set": "scenarios", "ids": ["world-shop-recipe-to-cart", "world-shop-clear-then-add", "world-shop-outside-then-add", "world-shop-signin-wall"]}],
+      "reason": "The browser world's cart, outside-page and sign-in flows run through this browser and press-approval code (#1122); re-run them on both routes before a release."
+    },
+    {
       "id": "scenario-tag-context",
       "match": {"tags": ["context"]},
       "select": [{"set": "scenarios", "tags": ["context"]}],

@@ -1,5 +1,11 @@
 """Sandbox-only import guard: no PyObjC, so no WebKit window can reach the owner's screen.
 
+A browser-world run (#1122) sets ``AGENTOS_EVAL_BROWSER_ORIGINS`` instead: PyObjC
+stays available so the embedded browser runs (headless for Work), and Still's
+test-only exact-origin allowance is given those loopback origins and nothing
+else (``eval_browser_reach.py``).  An origin other than ``127.0.0.1:<port>``
+stops the sandbox.
+
 The eval launcher puts this folder first on ``PYTHONPATH`` of every sandbox
 Still process (and the browser worker inherits it).  Still already treats
 missing PyObjC as "embedded browser unavailable"
@@ -19,13 +25,16 @@ class _NoPyObjC:
         return None
 
 
-sys.meta_path.insert(0, _NoPyObjC())
+import os as _os
+
+_BROWSER_ORIGINS = _os.environ.get('AGENTOS_EVAL_BROWSER_ORIGINS', '')
+if not _BROWSER_ORIGINS:
+    sys.meta_path.insert(0, _NoPyObjC())
 
 
 # Eval-only: with AGENTOS_EVAL_TELEGRAM_ROOT set, the sandbox's Bot API calls go to the
 # eval's loopback stand-in (``agentos_eval.fake_telegram``) instead of api.telegram.org.
 # Only a loopback root is accepted; the sandbox's bot token is made up as well.
-import os as _os
 
 _TELEGRAM_ROOT = _os.environ.get('AGENTOS_EVAL_TELEGRAM_ROOT', '')
 _TELEGRAM_MODULE = 'personal_agent.conversation_handoff'
@@ -65,3 +74,36 @@ if _TELEGRAM_ROOT:
         sys.stderr.write('AGENTOS_EVAL_TELEGRAM_ROOT must be an http://127.0.0.1:<port> root\n')
         _os._exit(2)
     sys.meta_path.insert(0, _TelegramRoot())
+
+
+class _BrowserReach:
+    """After ``personal_agent.browser_session`` loads, give its test-only allowance the world's origins."""
+
+    @staticmethod
+    def find_spec(name, path=None, target=None):
+        if name != 'personal_agent.browser_session':
+            return None
+        for finder in sys.meta_path:
+            if isinstance(finder, (_NoPyObjC, _TelegramRoot, _BrowserReach)) or finder in (_TelegramRoot, _BrowserReach):
+                continue
+            spec = getattr(finder, 'find_spec', lambda *a: None)(name, path, target)
+            if spec is not None and spec.loader is not None:
+                original = spec.loader.exec_module
+
+                def exec_module(module, original=original):
+                    original(module)
+                    import eval_browser_reach
+                    eval_browser_reach.apply(module, _ORIGINS)
+                spec.loader.exec_module = exec_module
+                return spec
+        return None
+
+
+if _BROWSER_ORIGINS:
+    try:
+        import eval_browser_reach as _reach
+        _ORIGINS = _reach.parse(_BROWSER_ORIGINS)
+    except ValueError as exc:
+        sys.stderr.write(f'{exc}\n')
+        _os._exit(2)
+    sys.meta_path.insert(0, _BrowserReach())
