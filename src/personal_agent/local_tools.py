@@ -593,6 +593,8 @@ def _check_coordinates(latitude, longitude):
 
 #: Where ``weather`` sends a city (and country code) to find its coordinates (#167: named in the information-use audit).
 GEOCODING_SEARCH='https://geocoding-api.open-meteo.com/v1/search'
+#: Extra geocoding requests with a shortened name when a multi-word place matches nothing (#1125).
+GEOCODING_RETRIES=3
 
 class LocalTools:
     def __init__(self, page_reader=None, providers=None):
@@ -647,9 +649,16 @@ class LocalTools:
 
     def weather(self, city, country=''):
         if not isinstance(city,str) or not 1<=len(city.strip())<=100:raise _not_sent(ValueError('날씨를 조회할 도시를 알려 주세요.'))
-        args={'name':city,'count':20,'language':'en','format':'json'}
+        args={'language':'en','count':20,'format':'json'}
         if isinstance(country,str) and re.fullmatch('[A-Za-z]{2}',country):args['countryCode']=country.upper()
-        places=self._public_request(GEOCODING_SEARCH+'?'+urlencode(args),10,first=True).get('results',[])
+        # Open-Meteo matches one place name, not a phrase (#1125): an owner-saved place is often
+        # several words (a district, a neighbourhood).  When the whole text matches nothing, ask
+        # again with it shortened from the end, at most GEOCODING_RETRIES more requests; the
+        # ambiguity check below still reports a same-named result to the worker.
+        words=city.split();places=[]
+        for index,name in enumerate([city]+[' '.join(words[:n]) for n in range(len(words)-1,0,-1)][:GEOCODING_RETRIES]):
+            places=self._public_request(GEOCODING_SEARCH+'?'+urlencode({'name':name,**args}),10,first=index==0).get('results',[])
+            if places:city=name;break
         if not places:raise ValueError('도시를 찾지 못했습니다. 도시와 국가를 함께 알려 주세요.')
         populated=sorted([p for p in places if p.get('population',0)>=100000],key=lambda p:p['population'],reverse=True)
         if len(populated)==1:places=populated
