@@ -18,6 +18,12 @@ function nonemptyString(value) {
   return typeof value === 'string' && value.length > 0;
 }
 
+function dmChatHandle(chatId) {
+  if (typeof chatId !== 'string') return;
+  const [service, separator, ...parts] = chatId.split(';');
+  if (service && separator === '-') return parts.join(';') || undefined;
+}
+
 function validScope({ mode, handle, since_ms, max_text_len }) {
   if (mode === 'off') return true;
   if (!Number.isInteger(since_ms)) return false;
@@ -77,10 +83,7 @@ export async function runSidecar({
     const ts_ms = message.createdAt.getTime();
     if (!(ts_ms > scope.since_ms)) return;
     let handle = message.participant;
-    if (handle == null && typeof message.chatId === 'string') {
-      const [service, separator, ...parts] = message.chatId.split(';');
-      if (service && separator === '-') handle = parts.join(';') || handle;
-    }
+    if (handle == null) handle = dmChatHandle(message.chatId) ?? handle;
     const text = message.text ?? '';
     if (scope.mode === 'paired') {
       if (handle !== scope.handle) return;
@@ -215,8 +218,20 @@ export async function runSidecar({
       badRequest('Send requires a request ID, text, and the paired recipient.', id);
       return;
     }
+    let chat;
     try {
-      await kit.send({ to, text });
+      const chats = await kit.listChats?.({ chatId: to, kind: 'dm' });
+      chat = chats?.find((row) => row.kind === 'dm' && dmChatHandle(row.chatId) === to);
+    } catch {
+      // A lookup failure leaves the address send available.
+    }
+    try {
+      // Kit 3.0.0 reduces 1:1 chat IDs to buddy sends. Use the pinned kit's reviewed runPipeline internal.
+      if (chat && typeof kit.sender?.runPipeline === 'function') {
+        await kit.sender.runPipeline({ target: { method: 'chat', identifier: chat.chatId }, text, attachments: [] });
+      } else {
+        await kit.send({ to, text });
+      }
     } catch (error) {
       let reason = 'send_error';
       if (/not running/i.test(error?.message)) reason = 'messages_not_running';
