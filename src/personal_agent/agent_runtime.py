@@ -228,6 +228,11 @@ def recorded_arguments(action,args,redact=None):
  if isinstance(hidden,str):hidden=(hidden,)
  if isinstance(scrubbed,str):scrubbed=(scrubbed,)
  if not isinstance(args,dict):return args
+ if action=='settings_change' and (args.get('category'),args.get('setting'))==('preparations','edit'):
+  try:edit=json.loads(args.get('value',''))
+  except (ValueError,TypeError,RecursionError):edit=None
+  # Match schedule_preparation: keep the source out of call records, including refused checks.
+  if isinstance(edit,dict) and 'check' in edit:hidden=(*hidden,'value')
  for field in (*hidden,*scrubbed):
   if field not in args:continue
   text=args.get(field)
@@ -598,7 +603,9 @@ SETTINGS_CHANGE_ARGUMENTS={
   'resumes the originating Work when continue_work is yes), preparations cancel (value is a reservation id from '
   'settings_read preparations: stop every future run; a scheduled run may cancel, pause or narrow its own preparation '
   'via edit (earlier end, fewer runs, longer interval); it applies at once and Still tells the owner; it cannot widen '
-  'or touch another. A run of a line the owner set up, or a run the owner steered, may also rewrite its own goal for '
+  'or touch another. A scheduled run of a check row may replace its own check with an edit containing only id and check '
+  '(the same check fields as schedule_preparation) after proving the new code in this Work, using only the current hosts '
+  'and secret sets or a subset. A run of a line the owner set up, or a run the owner steered, may also rewrite its own goal for '
   'the next runs: an edit with only id and goal, the whole new brief; Still tells the owner before and after with an undo), preparations accept (value is the id of one waiting '
   'for the owner\'s yes), preparations restore (value is a cancelled or self-narrowed reservation id; reapplies audited bounds after narrowing, keeps its goal and run count, '
   'continues at the next future slot without catching up, and refuses an ended window or past one-shot), phone_link send (when the owner is away from the Mac: send a one-time link, open about '

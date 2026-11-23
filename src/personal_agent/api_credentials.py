@@ -333,9 +333,27 @@ class ApiCredentials:
         """The check's state, checked and encrypted for ``store_sealed``; raises like ``_seal``."""
         return self._seal(CHECK_STATE_PREFIX + check_id, lambda: {'check': check_id, 'digest': digest}, text)
 
-    def discard_check_state(self, check_id):
+    def discard_check_state(self, check_id, *, keep_digest=None):
         """Remove the check's state after retiring its values; raises when it cannot be read."""
-        return self._discard_bound(CHECK_STATE_PREFIX + check_id)
+        key = CHECK_STATE_PREFIX + check_id
+        if keep_digest is None:
+            return self._discard_bound(key)
+
+        class CurrentState(Exception):
+            pass
+
+        def retire(token):
+            payload = json.loads(self._cipher().decrypt(token.encode()))
+            if payload.get('binding') == {'check': check_id, 'digest': keep_digest}:
+                raise CurrentState
+            return secret_state_values(payload.get('state'))
+
+        # Check the binding under the same lock that retires and removes the state.
+        # Undo can restore a digest after its state has been swept. It then starts from {}.
+        try:
+            return self.store.swap_secret(key, None, retire, origin='state')
+        except CurrentState:
+            return False
 
     def check_state_ids(self):
         """The checks that have a saved state."""

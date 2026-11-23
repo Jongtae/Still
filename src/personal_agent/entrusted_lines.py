@@ -497,10 +497,14 @@ def outcomes_text(outcomes, timezone_name=None, lang='ko'):
 
 def entry_text(entry, lang='ko'):
     """One line of the list answer: task, report promise, last delivered report, next run or blocker."""
+    checks = ''.join('\n' + msg('lines.list_check', lang, title=item['title'], seconds=item['every_seconds'],
+                               result=msg('checks.result_' + (item['last_result'] or 'none'), lang),
+                               runs=item['runs'], wakes=item['wakes'], cap=item['daily_wakes'])
+                     for item in entry.get('checks', ()))
     if entry['state'] == 'waiting':
-        return msg('lines.list_waiting', lang, task=entry['task'])
+        return msg('lines.list_waiting', lang, task=entry['task']) + checks
     if entry['state'] != STATE_ACTIVE:
-        return msg('lines.list_stopped', lang, task=entry['task'])
+        return msg('lines.list_stopped', lang, task=entry['task']) + checks
     last = entry.get('last_report') or msg('lines.no_report_yet', lang)
     if entry.get('blocked') == msg('lines.blocked_unscheduled'):
         following = msg('lines.blocked_unscheduled', lang)
@@ -512,7 +516,8 @@ def entry_text(entry, lang='ko'):
         following = msg('lines.list_next', lang, at=entry['next'])
     if entry.get('nothing_scheduled') and entry.get('blocked') != msg('lines.blocked_unscheduled'):
         following = f"{msg('lines.blocked_unscheduled', lang)} / {following}"
-    return msg('lines.list_entry', lang, task=entry['task'], promise=entry['report_promise'], last=last, following=following)
+    return msg('lines.list_entry', lang, task=entry['task'], promise=entry['report_promise'], last=last,
+               following=following) + checks
 
 
 def change_text(brief, *, rule='', drop=None, changes=None, days=None):

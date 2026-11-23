@@ -1,6 +1,7 @@
 """Run proven preparation checks in the existing code sandbox, independently of Work lanes (#972)."""
 from __future__ import annotations
 
+from contextlib import contextmanager
 from datetime import datetime, timedelta
 import fcntl
 import hashlib
@@ -11,7 +12,7 @@ import time
 
 from . import preparations as prep
 from .api_credentials import MAX_STATE_BYTES, ApiCredentials, CredentialError
-from .code_run import CodeRunError, CodeRunner, _arguments, check_arguments_digest, read_run_file
+from .code_run import MAX_HOSTS, CodeRunError, CodeRunner, _arguments, _hostname, check_arguments_digest, read_run_file
 from .current_context import redact_known_secrets
 from .direct_message_surface import redact_provenance_values
 from .messages import msg
@@ -58,6 +59,11 @@ def parse(value, declared):
     return dict(code=code, hosts=hosts, secrets=names, timeout_seconds=timeout), interval
 
 
+def parse_for_store(store, value):
+    from . import intranet
+    return parse(value, lambda host: intranet.host_declared(store, _hostname(host)))
+
+
 def prove(store, work_id, args, interval):
     """Bind the same Work's successful call and the libraries it actually loaded."""
     if _redact(store, args) != args:
@@ -75,15 +81,48 @@ def prove(store, work_id, args, interval):
     raise prep.PreparationRefusal('check_not_proven')
 
 
-def owner_view(store, row):
+def totals(status):
+    # Older rows retain only their latest day's counts.
+    return {key: status.get('total_' + key, status.get(key, 0)) for key in ('runs', 'wakes')}
+
+
+def daily_status(status, day):
+    return status if status.get('day') == day else {}
+
+
+def _host_counts(store, counts):
+    redacted = {}
+    for host, count in counts.items():
+        host = _redact(store, host)
+        redacted[host] = redacted.get(host, 0) + count
+    return redacted
+
+
+def owner_view(store, row, day, home_zone=None):
     spec = json.loads(row['check_spec'])
     status = json.loads(row.get('check_status') or '{}')
-    status.pop('pending', None)
-    return _redact(store, {
-        'code': spec['arguments']['code'], 'hosts': spec['arguments']['hosts'],
+    today = daily_status(status, day)
+    last_run = status.get('last_run_at')
+    paused = row['state'] == prep.STATE_PAUSED or row.get('run_return_state') == prep.STATE_PAUSED
+    view = _redact(store, {
+        'code': spec['arguments']['code'],
+        'hosts': spec['arguments']['hosts'],
         'secrets': spec['arguments']['secrets'], 'every_seconds': spec['every_seconds'],
-        'digest': spec['digest'], 'status': status,
+        'digest': spec['digest'], 'status': {
+            'day': day, 'runs': today.get('runs', 0), 'wakes': today.get('wakes', 0),
+            'last_result': status.get('last_result'), 'last_run_at': last_run,
+            'last_run_local': prep.local_text(last_run, row['timezone'], home_zone) if last_run is not None else None,
+            'paused': (status.get('paused') or 'requested_pause') if paused else None,
+        },
+        'daily_wakes': DAILY_WAKES,
     })
+    view['status']['host_requests'] = _host_counts(store, today.get('host_requests', {}))
+    return view
+
+
+def spec_summary(store, spec):
+    return _redact(store, {'every_seconds': spec['every_seconds'], 'digest': spec['digest'][:12],
+                           'hosts': spec['arguments']['hosts'], 'secrets': spec['arguments']['secrets']})
 
 
 def handoff_event(store, job):
@@ -112,6 +151,7 @@ class CheckRunner(CodeRunner):
     library_hints = False
     persist_states = False  # A check's writes are scratch data.
     withhold_truncated_output = True
+    count_allowed_requests = True
 
     def __init__(self, store, record_id, *, pinned, check_state=None, **kwargs):
         super().__init__(store, record_id, approvals=None, **kwargs)
@@ -178,26 +218,40 @@ class ConditionChecks:
                 LOG.warning('condition check tick failed kind=%s', type(exc).__name__)
             stop.wait(1)
 
+    @contextmanager
+    def _scheduler_lock(self):
+        # Store-wide and released on process exit. No SQLite lock during execution or state retirement.
+        with (self.store.private / 'condition-check.lock').open('a') as lock:
+            try:
+                fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            except BlockingIOError:
+                yield False
+            else:
+                yield True
+
     def sweep_states(self):
-        """Discard the state of every check whose row ended, was forgotten or no longer has a check (D4, D10).
+        """Discard state for ended rows and replaced digests (D4, D10).
 
         Runs outside any SQLite transaction: discarding reads the owner-held key to retire the values.
         A state that cannot be read now is kept and tried again on the next sweep, never dropped unretired.
         """
+        with self._scheduler_lock() as acquired:
+            return self._sweep_states() if acquired else 0
+
+    def _sweep_states(self):
         credentials = ApiCredentials(self.store)
         ids = credentials.check_state_ids()
         if not ids:
             return 0
         with self.store.db() as db:
-            live = {row['id'] for row in db.execute(
-                f"SELECT id FROM preparations WHERE id IN ({','.join('?' * len(ids))}) AND check_spec IS NOT NULL "
+            live = {row['id']: row['digest'] for row in db.execute(
+                f"SELECT id, json_extract(check_spec,'$.digest') AS digest FROM preparations "
+                f"WHERE id IN ({','.join('?' * len(ids))}) AND check_spec IS NOT NULL "
                 f"AND state IN ({','.join('?' * len(prep.ACTIVE_STATES))})", (*ids, *prep.ACTIVE_STATES))}
         dropped = 0
         for check_id in ids:
-            if check_id in live:
-                continue
             try:
-                dropped += bool(credentials.discard_check_state(check_id))
+                dropped += bool(credentials.discard_check_state(check_id, keep_digest=live.get(check_id)))
             except Exception:
                 continue
         return dropped
@@ -217,14 +271,8 @@ class ConditionChecks:
         with self.store.db() as db:
             if self._due(db, now) is None:
                 return False
-        # The file lock is store-wide and released on process exit. SQLite has no lock
-        # held during execution, so owner actions and Work lanes continue independently.
-        with (self.store.private / 'condition-check.lock').open('a') as lock:
-            try:
-                fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
-            except BlockingIOError:
-                return False
-            return self._run_due()
+        with self._scheduler_lock() as acquired:
+            return self._run_due() if acquired else False
 
     def _run_due(self):
         now = self.preparations.clock()
@@ -261,7 +309,7 @@ class ConditionChecks:
             try:
                 sealed = ApiCredentials(self.store).seal_check_state(row['id'], json.loads(row['check_spec'])['digest'], state)
             except CredentialError:
-                result = {'pause': 'setup_missing'}
+                result = {'pause': 'setup_missing', 'host_requests': result.get('host_requests', {})}
             except ValueError:
                 result = {**result, 'kind': 'failure'}  # The runner already checked it; never counted as saved.
         if self._settle(row, result, claimed_at=claimed_at) and sealed is not None:
@@ -364,6 +412,7 @@ class ConditionChecks:
             'output': output, 'allowed_hosts': sorted(runner.allowed_hosts),
             'allowed_secret_sets': args['secrets'], 'outside': outside,
         })
+        handoff['host_requests'] = _host_counts(self.store, getattr(runner, 'allowed_requests', {}))
         if kind == 'failure':
             tail = handoff['output'][-600:]
             handoff['output'] = '\n'.join(part for part in (failure_reason, tail) if part)
@@ -385,13 +434,16 @@ class ConditionChecks:
         except CredentialError:
             title = row['id']
             if not (result and result.get('scrubbed_spec')):
-                result = {'pause': 'setup_missing'}
+                result = {'pause': 'setup_missing', 'host_requests': (result or {}).get('host_requests', {})}
         status_destination = self.service.preparations_service.notice_destination(preparations.notice_channel(row))
         surface = next((item for item in self.service.surfaces if item.name == row['channel']), None)
         can_wake = result and result.get('kind') in ('hit', 'failure')
         pairing = surface.pairing() if can_wake and surface and row['delivery_mode'] != prep.DELIVERY_WHEN_NEEDED else None
         budget_destinations = self.service.preparations_service.budget_notice_destinations() if can_wake else ()
         expected_due = row['check_next_at'] if claimed_at is None else claimed_at
+        if result:
+            result = dict(result)
+        host_requests = result.pop('host_requests', {}) if result else {}
         now = preparations.clock()
         with self.store.db() as db:
             db.execute('BEGIN IMMEDIATE')
@@ -419,14 +471,20 @@ class ConditionChecks:
             pending = status.pop('pending', None)
             if status.pop('paused', None):
                 status['failures'] = 0
+            counts = totals(status)
             day = preparations.budget_day(now, db)
             if day != status.get('day'):
-                status.update(day=day, runs=0, wakes=0)
+                status.update(day=day, runs=0, wakes=0, host_requests={})
+            daily_hosts = status.setdefault('host_requests', {})
+            for host, count in host_requests.items():
+                if host in daily_hosts or len(daily_hosts) < MAX_HOSTS:
+                    daily_hosts[host] = daily_hosts.get(host, 0) + count
             next_at = now + row['every_seconds']
             pause = result.get('pause')
             kind = result.get('kind', 'failure')
             if not pending or pause:
                 status['runs'] += 1
+                counts['runs'] += 1
                 status.update(last_result=kind, last_run_at=now,
                               failures=status.get('failures', 0) + 1 if kind == 'failure' else 0)
             failed = status['failures'] >= FAILURE_LIMIT
@@ -441,6 +499,7 @@ class ConditionChecks:
                         row, channel=pairing.channel if pairing else 'web', chat_id=pairing.owner if pairing else None,
                         now=now, db=db, wake=wake):
                     status['wakes'] += 1
+                    counts['wakes'] += 1
                     if failed:
                         status['paused'] = 'failures'
                 elif failed:
@@ -463,6 +522,7 @@ class ConditionChecks:
                 db.execute('UPDATE preparations SET state=?,updated_at=?,check_spec=? WHERE id=?',
                            (prep.STATE_PAUSED, now, spec, row['id']))
                 self._notice(db, row, title, pause, now, status_destination)
+            status.update({f'total_{key}': count for key, count in counts.items()})
             self._advance(db, row, next_at, status)
         return accepted
 

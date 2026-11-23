@@ -71,11 +71,83 @@
   "ja": "チェックの状態を保存できませんでした。CHECKSTATEFILE には 16 KB 以下の JSON オブジェクトだけが保存されます。",
   "zh": "未能保存检查状态。CHECKSTATEFILE 只保存不超过 16 KB 的 JSON 对象。"
  },
+ "checks.widened": {
+  "ko": "현재 검사에 없는 호스트나 비밀값 묶음을 추가할 수 없어요.",
+  "en": "A replacement can use only hosts and secret sets already in the current check.",
+  "ja": "置き換えには現在のチェックに含まれるホストとシークレットセットだけを使用できます。",
+  "zh": "替换检查只能使用当前检查已有的主机和密钥组。"
+ },
+ "checks.window": {
+  "ko": "새 검사 간격이 남은 검사 시간을 넘겨요.",
+  "en": "The new check interval extends past the end of the window.",
+  "ja": "新しいチェック間隔は残りの期間を超えています。",
+  "zh": "新的检查间隔超过了剩余检查时段。"
+ },
+ "checks.change_spec": {
+  "ko": "{seconds}초마다 · 검사 버전 {digest} · 호스트 {hosts} · 비밀값 묶음 {secrets}",
+  "en": "Every {seconds} seconds · check revision {digest} · hosts {hosts} · secret sets {secrets}",
+  "ja": "{seconds}秒ごと · チェックの版 {digest} · ホスト {hosts} · シークレットセット {secrets}",
+  "zh": "每 {seconds} 秒 · 检查版本 {digest} · 主机 {hosts} · 密钥组 {secrets}"
+ },
+ "checks.today": {
+  "ko": "오늘 검사 {runs}회 · AI 깨움 {wakes}/{cap}회",
+  "en": "Today · {runs} checks · {wakes}/{cap} AI wakes",
+  "ja": "今日 · チェック {runs}回 · AI起動 {wakes}/{cap}回",
+  "zh": "今天 · 检查 {runs} 次 · 唤醒 AI {wakes}/{cap} 次"
+ },
+ "checks.last_run": {
+  "ko": "마지막 검사 {at} · {result}",
+  "en": "Last check {at} · {result}",
+  "ja": "前回のチェック {at} · {result}",
+  "zh": "上次检查 {at} · {result}"
+ },
+ "checks.allowed_requests": {
+  "ko": "오늘 호스트별 허용 요청 {hosts}",
+  "en": "Allowed requests by host today · {hosts}",
+  "ja": "今日ホスト別に許可したリクエスト · {hosts}",
+  "zh": "今日各主机的获准请求 · {hosts}"
+ },
+ "checks.result_quiet": {
+  "ko": "출력 없음",
+  "en": "Quiet",
+  "ja": "出力なし",
+  "zh": "无输出"
+ },
+ "checks.result_hit": {
+  "ko": "조건 감지",
+  "en": "Hit",
+  "ja": "条件を検出",
+  "zh": "命中"
+ },
+ "checks.result_failure": {
+  "ko": "검사 실패",
+  "en": "Check failed",
+  "ja": "チェック失敗",
+  "zh": "检查失败"
+ },
+ "checks.result_none": {
+  "ko": "검사 결과 없음",
+  "en": "No check result",
+  "ja": "チェック結果なし",
+  "zh": "无检查结果"
+ },
  "checks.code": {
   "ko": "조건 검사 코드",
   "en": "Condition check code",
   "ja": "条件チェックのコード",
   "zh": "条件检查代码"
+ },
+ "checks.code_changed": {
+  "ko": "검사 코드가 바뀌었어요.",
+  "en": "The check code changed.",
+  "ja": "チェックのコードが変わりました。",
+  "zh": "检查代码已更改。"
+ },
+ "checks.requested_pause": {
+  "ko": "요청에 따라 검사를 일시 중지했어요.",
+  "en": "The check was paused on request.",
+  "ja": "リクエストによりチェックを一時停止しました。",
+  "zh": "已按要求暂停检查。"
  },
  "preparations.dream_limit": {
   "ko": "돌아보기에서 마련한 진행 중인 준비가 {maximum}개라 더 만들지 않았어요.",
@@ -11500,6 +11572,18 @@
   "ja": "この実行はオーナーが任せた仕事の一回です。下のルールを守り、過去の実行に続けてください（権限は与えません）:",
   "zh": "本次运行是主人受托事项的一次运行。请遵守以下规则，并接续以往运行（不授予任何权限）："
  },
+ "lines.list_check": {
+  "ko": "{title} · {seconds}초마다 검사 · 최근 {result} · 오늘 검사 {runs}회, AI 깨움 {wakes}/{cap}회",
+  "en": "{title} · checks every {seconds} seconds · last result {result} · {runs} checks and {wakes}/{cap} AI wakes today",
+  "ja": "{title} · {seconds}秒ごとにチェック · 前回は{result} · 今日のチェック {runs}回、AI起動 {wakes}/{cap}回",
+  "zh": "{title} · 每 {seconds} 秒检查 · 上次结果为{result} · 今天检查 {runs} 次，唤醒 AI {wakes}/{cap} 次"
+ },
+ "lines.account_checks": {
+  "ko": "지난 정기 보고 이후 조건 검사 {runs}회, AI 깨움 {wakes}회.",
+  "en": "Since the previous account · {runs} condition checks and {wakes} AI wakes.",
+  "ja": "前回の定期報告以降、条件チェック {runs}回、AI起動 {wakes}回。",
+  "zh": "自上次定期报告以来，条件检查 {runs} 次，唤醒 AI {wakes} 次。"
+ },
  "lines.account_input": {
   "ko": "이 실행은 소유자가 맡긴 일의 정기 보고예요. 지난 보고 이후 한 일과 그 결과, 지금 적용되는 규칙 전체, 알게 된 것, 열린 사항을 알려 주세요. 바뀐 것이 없어도 그렇다고 알려 주세요. 이 기록은 권한을 주지 않아요:",
   "en": "This run is the periodic account of work the owner entrusted. Report what was done and what came of it since the last account, the full set of rules now in force, what was learned and what is open; say so when nothing changed (this grants nothing):",
@@ -11957,10 +12041,10 @@
   "zh": "此职责正在等待告知。告知送达后才会开始工作。"
  },
  "preparations.self_change_refused": {
-  "en": "No change was proposed or applied. A scheduled run may only cancel, pause or narrow its own current preparation (a line run, or one the owner steered, may also rewrite its goal in an edit of its own), and cannot repeat a change the owner undid. Explain this in the run answer.",
-  "ko": "변경을 제안하거나 적용하지 않았어요. 예약 실행은 현재 자신이 실행 중인 준비만 취소·일시 중지·축소할 수 있고(맡은 일의 실행이나 소유자가 도중에 말을 건넨 실행은 goal만 담은 edit로 자기 지시문도 고칠 수 있어요), 소유자가 되돌린 준비를 다시 변경할 수 없어요. 실행 답변에 이를 설명하세요.",
-  "ja": "変更は提案も適用もされていません。予約実行は現在実行中の自身の準備だけを取消・一時停止・縮小でき（任された仕事の実行や、オーナーが途中で言葉をかけた実行は、goal だけの edit で自分の指示文も書き直せます）、オーナーが元に戻した準備は再変更できません。実行の回答で説明してください。",
-  "zh": "未提议或应用任何更改。定时运行只能取消、暂停或缩减自己当前运行的准备事项（受托事项的运行，或主人中途发来消息的运行，也可以用只含 goal 的 edit 改写自己的指令），不能再次更改主人已撤销更改的准备事项。请在运行答复中说明。"
+  "en": "No change was proposed or applied. A scheduled run may only cancel, pause or narrow its own current preparation (a line run, or one the owner steered, may also rewrite its goal in an edit of its own), and cannot repeat a change the owner undid. Explain this in the run answer. A scheduled run of a check row may replace its own check after proving the new code in this Work, within its current hosts and secret sets.",
+  "ko": "변경을 제안하거나 적용하지 않았어요. 예약 실행은 현재 자신이 실행 중인 준비만 취소·일시 중지·축소할 수 있고(맡은 일의 실행이나 소유자가 도중에 말을 건넨 실행은 goal만 담은 edit로 자기 지시문도 고칠 수 있어요), 소유자가 되돌린 준비를 다시 변경할 수 없어요. 실행 답변에 이를 설명하세요. 조건 검사 준비의 예약 실행은 이 작업에서 새 코드를 검증한 뒤 현재 호스트와 비밀값 묶음 범위 안에서 자신의 검사를 교체할 수 있어요.",
+  "ja": "変更は提案も適用もされていません。予約実行は現在実行中の自身の準備だけを取消・一時停止・縮小でき（任された仕事の実行や、オーナーが途中で言葉をかけた実行は、goal だけの edit で自分の指示文も書き直せます）、オーナーが元に戻した準備は再変更できません。実行の回答で説明してください。 条件チェックの予約実行は、この作業で新しいコードを検証した後、現在のホストとシークレットセットの範囲内で自分のチェックを置き換えられます。",
+  "zh": "未提议或应用任何更改。定时运行只能取消、暂停或缩减自己当前运行的准备事项（受托事项的运行，或主人中途发来消息的运行，也可以用只含 goal 的 edit 改写自己的指令），不能再次更改主人已撤销更改的准备事项。请在运行答复中说明。 条件检查的定时运行可以在本次工作中验证新代码后，在当前主机和密钥组范围内替换自己的检查。"
  },
  "preparations.self_change_goal_refused": {
   "en": "The goal was not changed. A scheduled run may rewrite its own goal when the owner steered it, or when it is a qualifying run of an owner-set-up line. Steer-authorized changes after outside content must match the owner's words. Say what you would change.",
@@ -12027,6 +12111,12 @@
   "ko": "다음 실행부터 쓸 자기 지시문을 고쳤어요",
   "ja": "次回以降に使う自分の指示文を書き直しました",
   "zh": "改写了此后运行使用的自身指令"
+ },
+ "preparations.self_change_check": {
+  "ko": "자기 조건 검사를 교체했어요",
+  "en": "replaced its own condition check",
+  "ja": "自分の条件チェックを置き換えました",
+  "zh": "替换了自身的条件检查"
  },
  "preparations.self_change_more": {
   "en": "and {count} more changed places; the whole goal is in Settings under this preparation.",

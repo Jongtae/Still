@@ -1942,7 +1942,19 @@ function renderScheduledBudget(){
 }
 function preparationDescription(row){
  const recurrence=row.recurrence_labels?.[currentLanguage==='zh-CN'?'zh':currentLanguage];
- if(row.check)return recurrence||row.recurrence_labels?.ko||'';
+ if(row.check){
+  const parts=[recurrence||row.recurrence_labels?.ko||''],status=row.check.status;
+  if(status){
+   const result=preparationLabel('check_result_'+(status.last_result||'none'));
+   parts.push(status.last_run_local?preparationLabel('check_last_run').replace('{at}',status.last_run_local).replace('{result}',result):result);
+   parts.push(preparationLabel('check_today').replace('{runs}',status.runs).replace('{wakes}',status.wakes).replace('{cap}',row.check.daily_wakes));
+   if(status.paused)parts.push(preparationLabel('check_'+status.paused));
+   const hosts=Object.entries(status.host_requests||{}).map(([host,count])=>host+' ('+count+')').join(', ');
+   if(hosts)parts.push(preparationLabel('check_allowed_requests').replace('{hosts}',()=>hosts));
+  }
+  if(row.last_result)parts.push(row.last_result.trim());
+  return parts.join(' · ');
+ }
  const active=PREPARATION_ACTIVE.includes(row.state),parts=[row.kind==='reminder'?t('알림'):t('미리 준비'),row.recurrence==='window'?preparationWindowLabel(row):recurrence||preparationRepeatLabel(row.recurrence),active?t('{time} 예정',{time:row.due_local}):row.due_local,preparationDeliveryLabel(row.delivery)];
  if(row.last_decision)parts.push(preparationDecisionLabel(row));
  if(row.last_result)parts.push(t('마지막 결과: {text}',{text:row.last_result}));return parts.join(' · ');}
@@ -1953,6 +1965,7 @@ function renderPreparations(){renderScheduledBudget();const list=$('preparations
   if(PREPARATION_ACTIVE.includes(row.state)&&!pending){const cancel=settingsAction(row.state==='proposed'?preparationLabel('decline'):t('취소'),event=>busy(event.currentTarget,()=>preparationAction('cancel',row.id,t('준비를 취소했습니다.'),offerBinding)));cancel.dataset.focusKey='preparation-cancel:'+row.id;actions.push(cancel);}
   // #575: each button is the owner's Settings action, as for cancel.
   if(!pending){
+   if(row.undo_check){const undo=settingsAction(preparationLabel('check_undo'),event=>busy(event.currentTarget,()=>preparationAction('restore',row.id,preparationLabel('check_undone'),{fingerprint:row.undo_check})));undo.dataset.focusKey='preparation-undo:'+row.id;actions.push(undo);}
    for(const operation of row.state==='scheduled'?['pause','run_now']:row.state==='paused'?['resume','run_now']:[]){const action=settingsAction(preparationLabel(operation),event=>busy(event.currentTarget,()=>preparationAction(operation,row.id,preparationLabel('saved'))));action.dataset.focusKey='preparation-'+operation+':'+row.id;actions.push(action);}
    if(!row.check&&!row.resume_offer_fingerprint&&['proposed','scheduled','paused'].includes(row.state)){const edit=settingsAction(preparationLabel('edit'),()=>{preparationEditPending=preparationEditPending===row.id?null:row.id;renderPreparations();});edit.dataset.focusKey='preparation-edit:'+row.id;actions.push(edit);}
   }
