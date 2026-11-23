@@ -362,10 +362,13 @@ class Disconnect(Case):
             finished.set()
 
         car.stop = slow_stop
-        threading.Thread(target=self.service.disconnect_imessage, daemon=True).start()
+        disconnecting = threading.Thread(target=self.service.disconnect_imessage, daemon=True)
+        disconnecting.start()
         self.assertTrue(wait_for(lambda: self.surface._stopping, 2), 'the disconnect started stopping')
         self.service.stop_surfaces()
         self.assertTrue(finished.is_set(), 'shutdown returned only after the child was stopped')
+        # disconnect() still reads its status after the stop; let it finish before the store is removed.
+        disconnecting.join(5)
 
     def test_service_shutdown_waits_for_a_start_that_is_reaping_a_failed_child(self):
         reaped = threading.Event()

@@ -150,7 +150,7 @@ class IMessageSurface(DirectMessageSurface):
     REQUEST_KEY_PREFIX, MESSAGES = 'im', 'imessage'
     NOT_SENT, ERROR = IMessageNotSent, IMessageError
     POST_REPLY_STATUS = 'sending'
-    # A notice is delivered only when its echo is observed: it stays ``sending`` until
+    # A notice needs a delivery receipt: it stays ``sending`` until
     # ``_observe_echo`` calls ``notice_delivered``; a failed send is queued again.
     NOTICE_CONFIRMED_ON_POST = False
     MAX_NOTICE_SEND_FAILURES = 3
@@ -220,7 +220,7 @@ class IMessageSurface(DirectMessageSurface):
                     return
                 if time.monotonic() < self._retry_at:
                     return
-                self.service.store.put(self.STATUS_KEY, {})
+                self._set_connection_status()
                 starting = self._starting = threading.Event()
                 sidecar = None
         if sidecar is not None:
@@ -253,7 +253,7 @@ class IMessageSurface(DirectMessageSurface):
             with self.service.lock:
                 if (not starting.is_set() and self._injected_transport() is None
                         and self.offered() and self._wanted(self.config(), time.time())):
-                    self.service.store.put(self.STATUS_KEY, {'state': 'connected', 'kit': ready['kit']})
+                    self._set_connection_status(state='connected', kit=ready['kit'])
                     self._was_ready = True
                     self._backoff = 1
                     self._starting = None
@@ -277,7 +277,7 @@ class IMessageSurface(DirectMessageSurface):
                 self._notify_stopped()   # a start that ended (and reaped a failed child) lets shutdown finish
 
     def _record_failure(self, code):
-        self.service.store.put(self.STATUS_KEY, {'state': 'error', 'code': code})
+        self._set_connection_status(state='error', code=code)
         self._retry_at = time.monotonic() + self._backoff
         self._backoff = min(300, self._backoff * 2)
 
@@ -337,7 +337,7 @@ class IMessageSurface(DirectMessageSurface):
             live = self.service.store.config(self.STATUS_KEY, {}) or {}
             sidecar = self._detach_sidecar() if live.get('state') == 'error' else None
             self._retry_at, self._backoff = 0, 1
-            self.service.store.put(self.STATUS_KEY, {})
+            self._set_connection_status()
         if sidecar is not None:
             self._stop_sidecar(sidecar)
         return self.status()
@@ -404,7 +404,9 @@ class IMessageSurface(DirectMessageSurface):
             cfg.pop('pairing')
             cfg.update(enabled=True, handle=handle, owner_user_id=owner_key(handle), channel_id=handle,
                        generation=secrets.token_hex(6), since_ms=event['ts_ms'])
-            self.service.store.put(CONFIG_KEY, cfg)
+            with self.service.store.db() as db:
+                self.service.store.put(CONFIG_KEY, cfg, db=db)
+                self._set_send_failure(db, False)
             self._sync_scope(cfg)
             self.send_owner(self._text('connected_hello'), owner=owner_key(handle), generation=cfg['generation'])
         else:
@@ -439,9 +441,27 @@ class IMessageSurface(DirectMessageSurface):
         """A sidecar that became ready has forgotten its scope and any earlier error."""
         ready = self._transport_ready(transport)
         if ready and not self._was_ready:
-            self.service.store.put(self.STATUS_KEY, {'state': 'connected', 'kit': ready['kit']})
+            self._set_connection_status(state='connected', kit=ready['kit'])
             self._scope = None
         self._was_ready = bool(ready)
+
+    def _set_connection_status(self, **status):
+        store = self.service.store
+        with store.db() as db:
+            db.execute('BEGIN IMMEDIATE')
+            live = store.config(self.STATUS_KEY, db=db) or {}
+            if live.get('send_failure'):
+                status['send_failure'] = True
+            store.put(self.STATUS_KEY, status, db=db)
+
+    def _set_send_failure(self, db, failed):
+        store = self.service.store
+        live = store.config(self.STATUS_KEY, db=db) or {}
+        if failed:
+            live['send_failure'] = True
+        elif not live.pop('send_failure', None):
+            return
+        store.put(self.STATUS_KEY, live, db=db)
 
     def status(self):
         cfg = self.config()
@@ -462,7 +482,8 @@ class IMessageSurface(DirectMessageSurface):
                   'company_approved': cfg.get('company_approved') is True,
                   'usable': transport is not None and self.usable(cfg),
                   'offered': offered, 'state': state, 'pairing': bool(pending), 'handle': cfg.get('handle') or '',
-                  'pairing_expires_at': pending['expires_at'] if pending else None, 'message': ''}
+                  'pairing_expires_at': pending['expires_at'] if pending else None, 'message': '',
+                  'send_failure': self._text('send_not_delivered') if live.get('send_failure') else ''}
         if state == 'error':
             code = status['code'] = live['code']
             if code == 'no_disk_access':
@@ -568,20 +589,13 @@ class IMessageSurface(DirectMessageSurface):
         kind = event['ev']
         # Readiness comes from the transport (``_track_readiness``); its ``ready`` frames are the handshake.
         if kind == 'error' and isinstance(event.get('code'), str) and event['code'] in ERROR_CODES and isinstance(event.get('detail'), str):
-            self.service.store.put(self.STATUS_KEY, {'state': 'error', 'code': event['code']})
+            self._set_connection_status(state='error', code=event['code'])
         elif kind == 'send_failed' and _wire_string(event.get('id'), nonempty=True) and isinstance(event.get('reason'), str):
             with self.service.store.db() as db:
                 db.execute('BEGIN IMMEDIATE')
                 row = db.execute("SELECT * FROM imessage_sends WHERE id=? AND state='sending'", (event['id'],)).fetchone()
-                if row and row['notification_id'] and db.execute(
-                        "SELECT COUNT(*) FROM imessage_sends WHERE notification_id=? AND state='failed'",
-                        (row['notification_id'],)).fetchone()[0] + 1 < self.MAX_NOTICE_SEND_FAILURES:
-                    # Messages refused it, so the owner was not told: queue the notice again.
-                    db.execute("UPDATE imessage_sends SET state='failed',settled=? WHERE id=?", (now, row['id']))
-                    db.execute("UPDATE telegram_notifications SET state='queued' WHERE id=? AND state='sending'",
-                               (row['notification_id'],))
-                elif row:
-                    self._unknown(db, row, now)
+                if row:
+                    self._settle_failed(db, row, now)
         elif kind in ('message', 'from_me') and _valid_message(event):
             return self._receive_message(kind, event, now)
         # The 'sent' acknowledgement only confirms handoff to Messages.
@@ -715,14 +729,26 @@ class IMessageSurface(DirectMessageSurface):
         store = self.service.store
         with store.db() as db:
             db.execute('BEGIN IMMEDIATE')
-            if not self._remember_event(db, guid, now):
+            send = db.execute('SELECT * FROM imessage_sends WHERE echo_guid=?', (guid,)).fetchone()
+            if send is None:
+                if not self._remember_event(db, guid, now):
+                    return
+                send = db.execute(
+                    "SELECT * FROM imessage_sends WHERE state='sending' AND echo_guid IS NULL "
+                    'AND generation=? AND handle=? AND text_digest=? AND created BETWEEN ? AND ? '
+                    'AND CAST(created * 1000 AS INTEGER) <= ? ORDER BY created,rowid LIMIT 1',
+                    (cfg['generation'], cfg['handle'], _digest(event['text'].strip()),
+                     now - DELIVERY_WINDOW_SECONDS, now, ts_ms)).fetchone()
+                if send is None:
+                    return
+                db.execute('UPDATE imessage_sends SET echo_guid=? WHERE id=?', (guid, send['id']))
+            elif send['generation'] != cfg['generation'] or send['handle'] != cfg['handle']:
                 return
-            send = db.execute(
-                "SELECT * FROM imessage_sends WHERE state='sending' AND generation=? AND handle=? AND text_digest=? "
-                'AND created BETWEEN ? AND ? AND CAST(created * 1000 AS INTEGER) <= ? ORDER BY created,rowid LIMIT 1',
-                (cfg['generation'], cfg['handle'], _digest(event['text'].strip()),
-                 now - DELIVERY_WINDOW_SECONDS, now, ts_ms)).fetchone()
-            if not send:
+            if event.get('error') is not None and send['state'] in ('sending', 'unknown'):
+                self._settle_failed(db, send, now)
+                self._set_send_failure(db, True)
+                return
+            if send['state'] != 'sending' or event.get('delivered') is not True:
                 return
             if send['job_id']:
                 if not db.execute("UPDATE jobs SET delivery='sent' WHERE id=? AND delivery='sending'",
@@ -737,6 +763,7 @@ class IMessageSurface(DirectMessageSurface):
                 notice = db.execute("SELECT * FROM telegram_notifications WHERE id=? AND surface='imessage' "
                                     "AND state='sending'", (send['notification_id'],)).fetchone()
             db.execute("UPDATE imessage_sends SET state='delivered',settled=? WHERE id=?", (now, send['id']))
+            self._set_send_failure(db, False)
         if notice is not None:
             self.notice_delivered(dict(notice), guid)
         if send['job_id']:
@@ -746,6 +773,19 @@ class IMessageSurface(DirectMessageSurface):
                     self.service.queue_memory_candidates(job)
             except Exception as exc:
                 LOG.warning('iMessage memory follow-up failed (%s)', type(exc).__name__)
+
+    def _settle_failed(self, db, send, now):
+        db.execute("UPDATE imessage_sends SET state='failed',settled=? WHERE id=?", (now, send['id']))
+        # Expiry already settled the associated reply or notice. A late error updates only the send.
+        if send['state'] != 'sending':
+            return
+        if send['notification_id'] and db.execute(
+                "SELECT COUNT(*) FROM imessage_sends WHERE notification_id=? AND state='failed'",
+                (send['notification_id'],)).fetchone()[0] < self.MAX_NOTICE_SEND_FAILURES:
+            db.execute("UPDATE telegram_notifications SET state='queued' WHERE id=? AND surface='imessage' "
+                       "AND state='sending'", (send['notification_id'],))
+        else:
+            self._mark_delivery_unknown(db, send)
 
     def _expire_sends(self, now):
         prune = now - getattr(self, '_pruned_at', 0) >= PRUNE_SECONDS
@@ -762,9 +802,12 @@ class IMessageSurface(DirectMessageSurface):
         if prune:
             self._pruned_at = now
 
-    @staticmethod
-    def _unknown(db, send, now):
+    def _unknown(self, db, send, now):
         db.execute("UPDATE imessage_sends SET state='unknown',settled=? WHERE id=?", (now, send['id']))
+        self._mark_delivery_unknown(db, send)
+
+    @staticmethod
+    def _mark_delivery_unknown(db, send):
         if send['job_id']:
             db.execute("UPDATE jobs SET delivery='unknown' WHERE id=? AND delivery='sending'", (send['job_id'],))
         if send['notification_id']:

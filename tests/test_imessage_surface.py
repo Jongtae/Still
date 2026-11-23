@@ -86,9 +86,17 @@ class FakeSidecar:
         return self.emit(ev='message', guid=guid or self.guid(), handle=handle, text=text,
                          ts_ms=now_ms() if ts_ms is None else ts_ms, reaction=reaction)
 
-    def from_me(self, handle, text, ts_ms=None, guid=None):
-        return self.emit(ev='from_me', guid=guid or self.guid(), handle=handle, text=text,
-                         ts_ms=now_ms() if ts_ms is None else ts_ms)
+    def from_me(self, handle, text, ts_ms=None, guid=None, *, sent=True, delivered=True, error=None, flags=True):
+        """A from-me row; protocol v1.1 (#1179) carries its ``sent``/``delivered``/``error`` flags."""
+        event = dict(ev='from_me', guid=guid or self.guid(), handle=handle, text=text,
+                     ts_ms=now_ms() if ts_ms is None else ts_ms)
+        if flags:
+            event.update(sent=sent, delivered=delivered, error=error)
+        return self.emit(**event)
+
+    def again(self, echo, **changes):
+        """The same row re-observed after Messages changed its flags."""
+        return self.emit(**{**echo, **changes})
 
     def sends(self):
         return [op for op in self.ops if op.get('op') == 'send']
@@ -524,6 +532,134 @@ class Delivery(IMessageCase):
         self.service.deliver_one()
         self.assertEqual(len(self.answer_sends()), 1)
 
+    # -- #1179: Messages writes a from-me row for a failed send too; its flags decide -------
+    def send_states(self):
+        with self.store.db() as db:
+            return [row['state'] for row in db.execute('SELECT state FROM imessage_sends ORDER BY created,rowid')]
+
+    def test_an_echo_with_an_error_is_failed_never_delivered(self):
+        self.service.deliver_one()
+        self.sidecar.from_me(OWNER, ANSWER, sent=False, delivered=False, error=22)
+        self.surface.receive()
+        self.assertEqual(self.send_states()[-1], 'failed')
+        self.assertEqual(self.delivery(), 'unknown', 'a failed reply is never recorded as delivered')
+        self.assertIsNone(self.surface.reply_message(self.work['id'], 'handle:' + OWNER))
+        self.service.deliver_one()
+        self.assertEqual(len(self.answer_sends()), 1, 'Messages may still retry it, so Still never sends it twice')
+
+    def test_a_watch_notice_whose_echo_has_an_error_is_not_told_and_is_queued_again(self):
+        notice, recorded = self.watch_notice()
+        self.sidecar.from_me(OWNER, 'watch result', sent=True, delivered=False, error=22)
+        self.surface.receive()
+        self.assertEqual(self.store.notification(notice['id'])['state'], 'queued')
+        recorded.assert_not_called()
+
+    def test_a_sent_echo_stays_sending_and_its_later_delivery_marks_delivered(self):
+        self.service.deliver_one()
+        echo = self.sidecar.from_me(OWNER, ANSWER, sent=True, delivered=False)
+        self.surface.receive()
+        self.assertEqual(self.delivery(), 'sending', 'sent without a delivery receipt is not delivered')
+        self.sidecar.again(echo, delivered=True)
+        self.surface.receive()
+        self.assertEqual(self.delivery(), 'sent')
+        self.assertEqual(self.send_states()[-1], 'delivered')
+        self.assertEqual(self.surface.reply_message(self.work['id'], 'handle:' + OWNER), echo['guid'])
+
+    def test_a_sent_echo_that_later_fails_is_failed(self):
+        notice, recorded = self.watch_notice()
+        echo = self.sidecar.from_me(OWNER, 'watch result', sent=True, delivered=False)
+        self.surface.receive()
+        self.assertEqual(self.store.notification(notice['id'])['state'], 'sending')
+        self.sidecar.again(echo, error=22)
+        self.surface.receive()
+        self.assertEqual(self.send_states()[-1], 'failed')
+        self.assertEqual(self.store.notification(notice['id'])['state'], 'queued')
+        recorded.assert_not_called()
+
+    def test_a_late_failure_never_overrides_delivered(self):
+        notice, recorded = self.watch_notice()
+        echo = self.sidecar.from_me(OWNER, 'watch result', sent=True, delivered=True)
+        self.surface.receive()
+        self.sidecar.again(echo, error=22)
+        self.surface.receive()
+        self.assertEqual(self.send_states()[-1], 'delivered')
+        self.assertEqual(self.store.notification(notice['id'])['state'], 'sent')
+        self.assertEqual(recorded.call_count, 1)
+        self.assertEqual(self.surface.status()['send_failure'], '')
+
+    def test_a_sent_echo_without_a_delivery_receipt_becomes_unknown_after_the_window(self):
+        self.service.deliver_one()
+        self.sidecar.from_me(OWNER, ANSWER, sent=True, delivered=False)
+        self.surface.receive()
+        self.assertEqual(self.delivery(), 'sending')
+        self.surface.receive(now=time.time() + DELIVERY_WINDOW_SECONDS + 5)
+        self.assertEqual(self.delivery(), 'unknown')
+        self.assertEqual(self.send_states()[-1], 'unknown')
+
+    def test_an_error_after_the_window_still_shows_the_failure(self):
+        # The sidecar keeps re-reading a row for longer than the surface waits: an error that Messages
+        # sets after the window is still the truth about that send (review of #1179).
+        self.service.deliver_one()
+        echo = self.sidecar.from_me(OWNER, ANSWER, sent=True, delivered=False)
+        self.surface.receive()
+        later = time.time() + DELIVERY_WINDOW_SECONDS + 5
+        self.surface.receive(now=later)
+        self.assertEqual(self.send_states()[-1], 'unknown')
+        self.sidecar.again(echo, error=22)
+        self.surface.receive(now=later + 1)
+        self.assertEqual(self.send_states()[-1], 'failed')
+        self.assertEqual(self.delivery(), 'unknown', 'still never recorded as delivered, and never resent')
+        self.assertEqual(self.surface.status()['send_failure'], msg('imessage.send_not_delivered'))
+        self.service.deliver_one()
+        self.assertEqual(len(self.answer_sends()), 1)
+
+    def test_a_late_delivery_receipt_does_not_reopen_an_unknown_send(self):
+        self.service.deliver_one()
+        echo = self.sidecar.from_me(OWNER, ANSWER, sent=True, delivered=False)
+        self.surface.receive()
+        later = time.time() + DELIVERY_WINDOW_SECONDS + 5
+        self.surface.receive(now=later)
+        self.sidecar.again(echo, delivered=True)
+        self.surface.receive(now=later + 1)
+        self.assertEqual((self.send_states()[-1], self.delivery()), ('unknown', 'unknown'))
+
+    def test_a_failure_of_an_earlier_pairing_is_not_shown_after_repairing_or_disconnect(self):
+        self.service.deliver_one()
+        self.sidecar.from_me(OWNER, ANSWER, sent=False, delivered=False, error=22)
+        self.surface.receive()
+        self.assertTrue(self.surface.status()['send_failure'])
+        self.pair()
+        self.assertEqual(self.surface.status()['send_failure'], '', 'a new pairing starts without the old failure')
+        self.service.deliver_one()
+        self.sidecar.from_me(OWNER, msg('imessage.connected_hello'), sent=False, delivered=False, error=22)
+        self.surface.receive()
+        self.assertTrue(self.surface.status()['send_failure'])
+        self.surface.disconnect()
+        self.assertEqual(self.surface.status()['send_failure'], '')
+
+    def test_an_echo_without_delivery_flags_proves_nothing(self):
+        self.service.deliver_one()
+        self.sidecar.from_me(OWNER, ANSWER, flags=False)
+        self.surface.receive()
+        self.assertEqual(self.delivery(), 'sending')
+
+    def test_settings_names_the_last_send_failure_in_plain_words(self):
+        self.service.deliver_one()
+        self.assertEqual(self.surface.status()['send_failure'], '')
+        self.sidecar.from_me(OWNER, ANSWER, sent=False, delivered=False, error=22)
+        self.surface.receive()
+        shown = self.surface.status()['send_failure']
+        self.assertEqual(shown, msg('imessage.send_not_delivered'))
+        self.assertNotIn('22', shown, 'no raw error code')
+        self.assertEqual(self.service.settings()['imessage']['send_failure'], shown)
+        # A later send that Messages delivers clears it.
+        self.owner_says('다음 질문')
+        self.assertTrue(self.service.run_one())
+        self.service.deliver_one()
+        self.sidecar.from_me(OWNER, ANSWER, sent=True, delivered=True)
+        self.surface.receive()
+        self.assertEqual(self.surface.status()['send_failure'], '')
+
     def test_a_sidecar_that_is_down_leaves_the_reply_pending_then_sends_it_once(self):
         self.sidecar.down = True
         self.service.deliver_one()
@@ -823,6 +959,22 @@ class RealSidecarTransport(unittest.TestCase):
         with self.store.db() as db:
             self.assertEqual(db.execute('SELECT COUNT(*) FROM imessage_sends').fetchone()[0], before,
                              'a refused send leaves no in-flight row')
+
+    def test_a_failed_greeting_through_the_real_sidecar_is_failed_not_delivered(self):
+        # The 2026-11-24 live check (#1179): the greeting's from-me row appeared, but Messages could not deliver it.
+        self.pair()
+        greeting = [op for op in self.child.ops if op.get('op') == 'send'][-1]
+        self.child.stdout.push({'ev': 'sent', 'id': greeting['id']})
+        echo = {'ev': 'from_me', 'guid': 'G-2', 'handle': OWNER, 'text': greeting['text'], 'ts_ms': now_ms(),
+                'sent': False, 'delivered': False, 'error': None}
+        self.child.stdout.push(echo)
+        self.child.stdout.push({**echo, 'error': 22})
+
+        def failed():
+            with self.store.db() as db:
+                return [row['state'] for row in db.execute('SELECT state FROM imessage_sends')] == ['failed']
+        self.receive_until(failed)
+        self.assertEqual(self.surface.status()['send_failure'], msg('imessage.send_not_delivered'))
 
     def test_the_real_sidecar_reports_connected_and_disconnected(self):
         self.surface.receive()

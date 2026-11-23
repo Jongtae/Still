@@ -2136,6 +2136,7 @@ function renderIMessage(status){
  const message=status.code==='no_disk_access'&&status.disk_access_app?.name&&!status.disk_access_app.uncertain?
   t('시스템 설정 → 개인정보 보호 및 보안 → 전체 디스크 접근 권한에서 {app}을(를) 허용한 뒤 다시 시도하세요.',{app:status.disk_access_app.name}):t(status.message);
  if(message)list.append(element('p',message,'field-hint'));
+ if(status.send_failure)list.append(element('p',t(status.send_failure),'field-hint'));
  if(!pairing||imessagePairing?.expires_at!==status.pairing_expires_at)imessagePairing=null;
  const code=$('imessage-code');
  if(imessagePairing){

@@ -18,6 +18,12 @@ function nonemptyString(value) {
   return typeof value === 'string' && value.length > 0;
 }
 
+function dmChatHandle(chatId) {
+  if (typeof chatId !== 'string') return;
+  const [service, separator, ...parts] = chatId.split(';');
+  if (service && separator === '-') return parts.join(';') || undefined;
+}
+
 function validScope({ mode, handle, since_ms, max_text_len }) {
   if (mode === 'off') return true;
   if (!Number.isInteger(since_ms)) return false;
@@ -25,12 +31,16 @@ function validScope({ mode, handle, since_ms, max_text_len }) {
   return mode === 'pairing' && Number.isInteger(max_text_len) && max_text_len > 0;
 }
 
-export async function runSidecar({ input, output, createKit, kitVersion, databasePath }) {
+export async function runSidecar({
+  input, output, createKit, kitVersion, databasePath, recheckMs = 2_000, recheckWindowMs = 600_000,
+}) {
   const lines = createInterface({ input, crlfDelay: Infinity });
   let scope = { mode: 'off' };
   let kit;
   let stopped = false;
   const inflight = new Set();
+  const watched = new Map();
+  let recheckTimer;
 
   function emit(event) {
     output.write(JSON.stringify(event) + '\n');
@@ -73,10 +83,7 @@ export async function runSidecar({ input, output, createKit, kitVersion, databas
     const ts_ms = message.createdAt.getTime();
     if (!(ts_ms > scope.since_ms)) return;
     let handle = message.participant;
-    if (handle == null && typeof message.chatId === 'string') {
-      const [service, separator, ...parts] = message.chatId.split(';');
-      if (service && separator === '-') handle = parts.join(';') || handle;
-    }
+    if (handle == null) handle = dmChatHandle(message.chatId) ?? handle;
     const text = message.text ?? '';
     if (scope.mode === 'paired') {
       if (handle !== scope.handle) return;
@@ -87,13 +94,74 @@ export async function runSidecar({ input, output, createKit, kitVersion, databas
     const event = {
       ev: fromMe ? 'from_me' : 'message', guid: message.id, handle, text, ts_ms,
     };
-    if (!fromMe) {
+    if (fromMe) {
+      const sent = message.isSent === true;
+      const delivered = message.isDelivered === true;
+      const error = message.hasError === true && Number.isFinite(message.errorCode) ? message.errorCode : null;
+      const prior = watched.get(message.id);
+      if (prior && prior.sent === sent && prior.delivered === delivered && prior.error === error) return;
+      Object.assign(event, { sent, delivered, error });
+      if (delivered || error !== null) watched.delete(message.id);
+      else watched.set(message.id, { ts_ms, sent, delivered, error,
+        expires: prior?.expires ?? performance.now() + recheckWindowMs });
+    } else {
       const reaction = message.reaction;
       event.reaction = reaction ? {
         kind: reaction.kind, target_guid: reaction.targetMessageId, removed: Boolean(reaction.isRemoved),
       } : null;
     }
     emit(event);
+    if (fromMe) scheduleRecheck();
+  }
+
+  async function readPages(since_ms, current, visit) {
+    const since = new Date(since_ms);
+    for (let offset = 0; current(); offset += BACKFILL_PAGE) {
+      const page = await kit.getMessages({ since, limit: BACKFILL_PAGE, offset });
+      if (!current()) return;
+      for (const message of page) visit(message);
+      if (page.length < BACKFILL_PAGE) return;
+    }
+  }
+
+  function scheduleRecheck() {
+    if (recheckTimer || !watched.size) return;
+    const appliedScope = scope;
+    recheckTimer = setTimeout(() => void recheck(appliedScope), recheckMs).unref();
+  }
+
+  function clearRecheck() {
+    clearTimeout(recheckTimer);
+    recheckTimer = undefined;
+    watched.clear();
+  }
+
+  async function recheck(appliedScope) {
+    const current = () => !stopped && scope === appliedScope;
+    const active = () => {
+      if (!current()) return false;
+      const now = performance.now();
+      for (const [guid, row] of watched) {
+        if (row.expires <= now) watched.delete(guid);
+      }
+      return watched.size > 0;
+    };
+    try {
+      if (!active()) return;
+      // The kit's watcher only reports new ROWIDs, so query for changes on rows already emitted.
+      let since_ms = Infinity;
+      for (const row of watched.values()) since_ms = Math.min(since_ms, row.ts_ms);
+      await readPages(since_ms, active, (message) => {
+        if (watched.has(message.id)) forward(message, true);
+      });
+    } catch (error) {
+      if (current()) watchError(error, true);
+    } finally {
+      if (current()) {
+        recheckTimer = undefined;
+        scheduleRecheck();
+      }
+    }
   }
 
   async function backfill(appliedScope) {
@@ -105,13 +173,9 @@ export async function runSidecar({ input, output, createKit, kitVersion, databas
     const current = () => !stopped && scope === appliedScope;
     const rows = new Map();
     try {
-      for (let offset = 0; ; offset += BACKFILL_PAGE) {
-        const page = await kit.getMessages({ since: new Date(since_ms), limit: BACKFILL_PAGE, offset });
-        if (!current()) return;
-        // Pages are newest first; a row arriving meanwhile shifts the next page by one, so keep by guid.
-        for (const message of page) rows.set(message.id, message);
-        if (page.length < BACKFILL_PAGE) break;
-      }
+      // Pages are newest first; a row arriving meanwhile shifts the next page by one, so keep by guid.
+      await readPages(since_ms, current, (message) => rows.set(message.id, message));
+      if (!current()) return;
       const ordered = [...rows.values()].sort((a, b) => a.createdAt - b.createdAt || a.rowId - b.rowId);
       for (const message of ordered) forward(message, message.isFromMe === true);
     } catch (error) {
@@ -150,12 +214,32 @@ export async function runSidecar({ input, output, createKit, kitVersion, databas
   }
 
   async function send({ id, to, text }) {
-    if (typeof id !== 'string' || !nonemptyString(text) || scope.mode !== 'paired' || to !== scope.handle) {
-      badRequest('Send requires a request ID, text, and the paired recipient.', id);
+    const allowed = () => typeof id === 'string' && nonemptyString(text) &&
+      !stopped && scope.mode === 'paired' && to === scope.handle;
+    const refusal = 'Send requires a request ID, text, and the paired recipient.';
+    if (!allowed()) {
+      badRequest(refusal, id);
+      return;
+    }
+    let chat;
+    try {
+      const chats = await kit.listChats?.({ chatId: to, kind: 'dm' });
+      const matches = chats?.filter((row) => row.kind === 'dm' && dmChatHandle(row.chatId) === to);
+      chat = matches?.find((row) => row.service === 'iMessage') ?? matches?.[0];
+    } catch {
+      // A lookup failure leaves the address send available.
+    }
+    if (!allowed()) {
+      badRequest(refusal, id);
       return;
     }
     try {
-      await kit.send({ to, text });
+      // Kit 3.0.0 reduces 1:1 chat IDs to buddy sends. Use the pinned kit's reviewed runPipeline internal.
+      if (chat && typeof kit.sender?.runPipeline === 'function') {
+        await kit.sender.runPipeline({ target: { method: 'chat', identifier: chat.chatId }, text, attachments: [] });
+      } else {
+        await kit.send({ to, text });
+      }
     } catch (error) {
       let reason = 'send_error';
       if (/not running/i.test(error?.message)) reason = 'messages_not_running';
@@ -195,13 +279,14 @@ export async function runSidecar({ input, output, createKit, kitVersion, databas
       case 'scope': {
         const { mode, handle, since_ms, max_text_len } = request;
         if (validScope(request)) {
+          clearRecheck();
           scope = { mode, handle, since_ms, max_text_len };
           if (mode !== 'off') void backfill(scope);
         } else badRequest('Invalid sidecar scope.');
         break;
       }
       case 'send':
-        // Checked against the current scope now; osascript may take a while, so later ops do not wait for it.
+        // Later ops can run while the send looks up the chat or waits for osascript.
         {
           const sending = send(request).finally(() => inflight.delete(sending));
           inflight.add(sending);
@@ -225,6 +310,7 @@ export async function runSidecar({ input, output, createKit, kitVersion, databas
     await pending;
   } finally {
     stopped = true;
+    clearRecheck();
     lines.close();
     // Let a send already handed to osascript report its outcome before the kit closes.
     await Promise.allSettled([...inflight]);

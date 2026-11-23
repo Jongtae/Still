@@ -7600,6 +7600,12 @@
   "ja": "iMessage を受信できませんでした。Mac の Still で接続を確認してください。",
   "zh": "无法接收 iMessage。请在 Mac 上的 Still 中检查连接。"
  },
+ "imessage.send_not_delivered": {
+  "ko": "메시지 앱에서 마지막 메시지를 전달하지 못했어요. 새 Apple ID라면 iMessage가 아직 활성화되지 않았을 수 있어요. 메시지 앱 설정에서 ‘새로운 대화 시작’ 항목도 확인해 주세요.",
+  "en": "Messages could not deliver the last message. If this Apple ID is new, iMessage may still be activating. Also check ‘Start new conversations from’ in Messages settings.",
+  "ja": "メッセージアプリで直前のメッセージを配信できませんでした。新しい Apple ID では、iMessage がまだ有効になっていない場合があります。メッセージの設定で「新規チャットの発信元」も確認してください。",
+  "zh": "“信息”未能送达上一条消息。如果这是新的 Apple ID，iMessage 可能尚未激活。另请检查“信息”设置中的“开始新对话，来源”。"
+ },
  "imessage.no_disk_access": {
   "ko": "시스템 설정 → 개인정보 보호 및 보안 → 전체 디스크 접근 권한에서 {app}을(를) 허용한 뒤 다시 시도하세요.",
   "en": "Allow {app} in System Settings → Privacy & Security → Full Disk Access, then try again.",
