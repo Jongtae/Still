@@ -943,7 +943,8 @@ class ToolsAndReplan(Harness):
         self.assertIn('weather', turn['offered'], 'the full offered toolset, not a subset')
         context, _question, schema = self.asked_plans[0]
         self.assertEqual(set(schema['required']), {'worker', 'model', 'effort', 'brief', 'reason', 'account_change',
-                                                   'owner_situation', 'technical_work', 'reply', 'recall_query'})
+                                                   'owner_situation', 'technical_work', 'reply', 'recall_query',
+                                                   'acknowledgement'})
         descriptions = context.facts['tool_descriptions']
         self.assertIn('- public_page_read: ', descriptions)
         self.assertIn('- list_notes: ', descriptions)

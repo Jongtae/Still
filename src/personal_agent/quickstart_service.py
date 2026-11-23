@@ -788,6 +788,8 @@ class AgentService:
         self.live_steps={}
         #: The worker and model each running Work's current attempt was launched with (``worker_line``).
         self.live_workers={}
+        #: The first plan's wait line for each running Work (presentation only).
+        self.live_acknowledgements={}
         #: #460: each running Work's live sub-agents, ``{call id: description}`` (``_observe_sub_agent``).
         self.live_agents={}
         self.subscription_engines=subscription_engines or SubscriptionEngines()
@@ -2924,6 +2926,9 @@ class AgentService:
         the worker and the model it was launched with, never a guessed one.
         """
         self.live_workers[job_id]=worker_line(entry,effort)
+        if (entry or {}).get('attempt',1)!=1:
+            # #1183: only the first plan writes a wait line; a re-delegated attempt shows the bare wait.
+            self.live_acknowledgements.pop(job_id,None)
         try:
             # #825: appended inside the merge transaction (two writers keep each other's rows);
             # ``workers_dropped`` counts the rows the bound of six removed.
@@ -7026,7 +7031,7 @@ class AgentService:
     APPROVAL_NOTIFICATIONS=('context_approval_needed','browser_approval_needed')
 
     def _draft_step_text(self, job, state):
-        """The launched worker in /dev mode, dots alone otherwise (#477).
+        """The launched worker in /dev mode, otherwise the first plan's wait line if present.
 
         None during approval/payment waits: the prompt is the only surface.
         Worker Evidence is recorded independently of this presentation gate.
@@ -7036,7 +7041,9 @@ class AgentService:
             return None
         _text,approval=draft_step(self.store.task_events(job['id']),self.live_steps.get(job['id']))
         if approval:return None
-        if not self.developer_mode():return NO_STEP_LINE
+        if not self.developer_mode():
+            line=self.live_acknowledgements.get(job['id'])
+            return ai_text(line) if line else NO_STEP_LINE
         # #458/#477: with /dev on, the bubble names the launched worker, never a per-tool step.
         line=self.live_workers.get(job['id']) or NO_STEP_LINE
         # #460: the worker's sub-agents at work, by the description it gave them.

@@ -108,6 +108,7 @@ MAX_NOTES_CHARS = 1200
 #: #1459: the professional lens a plan names for the worker (Professional Roles and Communication Contract).
 MAX_LENS_CHARS = 400
 MAX_REASON_CHARS = 200
+MAX_ACKNOWLEDGEMENT_CHARS = 300
 #: Bounds of the facts the orchestrator is asked over, besides the owner's
 #: request and the catalogue, which are never cut.
 CONVERSATION_CHARS = GOAL_CONVERSATION_CHARS
@@ -828,6 +829,7 @@ def plan_schema(workers, ask_location=False, preview=False):
                             'required': ['notes', 'lens', 'needs']},
                   'reason': {'type': 'string'},
                   'reply': {'type': 'string'},
+                  'acknowledgement': {'type': 'string'},
                   # No minLength/maxLength: not every structured-output transport accepts them.
                   # As with choose_many's uniqueness, enforce the bound after parsing.
                   'recall_query': {'type': 'string', 'description': 'Optional recall terms, at most 500 characters; empty for none.'},
@@ -835,7 +837,8 @@ def plan_schema(workers, ask_location=False, preview=False):
                   'owner_situation': {'type': 'boolean'},
                   'technical_work': {'type': 'boolean'}},
               'required': ['worker', 'model', 'effort', 'brief', 'reason', 'account_change', 'owner_situation',
-                           'technical_work', 'reply', 'recall_query']}, optional=('recall_query',))
+                           'technical_work', 'reply', 'recall_query', 'acknowledgement']},
+              optional=('recall_query', 'acknowledgement'))
     if ask_location:
         # #1293: required with "" for none, as strict structured outputs need every property listed.
         schema['properties'].update(ask_location={'type': 'string'}, location_button={'type': 'string'})
@@ -912,7 +915,7 @@ class Attempt:
     __slots__ = ('number', 'worker', 'model', 'notes', 'lens', 'sections', 'reason', 'planned',
                  'fallback', 'digest', 'signature', 'account_change', 'owner_situation', 'technical_work',
                  'lifted_from', 'ask_location', 'location_button', 'effort', 'unlisted_model', 'steer', 'context_digest',
-                 'preview', 'shown_preview', 'corrections', 'told', 'reply', 'recall_query', 'plan_reading')
+                 'preview', 'shown_preview', 'corrections', 'told', 'reply', 'acknowledgement', 'recall_query', 'plan_reading')
 
     def __init__(self, number, worker, *, model='', notes='', reason='', planned=False, fallback='', effort='', lens='', recall_query=''):
         self.number, self.worker, self.model = number, worker, model
@@ -943,6 +946,7 @@ class Attempt:
         #: #407: the first plan's owner-facing preview (``plan_preview``), or None.
         self.preview = None
         self.reply = ''
+        self.acknowledgement = ''
         #: #407: the preview text the owner was actually sent, which the brief then names, or "".
         self.shown_preview = ''
         #: #428: the owner's own words that steered this Work before the attempt was planned.
@@ -1496,6 +1500,9 @@ class Orchestration:
         attempt.reply = (self._redact(data['reply']).strip()[:REPLY_CHARS]
                          if number == 1 and not data.get('ask_location', '').strip()
                          and not plan_preview(data.get('preview')) else '')
+        acknowledgement = data.get('acknowledgement')
+        if number == 1 and not data['reply'].strip() and isinstance(acknowledgement, str):
+            attempt.acknowledgement = one_line(self._redact(acknowledgement), MAX_ACKNOWLEDGEMENT_CHARS)
         attempt.unlisted_model = unlisted
         attempt.account_change, attempt.lifted_from = account_change, lifted_from
         attempt.owner_situation = owner_situation
