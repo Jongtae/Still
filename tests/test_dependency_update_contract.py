@@ -10,7 +10,7 @@ from packaging.requirements import Requirement
 
 ROOT = Path(__file__).resolve().parents[1]
 UV_VERSION = "0.11.33"
-SETUP_UV_REF = "68559e99cc807c1eb7e9238fd43a15bba460eec2"
+SETUP_UV_REF = "1db35dd8eee11c5894872e0b383ae6c406cf738d"
 MCP_VERSION = "2.3.0"
 
 
