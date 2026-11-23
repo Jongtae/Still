@@ -596,6 +596,47 @@ class Delivery(IMessageCase):
         self.assertEqual(self.delivery(), 'unknown')
         self.assertEqual(self.send_states()[-1], 'unknown')
 
+    def test_an_error_after_the_window_still_shows_the_failure(self):
+        # The sidecar keeps re-reading a row for longer than the surface waits: an error that Messages
+        # sets after the window is still the truth about that send (review of #1179).
+        self.service.deliver_one()
+        echo = self.sidecar.from_me(OWNER, ANSWER, sent=True, delivered=False)
+        self.surface.receive()
+        later = time.time() + DELIVERY_WINDOW_SECONDS + 5
+        self.surface.receive(now=later)
+        self.assertEqual(self.send_states()[-1], 'unknown')
+        self.sidecar.again(echo, error=22)
+        self.surface.receive(now=later + 1)
+        self.assertEqual(self.send_states()[-1], 'failed')
+        self.assertEqual(self.delivery(), 'unknown', 'still never recorded as delivered, and never resent')
+        self.assertEqual(self.surface.status()['send_failure'], msg('imessage.send_not_delivered'))
+        self.service.deliver_one()
+        self.assertEqual(len(self.answer_sends()), 1)
+
+    def test_a_late_delivery_receipt_does_not_reopen_an_unknown_send(self):
+        self.service.deliver_one()
+        echo = self.sidecar.from_me(OWNER, ANSWER, sent=True, delivered=False)
+        self.surface.receive()
+        later = time.time() + DELIVERY_WINDOW_SECONDS + 5
+        self.surface.receive(now=later)
+        self.sidecar.again(echo, delivered=True)
+        self.surface.receive(now=later + 1)
+        self.assertEqual((self.send_states()[-1], self.delivery()), ('unknown', 'unknown'))
+
+    def test_a_failure_of_an_earlier_pairing_is_not_shown_after_repairing_or_disconnect(self):
+        self.service.deliver_one()
+        self.sidecar.from_me(OWNER, ANSWER, sent=False, delivered=False, error=22)
+        self.surface.receive()
+        self.assertTrue(self.surface.status()['send_failure'])
+        self.pair()
+        self.assertEqual(self.surface.status()['send_failure'], '', 'a new pairing starts without the old failure')
+        self.service.deliver_one()
+        self.sidecar.from_me(OWNER, msg('imessage.connected_hello'), sent=False, delivered=False, error=22)
+        self.surface.receive()
+        self.assertTrue(self.surface.status()['send_failure'])
+        self.surface.disconnect()
+        self.assertEqual(self.surface.status()['send_failure'], '')
+
     def test_an_echo_without_delivery_flags_proves_nothing(self):
         self.service.deliver_one()
         self.sidecar.from_me(OWNER, ANSWER, flags=False)

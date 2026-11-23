@@ -860,3 +860,24 @@ test('a refused send looks up no chat', async () => {
   assert.deepEqual(kit.jobs, []);
   await sidecar.stop();
 });
+
+test('an iMessage chat is preferred over a more recent SMS chat with the same handle', async () => {
+  const kit = chatKit([
+    chat(`SMS;-;${OWNER}`, { service: 'SMS', lastMessageAt: new Date(2_000) }),
+    chat(`any;-;${OWNER}`, { service: 'iMessage', lastMessageAt: new Date(1_000) }),
+  ]);
+  const sidecar = await start(kit);
+  await sidecar.send({ op: 'scope', mode: 'paired', handle: OWNER, since_ms: 0 });
+  await sidecar.send({ op: 'send', id: 'r1', to: OWNER, text: 'hi' });
+  assert.deepEqual(kit.jobs.map((job) => job.target.identifier), [`any;-;${OWNER}`]);
+  await sidecar.stop();
+});
+
+test('a 1:1 chat on another service is still used when no iMessage chat exists', async () => {
+  const kit = chatKit([chat(`SMS;-;${OWNER}`, { service: 'SMS' })]);
+  const sidecar = await start(kit);
+  await sidecar.send({ op: 'scope', mode: 'paired', handle: OWNER, since_ms: 0 });
+  await sidecar.send({ op: 'send', id: 'r1', to: OWNER, text: 'hi' });
+  assert.deepEqual(kit.jobs.map((job) => job.target.identifier), [`SMS;-;${OWNER}`]);
+  await sidecar.stop();
+});
