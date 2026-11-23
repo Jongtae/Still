@@ -20,6 +20,7 @@ No live model, browser engine, account or site is used.  A live run of the
 same scenarios is documented in ``evals/README.md`` and is not performed here.
 """
 import json
+import types
 import os
 import subprocess
 import sys
@@ -318,7 +319,7 @@ def still(tmp_path, monkeypatch, world):
     """
     opened = []
 
-    def make(task, judged=press_effect):
+    def make(task, judged=press_effect, requested=None):
         shop_world = world(task)
         reach().apply(bs, worlds.browser_origins(shop_world), setattr=monkeypatch.setattr)
         drivers = []
@@ -347,6 +348,8 @@ def still(tmp_path, monkeypatch, world):
                             finish('done', 'k', summary='Your cart is updated.')]
 
         def goal(context, _proposition):
+            if context.purpose == 'press-requested' and requested is not None:
+                return BinaryDecision(OUTCOME_DECIDED, requested(context.facts), fixture_confidence())
             if context.purpose != 'goal-reached':
                 return None
             return BinaryDecision(OUTCOME_DECIDED, shop_world.evaluate()['passed'], fixture_confidence())
@@ -388,8 +391,8 @@ def steps_for(task, shop_world):
     return calls
 
 
-def run(still, task, judged=press_effect):
-    return still(task, judged)
+def run(still, task, judged=press_effect, requested=None):
+    return still(task, judged, requested)
 
 
 @pytest.mark.parametrize('task', ['recipe-to-cart', 'outside-then-add', 'clear-then-add'])
@@ -420,6 +423,109 @@ def test_a_press_judged_irreversible_still_waits_and_the_cart_stays_empty(still)
     assert service._browser_request(job['id'])['state'] == 'requested'
     assert shop_world.state.snapshot()['cart'] == {} and job['status'] != 'succeeded'
     assert presses(drivers) == []
+
+
+def emptying_is_irreversible(context, candidates, question):
+    """The press judgment as a real Judgment AI answers it: emptying a cart deletes stored state."""
+    if context.purpose != 'press-effect':
+        return None
+    name = context.facts['element_name']
+    choice = 'irreversible' if name == 'Empty cart' else 'reversible' if name.startswith('Add to cart') else 'read'
+    return SelectionDecision(OUTCOME_DECIDED, choice, candidates, fixture_confidence())
+
+
+def asked_to_empty(facts):
+    """A scripted press-requested judgment: the owner's own words asked to empty the cart."""
+    # The judgment sees where the press happens, so another site's Empty cart can be told apart (#1159 review).
+    assert facts['page'].startswith('http://127.0.0.1:') and facts['page'].endswith('/cart'), facts['page']
+    return facts['element_name'] == 'Empty cart' and 'Empty my cart' in facts['owner_message']
+
+
+def test_an_irreversible_press_the_owner_asked_for_needs_no_second_approval(still):
+    # #1158 (owner decision 2026-11-23): "empty my cart" is the owner's approval of the Empty cart press.
+    shop_world, service, job, drivers = run(still, 'clear-then-add', judged=emptying_is_irreversible,
+                                            requested=asked_to_empty)
+    assert service._browser_request(job['id']) is None, 'the owner was asked again for a press they asked for'
+    assert shop_world.evaluate()['passed'] and job['status'] == 'succeeded'
+    with service.store.db() as db:
+        rows = db.execute("SELECT detail FROM tool_events WHERE job_id=? AND tool='self_set_write'",
+                          (job['id'],)).fetchall()
+    assert {json.loads(row['detail'])['authorized_by'] for row in rows} == {'owner-request', 'reversible'}
+
+
+@pytest.mark.parametrize('requested', [None, lambda facts: False])
+def test_an_irreversible_press_the_owner_did_not_ask_for_still_waits(still, requested):
+    # No judgment (unavailable) or a "no": the request does not stand as approval, nothing is emptied.
+    shop_world, service, job, drivers = run(still, 'clear-then-add', judged=emptying_is_irreversible,
+                                            requested=requested)
+    assert service._browser_request(job['id'])['state'] == 'requested'
+    assert shop_world.state.snapshot()['cart'] and job['status'] != 'succeeded'
+
+
+def test_the_owner_request_judgment_reads_the_owners_corrections(still, monkeypatch):
+    # #1159 review: a correction made while the Work runs is part of what the owner asked; the latest wins.
+    seen = []
+    monkeypatch.setattr(QuickStore, 'work_steer_texts', lambda self, job_id: ['Keep the cart as it is; only add milk.'])
+
+    def keep_the_cart(facts):
+        seen.append(facts['owner_message'])
+        return 'Keep the cart' not in facts['owner_message']
+
+    shop_world, service, job, drivers = run(still, 'clear-then-add', judged=emptying_is_irreversible,
+                                            requested=keep_the_cart)
+    assert seen and 'Empty my cart' in seen[0] and seen[0].rstrip().endswith('Keep the cart as it is; only add milk.')
+    assert service._browser_request(job['id'])['state'] == 'requested'
+
+
+def test_a_correction_after_the_owner_request_approval_voids_it_before_dispatch(tmp_path):
+    from personal_agent import self_set_writes
+    from personal_agent.agent_runtime import ToolError
+    store = QuickStore(tmp_path / 'state')
+    job_id = store.enqueue('Empty my cart.', 'steer-void', owner_typed=True)
+    ticket = {'digest': 'd', 'allowance': False, 'authorized_by': 'owner-request', 'owner_steers': 0}
+    with store.db() as db:
+        ticket['event'] = db.execute('INSERT INTO tool_events(job_id,tool,status,detail,created) VALUES (?,?,?,?,?)',
+                                     (job_id, self_set_writes.ACTION, 'dispatching', json.dumps(ticket), 0)).lastrowid
+    service = types.SimpleNamespace(store=store, work_stopped=lambda work_id: False)
+    job = {'id': job_id}
+    with store.db() as db:
+        self_set_writes.recheck(service, job, ticket, db=db)  # no correction yet: the ticket stands
+    with store.db() as db:
+        db.execute('INSERT INTO work_steers(source_job_id,job_id,content,created) VALUES (?,?,?,?)',
+                   ('later', job_id, 'Keep the cart.', 1))
+    with pytest.raises(ToolError) as refused, store.db() as db:
+        self_set_writes.recheck(service, job, ticket, db=db)
+    assert refused.value.code == 'allowance_changed'
+
+
+def test_a_press_state_too_large_to_show_whole_falls_back_to_explicit_approval(still, monkeypatch):
+    # #1159 review: a value cut to fit could hide the recipient or record; the owner is asked instead.
+    from personal_agent import self_set_writes
+    monkeypatch.setattr(self_set_writes, 'PRESS_REQUESTED_VALUES_LIMIT', -1)
+    asked = []
+    shop_world, service, job, drivers = run(still, 'clear-then-add', judged=emptying_is_irreversible,
+                                            requested=lambda facts: asked.append(facts) or True)
+    assert asked == [] and service._browser_request(job['id'])['state'] == 'requested'
+
+
+def adding_is_a_payment(context, candidates, question):
+    if context.purpose != 'press-effect':
+        return None
+    choice = 'payment' if context.facts['element_name'].startswith('Add to cart') else 'read'
+    return SelectionDecision(OUTCOME_DECIDED, choice, candidates, fixture_confidence())
+
+
+def test_a_payment_press_still_waits_even_if_the_owner_asked(still):
+    asked = []
+
+    def records(facts):
+        asked.append(facts['element_name'])
+        return True
+
+    shop_world, service, job, drivers = run(still, 'recipe-to-cart', judged=adding_is_a_payment, requested=records)
+    assert asked == [], 'a payment press reached the owner-request judgment'
+    assert service._browser_request(job['id'])['state'] == 'requested'
+    assert shop_world.state.snapshot()['cart'] == {} and shop_world.state.snapshot()['orders'] == []
 
 
 def test_a_sign_in_wall_mid_flow_asks_the_owner_and_types_nothing(still):
