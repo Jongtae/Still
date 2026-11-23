@@ -84,6 +84,8 @@ class ConversationSurface(ABC):
     #: Short stable name of the surface (log and prompt wording, never a branch).
     name = ''
     capabilities = SurfaceCapabilities()
+    #: Optional destination disclosed in a Work's information-use record.
+    information_route = None
     #: #213: the prefix of every ``jobs.channel`` value this surface creates (any pairing generation).
     #: A surface claims, delivers and cancels only Work on its own channels, never another surface's.
     channel_prefix = ''
@@ -217,19 +219,19 @@ class ConversationSurface(ABC):
 SURFACE_NAMES = ('telegram', 'mattermost', 'slack', 'terminal', 'imessage')
 
 
-def registered_surfaces(service):
-    """The registered surface implementations, including for store-only context readers.
-
-    Constructors and pairing identity reads require only ``service.store.config``;
-    observation readers supply that method from their existing SQLite snapshot."""
+def registered_surface_classes():
+    """The registered implementations, without constructing any surfaces."""
     from .telegram_surface import TelegramSurface
     from .mattermost_surface import MattermostSurface
     from .slack_surface import SlackSurface
     from .terminal_surface import TerminalSurface
     from .imessage_surface import IMessageSurface
-    return (TelegramSurface(service), MattermostSurface(service), SlackSurface(service), TerminalSurface(service),
-            IMessageSurface(service))
+    return (TelegramSurface, MattermostSurface, SlackSurface, TerminalSurface, IMessageSurface)
 
+
+def registered_surfaces(service):
+    """The registered surface implementations for a service or store-only context reader."""
+    return tuple(surface(service) for surface in registered_surface_classes())
 
 
 def surface_conversation(channel, chat_id):

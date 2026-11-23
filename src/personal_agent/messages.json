@@ -1037,6 +1037,12 @@
   "ja": "以前の回答の情報利用記録",
   "zh": "之前回答的信息使用记录"
  },
+ "information_use.conversation_destination": {
+  "ko": "- 대화 채널: {route}",
+  "en": "- Conversation channel: {route}",
+  "ja": "- 会話チャンネル: {route}",
+  "zh": "- 对话渠道：{route}"
+ },
  "information_use.browser_destinations": {
   "ko": "- 브라우저로 연 곳: {hosts}",
   "en": "- Opened in the browser: {hosts}",
@@ -7582,11 +7588,155 @@
   "ja": "リアクションした項目はすでに処理済みか、もう返答を待っていません。",
   "zh": "你回应的项目已处理或不再等待回复。"
  },
+ "imessage.company_approved_hint": {
+  "ko": "회사에서 이 iMessage 연결을 승인했을 때만 켜세요. 끄면 회사 모드에서 iMessage를 멈춰요.",
+  "en": "Turn this on only if your company approved this iMessage connection. When off, iMessage pauses in work mode.",
+  "ja": "会社がこの iMessage 接続を承認した場合だけオンにしてください。オフにすると、会社モード中は iMessage が停止します。",
+  "zh": "仅在公司批准此 iMessage 连接时开启。关闭后，iMessage 会在工作模式下暂停。"
+ },
  "imessage.receive_failed": {
   "ko": "iMessage를 받지 못했어요. Mac의 Still에서 연결을 확인해 주세요.",
   "en": "Could not receive iMessages. Check the connection in Still on your Mac.",
   "ja": "iMessage を受信できませんでした。Mac の Still で接続を確認してください。",
   "zh": "无法接收 iMessage。请在 Mac 上的 Still 中检查连接。"
+ },
+ "imessage.no_disk_access": {
+  "ko": "시스템 설정 → 개인정보 보호 및 보안 → 전체 디스크 접근 권한에서 {app}을(를) 허용한 뒤 다시 시도하세요.",
+  "en": "Allow {app} in System Settings → Privacy & Security → Full Disk Access, then try again.",
+  "ja": "システム設定 → プライバシーとセキュリティ → フルディスクアクセスで {app} を許可してから、もう一度お試しください。",
+  "zh": "在系统设置 → 隐私与安全性 → 完全磁盘访问权限中允许 {app}，然后重试。"
+ },
+ "imessage.no_disk_access_uncertain": {
+  "ko": "Still이 어느 앱에 권한이 필요한지 확실히 알아내지 못했어요. 시스템 설정 → 개인정보 보호 및 보안 → 전체 디스크 접근 권한에서 Still을 실행한 앱(터미널 등)이나 {app}을(를) 허용한 뒤 다시 시도하세요.",
+  "en": "Still could not tell for sure which app needs access. In System Settings → Privacy & Security → Full Disk Access, allow the app that runs Still (such as Terminal) or {app}, then try again.",
+  "ja": "Still はどのアプリに権限が必要か確定できませんでした。システム設定 → プライバシーとセキュリティ → フルディスクアクセスで、Still を実行しているアプリ（ターミナルなど）または {app} を許可してから、もう一度お試しください。",
+  "zh": "Still 无法确定需要授权的是哪个应用。请在系统设置 → 隐私与安全性 → 完全磁盘访问权限中允许运行 Still 的应用（如终端）或 {app}，然后重试。"
+ },
+ "imessage.messages_not_signed_in": {
+  "ko": "이 Mac의 메시지 앱에 Still용 Apple ID로 로그인한 뒤 다시 시도하세요.",
+  "en": "Sign in to Messages on this Mac with the Apple ID for Still, then try again.",
+  "ja": "この Mac のメッセージに Still 用の Apple ID でサインインしてから、もう一度お試しください。",
+  "zh": "在这台 Mac 的“信息”中登录 Still 专用的 Apple ID，然后重试。"
+ },
+ "imessage.db_unreadable": {
+  "ko": "메시지 기록을 읽을 수 없어요. 이 Mac에서 메시지 앱이 열리는지 확인한 뒤 다시 시도하세요.",
+  "en": "Still could not read the message history. Check that Messages opens on this Mac, then try again.",
+  "ja": "メッセージ履歴を読み取れませんでした。この Mac でメッセージを開けることを確認して、もう一度お試しください。",
+  "zh": "Still 无法读取信息记录。请确认这台 Mac 可以打开“信息”，然后重试。"
+ },
+ "imessage.unsupported_platform": {
+  "ko": "iMessage 연결은 지원되는 Mac에서만 사용할 수 있어요.",
+  "en": "The iMessage connection is available on supported Macs.",
+  "ja": "iMessage 接続は対応する Mac で利用できます。",
+  "zh": "iMessage 连接适用于受支持的 Mac。"
+ },
+ "imessage.node_unavailable": {
+  "ko": "iMessage에 필요한 Node.js를 준비하지 못했어요. 인터넷 연결을 확인한 뒤 다시 시도하세요.",
+  "en": "Still could not set up Node.js for iMessage. Check your internet connection, then try again.",
+  "ja": "iMessage に必要な Node.js を準備できませんでした。インターネット接続を確認して、もう一度お試しください。",
+  "zh": "Still 无法为 iMessage 准备 Node.js。请检查网络连接，然后重试。"
+ },
+ "imessage.integrity_mismatch": {
+  "ko": "iMessage 연결에 필요한 파일을 확인하지 못했어요. Still을 업데이트한 뒤 다시 시도하세요.",
+  "en": "Still could not verify the files needed for iMessage. Update Still, then try again.",
+  "ja": "iMessage 接続に必要なファイルを検証できませんでした。Still を更新してから、もう一度お試しください。",
+  "zh": "Still 无法验证 iMessage 所需的文件。请更新 Still，然后重试。"
+ },
+ "imessage.install_failed": {
+  "ko": "iMessage 연결에 필요한 파일을 설치하지 못했어요. 인터넷 연결과 여유 공간을 확인한 뒤 다시 시도하세요.",
+  "en": "Still could not install the files needed for iMessage. Check your internet connection and available disk space, then try again.",
+  "ja": "iMessage 接続に必要なファイルをインストールできませんでした。インターネット接続と空き容量を確認して、もう一度お試しください。",
+  "zh": "Still 无法安装 iMessage 所需的文件。请检查网络连接和可用磁盘空间，然后重试。"
+ },
+ "imessage.not_ready": {
+  "ko": "iMessage 연결을 시작하지 못했어요. 잠시 뒤 다시 시도하세요.",
+  "en": "Still could not start the iMessage connection. Try again in a moment.",
+  "ja": "iMessage 接続を開始できませんでした。しばらくしてから、もう一度お試しください。",
+  "zh": "Still 无法启动 iMessage 连接。请稍后重试。"
+ },
+ "imessage.exited": {
+  "ko": "iMessage 연결이 끊겼어요. 이 Mac의 메시지 앱을 확인한 뒤 다시 시도하세요.",
+  "en": "The iMessage connection closed. Check Messages on this Mac, then try again.",
+  "ja": "iMessage 接続が切れました。この Mac のメッセージを確認して、もう一度お試しください。",
+  "zh": "iMessage 连接已断开。请检查这台 Mac 上的“信息”，然后重试。"
+ },
+ "imessage.bad_request": {
+  "ko": "메시지 앱이 iMessage 연결 요청을 처리하지 못했어요. 다시 시도하세요.",
+  "en": "Messages could not process the iMessage connection request. Try again.",
+  "ja": "メッセージで iMessage の接続リクエストを処理できませんでした。もう一度お試しください。",
+  "zh": "“信息”无法处理 iMessage 连接请求。请重试。"
+ },
+ "imessage.local_only": {
+  "ko": "iMessage 연결은 이 Mac의 Still 설정에서만 바꿀 수 있어요.",
+  "en": "Change your iMessage connection in Still Settings on this Mac.",
+  "ja": "iMessage 接続の変更は、この Mac の Still 設定で行ってください。",
+  "zh": "请在这台 Mac 上的 Still 设置中更改 iMessage 连接。"
+ },
+ "imessage.setup": {
+  "ko": "iMessage 연결 설정",
+  "en": "Set up iMessage",
+  "ja": "iMessage の接続設定",
+  "zh": "设置 iMessage 连接"
+ },
+ "imessage.setup_account": {
+  "ko": "Still에서 쓸 별도의 Apple ID를 만드세요.",
+  "en": "Create a separate Apple ID for Still.",
+  "ja": "Still 用の Apple ID を別に作成してください。",
+  "zh": "为 Still 创建单独的 Apple ID。"
+ },
+ "imessage.setup_sign_in": {
+  "ko": "이 Mac의 메시지 앱에 그 Apple ID로 로그인하세요.",
+  "en": "Sign in to Messages on this Mac with that Apple ID.",
+  "ja": "この Mac のメッセージにその Apple ID でサインインしてください。",
+  "zh": "用该 Apple ID 登录这台 Mac 上的“信息”。"
+ },
+ "imessage.setup_disk_access": {
+  "ko": "시스템 설정 → 개인정보 보호 및 보안 → 전체 디스크 접근 권한에서 Still을 실행한 앱을 허용하세요. 권한이 필요하면 위에 앱 이름이 표시돼요.",
+  "en": "In System Settings → Privacy & Security → Full Disk Access, allow the app that launched Still. Its name appears above when permission is needed.",
+  "ja": "システム設定 → プライバシーとセキュリティ → フルディスクアクセスで、Still を起動したアプリを許可してください。許可が必要なときは上にアプリ名が表示されます。",
+  "zh": "在系统设置 → 隐私与安全性 → 完全磁盘访问权限中，允许启动 Still 的应用。需要授权时，上方会显示应用名称。"
+ },
+ "imessage.pair": {
+  "ko": "연결 코드 받기",
+  "en": "Get pairing code",
+  "ja": "接続コードを取得",
+  "zh": "获取配对码"
+ },
+ "imessage.cancel_pair": {
+  "ko": "코드 취소",
+  "en": "Cancel code",
+  "ja": "コードを取り消す",
+  "zh": "取消配对码"
+ },
+ "imessage.starting": {
+  "ko": "iMessage 시작 중…",
+  "en": "Starting iMessage…",
+  "ja": "iMessage を起動中…",
+  "zh": "正在启动 iMessage…"
+ },
+ "imessage.pairing": {
+  "ko": "연결 코드 대기 중",
+  "en": "Waiting for pairing code",
+  "ja": "接続コードを待機中",
+  "zh": "正在等待配对码"
+ },
+ "imessage.send_code": {
+  "ko": "iPhone에서 이 Mac의 메시지 앱에 로그인한 별도의 Apple ID로 이 코드를 보내세요.",
+  "en": "Text this code from your iPhone to the separate Apple ID signed in to Messages on this Mac.",
+  "ja": "iPhone から、この Mac のメッセージにサインインしている別の Apple ID 宛てに、このコードを送信してください。",
+  "zh": "用你的 iPhone 把此代码发给这台 Mac 上“信息”所登录的独立 Apple ID。"
+ },
+ "imessage.code_expiry": {
+  "ko": "만료 시각 {time}",
+  "en": "Expires at {time}",
+  "ja": "有効期限 {time}",
+  "zh": "{time} 到期"
+ },
+ "imessage.disconnect_confirm": {
+  "ko": "iMessage 연결을 해제할까요? 다시 연결하려면 새 코드가 필요해요.",
+  "en": "Disconnect iMessage? You will need a new code to reconnect.",
+  "ja": "iMessage の接続を解除しますか？再接続には新しいコードが必要です。",
+  "zh": "要断开 iMessage 吗？重新连接需要新的配对码。"
  },
  "slack.not_connected": {
   "ko": "Slack이 연결되어 있지 않아요. 설정 > 외부 연결에서 연결해 주세요.",
