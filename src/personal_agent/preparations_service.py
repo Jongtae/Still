@@ -2927,7 +2927,9 @@ class PreparationsService:
         with self.service.store.db() as db:
             rows=db.execute('SELECT detail FROM tool_events WHERE job_id=? AND tool=? ORDER BY id DESC',(work_id,el.READ_EVENT)).fetchall()
         for row in rows:
-            read=json.loads(row['detail']).get('evidence') or {}
+            try:read=json.loads(row['detail']).get('evidence') or {}
+            except (TypeError,ValueError,AttributeError):continue
+            if not isinstance(read,dict):continue
             if read.get('held') and read.get('line_id'):
                 brief=self.service.lines.readable(read['line_id'])
                 if brief and brief['state']==el.STATE_ACTIVE:return read['line_id']
