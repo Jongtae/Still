@@ -85,6 +85,8 @@ class IMessageSurface(DirectMessageSurface):
     REQUEST_KEY_PREFIX, MESSAGES = 'im', 'imessage'
     NOT_SENT, ERROR = IMessageNotSent, IMessageError
     POST_REPLY_STATUS = 'sending'
+    # A notice is confirmed by its echo, so watch bookkeeping waits for ``_observe_echo``.
+    NOTICE_CONFIRMED_ON_POST = False
     AT_THE_MAC = {'browser_approval_needed': 'imessage.approve_at_mac',
                   'context_approval_needed': 'surface.answer_at_mac', 'browser_login_needed': 'surface.answer_at_mac'}
 
@@ -358,10 +360,14 @@ class IMessageSurface(DirectMessageSurface):
                 db.execute('INSERT INTO imessage_turns(job_id,owner,created) VALUES (?,?,?) ON CONFLICT(job_id) DO NOTHING',
                            (send['job_id'], cfg['owner_user_id'], now))
                 db.execute('UPDATE imessage_turns SET reply_post_id=? WHERE job_id=?', (guid, send['job_id']))
-            if send['notification_id']:
-                db.execute("UPDATE telegram_notifications SET message_id=? WHERE id=? AND surface='imessage' "
-                           "AND state IN ('sent','memory_listed')", (guid, send['notification_id']))
+            notice = None
+            if send['notification_id'] and db.execute(
+                    "UPDATE telegram_notifications SET message_id=? WHERE id=? AND surface='imessage' "
+                    "AND state IN ('sent','memory_listed')", (guid, send['notification_id'])).rowcount:
+                notice = db.execute('SELECT * FROM telegram_notifications WHERE id=?', (send['notification_id'],)).fetchone()
             db.execute("UPDATE imessage_sends SET state='delivered',settled=? WHERE id=?", (now, send['id']))
+        if notice is not None:
+            self._notice_confirmed(dict(notice))
         if send['job_id']:
             try:
                 job = store.job(send['job_id'])

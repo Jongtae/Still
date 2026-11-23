@@ -311,6 +311,9 @@ class DirectMessageSurface(ConversationSurface):
     NOT_SENT = ERROR = ProviderError
     #: Delivery status after a successful terminal post. Some transports confirm it asynchronously.
     POST_REPLY_STATUS = 'sent'
+    #: Whether a returned notice post is a confirmed send. When False the surface calls
+    #: ``_notice_confirmed`` itself once the transport confirms delivery.
+    NOTICE_CONFIRMED_ON_POST = True
     #: What the owner does at the Mac for a notice kind this surface has no way to answer.
     AT_THE_MAC = {}
 
@@ -689,7 +692,6 @@ class DirectMessageSurface(ConversationSurface):
         if not notification:
             return False
         from .quickstart_service import MEMORY_PROMPT_KINDS, MEMORY_SAVED_KINDS
-        from . import preparations as prep
         with service.lock:
             with service.store.db() as db:
                 state = db.execute('SELECT state FROM telegram_notifications WHERE id=?', (notification['id'],)).fetchone()
@@ -724,22 +726,30 @@ class DirectMessageSurface(ConversationSurface):
                     notification['id'], 'memory_listed' if listed else 'sent', post_id,
                     json.dumps(memory_prompt) if kind in MEMORY_PROMPT_KINDS else
                     json.dumps(memory_saved) if kind in MEMORY_SAVED_KINDS else None, delivered=True)
-                if kind == prep.NOTIFY_KIND:
-                    # #306 review: as on Telegram (#719), only a confirmed send is what the owner was last
-                    # told, so an unchanged result of the next watch run is not told again.
-                    try:
-                        job = service.store.job(notification['job_id'])
-                        service.preparations.record_notified(notification['job_id'], notification['fingerprint'],
-                                                             service.scrub_prepared_answer(job) if job else '',
-                                                             service.preparations.clock())
-                    except Exception as exc:
-                        LOG.warning('watch notification record failed work=%s kind=%s', notification['job_id'],
-                                    type(exc).__name__)
+                if self.NOTICE_CONFIRMED_ON_POST:
+                    self._notice_confirmed(notification)
             except self.NOT_SENT:
                 service.store.update_notification(notification['id'], 'queued')
             except ProviderError:
                 service.store.update_notification(notification['id'], 'unknown')
         return True
+
+    def _notice_confirmed(self, notification):
+        """Bookkeeping that holds only once the owner was actually sent ``notification``."""
+        from . import preparations as prep
+        if notification['kind'] != prep.NOTIFY_KIND:
+            return
+        service = self.service
+        # #306 review: as on Telegram (#719), only a confirmed send is what the owner was last
+        # told, so an unchanged result of the next watch run is not told again.
+        try:
+            job = service.store.job(notification['job_id'])
+            service.preparations.record_notified(notification['job_id'], notification['fingerprint'],
+                                                 service.scrub_prepared_answer(job) if job else '',
+                                                 service.preparations.clock())
+        except Exception as exc:
+            LOG.warning('watch notification record failed work=%s kind=%s', notification['job_id'],
+                        type(exc).__name__)
 
     def cancel_pending_deliveries(self):
         service = self.service

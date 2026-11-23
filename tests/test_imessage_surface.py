@@ -386,6 +386,37 @@ class Delivery(IMessageCase):
         self.assertEqual(self.surface.reply_message(self.work['id'], 'handle:' + OWNER), echo['guid'])
         self.assertEqual(len(self.im_jobs()), 1, 'the echo is not ingested')
 
+    def watch_notice(self):
+        """A watch-result notice (``preparation_notify``) handed to the sidecar; returns its row and the spy."""
+        from personal_agent import preparations as prep
+        cfg = self.surface.config()
+        queued = self.store.queue_notification(self.work['id'], cfg['owner_user_id'], cfg['generation'],
+                                                        prep.NOTIFY_KIND, 'digest-1', surface='imessage')
+        recorded = mock.patch.object(self.service.preparations, 'record_notified').start()
+        self.addCleanup(mock.patch.stopall)
+        mock.patch('personal_agent.direct_message_surface.notice_binding', return_value={}).start()
+        mock.patch('personal_agent.direct_message_surface.notice_text', return_value='watch result').start()
+        while self.service.deliver_notification():
+            pass
+        return self.store.notification(queued['id']), recorded
+
+    def test_a_watch_notice_is_recorded_as_told_only_when_its_echo_arrives(self):
+        notice, recorded = self.watch_notice()
+        self.assertEqual(self.sidecar.sends()[-1]['text'], 'watch result')
+        recorded.assert_not_called()
+        self.sidecar.from_me(OWNER, 'watch result')
+        self.surface.receive()
+        self.assertEqual(recorded.call_count, 1)
+        self.assertEqual(recorded.call_args.args[:2], (self.work['id'], 'digest-1'))
+
+    def test_a_watch_notice_without_its_echo_is_never_recorded_as_told(self):
+        notice, recorded = self.watch_notice()
+        self.surface.receive(now=time.time() + DELIVERY_WINDOW_SECONDS + 5)
+        self.assertEqual(self.store.notification(notice['id'])['state'], 'unknown')
+        self.sidecar.from_me(OWNER, 'watch result')      # a late echo proves nothing
+        self.surface.receive()
+        recorded.assert_not_called()
+
     def test_without_the_echo_the_send_becomes_unknown_and_is_never_resent(self):
         self.service.deliver_one()
         send = self.answer_sends()[0]
