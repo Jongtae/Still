@@ -36,6 +36,7 @@ from .telegram_locale import ai_text
 import hashlib
 import hmac
 import json
+import threading
 import time
 
 from .telegram_presence import (CONTROL_RETRY, WaitState, draft_frame, draft_id_for, render_telegram_html, reply_controls_markup,
@@ -1077,6 +1078,79 @@ class TelegramSurface(ConversationSurface):
                 try:service.telegram.edit_message_reply_markup(sender,message['message_id'],{'inline_keyboard':[]})
                 except ProviderError:pass
 
+    def _receive_secret_input(self, generation, sender, message_id, session, key, token):
+        from . import api_input, phone_input, secret_miniapp
+        from .telegram_locale import translate
+
+        service = self.service
+        orchestrator = service.settings_orchestrator
+
+        def paired():
+            cfg = service.store.config('telegram', {})
+            return not work_mode.active(service.store) and service._callback_authorized(
+                cfg, generation, sender, {'type': 'private', 'id': sender})
+
+        try:
+            # The initial keyboard can arrive before confirmation finishes settling the input wait.
+            with orchestrator._category_locks['api_connections']:
+                if not paired():
+                    return
+            reason, response = 'closed', msg('api_input.miniapp_closed')
+            retry = False
+            if session is not None and session.kind == phone_input.API_SLOT:
+                if session.expired():
+                    session.finish('expired')
+                elif (key is not None and service.phone_input_session() is session and session.miniapp_key is key
+                      and session.api_draft['channel'] == f'telegram:{generation}'):
+                    try:
+                        body = json.loads(key.open(token))
+                    except secret_miniapp.SecretMiniAppError as exc:
+                        reason = exc.reason
+                        if reason != 'used':
+                            session.finish('expired')
+                    else:
+                        if not paired():
+                            return
+                        try:
+                            response = api_input.submit(service, session, body)['response']
+                            reason = 'saved'
+                        except ValueError as exc:
+                            response = str(exc)
+                            if any(value and value in response for value in body.values()):
+                                response = msg('api_input.input_failed')
+                            reason, retry = 'submit_failed', True
+                        except Exception:
+                            response = msg('api_input.input_failed')
+                            reason, retry = 'submit_failed', True
+            LOG.info('secret mini app input %s', reason)
+            if not paired():
+                return
+            lang = phone_input.owner_language(service.store)
+            try:
+                service.telegram.call('sendMessage', {'chat_id': sender, 'text': translate(response, lang),
+                                                      'reply_markup': {'remove_keyboard': True}})
+            except ProviderError:
+                pass
+            if isinstance(message_id, int):
+                try:
+                    service.telegram.call('deleteMessage', {'chat_id': sender, 'message_id': message_id})
+                except ProviderError:
+                    pass
+            if retry and service.phone_input_session() is session and not session.expired():
+                row = orchestrator._drafts().get(session.api_draft['id']) or {}
+                if row.get('state') == 'awaiting-input':
+                    try:
+                        if session.miniapp_rearms < 3 and paired() and api_input.miniapp_available(service):
+                            api_input.send_miniapp(service, session)
+                        else:
+                            session.finish('expired')
+                    except Exception:
+                        session.finish('expired')
+                        LOG.info('secret mini app input retry_unavailable')
+        except Exception:
+            # The update and decrypted values are never attached to a poll or worker exception.
+            LOG.info('secret mini app input failed')
+
     def ingest_update(self, update, generation):
         service=self.service
         with service.lock:
@@ -1090,6 +1164,18 @@ class TelegramSurface(ConversationSurface):
             message=update['edited_message'] if edited else update.get('message',{})
             sender=message.get('from',{}).get('id')
             chat=message.get('chat',{})
+            if 'web_app_data' in message:
+                cfg['cursor']=update_id+1
+                service.store.put('telegram',cfg)
+                if service._callback_authorized(cfg,generation,sender,chat) and not work_mode.active(service.store):
+                    session=service.phone_input_session()
+                    key=session.miniapp_key if session is not None else None
+                    payload=message['web_app_data']
+                    args=(generation,sender,message.get('message_id'),session,key,
+                          payload.get('data') if isinstance(payload,dict) else None)
+                    threading.Thread(target=self._receive_secret_input,args=args,
+                                     name='agentos-telegram-secret-input',daemon=True).start()
+                return
             photo=message.get('photo') if not edited else None
             has_photo=isinstance(photo,list) and bool(photo)
             media_group_id=message.get('media_group_id') if has_photo else None

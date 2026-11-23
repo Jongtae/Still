@@ -20,7 +20,7 @@ from functools import wraps
 import unicodedata
 from collections import namedtuple
 from pathlib import Path
-from .providers import NOT_REPORTED, ModelResult, ProviderError
+from .providers import NOT_REPORTED, STATIC_PREFIX_KEY, ModelResult, ProviderError
 from .local_tools import LocalTools
 from .search_providers import ISO_COUNTRY_CODES, NATIVE_REASONS, describe_options, search_arguments
 from .document_reader import read as read_document, supported as supported_document, MAX_FILE_BYTES
@@ -475,7 +475,9 @@ SCHEDULE_PREPARATION_ARGUMENTS={
  'delivery':'send (the owner is told each time), keep (the owner is not told; results can be looked up on request), or when_needed (kind prepare: the owner is told only when a result needs them). Choose by when the owner needs to hear: a check whose value is hearing in time needs send or when_needed, not keep. Preserve the owner\'s explicit delivery choice.',
  'title':'For kind prepare, what the owner reads for the scheduled preparation or proposal (#393, #755), apart from goal: a short name in the owner\'s language (at most 60 characters).',
  'check':('A JSON object with the proven code_run code, hosts, secrets and timeout_seconds, plus every_seconds '
-  '(minimum 15, default 60). For prepare windows with until. Output wakes the AI; use no packages.'),
+  '(minimum 15, default 60). For prepare windows with until. Output wakes the AI; use no packages. '
+  'Print nothing when the condition is not met. In a check run, CHECKSTATEFILE is a JSON object (at most 16 KB) kept '
+  'between its runs and absent while you prove the code, so keep a hold duration or report-once state there.'),
  'replaces':('The id (from settings_read preparations) of an active preparation this one takes the place of, when the owner changes what an existing watch or schedule does (another target, a new plan, a different time) (#766). '
   'In a Work the owner started, Still stops it once this one is scheduled, so the two never run side by side and the new one need not wait for the old to end; say in your answer what was stopped. '
   'A scheduled run the owner steered may replace its own preparation this way. Omit it for an additional preparation.'),
@@ -6673,7 +6675,9 @@ def run_agent(adapter,config,key,history,system,capabilities,record,scope='main'
  judgment reads the same owner model the worker was given; None reads ``none``.
  ``definitions`` (#825) is ``capabilities.definitions()`` as the caller already
  materialised and recorded it, so discovery is not run a second time."""
- messages=[{'role':'system','content':POLICY+'\n'+system},*history]
+ # #1139: POLICY is the same on every Work, so the Anthropic request caches it for an hour;
+ # the owner context after it changes between Works.
+ messages=[{'role':'system','content':POLICY+'\n'+system,STATIC_PREFIX_KEY:len(POLICY)},*history]
  if definitions is None:definitions=capabilities.definitions()
  definitions=loop_definitions(definitions)
  specs={d['function']['name']:d['function']['parameters'] for d in definitions if d is not FINISH_DEFINITION}
@@ -6840,7 +6844,10 @@ def run_agent(adapter,config,key,history,system,capabilities,record,scope='main'
   capabilities.worker_identity={'route':'direct-api','model':requested or '',
                                 'observed_model':actual if actual!=NOT_REPORTED else ''}
   calls=message.get('tool_calls') or []
-  record('model','responded',json.dumps({'scope':scope,'model':actual,'requested_model':requested,'tool_calls':recorded_calls(calls,capabilities.tools,getattr(capabilities,'judgment_text',None)),'has_text':bool(message.get('content'))},ensure_ascii=False))
+  # #1139: the provider's reported token counts for this turn (numbers only), when it reported any.
+  usage=getattr(adapter,'last_usage',None)
+  record('model','responded',json.dumps({'scope':scope,'model':actual,'requested_model':requested,'tool_calls':recorded_calls(calls,capabilities.tools,getattr(capabilities,'judgment_text',None)),'has_text':bool(message.get('content')),
+   **({'usage':usage} if isinstance(usage,dict) and usage else {})},ensure_ascii=False))
   if not calls and not successful and not failed and not proposals and not checked_direct and not last_turn:
    checked_direct=True
    messages.append(message)

@@ -31,7 +31,7 @@ from html import escape
 from urllib.parse import quote
 
 from .https_tunnel import start_tunnel
-from . import telegram_locale, work_mode
+from . import secret_miniapp, telegram_locale, work_mode
 from .messages import msg
 from .work_mode import WorkModeRefused
 
@@ -91,6 +91,8 @@ class PhoneInput:
         self._issued = []
         self.process = None
         self.link = None
+        self.miniapp_key: secret_miniapp.OneTimeKey | None = None
+        self.miniapp_rearms = 0
         self.reason = None
         self._lock = threading.Lock()
         self._ended = threading.Event()
@@ -142,6 +144,20 @@ class PhoneInput:
         threading.Thread(target=self._watch, name='agentos-local-input', daemon=True).start()
         return self.link
 
+    def start_miniapp(self, link, key):
+        """Publish a fresh key for this session, keeping the original expiry on retries."""
+        with self._lock:
+            if not self.alive() or self.expired():
+                key.destroy()
+                raise PhoneInputError(msg('api_input.input_expired'))
+            previous = self.miniapp_key
+            if previous is not None:
+                previous.destroy()
+                self.miniapp_rearms += 1
+            self.link, self.miniapp_key = link, key
+        if previous is None:
+            threading.Thread(target=self._watch, name='agentos-miniapp-input', daemon=True).start()
+
     def alive(self):
         return not self._ended.is_set()
 
@@ -154,6 +170,9 @@ class PhoneInput:
             if self._ended.is_set():
                 return False
             self.reason = reason
+            if self.miniapp_key is not None:
+                self.miniapp_key.destroy()
+                self.miniapp_key = None
             self._ended.set()
         process, self.process = self.process, None
         if process is not None:

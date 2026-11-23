@@ -229,8 +229,13 @@ def free_port(start=18900, end=19900, taken=()):
         return reservation.port
 
 
-def sandbox_environment(data, base=None, src=SRC, telegram_root=None, engine_home=None, browser_origins=()):
+def sandbox_environment(data, base=None, src=SRC, telegram_root=None, engine_home=None, browser_origins=(),
+                        worker_bin=None):
     """The minimal environment of one sandbox server: no AgentOS_* or connector settings inherited.
+
+    ``worker_bin`` (#545) is the folder holding the eval's ``claude`` wrapper
+    (``worker_key.WorkerApi.install``), put first on ``PATH`` so Still starts its
+    Claude Code worker through it.  The API key itself is never in this environment.
 
     ``telegram_root`` is the eval's loopback Bot API stand-in (``fake_telegram``), when the run uses one.
     ``engine_home`` (``world_engine_home``) replaces ``HOME`` and ``CODEX_HOME`` for a world run.
@@ -243,6 +248,8 @@ def sandbox_environment(data, base=None, src=SRC, telegram_root=None, engine_hom
                   str(Path(env.get('HOME', str(Path.home()))) / '.local' / 'bin')]
     env['PATH'] = os.pathsep.join(dict.fromkeys([*base.get('PATH', '').split(os.pathsep), *extra_path, '/usr/bin', '/bin']))
     env['PATH'] = os.pathsep.join(item for item in env['PATH'].split(os.pathsep) if item)
+    if worker_bin:
+        env['PATH'] = os.pathsep.join([str(worker_bin), env['PATH']])
     env['PYTHONPATH'] = os.pathsep.join([str(SANDBOX_SITE), str(src)])
     env['AGENTOS_ENGINE_RUNS'] = str(Path(data) / 'engine-runs')
     env['PYTHONUNBUFFERED'] = '1'
@@ -416,7 +423,7 @@ class Sandbox:
     """
 
     def __init__(self, root, seed=None, port=None, slot=None, python=None, src=SRC, keep=False, start_timeout=60,
-                 telegram=None, world=None):
+                 telegram=None, world=None, worker_api=None):
         self.root = Path(root)
         self.seed = Path(seed).expanduser() if seed else None
         self.port = port
@@ -434,6 +441,11 @@ class Sandbox:
         self.world = world
         self.engine_home = None
         self.world_setup = None
+        #: ``worker_key.WorkerApi`` when this sandbox's Claude Code worker runs on the eval API key (#545).
+        self.worker_api = worker_api
+        self.worker_folder = None
+        #: ``worker_key.usage_totals`` of the last run, read when the sandbox stops.
+        self.worker_usage = None
         #: #1122: a browser world's origins; the sandbox browser may load these and nothing local else.
         self.browser_origins = ()
         self._port_reservation = None
@@ -497,10 +509,19 @@ class Sandbox:
             argv = [self.python, '-m', 'personal_agent.quickstart', 'start', '--host', '127.0.0.1',
                     '--port', str(self.port),
                     '--data', str(self.data), '--no-browser']
+            worker_bin = None
+            if self.worker_api is not None:
+                # Beside the data folder, never inside it: Still's store and its Works never see the key file.
+                self.worker_folder = (self.root / f'slot-{self.slot}.claude-api' if self.slot is not None
+                                      else Path(tempfile.mkdtemp(prefix='claude-api-', dir=self.root)))
+                # The CLI Still would find on the server's own PATH (its install-directory fallbacks too).
+                server_path = sandbox_environment(self.data, src=self.src, engine_home=self.engine_home)['PATH']
+                worker_bin = self.worker_api.install(self.worker_folder, search_path=server_path)
             self.log = open(self.data / 'server.log', 'ab')
             env = sandbox_environment(self.data, src=self.src,
                                       telegram_root=self.telegram.root if self.telegram is not None else None,
-                                      engine_home=self.engine_home, browser_origins=self.browser_origins)
+                                      engine_home=self.engine_home, browser_origins=self.browser_origins,
+                                      worker_bin=worker_bin)
             self.process = subprocess.Popen(argv, cwd=str(self.data), env=env,
                                             stdin=subprocess.DEVNULL, stdout=self.log, stderr=subprocess.STDOUT,
                                             start_new_session=True)
@@ -549,6 +570,11 @@ class Sandbox:
             if self.data and self.data.exists() and not self.keep:
                 shutil.rmtree(self.data, ignore_errors=True)
         finally:
+            if self.worker_folder is not None:
+                from .worker_key import remove, usage_totals
+                self.worker_usage = usage_totals(self.worker_folder)
+                remove(self.worker_folder)
+                self.worker_folder = None
             if self._port_reservation is not None:
                 self._port_reservation.close()
                 self._port_reservation = None
@@ -567,7 +593,7 @@ class SandboxPool:
 
     MAX_SLOTS = 16
 
-    def __init__(self, size=3, seed=None, root=None, keep=False, sandbox_factory=Sandbox):
+    def __init__(self, size=3, seed=None, root=None, keep=False, sandbox_factory=Sandbox, worker_api=None):
         if not 1 <= size <= self.MAX_SLOTS:
             raise ValueError(f'instances must be between 1 and {self.MAX_SLOTS}')
         self.size = size
@@ -575,6 +601,8 @@ class SandboxPool:
         self.root = Path(root) if root else eval_home() / 'sandboxes'
         self.keep = keep
         self.factory = sandbox_factory
+        #: #545: ``worker_key.WorkerApi`` for Claude Code sandboxes, or None (the subscription).
+        self.worker_api = worker_api
         self.slots = threading.BoundedSemaphore(size)
         self.lock = threading.Lock()
         self.ports = set()
@@ -626,7 +654,11 @@ class SandboxPool:
     def sandbox(self, worker=None, telegram=None, world=None):
         with self.slots:
             slot, reservation, box = None, None, None
+            api = self.worker_api if worker == 'claude-code' else None
             try:
+                if api is not None and not api.admits():
+                    raise SandboxError(f'the daily eval budget (USD {api.cap_usd:g}) has no room for another '
+                                       'Claude Code worker run')
                 with self.lock:
                     slot = self._claim_slot()
                     reservation = reserve_port(taken=self.ports)
@@ -634,7 +666,8 @@ class SandboxPool:
                     self.ports.update({port, port + 1})
                 box = self.factory(self.root, seed=self.seed, port=port, slot=slot, keep=self.keep,
                                    **({'telegram': telegram} if telegram is not None else {}),
-                                   **({'world': world} if world is not None else {}))
+                                   **({'world': world} if world is not None else {}),
+                                   **({'worker_api': api} if api is not None else {}))
                 box._port_reservation = reservation
                 box.cached = self.cached_judgment(slot, worker) if worker else None
                 box.start(config=box.cached)

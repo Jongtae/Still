@@ -154,13 +154,14 @@ jobs:
           version: '0.11.33'
 
       - name: Require the release commit's validate check to pass
-        timeout-minutes: 30
+        # #1150: as long as validate itself may run (45 minutes), plus its start.
+        timeout-minutes: 50
         env:
           GH_TOKEN: ${{ github.token }}
         shell: bash
         run: |
           set -euo pipefail
-          for _ in $(seq 1 55); do
+          for _ in $(seq 1 95); do
             result="$(gh api "repos/$GITHUB_REPOSITORY/commits/$COMMIT/check-runs?check_name=validate" \
               --jq '.check_runs | if length == 0 then "" else (max_by(.started_at) | "\(.status):\(.conclusion)") end')"
             case "$result" in

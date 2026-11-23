@@ -274,14 +274,14 @@ class ApiInput(PhoneInputServiceCase):
     def test_paired_phone_link_binds_the_original_owner_generation(self):
         from test_phone_input import CHAT
         self.pair()
+        self.service.secret_miniapp_available = lambda: False
         with self.store.db() as db:
             db.execute('UPDATE jobs SET channel=?,chat_id=? WHERE id=?', ('telegram:g1', CHAT, self.job['id']))
         self.job = self.store.job(self.job['id'])
         _, session, cookie = self.open_input()
-        self.assertEqual(len(self.tunnel.processes), 1)
-        delivered = [body for method, body in self.calls if method == 'sendMessage']
-        self.assertEqual(delivered[-1]['chat_id'], CHAT)
-        self.assertIn(session.link, delivered[-1]['text'])
+        self.assertFalse(self.tunnel.processes)
+        self.assertFalse([body for method, body in self.calls if method == 'sendMessage'])
+        self.assertTrue(session.link.startswith('http://localhost:'))
         self.store.put('telegram', {'enabled': True, 'user_id': CHAT, 'generation': 'g2'})
         self.assertEqual(self.submit(session, cookie)[0], 400)
         self.assertFalse(self.api.calls)

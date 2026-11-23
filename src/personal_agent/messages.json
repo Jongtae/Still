@@ -35,6 +35,12 @@
   "ja": "3回連続で失敗しました。",
   "zh": "已连续失败三次。"
  },
+ "checks.state_unsaved": {
+  "ko": "검사 상태를 저장하지 못해서 멈췄어요. 다시 켜면 이전 상태부터 이어서 확인해요.",
+  "en": "The check state could not be saved, so the check is paused. Resuming it continues from the earlier state.",
+  "ja": "チェックの状態を保存できなかったため、一時停止しました。再開すると以前の状態から確認を続けます。",
+  "zh": "无法保存检查状态，因此已暂停检查。恢复后会从之前的状态继续检查。"
+ },
  "checks.setup_missing": {
   "ko": "비밀값 묶음을 다시 연결해야 해요.",
   "en": "A secret set needs to be connected again.",
@@ -52,6 +58,18 @@
   "en": "The check contains an embedded credential.",
   "ja": "チェック内に直接記述された認証情報が見つかりました。",
   "zh": "检查中包含直接写入的凭据。"
+ },
+ "code_run.state_withheld": {
+  "ko": "실행 출력을 보여 주지 않았어요. 실행이 바꾼 상태 파일을 읽을 수 없어 그 안의 값을 가릴 수 없었어요. 상태 파일은 16 KB 이하의 JSON 객체여야 해요.",
+  "en": "The run's output was withheld: a state file it changed could not be read, so the values in it could not be redacted. A state file must be a JSON object of at most 16 KB.",
+  "ja": "実行の出力を表示しませんでした。実行が変更した状態ファイルを読めず、その中の値を伏せられなかったためです。状態ファイルは 16 KB 以下の JSON オブジェクトにしてください。",
+  "zh": "未显示运行输出：无法读取运行更改的状态文件，因此无法遮盖其中的值。状态文件必须是不超过 16 KB 的 JSON 对象。"
+ },
+ "checks.state_refused": {
+  "ko": "검사 상태를 저장하지 못했어요. CHECKSTATEFILE에는 16 KB 이하의 JSON 객체만 저장돼요.",
+  "en": "The check state was not saved. CHECKSTATEFILE keeps only a JSON object of at most 16 KB.",
+  "ja": "チェックの状態を保存できませんでした。CHECKSTATEFILE には 16 KB 以下の JSON オブジェクトだけが保存されます。",
+  "zh": "未能保存检查状态。CHECKSTATEFILE 只保存不超过 16 KB 的 JSON 对象。"
  },
  "checks.code": {
   "ko": "조건 검사 코드",
@@ -2886,10 +2904,46 @@
   "zh": "{name} API 连接"
  },
  "api_input.link_sent": {
-  "ko": "API 인증 정보를 입력할 일회용 링크를 Telegram으로 보냈어요. 확인되면 원래 작업을 이어가요.",
-  "en": "Sent a one-time link for API credentials to Telegram. The original task will resume after verification.",
-  "ja": "API 認証情報の入力用ワンタイムリンクを Telegram に送りました。確認後、元のタスクを再開します。",
-  "zh": "已向 Telegram 发送 API 凭据一次性输入链接。验证后将继续原任务。"
+  "ko": "API 인증 정보를 입력할 버튼을 Telegram으로 보냈어요. 확인되면 원래 작업을 이어가요.",
+  "en": "I sent a button to Telegram for entering your API credentials. The original task will resume after verification.",
+  "ja": "API の認証情報を入力するボタンを Telegram に送りました。確認後、元の作業を再開します。",
+  "zh": "我已将输入 API 凭据的按钮发送到 Telegram。验证后会继续原来的任务。"
+ },
+ "api_input.miniapp_offer": {
+  "ko": "아래 버튼을 눌러 {label}에 필요한 정보를 입력해 주세요. 입력 화면은 약 {minutes}분 뒤에 닫혀요.",
+  "en": "Tap the button below to enter the details for {label}. The page closes in about {minutes} minutes.",
+  "ja": "下のボタンを押して、{label}に必要な情報を入力してください。入力画面は約{minutes}分で閉じます。",
+  "zh": "请点击下方按钮，输入 {label}所需的信息。输入页面将在约 {minutes} 分钟后关闭。"
+ },
+ "api_input.miniapp_button": {
+  "ko": "인증 정보 입력",
+  "en": "Enter credentials",
+  "ja": "認証情報を入力",
+  "zh": "输入凭据"
+ },
+ "api_input.miniapp_unavailable": {
+  "ko": "지금은 휴대폰에서 입력 화면을 열 수 없어요.",
+  "en": "The phone input page is unavailable right now.",
+  "ja": "今はスマートフォンで入力画面を開けません。",
+  "zh": "目前无法在手机上打开输入页面。"
+ },
+ "api_input.miniapp_open_from_button": {
+  "ko": "Telegram 대화에 있는 버튼으로 이 화면을 열어 주세요.",
+  "en": "Open this page using the button in the Telegram chat.",
+  "ja": "Telegram のチャットにあるボタンからこの画面を開いてください。",
+  "zh": "请用 Telegram 对话中的按钮打开此页面。"
+ },
+ "api_input.miniapp_too_long": {
+  "ko": "휴대폰에서 보내기에는 입력한 내용이 너무 길어요. Still이 실행 중인 Mac에서 다시 요청해 주세요.",
+  "en": "The details are too long to send from your phone. Ask again on the Mac where Still is running.",
+  "ja": "入力内容が長すぎてスマートフォンから送信できません。Still が動いている Mac でもう一度依頼してください。",
+  "zh": "输入内容太长，无法从手机发送。请在运行 Still 的 Mac 上重新提出请求。"
+ },
+ "api_input.miniapp_closed": {
+  "ko": "이 입력 화면은 닫혔어요. 다시 요청해 주세요.",
+  "en": "This input page has closed. Please ask again.",
+  "ja": "この入力画面は閉じられました。もう一度依頼してください。",
+  "zh": "此输入页面已关闭，请重新提出请求。"
  },
  "api_input.enter_credentials": {
   "ko": "API 인증 정보는 이 일회용 화면에 입력해 주세요. 확인되면 원래 작업을 이어가요.",

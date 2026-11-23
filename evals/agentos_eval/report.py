@@ -60,7 +60,7 @@ def records_from_samples(samples, scorer=SCORER):
             measurements.update(judgment_fallback_counts(run.get('work')))
         if 'judgment' in run:
             measurements['judgment_ai'] = run['judgment']
-        for key in ('turns', 'due_observations', 'observation_version'):
+        for key in ('turns', 'due_observations', 'observation_version', 'worker_api'):
             if key in run:
                 measurements[key] = run[key]
         if score is None:
@@ -202,7 +202,12 @@ def world_records(runs):
                                                 for row in run.get('approvals') or []],
                                   'payments_allowed': sum(1 for row in run.get('decisions') or []
                                                           if row.get('status') == 'allowed' and row.get('effect') == 'payment'),
-                                  'status': ((run.get('turns') or [{}])[-1]).get('status'), 'error': run.get('error')}})
+                                  'status': ((run.get('turns') or [{}])[-1]).get('status'), 'error': run.get('error'),
+                                  # #1122: which Judgment AI the run had, so a fallback route is visible.
+                                  'judgment': {key: (run.get('judgment') or {}).get(key)
+                                               for key in ('ready', 'mode', 'engine', 'model', 'fallback')}}})
+        if isinstance(run.get('worker_api'), dict):
+            records[-1]['worker_api'] = run['worker_api']
     return records
 
 
@@ -221,7 +226,8 @@ def world_section(records):
             'as_expected': sum(1 for record in rows if record['world'].get('result') is not None
                                and record['world']['result']['passed'] == record['world']['expected_pass']),
             'still_checks': {name: _rate(values) for name, values in sorted(checks.items())},
-            'per_run': [{'scenario': record['scenario'], 'epoch': record.get('epoch'), **record['world'],
+            'per_run': [{'scenario': record['scenario'], 'epoch': record.get('epoch'), 'worker': record.get('worker'),
+                         **record['world'],
                          'still': record.get('checks') or {}, 'passed': bool(record['value'].get('passed'))}
                         for record in rows]}
 

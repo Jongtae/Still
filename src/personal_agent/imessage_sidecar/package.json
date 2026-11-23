@@ -1,0 +1,11 @@
+{
+  "name": "still-imessage-sidecar",
+  "private": true,
+  "type": "module",
+  "description": "Pinned iMessage sidecar for Still's iMessage surface (#1142): protocol v1 over stdio JSON lines.",
+  "license": "AGPL-3.0-only",
+  "dependencies": {
+    "@photon-ai/imessage-kit": "3.0.0",
+    "better-sqlite3": "12.11.1"
+  }
+}

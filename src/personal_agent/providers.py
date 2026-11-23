@@ -4,7 +4,9 @@ Compatible with the original Still separation of engine health/run and model
 construction; this module has no host CLI, systemd or third-party dependency.
 """
 import json
+import math
 import re
+import threading
 from dataclasses import dataclass
 from urllib.request import Request, build_opener, HTTPRedirectHandler
 from urllib.error import HTTPError, URLError
@@ -89,6 +91,72 @@ ANTHROPIC_MAX_TOKENS = 16000
 #: Provider-owned replay data on an assistant message: OpenAI's encrypted
 #: reasoning items and Claude's original content blocks (signed thinking).
 _REPLAY_KEYS = {'openai': 'openai_reasoning', 'anthropic': 'anthropic_content'}
+#: #1139: optional key on a leading system message: how many leading characters
+#: of its content are the same on every call (Still's static instructions).
+#: Only the Anthropic request reads it; it never reaches any provider.
+STATIC_PREFIX_KEY = 'static_prefix_chars'
+#: #1139: Anthropic prompt caching (GA, no beta header).  The static prefix
+#: (tools + Still's fixed instructions) is reused across Works that start
+#: minutes to an hour apart, so it gets the 1-hour entry; the growing
+#: conversation of one Work is reused turn to turn within seconds, so it gets
+#: the default 5-minute automatic entry.  A 1-hour entry must come before
+#: 5-minute ones, which this order keeps.  No keep-alive requests are sent.
+ANTHROPIC_STATIC_CACHE = {'type': 'ephemeral', 'ttl': '1h'}
+ANTHROPIC_TAIL_CACHE = {'type': 'ephemeral'}
+
+
+def _numeric(value):
+    return type(value) in (int, float) and (not isinstance(value, float) or math.isfinite(value))
+
+
+def api_usage(provider, data):
+    """#1139: the token counts a provider reported for one call, numbers only.
+
+    Anthropic: input/output tokens, cache writes and reads, and the writes per
+    TTL.  OpenAI Responses: input/output tokens and the cached (and, where
+    reported, cache-write) input tokens.  Missing values stay absent; ``None``
+    when nothing numeric was reported.
+    """
+    usage = data.get('usage') if isinstance(data, dict) else None
+    if not isinstance(usage, dict):
+        return None
+    out = {}
+    if provider == 'anthropic':
+        for key in ('input_tokens', 'output_tokens', 'cache_creation_input_tokens', 'cache_read_input_tokens'):
+            if _numeric(usage.get(key)):out[key] = usage[key]
+        per_ttl = usage.get('cache_creation')
+        for key in ('ephemeral_1h_input_tokens', 'ephemeral_5m_input_tokens'):
+            if isinstance(per_ttl, dict) and _numeric(per_ttl.get(key)):out[key] = per_ttl[key]
+    elif provider == 'openai':
+        for key in ('input_tokens', 'output_tokens'):
+            if _numeric(usage.get(key)):out[key] = usage[key]
+        details = usage.get('input_tokens_details')
+        for key in ('cached_tokens', 'cache_write_tokens'):
+            if isinstance(details, dict) and _numeric(details.get(key)):out[key] = details[key]
+            elif _numeric(usage.get(key)) and key not in out:out[key] = usage[key]
+    return out or None
+
+
+def _anthropic_system(leading, hints):
+    """The ``system`` blocks for the leading system messages.
+
+    The first message whose hint (``STATIC_PREFIX_KEY``) names its static
+    prefix is split there, and the static part carries the 1-hour breakpoint,
+    which also covers the tools before it.  The text the model reads is
+    unchanged: the blocks concatenate to the string the joined ``system`` was.
+    """
+    blocks, marked = [], False
+    for index, message in enumerate(leading):
+        text = (('\n' if index else '') + (message.get('content') or ''))
+        static = hints[index] if index < len(hints) else None
+        if not marked and type(static) is int and 0 < static <= len(message.get('content') or ''):
+            cut = static + (1 if index else 0)
+            blocks.append({'type': 'text', 'text': text[:cut], 'cache_control': dict(ANTHROPIC_STATIC_CACHE)})
+            text, marked = text[cut:], True
+        if text:
+            if blocks and 'cache_control' not in blocks[-1]:blocks[-1]['text'] += text
+            else:blocks.append({'type': 'text', 'text': text})
+    return blocks
 
 
 def validate_model(config):
@@ -217,6 +285,13 @@ def _openai_message(data):
 class ModelAdapter:
     def __init__(self, transport=request_json):
         self.transport = transport
+        self._observed = threading.local()
+
+    @property
+    def last_usage(self):
+        """#1139: the usage the latest ``tool_turn`` on this thread reported, else ``None``."""
+        observed = getattr(self, '_observed', None)
+        return getattr(observed, 'usage', None) if observed is not None else None
 
     def _send(self, url, body, headers, timeout):
         # Existing transports (including test doubles) take three positional
@@ -265,8 +340,16 @@ class ModelAdapter:
         """
         import uuid
         cfg=validate_model(config);provider=cfg['provider']
-        # Each provider's own replay data reaches only that provider (#1047).
-        foreign=tuple(k for owner,k in _REPLAY_KEYS.items() if owner!=provider)
+        if getattr(self,'_observed',None) is None:self._observed=threading.local()
+        self._observed.usage=None
+        # #1139: each leading system message's static-prefix hint, read before the key is stripped.
+        hints=[]
+        for m in messages:
+            if m.get('role')!='system':break
+            hints.append(m.get(STATIC_PREFIX_KEY))
+        # Each provider's own replay data reaches only that provider (#1047); the
+        # static-prefix hint (#1139) reaches none.
+        foreign=(*(k for owner,k in _REPLAY_KEYS.items() if owner!=provider),STATIC_PREFIX_KEY)
         messages=[{k:v for k,v in m.items() if k not in foreign} for m in messages]
         messages=self._messages_with_images(messages,images,provider)
         try:
@@ -307,7 +390,7 @@ class ModelAdapter:
                     # Only the leading system messages form the top-level
                     # `system`; a later one is appended as text, so the prefix
                     # signed into replayed thinking blocks never changes (#1047).
-                    if m['role']=='system' and not converted:system.append(m['content']);continue
+                    if m['role']=='system' and not converted:system.append(m);continue
                     if m['role']=='system':entry={'role':'user','content':[{'type':'text','text':m.get('content') or ' '}]}
                     elif m['role']=='tool':entry={'role':'user','content':[{'type':'tool_result','tool_use_id':m['tool_call_id'],'content':m['content']}]}
                     elif m['role']=='assistant' and isinstance(m.get('anthropic_content'),list):
@@ -327,7 +410,14 @@ class ModelAdapter:
                 # #1117: a caller that requires the call (a judgment) gets strict tool use, so the
                 # arguments match the schema instead of failing the caller's shape check.
                 choice={'type':'auto'}
-                data=self._send(cfg['endpoint']+'/v1/messages',{'model':cfg['model'],'system':'\n'.join(system),'messages':converted,'tools':_anthropic_tools(tools,tool_choice=='required'),'max_tokens':ANTHROPIC_MAX_TOKENS,'tool_choice':choice,**({'output_config':{'effort':cfg['effort']}} if cfg.get('effort') else {})},{'x-api-key':key,'anthropic-version':'2023-06-01'},timeout)
+                blocks=_anthropic_system(system,hints)
+                body={'model':cfg['model'],'system':blocks if any('cache_control' in b for b in blocks) else '\n'.join(m.get('content') or '' for m in system),
+                      'messages':converted,'tools':_anthropic_tools(tools,tool_choice=='required'),'max_tokens':ANTHROPIC_MAX_TOKENS,'tool_choice':choice,
+                      **({'output_config':{'effort':cfg['effort']}} if cfg.get('effort') else {})}
+                # #1139: a multi-turn loop (not a one-shot required judgment) rereads its
+                # conversation on the next turn, so the tail gets the automatic 5-minute entry.
+                if tool_choice!='required':body['cache_control']=dict(ANTHROPIC_TAIL_CACHE)
+                data=self._send(cfg['endpoint']+'/v1/messages',body,{'x-api-key':key,'anthropic-version':'2023-06-01'},timeout)
                 message={'role':'assistant','content':'\n'.join(c['text'] for c in data['content'] if c['type']=='text')}
                 calls=[{'id':c['id'],'type':'function','function':{'name':c['name'],'arguments':json.dumps(c['input'])}} for c in data['content'] if c['type']=='tool_use']
                 if calls:message['tool_calls']=calls
@@ -335,6 +425,7 @@ class ModelAdapter:
                     message['anthropic_content']=data['content']
             if not isinstance(message,dict) or message.get('role','assistant')!='assistant':raise TypeError()
             message={k:v for k,v in message.items() if k in ('role','content','tool_calls','reasoning_details','openai_reasoning','anthropic_content')};message['role']='assistant'
+            self._observed.usage=api_usage(provider,data)
             if report_observed:
                 actual=data.get('model') if isinstance(data,dict) else None
                 return message,actual[:200] if isinstance(actual,str) and actual else ''

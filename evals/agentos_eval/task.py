@@ -125,10 +125,16 @@ def secretary(judge='none', budget_path=None, seed=None, measures=''):
     return score
 
 
+def claude_worker_api(worker, claude_auth='api', key_loader=None, budget_path=None):
+    """#545: the API-key setup for Claude Code sandboxes, or None (Codex only, or the subscription chosen)."""
+    from agentos_eval.worker_key import select_worker_api
+    return select_worker_api(workers_for(worker), claude_auth, key_loader=key_loader, budget_path=budget_path)
+
+
 @task
 def agentos_secretary(scenarios='', split='', worker='codex', instances=3, seed='', judge='',
                       turn_timeout=900, judgment_timeout=300, include_local=True, keep_sandboxes=False, measures='',
-                      sample_limit=None, judge_notice=True, arm=''):
+                      sample_limit=None, judge_notice=True, arm='', claude_auth='api'):
     """Multi-turn owner scenarios against fresh Still sandboxes, on Codex and/or Claude Code."""
     seed = seed or os.environ.get('AGENTOS_EVAL_SEED', '')
     from agentos_eval.cli import judge_notice as announce_judge, task_judge_settings
@@ -136,7 +142,8 @@ def agentos_secretary(scenarios='', split='', worker='codex', instances=3, seed=
     if announce:
         announce_judge(judge)
     pool = SandboxPool(size=int(instances), seed=Path(seed).expanduser() if seed else None,
-                       keep=str(keep_sandboxes).lower() in ('1', 'true', 'yes'))
+                       keep=str(keep_sandboxes).lower() in ('1', 'true', 'yes'),
+                       worker_api=claude_worker_api(worker, claude_auth))
     include_local = str(include_local).lower() not in ('0', 'false', 'no')
     selected = dataset(scenarios, split, worker, include_local, arm)
     if sample_limit is not None:

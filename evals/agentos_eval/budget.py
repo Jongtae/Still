@@ -124,6 +124,36 @@ class JudgeBudget:
             return actual
         return self._update(change)
 
+    def reserve_usd(self, amount, kind='worker'):
+        """Reserve a USD charge for a spend not priced by tokens here (#545, the API-key worker).
+
+        Counts against the same daily cap as the judge; refused (None) past it.
+        """
+        amount = float(amount)
+
+        def change(day):
+            if day['usd'] + amount > self.cap:
+                day['refused'] += 1
+                day[f'{kind}_refused'] = day.get(f'{kind}_refused', 0) + 1
+                return None
+            day['usd'] = round(day['usd'] + amount, 6)
+            day[f'{kind}_calls'] = day.get(f'{kind}_calls', 0) + 1
+            day[f'{kind}_usd'] = round(day.get(f'{kind}_usd', 0.0) + amount, 6)
+            return amount
+        return self._update(change)
+
+    def settle_usd(self, reserved, actual, kind='worker'):
+        """Replace a ``reserve_usd`` reservation by the reported USD; unknown keeps the reservation."""
+        if reserved is None or actual is None:
+            return reserved
+        actual = max(0.0, float(actual))
+
+        def change(day):
+            day['usd'] = round(max(0.0, day['usd'] - reserved + actual), 6)
+            day[f'{kind}_usd'] = round(max(0.0, day.get(f'{kind}_usd', 0.0) - reserved + actual), 6)
+            return actual
+        return self._update(change)
+
     def status(self):
         def read(day):
             return dict(day)
