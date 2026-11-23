@@ -23,13 +23,13 @@ class TargetRuleInPrompts(unittest.TestCase):
         self.assertIn('target to reach', text)
         self.assertIn('a plan or a scheduled continuation alone does not complete it', text)
 
-    def test_worker_and_line_account_report_what_was_tried_and_why(self):
-        for name in ('worker_core', 'line_account'):
-            with self.subTest(prompt=name):
-                text = prompt(name)
-                self.assertIn('target', text)
-                self.assertIn('tried', text)
-                self.assertIn('why', text)
+    def test_line_account_reports_what_was_tried_and_why(self):
+        # The worker core carries no target rule: it is paid on every Work and the CLI
+        # brief has no headroom for it, so the planner's brief names the target instead.
+        text = prompt('line_account')
+        self.assertIn('target', text)
+        self.assertIn('tried', text)
+        self.assertIn('why', text)
 
     def test_the_rule_names_no_method_or_domain(self):
         """C16: the AI chooses its methods; Still prompts carry no named technique or strategy."""
