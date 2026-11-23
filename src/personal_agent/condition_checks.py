@@ -6,10 +6,12 @@ import fcntl
 import hashlib
 import json
 import logging
+from pathlib import Path
+import time
 
 from . import preparations as prep
-from .api_credentials import CredentialError
-from .code_run import CodeRunError, CodeRunner, _arguments, check_arguments_digest
+from .api_credentials import MAX_STATE_BYTES, ApiCredentials, CredentialError
+from .code_run import CodeRunError, CodeRunner, _arguments, check_arguments_digest, read_run_file
 from .current_context import redact_known_secrets
 from .direct_message_surface import redact_provenance_values
 from .messages import msg
@@ -18,7 +20,23 @@ LOG = logging.getLogger(__name__)
 
 MIN_INTERVAL, DEFAULT_INTERVAL = 15, 60
 DAILY_WAKES, FAILURE_LIMIT = 24, 3
+#: How often states of checks that ended are discarded (D4: discarded when the check is replaced or ends).
+SWEEP_SECONDS = 60
+#: D4: the check's own state between its runs, for hold durations and edge triggering in the AI's code.
+#: Without an underscore, so no secret set's ``<SET>_<FIELD>`` variable (``api_requests.env_name``) can be
+#: this name: a set named ``check`` keeps its ``CHECK_STATE_FILE`` (#972 review).
+STATE_ENV = 'CHECKSTATEFILE'
 PAUSED_NOTICE = prep.BLOCKED_NOTICE_PREFIX + 'check:'
+
+
+def _state_acceptable(text):
+    """``write_check_state``'s own rule: empty (discard) or a JSON object of at most ``MAX_STATE_BYTES``."""
+    if not text.strip():
+        return True
+    try:
+        return len(text.encode()) <= MAX_STATE_BYTES and isinstance(json.loads(text), dict)
+    except ValueError:
+        return False
 
 
 def _redact(store, value):
@@ -95,9 +113,40 @@ class CheckRunner(CodeRunner):
     persist_states = False  # A check's writes are scratch data.
     withhold_truncated_output = True
 
-    def __init__(self, store, record_id, *, pinned, **kwargs):
+    def __init__(self, store, record_id, *, pinned, check_state=None, **kwargs):
         super().__init__(store, record_id, approvals=None, **kwargs)
         self.pinned = pinned
+        # (check id, check digest): the state is bound to the exact check code (D4).
+        self.check_state = check_state
+        self.check_state_saved = None
+        #: The state this run left, saved only once its result is accepted (``ConditionChecks._commit_state``).
+        self.check_state_text = None
+        self._check_file = None
+
+    def _load_states(self, names, workdir, env):
+        states = super()._load_states(names, workdir, env)
+        if self.check_state:
+            original = ApiCredentials(self.store).read_check_state(*self.check_state) or '{}'
+            path = Path(workdir, 'check-state.json')
+            path.write_text(original, encoding='utf-8')
+            env[STATE_ENV] = str(path)
+            self._check_file = (path, original)
+        return states
+
+    def _save_states(self, states):
+        saved, scratch_secrets = super()._save_states(states)
+        if self._check_file:
+            path, original = self._check_file
+            self._check_file = None
+            text = read_run_file(path, MAX_STATE_BYTES)
+            # The values this run wrote are redacted from its own output; unknown values withhold it.
+            self._state_secrets(text, hashlib.sha256(original.encode()).digest(), scratch_secrets)
+            if text != original:
+                # #1126 review: a report-once state must not outlive a hit that was never handed off, so the
+                # state is only checked here and saved after the result settles.
+                self.check_state_saved = text is not None and _state_acceptable(text)
+                self.check_state_text = text if self.check_state_saved else None
+        return saved, scratch_secrets
 
     def _libraries(self, names, proposed):
         from .procedures import module_name
@@ -118,12 +167,40 @@ class ConditionChecks:
 
     def loop(self):
         stop = self.service.stop
+        swept = None
         while not stop.is_set():
             try:
                 self.run_due()
+                if swept is None or time.monotonic() - swept >= SWEEP_SECONDS:
+                    swept = time.monotonic()
+                    self.sweep_states()
             except Exception as exc:  # Keep the scheduler available without logging payloads.
                 LOG.warning('condition check tick failed kind=%s', type(exc).__name__)
             stop.wait(1)
+
+    def sweep_states(self):
+        """Discard the state of every check whose row ended, was forgotten or no longer has a check (D4, D10).
+
+        Runs outside any SQLite transaction: discarding reads the owner-held key to retire the values.
+        A state that cannot be read now is kept and tried again on the next sweep, never dropped unretired.
+        """
+        credentials = ApiCredentials(self.store)
+        ids = credentials.check_state_ids()
+        if not ids:
+            return 0
+        with self.store.db() as db:
+            live = {row['id'] for row in db.execute(
+                f"SELECT id FROM preparations WHERE id IN ({','.join('?' * len(ids))}) AND check_spec IS NOT NULL "
+                f"AND state IN ({','.join('?' * len(prep.ACTIVE_STATES))})", (*ids, *prep.ACTIVE_STATES))}
+        dropped = 0
+        for check_id in ids:
+            if check_id in live:
+                continue
+            try:
+                dropped += bool(credentials.discard_check_state(check_id))
+            except Exception:
+                continue
+        return dropped
 
     def _due(self, db, now):
         row = db.execute("SELECT * FROM preparations WHERE state='scheduled' AND check_spec IS NOT NULL "
@@ -175,8 +252,54 @@ class ConditionChecks:
             except CredentialError:
                 # An unavailable key can prevent even the redactor from running.
                 result = {'pause': 'setup_missing'}
-        self._settle(row, result, claimed_at=claimed_at)
+        state = result.pop('state', None) if result else None
+        sealed = None
+        if state is not None:
+            # #1126 review: a state the check relies on is never lost silently.  Everything the save needs
+            # from the key happens before the result settles, so an unavailable key pauses the check with
+            # an owner notice instead of letting it run on from an empty state.
+            try:
+                sealed = ApiCredentials(self.store).seal_check_state(row['id'], json.loads(row['check_spec'])['digest'], state)
+            except CredentialError:
+                result = {'pause': 'setup_missing'}
+            except ValueError:
+                result = {**result, 'kind': 'failure'}  # The runner already checked it; never counted as saved.
+        if self._settle(row, result, claimed_at=claimed_at) and sealed is not None:
+            self._commit_state(row, sealed)
         return True
+
+    def _commit_state(self, row, sealed):
+        """Store the sealed state after its run's result was accepted, outside any SQLite transaction.
+
+        A stop between the two leaves the earlier state, so the next run sees the condition again: a
+        repeated report, never a lost one (D5).  A store that refuses it pauses the check with an owner
+        notice, the same way an unavailable key does, so the check never counts on a state it lost.
+        """
+        if ApiCredentials(self.store).store_sealed(sealed):
+            return
+        LOG.warning('condition check state not saved')
+        try:
+            title = redact_known_secrets(self.store, prep.owner_title(row))
+        except CredentialError:
+            title = row['id']
+        destination = self.service.preparations_service.notice_destination(self.preparations.notice_channel(row))
+        now = self.preparations.clock()
+        with self.store.db() as db:
+            db.execute('BEGIN IMMEDIATE')
+            current = db.execute('SELECT * FROM preparations WHERE id=?', (row['id'],)).fetchone()
+            if (not current or current['state'] not in (prep.STATE_SCHEDULED, prep.STATE_RUNNING)
+                    or current['check_spec'] != row['check_spec']):
+                return
+            status = json.loads(current['check_status'] or '{}')
+            status['paused'] = 'state_unsaved'
+            if current['state'] == prep.STATE_RUNNING:
+                # The hit's Work is running: the row pauses when it returns, as an owner pause would.
+                db.execute('UPDATE preparations SET run_return_state=?,updated_at=?,check_status=? WHERE id=?',
+                           (prep.STATE_PAUSED, now, json.dumps(status), row['id']))
+            else:
+                db.execute('UPDATE preparations SET state=?,updated_at=?,check_status=? WHERE id=?',
+                           (prep.STATE_PAUSED, now, json.dumps(status), row['id']))
+            self._notice(db, current, title, 'state_unsaved', now, destination)
 
     def _run(self, row, spec, pending=None):
         from .agent_runtime import outside_result_source
@@ -200,18 +323,27 @@ class ConditionChecks:
                     pinned[name] = ProcedureLibrary._row(found)
         if pending:
             return _redact(self.store, pending['result'])
-        runner = self.runner(self.store, 'check:' + row['id'], pinned=pinned, interrupted=self.service.stop.is_set)
+        runner = self.runner(self.store, 'check:' + row['id'], pinned=pinned, interrupted=self.service.stop.is_set,
+                             check_state=(row['id'], spec['digest']))
         failure_reason = None
         try:
             result = runner.run(args, seconds=spec['every_seconds'])
             outside = outside_result_source('code_run', 'code_run', args)
-            if result.get('exit_status') == 0 and not result.get('timed_out') and not result.get('failed_phase'):
+            if result.get('output_withheld'):
+                kind, output = 'failure', result.get('stderr') or ''
+            elif result.get('exit_status') == 0 and not result.get('timed_out') and not result.get('failed_phase'):
                 output = result.get('stdout') or ''
                 kind = 'hit' if output else 'quiet'
             else:
                 kind = 'failure'
                 failure_reason = 'timeout' if result.get('timed_out') else f"exit {result.get('exit_status')}"
                 output = result.get('stderr') or ''
+            if getattr(runner, 'check_state_saved', None) is False:
+                # A state the next run would not see is the check's own defect, for its AI to fix (D4, D9):
+                # a hit still wakes with the note, and a quiet run counts as a failure.
+                note = msg('checks.state_refused')
+                kind = 'hit' if kind == 'hit' else 'failure'
+                output = f'{output}\n{note}' if output else note
         except CodeRunError as exc:
             if exc.code == 'needs_setup':
                 return {'pause': 'setup_missing'}
@@ -235,6 +367,9 @@ class ConditionChecks:
         if kind == 'failure':
             tail = handoff['output'][-600:]
             handoff['output'] = '\n'.join(part for part in (failure_reason, tail) if part)
+        if getattr(runner, 'check_state_text', None) is not None:
+            # Never stored with the result (a pending hit is kept in SQLite); taken off before settling.
+            handoff['state'] = runner.check_state_text
         return handoff
 
     @staticmethod
@@ -295,6 +430,8 @@ class ConditionChecks:
                 status.update(last_result=kind, last_run_at=now,
                               failures=status.get('failures', 0) + 1 if kind == 'failure' else 0)
             failed = status['failures'] >= FAILURE_LIMIT
+            # Whether this result is kept: counted, handed off, or held for a retry (``_commit_state``).
+            accepted = True
             if not pause and (kind == 'hit' or failed):
                 slot = pending['slot'] if pending else row['check_next_at']
                 wake = {'handoff': {key: value for key, value in result.items() if key != 'outside'},
@@ -314,7 +451,11 @@ class ConditionChecks:
                 elif wake.get('budget_refused') or status['wakes'] >= DAILY_WAKES:
                     if pending:
                         status['pending'] = {'slot': slot, 'result': result}
+                    else:
+                        accepted = False
                     next_at = self._next_day(now, db)
+                else:
+                    accepted = False
             if pause:
                 status['paused'] = pause
                 scrubbed = result.get('scrubbed_spec')
@@ -323,6 +464,7 @@ class ConditionChecks:
                            (prep.STATE_PAUSED, now, spec, row['id']))
                 self._notice(db, row, title, pause, now, status_destination)
             self._advance(db, row, next_at, status)
+        return accepted
 
     def _notice(self, db, row, title, pause, now, destination):
         notice = f"check:{row['id']}:{row['check_next_at']}"
