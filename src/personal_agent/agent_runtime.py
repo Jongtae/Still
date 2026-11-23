@@ -3163,11 +3163,11 @@ def revisable_preparation(store,preparation_id):
 
  It follows the scheduler's own rule (#1170 review): an inactive row is gone (a replacement cancels the
  row it replaces); a line's next piece is revised by scheduling it again (one child per run,
- ``piece_of``), since ``schedule_piece`` refuses ``replaces``; any other row only when it was accepted
+ ``piece_of``) while it is still scheduled, since ``schedule_piece`` refuses ``replaces``; any other row only when it was accepted
  and not set up by a daily-plan run, because ``preparation_scheduler`` refuses a replacement from a
  proposal or a plan run (``replace_not_allowed``).
  """
- from .preparations import ACTIVE_STATES,ACCEPTED_DAY_PLAN
+ from .preparations import ACTIVE_STATES,ACCEPTED_DAY_PLAN,STATE_SCHEDULED
  if not isinstance(preparation_id,str) or not preparation_id:return None
  try:
   with store.db() as db:
@@ -3175,7 +3175,8 @@ def revisable_preparation(store,preparation_id):
  except __import__("sqlite3").OperationalError:
   return None
  if not row or row['state'] not in ACTIVE_STATES:return None
- if row['piece_of']:return {'state':row['state'],'line_piece':True}
+ # ``_piece_admission`` updates an existing piece only while it is still scheduled (``line_piece_exists``).
+ if row['piece_of']:return {'state':row['state'],'line_piece':True} if row['state']==STATE_SCHEDULED else None
  if row['accepted_by'] in (None,ACCEPTED_DAY_PLAN):return None
  return {'state':row['state']}
 

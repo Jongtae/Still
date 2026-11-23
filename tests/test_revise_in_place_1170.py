@@ -119,6 +119,12 @@ class ReviseInPlace(Records):
         self.assertTrue(facts[piece].get('line_piece'))
         self.assertNotIn('line_piece', facts[plain])
         self.assertIn('without replaces', note)
+        # Codex review: a piece that already started is no longer updated by scheduling it again.
+        with self.store.db() as db:
+            db.execute("UPDATE preparations SET state='running' WHERE id=?", (piece,))
+        facts = {f['preparation_id']: f for f in json.loads(revisable_record_note(self.store, self.work).rsplit('\n', 1)[1])}
+        self.assertNotIn(piece, facts)
+        self.assertIn(plain, facts)
 
     def test_a_record_this_work_may_not_replace_still_stops(self):
         # Codex review: the scheduler refuses ``replaces`` from a daily-plan run and for a proposal, so such a
