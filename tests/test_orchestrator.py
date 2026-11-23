@@ -48,6 +48,11 @@ SEARCH_TOOLS = ('web_search',)
 NO_TOOL_CALLS = {'tool_calls': [], 'stream_tail': ['thread.started', 'turn.started', 'turn.completed']}
 
 
+
+def system_text(content):
+    """The system text of a Responses input item; #1164 sends Still's static prefix as text blocks."""
+    return content if isinstance(content, str) else ''.join(block['text'] for block in content)
+
 def reported(calls, end='turn.completed'):
     """``cli_metadata``'s shape for a stream that ended with ``end`` and reported ``calls``."""
     return {'tool_calls': list(calls), 'stream_tail': ['turn.started', end]}
@@ -3077,7 +3082,7 @@ class OwnerModelAlwaysOn(Harness):
         cli = self.engine.turns[-1]['prompt']
         self.use_main('openai')
         self.run_work('고마워')
-        system = self.transport.bodies[-1]['input'][0]['content']
+        system = system_text(self.transport.bodies[-1]['input'][0]['content'])
         sent = self.store.turn_provenance(cli_job)
         self.assertEqual(sent['instructions_channel'], 'developer-instructions')
         self.assertIn(preference, cli)
@@ -3110,7 +3115,7 @@ class OwnerModelAlwaysOn(Harness):
         prompt = self.engine.turns[-1]['prompt']
         self.use_main('openai')  # #1431: the API route runs when it is the Main AI
         self.run_work('저녁 추천해줘')
-        system = self.transport.bodies[0]['input'][0]['content']
+        system = system_text(self.transport.bodies[0]['input'][0]['content'])
         for text in (prompt, system):
             self.assertIn(PROFILE_HEADING + '\n', text)
             self.assertIn('판교 사무실', text)

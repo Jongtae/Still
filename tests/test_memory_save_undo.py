@@ -131,6 +131,8 @@ class SaveAndTell(TelegramHarness):
             workers.use_main('openai')
             workers.run_work('고마워', key=stage + '-api')
             system = workers.transport.bodies[-1]['input'][0]['content']
+            # #1164: the OpenAI route sends Still's static prefix as text blocks.
+            system = system if isinstance(system, str) else ''.join(block['text'] for block in system)
             profiles = [cli, system]
             self.assertIn(prompt('voice'), instructions)
             self.assertIn(prompt('voice'), system)

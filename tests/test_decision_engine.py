@@ -26,6 +26,11 @@ OPENAI = {'provider': 'openai', 'endpoint': 'https://api.openai.com/v1', 'model'
 ANTHROPIC = {'provider': 'anthropic', 'endpoint': 'https://api.anthropic.com', 'model': 'claude-x'}
 
 
+
+def input_text(content):
+    """A Responses input item's text: #1164 sends Still's static prefix as text blocks."""
+    return content if isinstance(content, str) else ''.join(block['text'] for block in content)
+
 def openai_tool_reply(arguments, model='gpt-4o-mini-2024-07-18'):
     """The raw Responses shape of an OpenAI tool call."""
     return responses_reply({
@@ -157,7 +162,7 @@ class ModelEngineTests(unittest.TestCase):
         self.assertEqual(judgments.closing_reaction('안녕', ('🎉',)), '🎉')
         self.assertEqual(len(transport.calls), 3)
         for index, call in enumerate(transport.calls):
-            assembled = '\n'.join(message['content'] for message in call['body']['input'])
+            assembled = '\n'.join(input_text(message['content']) for message in call['body']['input'])
             with self.subTest(generator=index):
                 self.assertEqual(assembled.count(prompt('voice')), 1)
                 for removed in ("language and register of the owner's", 'as the professional the request calls for',
@@ -178,7 +183,7 @@ class ModelEngineTests(unittest.TestCase):
             '요청', '답', 'failed', 'not_reached', '정정', preference, 'correction')
         self.assertEqual(data, {'lessons': [], 'change': '', 'blocker': ''})
         [call] = transport.calls
-        assembled = '\n'.join(message['content'] for message in call['body']['input'])
+        assembled = '\n'.join(input_text(message['content']) for message in call['body']['input'])
         self.assertEqual(assembled.count(prompt('voice')), 1)
         self.assertIn(preference, assembled)
         self.assertIn('apply to change, which is shown to the owner', assembled)

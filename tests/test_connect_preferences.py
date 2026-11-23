@@ -15,6 +15,11 @@ from test_orchestrator import Harness, plan
 KEY = 'profile.preference.connection.unseen'
 
 
+
+def system_text(content):
+    """The system text of a Responses input item; #1164 sends Still's static prefix as text blocks."""
+    return content if isinstance(content, str) else ''.join(block['text'] for block in content)
+
 class ConnectionPreferences(Harness):
     def save_choice(self, value):
         self.saved_results = []
@@ -46,7 +51,7 @@ class ConnectionPreferences(Harness):
                 self.assertIn(CONNECTION_PREFERENCE_GUIDANCE, sent['instructions'])
                 self.assertIn(KEY + ': ' + choice, cli_prompt)
                 self.assertNotIn(KEY + ': ' + choice, sent['instructions'])
-                system = self.transport.bodies[-1]['input'][0]['content']
+                system = system_text(self.transport.bodies[-1]['input'][0]['content'])
                 self.assertIn(KEY + ': ' + choice, system)
                 self.assertIn(CONNECTION_PREFERENCE_GUIDANCE, system)
                 self.assertTrue(all(KEY + ': ' + choice in item[0].facts['owner_profile'] for item in self.asked_plans))
