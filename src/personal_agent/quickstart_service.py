@@ -8488,10 +8488,16 @@ class AgentService:
         reads=read_state_text(observed)
         verified=job.get('owner_verified') or reads
         if verified:done+=' '+verified[:500]
-        # #1034: the owner is told what they got (the verified part, else the answer's first line), not
-        # the step count or Still's read record; ``done`` above stays the resume brief's fact.
-        got=job.get('owner_verified') or first_answer_line(job.get('response'))
-        owner_done=got[:300] if got else msg('budget_continue.done_steps',count=len(observed))
+        # #1034: the owner is told what they got, not the step count or Still's read record.  #1185: that
+        # is the AI's own answer line; ``owner_verified`` is the host's rendering of its reads, so it
+        # never leads here.  ``done`` above stays the resume brief's fact.
+        got=first_answer_line(job.get('response'))
+        if len(got)>300:
+            # Cut on a word boundary (text without spaces, such as CJK, is cut at the limit).
+            head=got[:300]
+            if not got[300].isspace() and ' ' in head:head=head.rsplit(None,1)[0]
+            got=head.rstrip(' ,;:')+'…'
+        owner_done=got if got else msg('budget_continue.done_steps',count=len(observed))
         gap=(getattr(run.orchestration,'terminal_gap','') or (run.agency_report or {}).get('gap')
              or (run.agency_report or {}).get('next') or msg('budget_continue.remaining'))
         totals=self.work_information_use(job['id'],compare_held_values=False)['usage']['totals']
