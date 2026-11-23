@@ -9,7 +9,9 @@ from __future__ import annotations
 import hashlib
 import hmac
 import logging
+import queue
 import secrets
+import threading
 import time
 
 from .conversation_surface import SurfaceCapabilities
@@ -96,6 +98,14 @@ class IMessageSurface(DirectMessageSurface):
         self._scoped_transport = None
         self._scope = None
         self._seen = {}
+        # The sidecar's ``events()`` may block until its next event, so one reader thread per
+        # transport consumes it and ``receive`` drains what has arrived without waiting (#1141 review).
+        self._inbox = queue.Queue()
+        self._reader = None
+        self._reader_lock = threading.Lock()
+        self.reader_spawn = lambda target: threading.Thread(target=target, name='imessage-events', daemon=True).start()
+        self._acting = set()
+        self._acting_lock = threading.Lock()
 
     def outbound_target(self, cfg, url):
         return False
@@ -124,8 +134,11 @@ class IMessageSurface(DirectMessageSurface):
         if transport is self._scoped_transport and op == self._scope:
             return transport
         try:
-            transport.send_op(op)
+            accepted = transport.send_op(op) is not False
         except (OSError, IMessageNotSent):
+            accepted = False
+        if not accepted:
+            # A refused scope is not installed; the next tick sends it again.
             self._scope = None
             return None
         self._scoped_transport, self._scope = transport, op
@@ -215,17 +228,41 @@ class IMessageSurface(DirectMessageSurface):
                 heartbeat_outbound_process(self.service.store)
                 self.replay_ingress()
             created = []
-            try:
-                for event in transport.events():
-                    work_id = self._receive_event(event, now, pairing_batch)
-                    if work_id:
-                        created.append(work_id)
-            except (OSError, IMessageNotSent):
-                self._scope = None
-                LOG.warning('%s', self._text('receive_failed'))
+            self._ensure_reader(transport)
+            while True:
+                try:
+                    source, event = self._inbox.get_nowait()
+                except queue.Empty:
+                    break
+                if source is not transport:
+                    continue   # buffered from a transport that was replaced
+                work_id = self._receive_event(event, now, pairing_batch)
+                if work_id:
+                    created.append(work_id)
             self._record_seen()
             self._sync_scope(self.config())
-            return created if usable or created else None
+        self._run_pending_acts()
+        return created if usable or created else None
+
+    def _ensure_reader(self, transport):
+        """Start one reader of ``transport.events()`` unless one is running for it."""
+        with self._reader_lock:
+            if self._reader is transport:
+                return
+            self._reader = transport
+
+        def read():
+            try:
+                for event in transport.events():
+                    self._inbox.put((transport, event))
+            except Exception as exc:
+                self._scope = None
+                LOG.warning('%s (%s)', self._text('receive_failed'), type(exc).__name__)
+            finally:
+                with self._reader_lock:
+                    if self._reader is transport:
+                        self._reader = None   # the next tick starts another reader
+        self.reader_spawn(read)
 
     def _record_seen(self):
         """Advance the replay watermark of the current pairing once per batch (rows of an old one are dropped)."""
@@ -287,10 +324,12 @@ class IMessageSurface(DirectMessageSurface):
                     (target, owner, self.channel_prefix + generation, target, owner, generation)).fetchone()
                 if not known or not self._remember_event(db, guid, now):
                     return None
+                # Recorded with the GUID, so a stop before the act is settled replays it.
+                name = reaction['kind']
+                db.execute('INSERT OR IGNORE INTO imessage_pending_acts(guid,target,emoji,generation,created) '
+                           'VALUES (?,?,?,?,?)', (guid, target, TAPBACK_NAMES.get(name, name), generation, now))
         if reaction is not None:
-            name = reaction['kind']
-            self.ingest_reaction(target, TAPBACK_NAMES.get(name, name), owner, generation)
-            return None
+            return None   # settled by ``_run_pending_acts`` after this batch
         # The base commits the Work and its request key together. If Still stops
         # before writing the GUID here, that key already protects the next poll.
         work_id = self._ingest_owner_message(guid, text, None, owner, generation, spoke=event['ts_ms'] / 1000)
@@ -299,6 +338,44 @@ class IMessageSurface(DirectMessageSurface):
         if work_id and self.service.is_natural_language(text):
             steer_if_owner_typed(self.service, work_id, text)
         return work_id
+
+    def _run_pending_acts(self):
+        """Hand each recorded tapback to the owner-act path once; clear it when its worker finishes."""
+        service = self.service
+        with service.lock:
+            cfg = self.config()
+            owner, generation = cfg.get('owner_user_id'), cfg.get('generation')
+            with service.store.db() as db:
+                db.execute('DELETE FROM imessage_pending_acts WHERE generation IS NOT ?', (generation,))
+                rows = [dict(row) for row in db.execute(
+                    'SELECT * FROM imessage_pending_acts ORDER BY created,rowid').fetchall()]
+            if not self.usable(cfg):
+                return
+        for row in rows:
+            guid = row['guid']
+            with self._acting_lock:
+                if guid in self._acting:
+                    continue
+                self._acting.add(guid)
+            spawned = False
+            try:
+                spawned = self.ingest_reaction(row['target'], row['emoji'], owner, generation,
+                                               done=lambda guid=guid: self._clear_act(guid)) == 'owner_act'
+            except Exception as exc:
+                LOG.warning('iMessage tapback act failed (%s)', type(exc).__name__)
+                continue
+            finally:
+                if not spawned:
+                    with self._acting_lock:
+                        self._acting.discard(guid)
+            if not spawned:
+                self._clear_act(guid)
+
+    def _clear_act(self, guid):
+        with self.service.store.db() as db:
+            db.execute('DELETE FROM imessage_pending_acts WHERE guid=?', (guid,))
+        with self._acting_lock:
+            self._acting.discard(guid)
 
     @staticmethod
     def _remember_event(db, guid, now):
@@ -329,7 +406,8 @@ class IMessageSurface(DirectMessageSurface):
                            'VALUES (?,?,?,?,?,?,?,?)',
                            (send_id, job_id, notification_id, generation, handle, _digest(text.strip()), 'sending', time.time()))
             try:
-                transport.send_op({'op': 'send', 'id': send_id, 'to': handle, 'text': text})
+                if transport.send_op({'op': 'send', 'id': send_id, 'to': handle, 'text': text}) is False:
+                    raise IMessageNotSent(self._text('not_connected'))   # no ready sidecar took it
             except (OSError, IMessageNotSent):
                 with store.db() as db:
                     db.execute('DELETE FROM imessage_sends WHERE id=?', (send_id,))

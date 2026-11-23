@@ -48,12 +48,16 @@ class FakeSidecar:
         self.ops = []
         self.queue = []
         self.down = False
+        self.refusing = False    # as IMessageSidecar.send_op while stopped or restarting
         self._guid = 0
 
     def send_op(self, op):
         if self.down:
             raise BrokenPipeError('sidecar is not running')
+        if self.refusing:
+            return False
         self.ops.append(json.loads(json.dumps(op)))   # one JSON line, as on stdin
+        return True
 
     def events(self):
         while self.queue:
@@ -103,6 +107,7 @@ class IMessageCase(unittest.TestCase):
                                  'api_key': ''})
         self.assertTrue(self.service.test_model()['ok'])
         self.surface = self.service.imessage_surface
+        self.surface.reader_spawn = lambda target: target()   # FakeSidecar.events() returns once drained
 
     def pair(self, handle=OWNER):
         """Pair ``handle`` with a fresh code; returns the code message's ``ts_ms``."""
@@ -317,6 +322,7 @@ class Ingest(IMessageCase):
         self.service = AgentService(self.store)
         self.service.imessage_transport = self.sidecar
         self.surface = self.service.imessage_surface
+        self.surface.reader_spawn = lambda target: target()   # FakeSidecar.events() returns once drained
         self.sidecar.emit(**event)
         self.surface.receive()
         self.assertEqual(len(self.im_jobs()), 1)
@@ -459,6 +465,29 @@ class Delivery(IMessageCase):
         self.assertEqual(len(self.answer_sends()), 1)
         self.assertEqual(self.delivery(), 'sending')
 
+    def test_a_sidecar_that_refuses_the_send_leaves_the_reply_pending_then_sends_it_once(self):
+        self.sidecar.refusing = True
+        self.service.deliver_one()
+        self.assertEqual(self.delivery(), 'pending', 'a refused send is not in flight')
+        with self.store.db() as db:
+            self.assertEqual(db.execute('SELECT COUNT(*) FROM imessage_sends WHERE job_id=?',
+                                        (self.work['id'],)).fetchone()[0], 0)
+        self.sidecar.refusing = False
+        self.service.deliver_one()
+        self.assertEqual(len(self.answer_sends()), 1)
+        self.assertEqual(self.delivery(), 'sending')
+
+    def test_a_refused_scope_is_sent_again_on_the_next_tick(self):
+        scopes = len(self.sidecar.scopes())
+        self.surface._scope = None
+        self.sidecar.refusing = True
+        self.surface.receive()
+        self.assertEqual(len(self.sidecar.scopes()), scopes, 'refused, so not recorded by the fake')
+        self.assertIsNone(self.surface._scope, 'a refused scope is not cached as installed')
+        self.sidecar.refusing = False
+        self.surface.receive()
+        self.assertEqual(self.sidecar.scopes()[-1]['mode'], 'paired')
+
     def test_an_in_flight_send_across_a_restart_is_unknown(self):
         self.service.deliver_one()
         store = QuickStore(self.store.root)
@@ -561,6 +590,29 @@ class OwnerActs(IMessageCase):
         self.assertEqual(self.service.settings_orchestrator._drafts()[draft_id]['state'], 'applied')
         self.assertEqual(len(self.im_jobs()), 1, 'a tapback is never a typed request')
 
+    def test_a_tapback_act_interrupted_by_a_stop_is_settled_after_the_restart(self):
+        job, draft_id, notice = self.settings_notice()
+        echo = self.sidecar.from_me(OWNER, self.sidecar.sends()[-1]['text'])
+        self.surface.receive()
+        self.service.steer_spawn = lambda target: None          # Still stops before the worker runs
+        self.sidecar.message(OWNER, 'Liked a message', reaction={'kind': 'like', 'target_guid': echo['guid'],
+                                                                 'removed': False})
+        self.surface.receive()
+        self.assertNotEqual(self.service.settings_orchestrator._drafts()[draft_id]['state'], 'applied')
+        service = AgentService(self.store, ModelAdapter(model), lambda *a, **k: {'ok': True, 'result': True})
+        service.use_decision_engine(with_owner_acts(FixtureDecisionEngine()))
+        service.imessage_transport = self.sidecar
+        service.steer_spawn = lambda target: target()
+        surface = service.imessage_surface
+        surface.reader_spawn = lambda target: target()
+        with mock.patch.object(service.owner_acts, 'answer_reaction', wraps=service.owner_acts.answer_reaction) as answered:
+            surface.receive()
+            surface.receive()
+        self.assertEqual(answered.call_count, 1)
+        self.assertEqual(service.settings_orchestrator._drafts()[draft_id]['state'], 'applied')
+        with self.store.db() as db:
+            self.assertEqual(db.execute('SELECT COUNT(*) FROM imessage_pending_acts').fetchone()[0], 0)
+
     def test_a_removed_tapback_is_no_act(self):
         job, draft_id, notice = self.settings_notice()
         with mock.patch.object(self.service.owner_acts, 'answer_reaction') as answered:
@@ -641,3 +693,62 @@ class WorkMode(IMessageCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+
+class RealSidecarTransport(unittest.TestCase):
+    """The merged #1142 ``IMessageSidecar`` (blocking ``events()``) over a fake child process."""
+
+    def setUp(self):
+        from test_imessage_sidecar import FakePopen, launcher
+        temp = tempfile.TemporaryDirectory()
+        self.addCleanup(temp.cleanup)
+        self.store = QuickStore(Path(temp.name) / 'data')
+        self.service = AgentService(self.store, ModelAdapter(model), lambda *a, **k: {'ok': True, 'result': True})
+        self.popen = FakePopen()
+        self.sidecar = launcher(popen=self.popen)
+        self.sidecar.start()
+        self.addCleanup(self.sidecar.stop)
+        self.service.imessage_transport = self.sidecar
+        self.surface = self.service.imessage_surface
+        self.child = self.popen.processes[-1]
+
+    def receive_until(self, check, seconds=5):
+        deadline = time.monotonic() + seconds
+        while time.monotonic() < deadline:
+            started = time.monotonic()
+            self.surface.receive()
+            self.assertLess(time.monotonic() - started, 1, 'receive() returns while the sidecar is idle')
+            if check():
+                return
+            time.sleep(0.02)
+        self.fail('the sidecar event never reached the surface')
+
+    def pair(self):
+        code = self.surface.start_pairing()['code']
+        self.surface.receive()
+        self.assertEqual([op['mode'] for op in self.child.ops if op.get('op') == 'scope'][-1], 'pairing')
+        self.child.stdout.push({'ev': 'message', 'guid': 'G-1', 'handle': OWNER, 'text': code, 'ts_ms': now_ms(),
+                                'reaction': None})
+        self.receive_until(lambda: self.surface.config().get('handle') == OWNER)
+
+    def test_an_idle_sidecar_never_holds_the_service_lock(self):
+        started = time.monotonic()
+        self.surface.receive()
+        self.assertLess(time.monotonic() - started, 1)
+        self.assertTrue(self.service.lock.acquire(timeout=1), 'receive() released the service lock')
+        self.service.lock.release()
+
+    def test_pairing_and_a_send_go_through_the_real_sidecar(self):
+        self.pair()
+        self.assertTrue(any(op.get('op') == 'send' and op['to'] == OWNER for op in self.child.ops), 'hello sent')
+
+    def test_a_stopped_sidecar_refuses_the_send_and_nothing_is_in_flight(self):
+        self.pair()
+        with self.store.db() as db:
+            before = db.execute('SELECT COUNT(*) FROM imessage_sends').fetchone()[0]
+        self.sidecar.stop()
+        with self.assertRaises(self.surface.NOT_SENT):
+            self.surface._post(self.surface.config(), 'after the stop')
+        with self.store.db() as db:
+            self.assertEqual(db.execute('SELECT COUNT(*) FROM imessage_sends').fetchone()[0], before,
+                             'a refused send leaves no in-flight row')

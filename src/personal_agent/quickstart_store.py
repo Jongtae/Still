@@ -291,6 +291,9 @@ class QuickStore:
             db.execute('CREATE TABLE IF NOT EXISTS imessage_sends(id TEXT PRIMARY KEY, job_id TEXT, notification_id TEXT, '
                        'generation TEXT NOT NULL, handle TEXT NOT NULL, text_digest TEXT NOT NULL, '
                        'state TEXT NOT NULL, created REAL NOT NULL, settled REAL)')
+            # A tapback owner act stays here until its owner-act worker finishes, so a restart replays it.
+            db.execute('CREATE TABLE IF NOT EXISTS imessage_pending_acts(guid TEXT PRIMARY KEY, target TEXT NOT NULL, '
+                       'emoji TEXT NOT NULL, generation TEXT NOT NULL, created REAL NOT NULL)')
             # #214: the same for Slack (message ts), and the Socket Mode events and button presses already taken.
             db.execute('CREATE TABLE IF NOT EXISTS slack_turns(job_id TEXT PRIMARY KEY, owner TEXT NOT NULL, '
                        'source_post_id TEXT, reply_post_id TEXT, reply_to_post_id TEXT, created REAL NOT NULL)')
