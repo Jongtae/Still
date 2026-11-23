@@ -570,8 +570,10 @@ def prepare_judgment(client, pool, box, worker, timeout=300, clock=time.monotoni
             status = client.wait_judgment(worker, timeout=timeout)
     ready = False if failure else client.judgment_ready(status, worker)
     fallback = None
-    if not ready and status.get('mode') != 'follow_main':
-        # #1122: the owner's own judgment route may be an API whose key the seed leaves out. A run
+    seeded = (status.get('active') or {}).get('transport')
+    if not ready and status.get('mode') != 'follow_main' and seeded not in (None, 'none', 'off'):
+        # #1122: the owner's own judgment route may be an API whose key the seed leaves out (a seed
+        # with no Judgment AI keeps that choice). A run
         # without a Judgment AI measures a path the owner never runs (every press asks), so the
         # judgment follows this worker's route instead, and the record says so.
         try:

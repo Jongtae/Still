@@ -57,3 +57,13 @@ def test_a_world_run_without_a_judgment_ai_is_an_infra_error_not_a_product_failu
                                        world_loader=lambda *args: world, worker='codex')
     assert record['error'].startswith('SandboxError: infra:judgment_ai')
     turn.assert_not_called()
+
+
+def test_a_seed_with_no_judgment_route_keeps_that_choice():
+    client = client_for()
+    client.judgment.return_value = {**api_status(), 'active': {'transport': 'none'}}
+    client.requalify_judgment.return_value = None
+    result = runner.prepare_judgment(client, mock.Mock(), SimpleNamespace(cached=None), 'codex')
+    client.post.assert_not_called()
+    client.wait_judgment.assert_not_called()
+    assert result['ready'] is False and 'fallback' not in result
