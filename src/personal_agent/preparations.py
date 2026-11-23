@@ -930,10 +930,13 @@ def require_preparation_replacement(db, work_id, replaces=None, distinct=frozens
     from .agent_runtime import ToolError, not_run
     carried = carried_preparations(db, work_id)
     if replaces in carried and not carried[replaces]['settled']:
-        # A revision of one carried row sets nothing new up: only a settled one with the same goal blocks it.
-        blocking = sorted(key for key, row in carried.items() if key != replaces and row['settled'] and key not in distinct)
+        # A revision of one carried row: blocked only by another carried row with the same goal, active or settled.
+        blocking = {key: row for key, row in carried.items() if key != replaces and key not in distinct}
+        settled = sorted(key for key, row in blocking.items() if row['settled'])
+        if settled:
+            raise not_run(ToolError(msg('preparations.preparation_settled', ids=', '.join(settled)), 'preparation_settled'))
         if blocking:
-            raise not_run(ToolError(msg('preparations.preparation_settled', ids=', '.join(blocking)), 'preparation_settled'))
+            raise not_run(ToolError(msg('preparations.preparation_exists', ids=', '.join(sorted(blocking))), 'preparation_exists'))
         return
     carried = {key: row for key, row in carried.items() if key not in distinct}
     settled = sorted(key for key, row in carried.items() if row['settled'])

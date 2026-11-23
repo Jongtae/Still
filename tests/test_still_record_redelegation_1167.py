@@ -234,6 +234,42 @@ class Reconciled(StillRecords):
                         handle(args)
                     self.assertEqual(refused.exception.code, expected)
 
+    def test_a_preparation_deleted_before_the_marker_is_still_fenced(self):
+        # Codex P2: the owner deletes it between the continuation rule and the fence's read; the call still names it.
+        import personal_agent.agent_runtime as runtime
+        work, row = self.scheduled_work()
+        read = runtime.still_record_fence
+
+        def deleted_first(store, work_id):
+            self.service.preparations.delete(row['id'])
+            return read(store, work_id)
+        with patch.object(runtime, 'still_record_fence', deleted_first):
+            self.step(work, following=object())
+        schedule = self.service.preparation_scheduler(self.store.job(work), '')
+        with self.assertRaises(ToolError) as refused:
+            schedule(self.schedule_args(row))
+        self.assertEqual(refused.exception.code, 'preparation_settled')
+        self.assertEqual([other for other in self.service.preparations.rows() if other['created_from'] == work], [])
+
+    def test_a_revision_into_an_active_siblings_goal_is_refused(self):
+        # Codex P2: replacing A with B's goal while B is still scheduled would run B's purpose twice.
+        work, first = self.scheduled_work()
+        schedule = self.service.preparation_scheduler(self.store.job(work), '')
+        other = schedule({**self.schedule_args(first), 'goal': '스트레칭하라고 알리기', 'title': '스트레칭',
+                          'due': self.due_iso(7200)})['preparation_id']
+        self.step(work, following=object())
+
+        def judge(context, proposition):
+            if context.purpose == 'same-preparation-goal':
+                return BinaryDecision(OUTCOME_DECIDED, True, fixture_confidence())
+            return None
+        self.service.use_decision_engine(FixtureDecisionEngine(judge=judge))
+        revise = self.service.preparation_scheduler(self.store.job(work), '')
+        with self.assertRaises(ToolError) as refused:
+            revise({**self.schedule_args(first), 'goal': '스트레칭하라고 알리기', 'title': '스트레칭', 'replaces': first['id']})
+        self.assertEqual(refused.exception.code, 'preparation_exists')
+        self.assertEqual({self.service.preparations.get(key)['state'] for key in (first['id'], other)}, {prep.STATE_SCHEDULED})
+
     def test_without_a_re_delegation_two_preparations_in_one_work_stay_allowed(self):
         work, row = self.scheduled_work()
         schedule = self.service.preparation_scheduler(self.store.job(work), '')

@@ -2655,6 +2655,10 @@ def still_record_fence(store, work_id):
    'SELECT id FROM preparations WHERE (created_from=?' + (f' OR id IN ({marks})' if called else '') + ') '
    'AND origin IS NOT ? ORDER BY created_at,id',
    (work_id, *called, prep.ORIGIN_LINE_ACCOUNT)) if row['id'] not in replaced] if 'preparations' in tables else []
+  # A row the owner deleted is gone from the store; its call still names it, so it is fenced as settled.
+  if called and 'preparations' in tables:
+   held = {row['id'] for row in db.execute(f'SELECT id FROM preparations WHERE id IN ({marks})', tuple(called))}
+   preparations += sorted(called - held - replaced)
   lines = [row['slot'][len(el.SLOT_PREFIX):] for row in db.execute(
    'SELECT slot FROM procedure_versions WHERE work_id=? AND version=1 AND slot LIKE ? ORDER BY created,slot',
    (work_id, el.SLOT_PREFIX+'%'))] if 'procedure_versions' in tables else []

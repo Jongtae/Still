@@ -303,8 +303,8 @@ class PreparationsService:
             replaces=args.get('replaces')
             with service.store.db() as db:
                 carried=prep.carried_preparations(db,job['id'])
-            # A revision of one carried row is judged only against the settled others it could set up again.
-            relevant=({key:row for key,row in carried.items() if key!=replaces and row['settled']}
+            # A revision of one carried row is judged against the other carried rows it could duplicate.
+            relevant=({key:row for key,row in carried.items() if key!=replaces}
                       if replaces in carried and not carried[replaces]['settled'] else carried)
             distinct=frozenset()
             if (relevant and all(row['goal'] is not None for row in relevant.values())
