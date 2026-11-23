@@ -375,6 +375,18 @@ class InstallTest(unittest.TestCase):
 
 
 class LauncherTest(unittest.TestCase):
+    def test_stop_latches_the_launcher_closed(self):
+        # #1143: once stop() has begun, no start or automatic restart runs a child again.
+        popen = FakePopen()
+        process_launcher = launcher(popen=popen)
+        process_launcher.start()
+        process_launcher.stop()
+        with self.assertRaises(IMessageSidecarError) as caught:
+            process_launcher.start()
+        self.assertEqual(caught.exception.code, 'not_ready')
+        process_launcher._restart()
+        self.assertEqual(len(popen.calls), 1, 'neither start() nor a restart launched another child')
+
     def test_stop_waits_for_a_child_another_thread_is_still_terminating(self):
         # #1143 review: a restart whose handshake failed clears the process, then reaps it; stop() must not return first.
         process_launcher = launcher()

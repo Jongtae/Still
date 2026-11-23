@@ -7,6 +7,7 @@
 // only records the request, so a test sees exactly which sends reached the kit.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import { once } from 'node:events';
 import { PassThrough } from 'node:stream';
 import { readFileSync } from 'node:fs';
 import net from 'node:net';
@@ -540,6 +541,46 @@ test('the real entry runs through a symlinked directory and keeps stdout for pro
   assert.equal(done.status, 0, done.stderr);
   assert.deepEqual(done.stdout.trim().split('\n').map((line) => JSON.parse(line)), [{ ev: 'ready', v: 1, kit: '3.0.0' }]);
   assert.match(done.stderr, /kit diagnostics/);
+});
+
+test('the real entry exits when Still closes its stdin, even if the kit never lets go (#1143)', async () => {
+  const { mkdtempSync, mkdirSync, writeFileSync, copyFileSync, realpathSync } = await import('node:fs');
+  const { tmpdir } = await import('node:os');
+  const { join } = await import('node:path');
+  const { spawn } = await import('node:child_process');
+  const base = realpathSync(mkdtempSync(join(tmpdir(), 'imessage-eof-')));
+  const kitDir = join(base, 'node_modules', '@photon-ai', 'imessage-kit');
+  mkdirSync(kitDir, { recursive: true });
+  copyFileSync(fileURLToPath(SIDECAR), join(base, 'sidecar.mjs'));
+  writeFileSync(join(kitDir, 'package.json'), JSON.stringify({
+    name: '@photon-ai/imessage-kit', version: '3.0.0', type: 'module', exports: { '.': { import: './index.js' } },
+  }));
+  // A watcher that keeps the event loop alive and a close() that never settles: only a hard exit ends this.
+  writeFileSync(join(kitDir, 'index.js'), [
+    'export class IMessageSDK {',
+    '  async startWatching() { this.timer = setInterval(() => {}, 1000); }',
+    '  async getMessages() { return []; }',
+    '  async send() {}',
+    '  close() { return new Promise(() => {}); }',
+    '}',
+  ].join('\n'));
+  const child = spawn(process.execPath, [join(base, 'sidecar.mjs')], {
+    stdio: ['pipe', 'pipe', 'pipe'], env: { PATH: '/usr/bin:/bin', HOME: base },
+  });
+  let out = '';
+  child.stdout.on('data', (chunk) => { out += chunk; });
+  child.stdin.write('{"op":"hello","v":1}\n');
+  for (let i = 0; i < 100 && !out.includes('"ready"'); i += 1) await new Promise((resolve) => setTimeout(resolve, 50));
+  assert.match(out, /"ready"/);
+  const started = Date.now();
+  const exited = once(child, 'exit');
+  child.stdin.end();   // what Still's exit, crash or SIGKILL does to this pipe
+  const timer = setTimeout(() => child.kill('SIGKILL'), 15_000);
+  const [code, signal] = await exited;
+  clearTimeout(timer);
+  assert.equal(signal, null, 'exited on its own, not killed by the test');
+  assert.equal(code, 0);
+  assert.ok(Date.now() - started < 10_000);
 });
 
 test('a backfill pages through every row since since_ms, oldest first', async () => {

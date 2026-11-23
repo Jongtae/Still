@@ -8,6 +8,8 @@ import { fileURLToPath } from 'node:url';
 
 export const PROTOCOL_VERSION = 1;
 const BACKFILL_PAGE = 500;
+/** How long the sidecar waits after Still closes its stdin before it exits regardless. */
+const EOF_GRACE_MS = 3_000;
 
 const DISK_DENIED = /unable to open|authorization denied|not authorized|operation not permitted|EPERM|EACCES|SQLITE_CANTOPEN|SQLITE_AUTH/i;
 const SIGN_IN = /signed in|not signed|sign in/i;
@@ -233,6 +235,11 @@ export async function runSidecar({ input, output, createKit, kitVersion, databas
 if (process.argv[1] && fileURLToPath(import.meta.url) === realpathSync(process.argv[1])) {
   // The kit may log diagnostics. Reserve stdout for protocol frames, including during import.
   globalThis.console = new Console({ stdout: process.stderr, stderr: process.stderr });
+  // Still holds this pipe. When it closes (Still stopped, crashed or was killed) the sidecar exits
+  // after a short grace for an in-flight send, even if the kit's watcher or close() never lets go (#1143).
+  const exitSoon = () => setTimeout(() => process.exit(0), EOF_GRACE_MS).unref();
+  process.stdin.once('end', exitSoon);
+  process.stdin.once('close', exitSoon);
   const { IMessageSDK } = await import('@photon-ai/imessage-kit');
   const manifest = new URL('./node_modules/@photon-ai/imessage-kit/package.json', import.meta.url);
   const { version } = JSON.parse(readFileSync(manifest, 'utf8'));
