@@ -3150,6 +3150,123 @@ EFFECT_NONE,EFFECT_DRAFT,EFFECT_CHANGED,EFFECT_UNKNOWN='none','draft','changed',
 #: Work, Memory keys), so none ever blocks continuation.  A location request is not listed: a Work
 #: that already prompted the owner for a location is not replayed (#774).
 OWNER_LOCAL_ACTIONS=frozenset({'tell_owner','save_result','save_memory',CONNECTOR_APPROVAL_NOTE})
+#: #1170: Still's own owner records that a later attempt of the same Work revises in place rather than
+#: sets up again: a scheduled preparation (``schedule_preparation replaces``, and the store's per-Work
+#: content key that returns the same row for the same call) and an entrusted line (``entrusted_line
+#: revise`` on its id and version).  They stay ``changed`` (``record_effect``) for every reader; only a
+#: re-delegation within the same Work continues past them, its brief naming each record
+#: (``revisable_record_note``).  Each later run of such a record is its own Work, under its own approvals.
+REVISABLE_RECORD_ACTIONS=PREPARATION_ACTIONS|LINE_ACTIONS
+
+def revisable_preparation(store,preparation_id):
+ """``{'state', 'line_piece'?}`` when the current Work can still revise this preparation in place, else None.
+
+ It follows the scheduler's own rule (#1170 review): an inactive row is gone (a replacement cancels the
+ row it replaces); a line's next piece is revised by scheduling it again (one child per run,
+ ``piece_of``) while it is still scheduled, since ``schedule_piece`` refuses ``replaces``; any other row only when it was accepted
+ and not set up by a daily-plan run, because ``preparation_scheduler`` refuses a replacement from a
+ proposal or a plan run (``replace_not_allowed``).
+ """
+ from .preparations import ACTIVE_STATES,ACCEPTED_DAY_PLAN,STATE_SCHEDULED
+ if not isinstance(preparation_id,str) or not preparation_id:return None
+ try:
+  with store.db() as db:
+   row=db.execute('SELECT state,piece_of,accepted_by FROM preparations WHERE id=?',(preparation_id,)).fetchone()
+ except __import__("sqlite3").OperationalError:
+  return None
+ if not row or row['state'] not in ACTIVE_STATES:return None
+ # ``_piece_admission`` updates an existing piece only while it is still scheduled (``line_piece_exists``).
+ if row['piece_of']:return {'state':row['state'],'line_piece':True} if row['state']==STATE_SCHEDULED else None
+ if row['accepted_by'] in (None,ACCEPTED_DAY_PLAN):return None
+ return {'state':row['state']}
+
+def revisable_line(store,line_id):
+ """``{'state', 'version'}`` when this entrusted line can still be revised in place, else None (#1170 review).
+
+ ``entrusted_line revise`` refuses a stopped line (``line_stopped``); restarting it is the owner's own
+ separate operation, so a stopped, forgotten or unreadable line is no record to revise.
+ """
+ from .entrusted_lines import EntrustedLines,LineRefusal,STATE_ACTIVE,line_id_of
+ if not isinstance(line_id,str) or not line_id:return None
+ try:brief=EntrustedLines(store).current(line_id_of(line_id))
+ except (LineRefusal,__import__("sqlite3").OperationalError):return None
+ if not brief or brief.get('state')!=STATE_ACTIVE:return None
+ return {'state':STATE_ACTIVE,**({'version':brief['version']} if isinstance(brief.get('version'),int) else {})}
+
+def revising_work(service,work_id):
+ """Whether ``work_id`` is a Work whose re-delegation revises its own records in place (#1170).
+
+ Only the owner's own typed Work: there the scheduler accepts ``replaces`` and a line revision on the
+ owner's words.  A scheduled run, a steered run or a line's run has narrower rules (its own row only,
+ one piece per run, bookkeeping receipts), so its records keep stopping re-delegation.
+ """
+ try:job=service.store.job(work_id)
+ except Exception:return False
+ return bool(job) and bool(service.owner_typed_work(job))
+
+def replaced_preparations(rows):
+ """The preparation ids a later call of the same Work named in ``replaces`` (#1170 review).
+
+ ``rows`` are ``(tool, status, detail)``; the argument is on the call's running record.  A replacement
+ cancels the row it replaces, so that row's call is carried on by the replacing call, which is
+ classified on its own.
+ """
+ named=set()
+ for tool,_status,detail in rows:
+  detail=detail if isinstance(detail,dict) else {}
+  if (detail.get('host_action') or tool) not in PREPARATION_ACTIONS:continue
+  arguments=detail.get('arguments') if isinstance(detail.get('arguments'),dict) else {}
+  if isinstance(arguments.get('replaces'),str) and arguments['replaces']:named.add(arguments['replaces'])
+ return frozenset(named)
+
+def revisable_record(action,status,detail=None,store=None,replaced=frozenset()):
+ """Whether one ``changed`` call is a record a re-delegation of the same Work revises in place (#1170).
+
+ With ``store``, a preparation must also still be revisable by this Work (``revisable_preparation``),
+ or have been replaced by a later call of the same Work (``replaced``), which is judged by itself.
+ """
+ if action not in REVISABLE_RECORD_ACTIONS or status!='succeeded':return False
+ if store is None:return True
+ evidence=(detail or {}).get('evidence') if isinstance((detail or {}).get('evidence'),dict) else {}
+ if action in LINE_ACTIONS:return revisable_line(store,evidence.get('line_id')) is not None
+ ident=evidence.get('preparation_id')
+ return ident in replaced or revisable_preparation(store,ident) is not None
+
+def revisable_record_note(store,work_id):
+ """The records this Work's attempts set up that a later attempt revises in place, as host facts, or '' (#1170).
+
+ Read from the Work's own succeeded calls: only identifiers and states the tools returned, never
+ their goals or rules.
+ """
+ with store.db() as db:
+  # Every call of the Work: a manifest may expose either action under another tool id, and only
+  # ``call_effects`` resolves the recorded ``host_action`` (#1170 review).
+  rows=db.execute('SELECT tool,status,detail FROM tool_events WHERE job_id=? ORDER BY id',(work_id,)).fetchall()
+ calls=[]
+ for row in rows:
+  try:detail=json.loads(row['detail'] or '{}')
+  except (TypeError,ValueError):continue
+  calls.append((row['tool'],row['status'],detail if isinstance(detail,dict) else {}))
+ facts,seen=[],set()
+ for action,effect,status,detail in call_effects(calls,with_detail=True):
+  if effect!=EFFECT_CHANGED or not revisable_record(action,status):continue
+  evidence=detail.get('evidence') if isinstance(detail.get('evidence'),dict) else {}
+  fields=(('preparation_id','kind','state','due','recurrence') if action in PREPARATION_ACTIONS
+          else ('line_id','version','state'))
+  fact={key:evidence[key] for key in fields if isinstance(evidence.get(key),(str,int,float))}
+  ident=fact.get('preparation_id') or fact.get('line_id')
+  if not ident:continue
+  fact={'tool':action,**fact}
+  if ident in seen:facts=[item for item in facts if (item.get('preparation_id') or item.get('line_id'))!=ident]
+  seen.add(ident);facts.append(fact)
+ current=[]
+ for fact in facts:
+  now=(revisable_preparation(store,fact['preparation_id']) if fact.get('preparation_id')
+       else revisable_line(store,fact.get('line_id')))
+  if now is None:continue
+  current.append({**fact,**now})
+ facts=current
+ return prompt('revisable_records')+'\n'+json.dumps(facts[-12:],ensure_ascii=False) if facts else ''
 
 def record_effect(action,detail,status):
  """The effect class of one recorded tool call (#1445, #618 E1): the one rule every consumer applies.

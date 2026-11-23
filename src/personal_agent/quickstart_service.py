@@ -1296,6 +1296,8 @@ class AgentService:
           (``MAX_CONTINUATIONS``) - every owner-act continuation counts, a renewed allowance included.
 
         ``none`` and ``draft`` calls never block, nor does an owner-local write (``OWNER_LOCAL_ACTIONS``).
+        #1170: nor, for ``redelegate`` only, a record of Still's own that the next attempt revises in place
+        (``REVISABLE_RECORD_ACTIONS``: a scheduled preparation, an entrusted line).
         Unknown and observed external changes are read over the whole Work (and its request chain);
         ``since`` (an event id) limits the calls and owner waits to one attempt.  The reasons come in
         ``CONTINUE_REASONS`` order and read as ``CONTINUE_TEXT``; an empty tuple means the Work may continue.
