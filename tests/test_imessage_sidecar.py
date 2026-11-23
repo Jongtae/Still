@@ -503,6 +503,25 @@ class LauncherTest(unittest.TestCase):
         self.assertEqual(next(events), {'ev': 'sent', 'id': 'r1'})
         process_launcher.stop()
 
+    def test_from_me_delivery_flags_and_their_later_changes_reach_the_caller_unchanged(self):
+        # #1179: Messages.app writes a from-me row even for a failed send, and sets its flags later.
+        # The launcher keeps no delivery state: every re-observation of a row is passed on as is.
+        popen = FakePopen()
+        process_launcher = launcher(popen=popen)
+        process_launcher.start()
+        process = popen.processes[0]
+        base = {'ev': 'from_me', 'guid': 'g1', 'handle': '+15551230000', 'text': 'hi', 'ts_ms': 6}
+        process.stdout.push({**base, 'sent': True, 'delivered': False, 'error': None})
+        process.stdout.push({**base, 'sent': True, 'delivered': False, 'error': 22})
+        process.stdout.push({**base, 'sent': True, 'delivered': True, 'error': None})
+        events = process_launcher.events()
+        self.assertEqual([next(events) for _ in range(3)], [
+            {**base, 'sent': True, 'delivered': False, 'error': None},
+            {**base, 'sent': True, 'delivered': False, 'error': 22},
+            {**base, 'sent': True, 'delivered': True, 'error': None},
+        ])
+        process_launcher.stop()
+
     def test_send_op_says_whether_a_ready_child_took_the_op(self):
         process_launcher = launcher()
         scope = {'op': 'scope', 'mode': 'off'}
