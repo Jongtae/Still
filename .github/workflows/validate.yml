@@ -21,7 +21,8 @@ concurrency:
 jobs:
   validate:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    # #1150: the whole suite alone takes about 27 minutes; 30 cancelled ordinary runs.
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@v7
         with:
