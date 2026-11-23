@@ -2624,9 +2624,11 @@ STILL_RECORD_ACTIONS = frozenset(STILL_RECORD_KINDS)
 def still_record_ids(store, work_id):
  """``{(kind, id)}`` of the records this Work made that Still holds and that never ran (#1167).
 
- A row the Work replaced or the owner cancelled is still known to Still, so its call is reconciled.
- A preparation that already ran (a run started, or it was delivered, failed or expired) is not: its
- run may have acted outside, and the next attempt could repeat it, so the Work keeps the effect stop.
+ A row this Work itself replaced (a succeeded call of this Work named it in ``replaces``) is still
+ known to Still, so its call is reconciled.  Not reconciled, so the Work keeps the effect stop:
+ a preparation that already ran (a run started, or it was delivered, failed or expired), whose run may
+ have acted outside and which the next attempt could repeat; and a row cancelled any other way (the
+ owner's cancellation), which the next attempt must not undo by scheduling it again.
  Only ``still_records`` (what the next attempt may revise) is limited to current rows.
  """
  from . import entrusted_lines as el, preparations as prep
@@ -2634,9 +2636,19 @@ def still_record_ids(store, work_id):
  with store.db() as db:
   tables = {row['name'] for row in db.execute("SELECT name FROM sqlite_master WHERE type='table' "
                                             "AND name IN ('preparations','procedure_versions')")}
+  asked, succeeded = {}, set()
+  for row in db.execute("SELECT status,detail FROM tool_events WHERE job_id=? AND tool='schedule_preparation'", (work_id,)):
+   try:detail = json.loads(row['detail'] or '{}')
+   except (TypeError, ValueError):continue
+   call = detail.get('call_id') if isinstance(detail, dict) else None
+   if not isinstance(call, str):continue
+   if row['status'] == 'running' and isinstance(detail.get('arguments'), dict):asked[call] = detail['arguments'].get('replaces')
+   elif row['status'] == 'succeeded':succeeded.add(call)
+  replaced = {asked[call] for call in succeeded if isinstance(asked.get(call), str)}
   ids = {('preparation', row['id']) for row in db.execute(
-   'SELECT id FROM preparations WHERE created_from=? AND last_run_job_id IS NULL AND COALESCE(run_count,0)=0 '
-   'AND state NOT IN (?,?,?,?,?)', (work_id, *ran))} if 'preparations' in tables else set()
+   'SELECT id,state FROM preparations WHERE created_from=? AND last_run_job_id IS NULL AND COALESCE(run_count,0)=0 '
+   'AND state NOT IN (?,?,?,?,?)', (work_id, *ran)) if row['state'] != prep.STATE_CANCELLED or row['id'] in replaced
+   } if 'preparations' in tables else set()
   if 'procedure_versions' in tables:
    ids |= {('line', row['slot'][len(el.SLOT_PREFIX):]) for row in db.execute(
     'SELECT slot FROM procedure_versions WHERE work_id=? AND version=1 AND slot LIKE ?', (work_id, el.SLOT_PREFIX+'%'))}

@@ -131,6 +131,23 @@ class Reconciled(StillRecords):
 
 
 class OutsideEffectsUnchanged(StillRecords):
+    def test_an_owner_cancellation_during_the_attempt_keeps_the_effect_stop(self):
+        # Codex P2: re-delegation must not undo the owner's cancellation by scheduling the reminder again.
+        work, row = self.scheduled_work()
+        self.service.preparations.cancel(row['id'])
+        self.assertIn('effect', self.service.continuation_reasons(work, 'redelegate'))
+        self.assertEqual(self.step(work, following=object()).next.call_args.kwargs['effect'], 'changed')
+
+    def test_a_row_this_work_replaced_still_reconciles(self):
+        work, row = self.scheduled_work()
+        self.script = [{'content': None, 'tool_calls': [call('2', 'schedule_preparation',
+                                                             **self.schedule_args(row, replaces=row['id']))]}, finish('g', '2')]
+        with self.store.db() as db:
+            db.execute("UPDATE jobs SET status='queued',response=NULL WHERE id=?", (work,))
+        self.service.run_one()
+        self.assertEqual(self.service.preparations.get(row['id'])['state'], prep.STATE_CANCELLED)
+        self.assertNotIn('effect', self.service.continuation_reasons(work, 'redelegate'))
+
     def test_a_preparation_that_already_ran_keeps_the_effect_stop(self):
         # Codex P2: a short reminder that fired while the attempt ran is no longer revisable, so it is not reconciled.
         work, row = self.scheduled_work()
