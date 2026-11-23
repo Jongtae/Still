@@ -55,6 +55,9 @@ TAPBACK_NAMES = {'like': '+1', 'dislike': '-1', 'love': 'heart', 'laugh': 'grin'
 
 _BARE_URL = re.compile(r'[A-Za-z][A-Za-z0-9+.-]*://([^\s<>]+)')
 _URL_TRAILING_PUNCTUATION = '.,;:!?\'"*~…“”‘’。，；：！？'
+_ARITHMETIC_STAR = re.compile(r'(?<=\d)\*(?=\d)')
+_LONG_ORDERED_MARKER = re.compile(
+    r'(?m)(?:^|(?<=\r))([ \t]*(?:(?:[-+*]|[0-9]{1,9}[.)])[ \t]+)*?[0-9]{4,})\.(?=\s|$)')
 
 
 # Supply the inline rule's matcher without adding the optional linkify-it-py dependency.
@@ -82,25 +85,37 @@ _MARKDOWN = MarkdownIt('commonmark', {'linkify': True}).enable(['table', 'strike
 _MARKDOWN.inline.ruler.enable('linkify')
 _MARKDOWN.linkify = _BareURLMatcher()
 _MARKDOWN.normalizeLink = _MARKDOWN.normalizeLinkText = lambda url: url
+# Messages receives the URL as text, so HTML link restrictions would expose it to Markdown parsing.
+_MARKDOWN.validateLink = lambda url: True
 _LISTS = ('bullet_list', 'ordered_list')
 
 
 def plain_text(text: str) -> str:
     """Render Markdown for Messages, preserving the source when it has no markup."""
+    # Use private-use characters absent from the input so the original characters can be restored.
+    used = set(text)
+    markers = (chr(code) for code in range(0xE000, 0xF900) if chr(code) not in used)
+    star, dot = next(markers, None), next(markers, None)
+    if dot is None:
+        return text
+    # A star between digits is arithmetic, even within a formatted answer.
+    source = _ARITHMETIC_STAR.sub(star, text)
+    # A long dotted number at the start of a line or list item may be a date.
+    source = _LONG_ORDERED_MARKER.sub(lambda match: match[1] + dot, source)
     env = {}
     try:
-        tokens = _MARKDOWN.parse(text, env)
+        tokens = _MARKDOWN.parse(source, env)
     except Exception:
         return text
     if not env.get('references') and all(
             token.type in ('paragraph_open', 'paragraph_close', 'inline', 'html_block')
-            and all(child.type in ('text', 'softbreak', 'html_inline')
-                    or child.markup == 'linkify'
-                    or (child.type == 'text_special' and child.markup == child.content)
+            and all(child.type in ('text', 'text_special', 'softbreak', 'html_inline') or child.markup == 'linkify'
                     for child in token.children or ())
             for token in tokens):
         return text
-    return _plain_blocks(SyntaxTreeNode(tokens).children)
+    rendered = _plain_blocks(SyntaxTreeNode(tokens).children).translate(str.maketrans({star: '*', dot: '.'}))
+    # The sidecar refuses empty messages, which can result from parsing a reference definition.
+    return rendered if rendered.strip() else text
 
 
 def _plain_blocks(nodes):
@@ -137,13 +152,17 @@ def _plain_list_item(item, marker):
 def _plain_inline(node):
     if node.type in ('softbreak', 'hardbreak'):
         return '\n'
-    if node.type == 'image' and not node.children:
-        return ''
+    if node.type == 'text_special':
+        # Escapes and entities carry their original spelling in markup.
+        return node.markup
     label = ''.join(map(_plain_inline, node.children)) if node.children else node.content
     if node.type == 'link':
         url = node.attrGet('href')
         if node.markup == 'autolink' or label == url:
             return label
+        return f'{label} ({url})' if label else url
+    if node.type == 'image':
+        url = node.attrGet('src')
         return f'{label} ({url})' if label else url
     return label
 
@@ -302,11 +321,13 @@ class IMessageSurface(DirectMessageSurface):
         if not self.owns(job) or not self._allowed(cfg, job['created']):
             return False
         frame = draft_frame(text, 0)
+        # A refused hand-off must not trigger another attempt on each presence tick under the lock.
+        state.wait_status_at = now
         try:
             self._post(cfg, frame)
         except (self.NOT_SENT, self.ERROR):
             return False
-        state.wait_status_at, state.wait_status_text = now, frame
+        state.wait_status_text = frame
         return True
 
     def _injected_transport(self):
