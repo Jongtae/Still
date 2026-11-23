@@ -397,6 +397,14 @@ class Disconnect(Case):
         self.service.stop_surfaces()
         self.assertTrue(reaped.is_set(), 'shutdown returned only after the start reaped its child')
 
+    def test_no_sidecar_starts_after_shutdown(self):
+        # A poll pass already inside receive() when Still shuts down must not launch a child afterwards.
+        self.service.start_imessage_pairing()
+        self.service.stop_surfaces()
+        self.surface.receive()
+        self.service.receive_polled_surfaces()
+        self.assertEqual(self.popen.calls, [])
+
     def test_still_main_stops_the_surfaces_before_it_exits(self):
         main = (Path(imessage_surface.__file__).with_name('quickstart.py')).read_text(encoding='utf-8')
         tail = main[main.index('    try:run()'):]

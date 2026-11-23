@@ -165,6 +165,7 @@ class IMessageSurface(DirectMessageSurface):
         self._supervised = None
         self._starting = None
         self._stopping = False
+        self._closed = False
         self._stopped = threading.Condition()   # signalled when a sidecar stop finishes
         self._retry_at = 0
         self._backoff = 1
@@ -215,7 +216,7 @@ class IMessageSurface(DirectMessageSurface):
             if self._injected_transport() is not None or not self.offered() or not self._wanted(self.config(), now):
                 sidecar = self._detach_sidecar()
             else:
-                if self._supervised is not None or self._starting is not None or self._stopping:
+                if self._closed or self._supervised is not None or self._starting is not None or self._stopping:
                     return
                 if time.monotonic() < self._retry_at:
                     return
@@ -324,6 +325,7 @@ class IMessageSurface(DirectMessageSurface):
     def shutdown(self):
         """Stop the sidecar and wait for any stop or start under way, so Still never exits before its child."""
         with self.service.lock:
+            self._closed = True   # admitted under this lock: no start begins after shutdown
             sidecar = self._detach_sidecar()
         if sidecar is not None:
             self._stop_sidecar(sidecar)
