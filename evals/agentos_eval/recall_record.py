@@ -156,7 +156,7 @@ def dry_run_engine(catalogue):
                 range(1,len(context.facts['notes'].splitlines())+1)])
         elif context.purpose == 'work-orchestration':
             data = dict(worker=catalogue.default,model='',effort='',brief=dict(notes='',lens='',needs=''),
-                reason='dry-run fixture',reply='',recall_query='',
+                reason='dry-run fixture',reply='',recall_query='',acknowledgement='',
                 account_change=False,owner_situation=False,technical_work=False)
             if 'ask_location' in schema['properties']:
                 data['ask_location'] = ''
