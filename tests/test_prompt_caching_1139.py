@@ -3,8 +3,9 @@
 Anthropic prompt caching (GA): the static prefix (tools + Still's fixed
 instructions) gets a 1-hour breakpoint, a multi-turn loop's growing
 conversation the default 5-minute automatic entry, and a one-shot required
-judgment no tail entry.  OpenAI Responses caches implicitly, so its request is
-unchanged; both routes record the provider's reported token counts.
+judgment no tail entry.  OpenAI Responses caches implicitly (its only request
+change is #1161's ``prompt_cache_key``); both routes record the provider's
+reported token counts.
 
 Evidence class: unit tests with injected transports and a temporary store.
 No model, provider, network or owner data is used.
@@ -132,7 +133,7 @@ class AnthropicCacheTests(unittest.TestCase):
 
 
 class OtherProviderTests(unittest.TestCase):
-    def test_openai_request_is_unchanged_and_its_cache_usage_is_recorded(self):
+    def test_openai_request_keeps_its_shape_and_its_cache_usage_is_recorded(self):
         transport = Transport(OPENAI_REPLY)
         adapter = ModelAdapter(transport)
         adapter.tool_turn(OPENAI, 'sk', loop_messages(), TOOLS)
