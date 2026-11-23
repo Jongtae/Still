@@ -175,7 +175,7 @@ class QuickStore:
                 id INTEGER PRIMARY KEY AUTOINCREMENT, job_id TEXT NOT NULL, tool_event_id INTEGER,
                 call_id TEXT, tool TEXT NOT NULL, epoch INTEGER, created REAL NOT NULL,
                 source_kind TEXT NOT NULL, full_length INTEGER NOT NULL, excerpt TEXT NOT NULL,
-                page_url TEXT, page_title TEXT
+                page_url TEXT, page_title TEXT, page_etag TEXT, page_last_modified TEXT
             );
             CREATE INDEX IF NOT EXISTS work_read_results_job ON work_read_results(job_id,id);
             CREATE TABLE IF NOT EXISTS work_read_judgments(
@@ -301,7 +301,7 @@ class QuickStore:
             if 'surface' not in columns:
                 db.execute("ALTER TABLE telegram_notifications ADD COLUMN surface TEXT NOT NULL DEFAULT 'telegram'")
             read_result_columns = {row['name'] for row in db.execute('PRAGMA table_info(work_read_results)')}
-            for column in ('page_url', 'page_title'):
+            for column in ('page_url', 'page_title', 'page_etag', 'page_last_modified'):
                 if column not in read_result_columns:
                     db.execute(f'ALTER TABLE work_read_results ADD COLUMN {column} TEXT')
             self._setup_read_pages_search(db)
@@ -2716,14 +2716,26 @@ class QuickStore:
         return self.telegram.update_notification(notification_id, state, message_id, fingerprint, delivered=delivered)
 
     def record_read_result(self, job_id, *, tool, text, source_kind, epoch=None, call_id=None,
-                           tool_event_id=None, now=None, db=None, page_url=None, page_title=None):
+                           tool_event_id=None, now=None, db=None, page_url=None, page_title=None,
+                           page_etag=None, page_last_modified=None):
         """Keep one worker-visible excerpt locally, redacted before it can be cut."""
         from .current_context import redact_known_secrets
         from .entrusted_lines import line_state
+        from .local_tools import page_validator
         from .preparations import preparation_lineage, preparation_of
 
-        excerpt = redact_known_secrets(self, text)[:READ_RESULT_EXCERPT_CHARS]
-        page_url = redact_known_secrets(self, page_url)[:512] if page_url else None
+        redacted = redact_known_secrets(self, text)
+        excerpt = redacted[:READ_RESULT_EXCERPT_CHARS]
+        kept_url = redact_known_secrets(self, page_url)[:512] if page_url else None
+        etag = last_modified = None
+        # A redacted or shortened address cannot identify the same representation.
+        if kept_url and kept_url == page_url and excerpt == redacted == text:
+            etag = page_validator(page_etag)
+            last_modified = page_validator(page_last_modified)
+            if etag and redact_known_secrets(self, etag) != etag:
+                etag = None
+            if last_modified and redact_known_secrets(self, last_modified) != last_modified:
+                last_modified = None
         page_title = redact_known_secrets(self, page_title)[:512] if page_title else None
         with (self.db() if db is None else nullcontext(db)) as conn:
             if not conn.in_transaction:
@@ -2746,9 +2758,9 @@ class QuickStore:
                 return None
             row_id = conn.execute(
                 'INSERT INTO work_read_results(job_id,tool_event_id,call_id,tool,epoch,created,source_kind,'
-                'full_length,excerpt,page_url,page_title) VALUES (?,?,?,?,?,?,?,?,?,?,?)',
+                'full_length,excerpt,page_url,page_title,page_etag,page_last_modified) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)',
                 (job_id, tool_event_id, call_id, tool, epoch, time.time() if now is None else now,
-                 source_kind, len(text), excerpt, page_url, page_title),
+                 source_kind, len(text), excerpt, kept_url, page_title, etag, last_modified),
             ).lastrowid
             conn.execute('DELETE FROM work_read_results WHERE id IN ('
                          'SELECT id FROM work_read_results WHERE job_id=? ORDER BY id DESC LIMIT -1 OFFSET ?)',
@@ -2823,6 +2835,20 @@ class QuickStore:
             if len(found) >= limit:
                 break
         return found
+
+    def revalidation_row(self, url, *, now=None):
+        """The newest eligible whole page with a validator for this address."""
+        cutoff = (time.time() if now is None else now) - READ_RESULT_RETENTION_SECONDS
+        with self.db() as db:
+            documents = set(self.config('file_workspace_document_jobs', [], db=db) or [])
+            rows = db.execute(f"""SELECT r.id,r.job_id,r.page_url,r.page_title,r.excerpt,r.created,
+                        r.page_etag,r.page_last_modified
+                    FROM work_read_results r JOIN jobs j ON j.id=r.job_id
+                    WHERE r.tool='public_page_read' AND {READ_PAGE_ROW_SQL.format(row='r')}
+                    AND r.page_url=? AND r.created>? AND {OWNER_WORDS_SQL}
+                    AND (r.page_etag IS NOT NULL OR r.page_last_modified IS NOT NULL)
+                    ORDER BY r.created DESC,r.id DESC""", (url, cutoff))
+            return next((dict(row) for row in rows if row['job_id'] not in documents), None)
 
     def read_results(self, job_id, *, epoch=_ANY_READ_RESULT_EPOCH, after_id=0, now=None):
         """Unexpired result rows, newest first. An explicit None matches only ledgerless reads."""

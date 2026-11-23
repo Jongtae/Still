@@ -313,6 +313,11 @@ def _history_time(value):
         return '—'
 
 
+def _read_page_items(evidence):
+    return [f"a page an earlier Work read {_text(ref.get('work_id'), 40)}: {_text(ref.get('url'), 200)}"
+            for ref in evidence.get('read_page_refs') or () if isinstance(ref, dict)]
+
+
 def _event_items(action, evidence):
     """Short labels of the owner items one successful read or write event shows."""
     evidence = evidence if isinstance(evidence, dict) else {}
@@ -326,9 +331,10 @@ def _event_items(action, evidence):
             *(f"earlier exchange {ref['work_id']} (messages {','.join(str(i) for i in ref['message_ids'])})"
               for ref in evidence.get('exchange_refs') or []),
             *(f"an earlier Work's read results {work_id}" for work_id in evidence.get('read_result_work_ids') or []),
-            *(f"a page an earlier Work read {_text(ref.get('work_id'), 40)}: {_text(ref.get('url'), 200)}"
-              for ref in evidence.get('read_page_refs') or () if isinstance(ref, dict)),
+            *_read_page_items(evidence),
         ]
+    if action == 'public_page_read':
+        return _read_page_items(evidence)
     if action == 'list_memory':
         keys = [_text(key, 80) for key in evidence.get('memory_keys') or ()]
         return keys or [f"기억 {int(evidence.get('memory_count') or 0)}개"]
@@ -797,6 +803,8 @@ def _work_information_use(store, job_id, redact=None, *, compare_held_values=Tru
         if (status == 'succeeded' or (action == MEMORY_UNDO_ACTION and status == 'recorded')) and action in READ_CATEGORIES:
             add(READ_CATEGORIES[action], _event_items(action, evidence),
                 limit=400 if action == 'browser_history_search' else LABEL_CHARS)
+        if status == 'succeeded' and action == 'public_page_read' and evidence.get('read_page_refs'):
+            add('conversation', _event_items(action, evidence))
         if action in LOOKUP_ACTIONS and status in ('succeeded', 'failed') and (action not in ('capability_search','public_download') or evidence.get('contacted') is True):
             # A succeeded lookup's record is what its Evidence says left (``sent``, the CLI's reported
             # queries); the worker's raw arguments are not shown for it.  A failed lookup was still

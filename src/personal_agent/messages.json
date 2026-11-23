@@ -9700,6 +9700,12 @@
   "ja": "作業開始後にこのツールが無効化されたか宣言が変わったため、実行しませんでした。新しい依頼で再試行してください。",
   "zh": "此工具在工作开始后被禁用或声明已更改，未执行。请通过新请求重试。"
  },
+ "agent_runtime.page_not_modified_unexpected": {
+  "ko": "공개 페이지가 바뀌지 않았다고 답했지만 이전에 읽은 내용이 없어 쓸 수 없었어요. 다시 읽어 주세요.",
+  "en": "The public page answered that it had not changed, but there was no earlier read to use. Read it again.",
+  "ja": "公開ページは変更なしと応答しましたが、以前に読んだ内容がないため使えませんでした。もう一度読んでください。",
+  "zh": "公开页面答复未更改，但没有之前读取的内容可用。请重新读取。"
+ },
  "agent_runtime.drive_unavailable": {
   "ko": "Google Drive에 접근하지 못했어요. 잠시 후 다시 시도해 주세요.",
   "en": "Could not access Google Drive. Try again shortly.",

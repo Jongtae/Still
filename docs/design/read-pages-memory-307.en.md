@@ -6,7 +6,7 @@ This is the design for [#307](https://github.com/Jongtae/Still/issues/307) at th
 
 Out of scope, as the owner decided: browser history ([#31](https://github.com/Jongtae/Still/issues/31), designed separately), and pages read behind the owner's sign-in.
 
-Slice 1 is implemented with this note. Later slices are proposals.
+Slices 1 and 2 are implemented. Later slices are proposals.
 
 ## Owner outcome
 
@@ -72,7 +72,7 @@ Slice 1 gives the AI what it needs to decide, and decides nothing itself:
 
 There is no per-category freshness table in core (C16), no background refetch, and no fetch on a mere mention (#307 2026-10-25 discussion: a mention is not an access).
 
-Proposed for slice 2 (not implemented): **conditional revalidation**. Keep the response validators (`ETag`, `Last-Modified`) with the row, and when the AI reads the same address again, send `If-None-Match` / `If-Modified-Since` (RFC 9111). A 304 reuses the kept text and costs no download. This touches the public page reader's transport (`local_tools.PublicPageReader`, urllib with a pinned connection path), so it is its own change.
+Slice 2 adds **conditional revalidation**. Keep safe response validators (`ETag`, `Last-Modified`) only when the excerpt is the whole page text and has no redactions. A re-read can use the newest unexpired eligible row for the requested address. Send `If-None-Match` and `If-Modified-Since` only on the hop whose normalized address matches the row. A 304 reuses the kept text without downloading the page body. It writes a new row with the validators, names the earlier Work in information use, and carries the outside-content mark forward.
 
 ### R6. Retention
 
@@ -94,7 +94,7 @@ Proposed for a later owner decision: whether a page the owner cites again should
 
 ## Authority and threat model
 
-- **Data.** No new data is collected. The rows already exist under #768; slice 1 adds an index of the public ones and a way to find them. Public page text is not owner-private data; it stays on the owner's device and reaches only the owner's chosen AI.
+- **Data.** The rows already exist under #768. Slice 1 adds an index of the public ones. Slice 2 keeps eligible public response validators on those rows with the same retention. Public page text stays on the owner's device and reaches only the owner's chosen AI.
 - **Secrets.** Indexed text is the row's text, which was redacted before it was written. The address is redacted too (`record_read_result`), and `public_page_read` refuses an address that carries a stored secret (#820).
 - **Grants and destinations.** No Grant, folder scope, connector or destination changes. A re-read uses the existing `public_page_read` with its existing boundary.
 - **Outside text (C17 case 3).** Pointers sit under a label that says content, never instructions; the outside mark is inherited.
@@ -103,17 +103,19 @@ Proposed for a later owner decision: whether a page the owner cites again should
 
 ## Existing solutions review
 
-- **Standards and platform.** SQLite FTS5 (`unicode61` tokenizer, `bm25`, `secure-delete`, SQLite 3.42+), part of the platform `sqlite3`. HTTP caching and conditional requests (RFC 9111) and stale-while-revalidate (RFC 5861) for the slice 2 revalidation.
+- **Standards and platform.** SQLite FTS5 (`unicode61` tokenizer, `bm25`, `secure-delete`, SQLite 3.42+), part of the platform `sqlite3`. HTTP conditional requests (RFC 9110 section 13) and cache validators (RFC 9111) cover slice 2.
 - **Official and reference implementations.** Anthropic's Messages API context editing and OpenAI's Responses conversation state keep tool results in the thread a follow-up continues (as #768 adopted); they do not offer cross-thread lookup, which is the gap here. Browser history search (Chrome omnibox, Firefox Places) finds pages by title and address with a full-text index over the browser's own record: the same shape, over a different source (#31).
-- **Mature open source.** ArchiveBox (MIT; self-hosted archive with full-text search over snapshots), Wallabag (MIT; read-later with search), Zotero (AGPL-3.0; by DOI). Each is a separate application with its own store and crawler, so adopting one would add a second owner-state store and a fetcher outside Still's egress boundary. hishel (BSD-3-Clause; RFC 9111 cache for httpx) is the candidate for slice 2 but targets `httpx`, while Still's public page reader is urllib with a pinned connection path and its other transport is the `httpx2` fork, so it needs a compatibility check before use.
+- **Mature open source.** ArchiveBox (MIT; self-hosted archive with full-text search over snapshots), Wallabag (MIT; read-later with search), Zotero (AGPL-3.0; by DOI). Each is a separate application with its own store and crawler, so adopting one would add a second owner-state store and a fetcher outside Still's egress boundary.
 - **Internal.** `work_read_results` (#768), the FTS5 recall pattern and `fts_prefix_expression` (#221), `search_conversation` and `read_results_block`, `owner_forget`, `portable_state`, `information_use._event_items`, `inherit_outside_content`. Each already follows the external pattern above (FTS5; tool results as thread items).
 - **Rejected.**
   - A new tool for page lookup: `search_conversation` already is the AI's "find what we did before" tool, with budget and audit.
   - Indexing every row (an external-content table): it would index owner-private and signed-in rows.
   - Returning excerpts with the pointers: it would spend the follow-up's room on every query, and decide for the AI what matters.
   - An application-level archive (ArchiveBox, Wallabag): a second store and crawler outside Still's boundary for a need the existing rows cover.
+  - hishel (BSD-3-Clause): its cache transport targets `httpx`. Still's public page reader uses address-pinned `http.client` connections.
   - A core freshness table per kind of page: C16 forbids category branches; the AI decides from the read time.
 - **Decision: Adopt.** SQLite FTS5 and the repository's existing #221 recall pattern over the existing #768 rows, through the existing `search_conversation` tool.
+- **Decision for slice 2: Adopt.** Use RFC 9110 section 13 conditional requests and RFC 9111 validators. The existing reader sends the headers. Thin Still glue selects eligible rows and records which Work supplied the reused text.
 
 ## Non-goals
 
@@ -137,8 +139,20 @@ Proposed for a later owner decision: whether a page the owner cites again should
 
 All of these are unit tests in `tests/test_read_pages_307.py` (model-free; temporary store; real `Capabilities`, `OwnerForget` and `portable_state`).
 
+## Acceptance (slice 2)
+
+- A 200 through `Capabilities` keeps both validators when the row holds the whole page text.
+- A re-read sends both conditional headers. A 304 returns the kept text and its earlier Work and read time. A new row keeps the validators.
+- A cut or redacted page keeps no validators. Its next read sends no conditional headers.
+- In a redirect chain, only the matching address gets the conditional headers. A 304 without validators fails.
+- Expired, forgotten, non-owner-words and file-workspace document Works supply no validators. Delegated and readonly Works send none.
+- Evidence and information use name the earlier Work and address. The reading Work inherits its outside-content mark.
+- Unsafe or secret-bearing validators are dropped. Conditional headers never carry CR or LF.
+- A portable copy drops the rows. An old store gains nullable validator columns and keeps its existing rows.
+
+The model-free tests in `tests/test_read_pages_revalidation_307.py` use the public reader's test opener and a temporary store.
+
 ## Later slices
 
-1. **Slice 2: conditional revalidation** (R5). Validators kept with the row; `If-None-Match` / `If-Modified-Since` on a re-read; a 304 reuses the kept text.
-2. **Slice 3: signed-in and browser pages.** Needs the owner's decision on signed-in pages first; then the browser's own per-page record of whether the view carried the owner's session.
-3. **Slice 4: retention beyond 30 days** for pages the owner returns to, if the owner wants it.
+- **Slice 3: signed-in and browser pages.** Needs the owner's decision on signed-in pages first, then the browser's own per-page record of whether the view carried the owner's session.
+- **Slice 4: retention beyond 30 days** for pages the owner returns to, if the owner wants it.

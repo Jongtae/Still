@@ -4021,7 +4021,10 @@ class Capabilities:
     # its row keeps the page's text rather than the reader's envelope (the attempt still judges both).
     if isinstance(visible,dict) and isinstance(visible.get('url'),str) and visible['url']:
      page={'page_url':visible['url'],'page_title':visible.get('title') if isinstance(visible.get('title'),str) else None}
-     if isinstance(visible.get('content'),str):page['row_text']=visible['content']
+     if isinstance(visible.get('content'),str):
+      page['row_text']=visible['content']
+      if action=='public_page_read' and not visible.get('content_truncated'):
+       page.update({f'page_{key}':visible[key] for key in ('etag','last_modified') if key in visible})
    epoch=getattr(getattr(self.budget,'ledger',None),'epoch',None)
    if browser:
     return self.store.record_read_result(self.job_id,tool=action,text=text,source_kind=kind,epoch=epoch,**page)
@@ -4712,10 +4715,42 @@ class Capabilities:
    # or link-local destination after DNS resolution, checked again on every redirect.
    self._page_address_secret_free(args.get('url'))
    # #820 review: every redirect target passes the same check before its request.
-   from .local_tools import PAGE_ADDRESS_CHECK
+   from .current_context import redact_known_secrets
+   from .local_tools import PAGE_ADDRESS_CHECK, PAGE_READ_SCOPE, normalize_public_url
+   plan={'tool':name,'url':args.get('url')}
+   row=None
+   if not self.delegated and not self.readonly:
+    try:url=normalize_public_url(plan['url'],getattr(self.network,'destination_declared',None))
+    except ValueError:pass
+    else:row=self.store.revalidation_row(url)
+   if row is not None:
+    validators={key:row[f'page_{key}'] for key in ('etag','last_modified')}
+    for key,value in validators.items():
+     if value is not None and redact_known_secrets(self.store,value)!=value:
+      validators[key]=None
+    if any(validators.values()):
+     plan['validators']={'url':row['page_url'],**validators}
    token=PAGE_ADDRESS_CHECK.set(self._page_address_secret_free)
-   try:return self._read_network({'tool':name,'url':args.get('url')})
+   try:result=self._read_network(plan)
    finally:PAGE_ADDRESS_CHECK.reset(token)
+   if result.get('not_modified') is True:
+    if 'validators' not in plan or result.get('url')!=row['page_url']:
+     raise ProviderError(msg('agent_runtime.page_not_modified_unexpected'))
+    self.store.inherit_outside_content(self.job_id,(row['job_id'],),name)
+    content=redact_known_secrets(self.store,row['excerpt'])
+    result={'tool':name,'url':row['page_url'],'retrieved_at':result['retrieved_at'],
+            'content':content,'content_truncated':False,'scope':PAGE_READ_SCOPE,'sources':[row['page_url']],
+            'unchanged_since':datetime.fromtimestamp(row['created'],timezone.utc).isoformat(),
+            'kept_from_work':row['job_id'],
+            'etag':row['page_etag'] if content==row['excerpt'] else None,
+            'last_modified':row['page_last_modified'] if content==row['excerpt'] else None}
+   # Validators are public headers, but a response can echo a held secret.
+   # Drop it before the result can reach either worker route.
+   for key in ('etag','last_modified'):
+    value=result.get(key)
+    if value is not None and redact_known_secrets(self.store,value)!=value:
+     result={**result,key:None}
+   return result
   if name=='public_download':
    from copy import copy
    destinations=[]
@@ -5727,6 +5762,8 @@ def _evidence_detail(name,result):
   return {key:result[key] for key in ('artifact','received','total','revision','offset','stop_code') if key in result}
  if name in ('web_search','public_page_read','weather'):
   summary={'sources':result.get('sources',[])[:8],'result_count':len(result.get('results',[])),'retrieved_at':result.get('retrieved_at')}
+  if name=='public_page_read' and result.get('kept_from_work'):
+   summary['read_page_refs']=[{'work_id':result['kept_from_work'],'url':result['url']}]
   # #655: which configured provider answered this search, and the selectors sent.
   if name in SEARCH_BACKED_ACTIONS and result.get('provider'):
    summary['provider']=result['provider']
