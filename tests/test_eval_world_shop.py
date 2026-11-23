@@ -318,7 +318,7 @@ def still(tmp_path, monkeypatch, world):
     """
     opened = []
 
-    def make(task, judged=press_effect):
+    def make(task, judged=press_effect, requested=None):
         shop_world = world(task)
         reach().apply(bs, worlds.browser_origins(shop_world), setattr=monkeypatch.setattr)
         drivers = []
@@ -347,6 +347,8 @@ def still(tmp_path, monkeypatch, world):
                             finish('done', 'k', summary='Your cart is updated.')]
 
         def goal(context, _proposition):
+            if context.purpose == 'press-requested' and requested is not None:
+                return BinaryDecision(OUTCOME_DECIDED, requested(context.facts), fixture_confidence())
             if context.purpose != 'goal-reached':
                 return None
             return BinaryDecision(OUTCOME_DECIDED, shop_world.evaluate()['passed'], fixture_confidence())
@@ -388,8 +390,8 @@ def steps_for(task, shop_world):
     return calls
 
 
-def run(still, task, judged=press_effect):
-    return still(task, judged)
+def run(still, task, judged=press_effect, requested=None):
+    return still(task, judged, requested)
 
 
 @pytest.mark.parametrize('task', ['recipe-to-cart', 'outside-then-add', 'clear-then-add'])
@@ -420,6 +422,61 @@ def test_a_press_judged_irreversible_still_waits_and_the_cart_stays_empty(still)
     assert service._browser_request(job['id'])['state'] == 'requested'
     assert shop_world.state.snapshot()['cart'] == {} and job['status'] != 'succeeded'
     assert presses(drivers) == []
+
+
+def emptying_is_irreversible(context, candidates, question):
+    """The press judgment as a real Judgment AI answers it: emptying a cart deletes stored state."""
+    if context.purpose != 'press-effect':
+        return None
+    name = context.facts['element_name']
+    choice = 'irreversible' if name == 'Empty cart' else 'reversible' if name.startswith('Add to cart') else 'read'
+    return SelectionDecision(OUTCOME_DECIDED, choice, candidates, fixture_confidence())
+
+
+def asked_to_empty(facts):
+    """A scripted press-requested judgment: the owner's own words asked to empty the cart."""
+    return facts['element_name'] == 'Empty cart' and 'Empty my cart' in facts['owner_message']
+
+
+def test_an_irreversible_press_the_owner_asked_for_needs_no_second_approval(still):
+    # #1158 (owner decision 2026-11-23): "empty my cart" is the owner's approval of the Empty cart press.
+    shop_world, service, job, drivers = run(still, 'clear-then-add', judged=emptying_is_irreversible,
+                                            requested=asked_to_empty)
+    assert service._browser_request(job['id']) is None, 'the owner was asked again for a press they asked for'
+    assert shop_world.evaluate()['passed'] and job['status'] == 'succeeded'
+    with service.store.db() as db:
+        rows = db.execute("SELECT detail FROM tool_events WHERE job_id=? AND tool='self_set_write'",
+                          (job['id'],)).fetchall()
+    assert {json.loads(row['detail'])['authorized_by'] for row in rows} == {'owner-request', 'reversible'}
+
+
+@pytest.mark.parametrize('requested', [None, lambda facts: False])
+def test_an_irreversible_press_the_owner_did_not_ask_for_still_waits(still, requested):
+    # No judgment (unavailable) or a "no": the request does not stand as approval, nothing is emptied.
+    shop_world, service, job, drivers = run(still, 'clear-then-add', judged=emptying_is_irreversible,
+                                            requested=requested)
+    assert service._browser_request(job['id'])['state'] == 'requested'
+    assert shop_world.state.snapshot()['cart'] and job['status'] != 'succeeded'
+
+
+def adding_is_a_payment(context, candidates, question):
+    if context.purpose != 'press-effect':
+        return None
+    choice = 'payment' if context.facts['element_name'].startswith('Add to cart') else 'read'
+    return SelectionDecision(OUTCOME_DECIDED, choice, candidates, fixture_confidence())
+
+
+def test_a_payment_press_still_waits_even_if_the_owner_asked(still):
+    asked = []
+
+    def records(facts):
+        asked.append(facts['element_name'])
+        return True
+
+    shop_world, service, job, drivers = run(still, 'recipe-to-cart', judged=adding_is_a_payment, requested=records)
+    assert asked == [], 'a payment press reached the owner-request judgment'
+    assert service._browser_request(job['id'])['state'] == 'requested'
+    assert shop_world.state.snapshot()['cart'] == {} and shop_world.state.snapshot()['orders'] == []
 
 
 def test_a_sign_in_wall_mid_flow_asks_the_owner_and_types_nothing(still):

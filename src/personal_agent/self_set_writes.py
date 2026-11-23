@@ -233,6 +233,20 @@ def authorize(service, job, binding, connection, operation, target, names=(), *,
     # owner's request covers a reversible press even after outside content was read; that
     # content only informs which one. Irreversible and payment presses still ask.
     reversible = effect == 'reversible' and (not marked or browser_press and service.owner_typed_work(job))
+    # #1158 (owner decision 2026-11-23): an irreversible press the owner's own typed message asked
+    # for (empty the cart, delete that item) is approved by that message; the owner is not asked
+    # again.  A judgment reads the owner's words against the element, which stays untrusted page
+    # data, so a press only a page asked for, or one broader than the request, still asks.
+    # Payments never reach it (above, and the judgment's own question).
+    requested = False
+    if effect == 'irreversible' and browser_press and not service.unattended_work(job) and service.owner_typed_work(job):
+        try:
+            from .conversation_handoff import JUDGMENT_YES
+            requested = service.decision_judge.press_requested(
+                (service.store.job(job['id']) or job).get('message'), operation, tuple(names), job['id']).outcome == JUDGMENT_YES
+        except Exception:
+            requested = False
+    covered = reversible or requested
     scoped = scoped_binding(binding)
     digest = service._browser_step_keys(scoped)['digest']
     label = service._redact_known_secrets(f'{connection or "browser"} / {operation} / {target}' +
@@ -249,8 +263,8 @@ def authorize(service, job, binding, connection, operation, target, names=(), *,
     with service.store.db() as db:
         if _effect_replayed(db, job['id'], digest):
             raise not_run(ToolError(msg('write_allowances.replayed'), 'effect_replayed'))
-    approval = service._browser_request(job['id']) if not reversible and not allowed else None
-    if not reversible and not allowed and not service._consume_browser_step(job, scoped):
+    approval = service._browser_request(job['id']) if not covered and not allowed else None
+    if not covered and not allowed and not service._consume_browser_step(job, scoped):
         asks = not service.unattended_work(job) or service.self_set_write_wait(job)
         if require_note and not note and asks:
             # #953 (owner choice 2026-11-17): no approval request without the AI's plain words.
@@ -272,7 +286,8 @@ def authorize(service, job, binding, connection, operation, target, names=(), *,
                   'revision': next(iter(modes.values()))['revision'] if allowed and len(modes)==1 else None,
                   'allowances': {key: value['revision'] for key,value in modes.items()} if allowed else {},
                   'connection_revisions': {key: value['connection_revision'] for key,value in modes.items()} if allowed else {},
-                  'authorized_by': 'connection-allowance' if allowed else 'reversible' if reversible else 'owner-step',
+                  'authorized_by': ('connection-allowance' if allowed else 'reversible' if reversible
+                                    else 'owner-request' if requested else 'owner-step'),
                   'authorized_at': time.time()}
         ticket['event'] = db.execute('INSERT INTO tool_events(job_id,tool,status,detail,created) VALUES (?,?,?,?,?)',
             (job['id'], ACTION, 'dispatching', json.dumps(ticket), time.time())).lastrowid

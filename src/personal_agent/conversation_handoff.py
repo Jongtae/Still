@@ -663,6 +663,8 @@ OWNER_ACT_QUESTION = prompt('owner_act_answer')
 CONNECTOR_EFFECT_QUESTION = prompt('connector_effect')
 #: #1063: a browser press, judged as a press on a page element rather than as a connector operation.
 PRESS_EFFECT_QUESTION = prompt('press_effect')
+#: #1158 (owner decision 2026-11-23): did the owner's own message ask for this irreversible press?
+PRESS_REQUESTED_PROPOSITION = prompt('press_requested')
 UNSUPPORTED_QUESTION = prompt('unsupported_capability').format(
     capabilities='; '.join(f'{key} = {label}' for key, label in UNSUPPORTED_CAPABILITIES.items()))
 CAPABILITY_NEED_QUESTION = prompt('capability_need').format(
@@ -879,6 +881,25 @@ class ConversationJudgments:
             question=CONNECTOR_EFFECT_QUESTION
         decision=self.engine.choose(context,('read','reversible','irreversible','payment'),question)
         return self.policy.selection(decision)
+
+    def press_requested(self, owner_message, operation, target, work_id=None):
+        """Did the owner's own message ask for exactly this irreversible browser press (#1158)?
+
+        Asked only for a press the press-effect judgment classified ``irreversible`` in a Work
+        the owner's own typed message started.  ``target`` is the press's ``(role, name, *form
+        field names)`` from Still's own page snapshot, untrusted page data; ``owner_message`` is
+        the owner's typed request.  Yes lets the owner's request stand as the approval of that
+        press; a payment never reaches this question.
+        """
+        role, name, *fields = [*map(str, target), '', ''][:max(2, len(target))]
+        context = self._context('press-requested', {'owner_message': owner_message or '', 'operation': operation,
+                                                    'element_role': role, 'element_name': name,
+                                                    'form_fields': ', '.join(fields) or 'none (not in a form)'},
+                                work_id=work_id)
+        decision = self.engine.judge(context, PRESS_REQUESTED_PROPOSITION)
+        verdict = self.policy.binary(decision)
+        return Judgment(JUDGMENT_UNAVAILABLE if verdict == 'unknown' else verdict,
+                        source=decision.confidence.provider or decision.outcome)
 
     def unsupported_capability(self, utterance):
         """Does ``utterance`` ask for a declared-but-unavailable capability?
