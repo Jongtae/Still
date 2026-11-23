@@ -249,6 +249,7 @@ class PreparationsService:
         """
         service=self.service
         def schedule(args):
+            if args.get('line'):args={**args,'line':el.line_id_of(args['line'])}
             # #780: the daily plan's own run sets up reading-and-reporting work; what it sets up never
             # pays (``SELF_SET``) and cannot schedule in turn, so one misled plan run stays bounded.
             planning=self.day_plan_run(job) and self.day_plan_on()
@@ -2696,6 +2697,7 @@ class PreparationsService:
         def refused(code,detail=''):
             return not_run(ToolError(msg('lines.refused_'+code,detail=detail) if detail else msg('lines.refused_'+code),code))
         def handle(args):
+            if args.get('line'):args={**args,'line':el.line_id_of(args['line'])}
             action=args.get('action')
             try:
                 if action=='list':return self.lines_listing()
