@@ -12,7 +12,7 @@ import copy
 import json
 import unittest
 
-from personal_agent.providers import STATIC_PREFIX_KEY, ModelAdapter
+from personal_agent.providers import STATIC_PREFIX_KEY, ModelAdapter, ProviderError
 
 OPENAI = {'provider': 'openai', 'endpoint': 'https://api.openai.com/v1', 'model': 'gpt-6.2-sol'}
 ANTHROPIC = {'provider': 'anthropic', 'endpoint': 'https://api.anthropic.com', 'model': 'claude-opus-5-5'}
@@ -111,6 +111,56 @@ class OpenAIStaticBreakpointTests(unittest.TestCase):
         transport = Transport(ANTHROPIC_REPLY)
         ModelAdapter(transport).tool_turn(ANTHROPIC, 'ak', work('ctx'), TOOLS)
         self.assertNotIn('prompt_cache_breakpoint', json.dumps(transport.bodies[0]))
+
+
+class RefusingTransport(Transport):
+    """A model before GPT-5.6: refuses a request that carries an explicit breakpoint."""
+
+    def __init__(self, reply, detail=None, status=400):
+        super().__init__(reply)
+        self.detail = detail or {'type': 'invalid_request_error', 'code': 'unknown_parameter',
+                                 'param': 'input[0].content[0].prompt_cache_breakpoint'}
+        self.status = status
+
+    def __call__(self, url, body, headers, timeout=60):
+        self.bodies.append(copy.deepcopy(body))
+        if 'prompt_cache_breakpoint' in json.dumps(body):
+            error = ProviderError('refused', status=self.status)
+            error.error_detail = self.detail
+            raise error
+        return copy.deepcopy(self.reply)
+
+
+class OlderModelFallbackTests(unittest.TestCase):
+    """#1164: the provider's own refusal of a breakpoint sends that model as before."""
+
+    def test_a_refused_breakpoint_is_resent_plain_and_not_tried_again(self):
+        transport = RefusingTransport(OPENAI_REPLY)
+        adapter = ModelAdapter(transport)
+        older = dict(OPENAI, model='gpt-4.1')
+        message, _model = adapter.tool_turn(older, 'sk', work('ctx'), TOOLS)
+        self.assertEqual(message['content'], 'ok')
+        self.assertEqual(len(transport.bodies), 2)
+        self.assertEqual(transport.bodies[1]['input'][0], {'role': 'system', 'content': POLICY + '\nctx'})
+        adapter.tool_turn(older, 'sk', work('other'), TOOLS)
+        self.assertEqual(len(transport.bodies), 3)
+        self.assertNotIn('prompt_cache_breakpoint', json.dumps(transport.bodies[2]))
+
+    def test_the_fallback_is_per_model(self):
+        transport = RefusingTransport(OPENAI_REPLY)
+        adapter = ModelAdapter(transport)
+        adapter.tool_turn(dict(OPENAI, model='gpt-4.1'), 'sk', work('ctx'), TOOLS)
+        good = Transport(OPENAI_REPLY)
+        adapter.transport = good
+        adapter.tool_turn(OPENAI, 'sk', work('ctx'), TOOLS)
+        self.assertIn('prompt_cache_breakpoint', json.dumps(good.bodies[0]))
+
+    def test_any_other_error_is_not_retried(self):
+        for status, detail in ((400, {'code': 'context_length_exceeded'}), (401, {'code': 'invalid_api_key'})):
+            transport = RefusingTransport(OPENAI_REPLY, detail=detail, status=status)
+            with self.subTest(status=status), self.assertRaises(ProviderError):
+                ModelAdapter(transport).tool_turn(OPENAI, 'sk', work('ctx'), TOOLS)
+            self.assertEqual(len(transport.bodies), 1)
 
 
 if __name__ == '__main__':

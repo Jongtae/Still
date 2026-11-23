@@ -164,6 +164,13 @@ def _openai_static_breakpoints(items, hints):
     return items
 
 
+def _refuses_breakpoint(error):
+    """#1164: the provider rejected the request because of ``prompt_cache_breakpoint``."""
+    detail = getattr(error, 'error_detail', None) or {}
+    return error.status == 400 and any('prompt_cache_breakpoint' in str(detail.get(key) or '')
+                                        for key in ('param', 'message', 'code'))
+
+
 def openai_cache_key(model, tools, leading, hints):
     """#1161: a stable ``prompt_cache_key`` for requests that share Still's static prefix.
 
@@ -408,8 +415,21 @@ class ModelAdapter:
                 cache_key=openai_cache_key(cfg['model'],body['tools'],
                                            [m for m in messages[:len(hints)] if m.get('role')=='system'],hints)
                 if cache_key:body['prompt_cache_key']=cache_key
-                _openai_static_breakpoints(body['input'],hints)
-                data=self._send(cfg['endpoint']+'/responses',body,{'Authorization':'Bearer '+key} if key else {},timeout)
+                headers={'Authorization':'Bearer '+key} if key else {}
+                plain=body['input']
+                refused=self.__dict__.setdefault('_breakpoint_refused',set())
+                marked=None if cfg['model'] in refused else _openai_static_breakpoints([dict(i) for i in plain],hints)
+                if marked is not None and marked!=plain:
+                    try:
+                        data=self._send(cfg['endpoint']+'/responses',{**body,'input':marked},headers,timeout)
+                    except ProviderError as exc:
+                        # #1164: a model before GPT-5.6 refuses explicit breakpoints; the
+                        # provider's own refusal decides, then this model is sent as before.
+                        if not _refuses_breakpoint(exc):raise
+                        refused.add(cfg['model'])
+                        data=self._send(cfg['endpoint']+'/responses',body,headers,timeout)
+                else:
+                    data=self._send(cfg['endpoint']+'/responses',body,headers,timeout)
                 message=_openai_message(data)
                 if not message['content'] and not message.get('tool_calls'):raise TypeError()
             elif provider=='compatible':
