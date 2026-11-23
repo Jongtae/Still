@@ -3179,6 +3179,19 @@ def revisable_preparation(store,preparation_id):
  if row['accepted_by'] in (None,ACCEPTED_DAY_PLAN):return None
  return {'state':row['state']}
 
+def revisable_line(store,line_id):
+ """``{'state', 'version'}`` when this entrusted line can still be revised in place, else None (#1170 review).
+
+ ``entrusted_line revise`` refuses a stopped line (``line_stopped``); restarting it is the owner's own
+ separate operation, so a stopped, forgotten or unreadable line is no record to revise.
+ """
+ from .entrusted_lines import EntrustedLines,LineRefusal,STATE_ACTIVE,line_id_of
+ if not isinstance(line_id,str) or not line_id:return None
+ try:brief=EntrustedLines(store).current(line_id_of(line_id))
+ except (LineRefusal,__import__("sqlite3").OperationalError):return None
+ if not brief or brief.get('state')!=STATE_ACTIVE:return None
+ return {'state':STATE_ACTIVE,**({'version':brief['version']} if isinstance(brief.get('version'),int) else {})}
+
 def replaced_preparations(rows):
  """The preparation ids a later call of the same Work named in ``replaces`` (#1170 review).
 
@@ -3201,8 +3214,9 @@ def revisable_record(action,status,detail=None,store=None,replaced=frozenset()):
  or have been replaced by a later call of the same Work (``replaced``), which is judged by itself.
  """
  if action not in REVISABLE_RECORD_ACTIONS or status!='succeeded':return False
- if store is None or action not in PREPARATION_ACTIONS:return True
+ if store is None:return True
  evidence=(detail or {}).get('evidence') if isinstance((detail or {}).get('evidence'),dict) else {}
+ if action in LINE_ACTIONS:return revisable_line(store,evidence.get('line_id')) is not None
  ident=evidence.get('preparation_id')
  return ident in replaced or revisable_preparation(store,ident) is not None
 
@@ -3235,11 +3249,10 @@ def revisable_record_note(store,work_id):
   seen.add(ident);facts.append(fact)
  current=[]
  for fact in facts:
-  if fact.get('preparation_id'):
-   now=revisable_preparation(store,fact['preparation_id'])
-   if now is None:continue
-   fact={**fact,**now}
-  current.append(fact)
+  now=(revisable_preparation(store,fact['preparation_id']) if fact.get('preparation_id')
+       else revisable_line(store,fact.get('line_id')))
+  if now is None:continue
+  current.append({**fact,**now})
  facts=current
  return prompt('revisable_records')+'\n'+json.dumps(facts[-12:],ensure_ascii=False) if facts else ''
 

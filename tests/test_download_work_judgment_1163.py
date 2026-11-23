@@ -90,8 +90,10 @@ def test_owner_local_reads_and_a_download_do_not_block_redelegation(case):
 def test_a_line_write_is_still_a_change(case):
     # A changed line is no read: the declaration follows the action that ran, never the tool's name.
     # #1170: a re-delegation of the same Work revises it in place; a retry or steer still stops on it.
-    call(case, 'c-revise', 'entrusted_line', {'action': 'revise', 'line': 'fixture-line'},
-         {'line_id': 'fixture-line', 'version': 4, 'state': 'active'})
+    from personal_agent.entrusted_lines import EntrustedLines
+    line = EntrustedLines(case.service.store).open(case.id, task='fixture task', report_promise='fixture report')
+    call(case, 'c-revise', 'entrusted_line', {'action': 'revise', 'line': line['line_id']},
+         {'line_id': line['line_id'], 'version': line['version'], 'state': 'active'})
     for purpose in ('retry', 'steer'):
         assert case.service.continuation_reasons(case.id, purpose) == ('effect',)
     assert case.service.continuation_reasons(case.id, 'redelegate') == ()

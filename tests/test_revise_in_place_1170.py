@@ -32,6 +32,16 @@ class Records(Store):
                                                accepted_by=accepted_by if accepted_by is not None else prep.ACCEPTED_OWNER_WORK)
         return row['id']
 
+    def line(self, call_id='l1', stopped=False):
+        from personal_agent.entrusted_lines import EntrustedLines
+        lines = EntrustedLines(self.store)
+        brief = lines.open(self.work, task='fixture task', report_promise='fixture report')
+        if stopped:
+            lines.write(brief['line_id'], self.work, brief['version'], 'stopped', lambda b: {**b, 'state': 'stopped'})
+        self.call('entrusted_line', {'evidence': {'line_id': brief['line_id'], 'version': brief['version'],
+                                                  'state': 'active'}}, 'succeeded', call_id)
+        return brief['line_id']
+
     def scheduled(self, goal='kept goal', call_id='p1', **kwargs):
         ident = self.prepared(goal, **kwargs)
         self.call('schedule_preparation', {'evidence': {**PREPARED['evidence'], 'preparation_id': ident}}, 'succeeded', call_id)
@@ -41,7 +51,7 @@ class Records(Store):
 class ReviseInPlace(Records):
     def records(self):
         self.scheduled()
-        self.call('entrusted_line', LINE, 'succeeded', 'l1')
+        self.line()
 
     def test_a_redelegation_continues_past_records_it_revises_in_place(self):
         self.records()
@@ -63,14 +73,14 @@ class ReviseInPlace(Records):
         self.assertEqual(revisable_record_note(self.store, self.work), '')
         kept = self.prepared('SECRET-GOAL one')
         self.call('schedule_preparation', {'evidence': {**PREPARED['evidence'], 'preparation_id': kept}}, 'succeeded', 'p1')
-        self.call('entrusted_line', LINE, 'succeeded', 'l1')
+        line = self.line()
         # A read of a line is no record to revise (#1163).
         self.call('entrusted_line', {'declared_effect': 'read', 'evidence': {'line_id': 'line-read', 'version': 1}},
                   'succeeded', 'l2')
         note = revisable_record_note(self.store, self.work)
         facts = json.loads(note.rsplit('\n', 1)[1])
         self.assertEqual([(f['tool'], f.get('preparation_id') or f.get('line_id')) for f in facts],
-                         [('schedule_preparation', kept), ('entrusted_line', 'line-1170a')])
+                         [('schedule_preparation', kept), ('entrusted_line', line)])
         self.assertIn('replaces', note)
         self.assertNotIn('SECRET-GOAL', note, 'identifiers and states only, never a goal')
 
@@ -146,6 +156,12 @@ class ReviseInPlace(Records):
         first = self.scheduled('first goal', call_id='p1')
         self.service.preparations.cancel(first)
         self.assertEqual(self.service.may_continue(self.work, 'redelegate'), (False, 'effect'))
+
+    def test_a_stopped_line_is_no_record_to_revise(self):
+        # Codex review: revise refuses a stopped line; restarting it is the owner's own operation.
+        self.line(stopped=True)
+        self.assertEqual(self.service.may_continue(self.work, 'redelegate'), (False, 'effect'))
+        self.assertEqual(revisable_record_note(self.store, self.work), '')
 
 
 class StillStops(Records):
