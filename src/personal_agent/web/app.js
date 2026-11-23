@@ -46,6 +46,10 @@ Object.assign(I18N["zh-CN"],{"직접 말함":"本人所说","추론":"推断","�
 Object.assign(I18N["en"],{"{date}까지":"Until {date}","{date}에 끝남":"Ended {date}","{time} 저장":"Saved {time}","{time} 제안 · 승인하기 전에는 기억으로 저장되지 않습니다.":"Suggested {time} · not saved as memory until you approve it.","검토 대기":"Waiting for review","검토하기":"Review","기록":"Record","기억과 메모":"Memory and notes","대화에서 저장한 기억과 메모입니다. 하나를 열어 내용을 확인하거나 지울 수 있습니다.":"Memory and notes saved in conversation. Open one to read it or delete it.","돌아가기":"Back","모델이 스스로 제안한 기억은 승인하기 전까지 저장되지 않습니다. 하나씩 열어 검토한 뒤 승인하거나 거부하세요.":"Memory the model suggested on its own is not saved until you approve it. Open each one, review it, then approve or reject it.","승인하기 전에는 기억으로 저장되지 않습니다.":"Not saved as memory until you approve it.","아직 저장한 기억이나 메모가 없습니다. 대화에서 기억하거나 메모해 달라고 요청하세요.":"No saved memory or notes yet. Ask Still to remember something or take a note in conversation.","열기":"Open","이 기록은 이미 지워졌거나 바뀌었습니다.":"This record was already deleted or has changed.","이 기록을 남긴 대화 보기":"Show the conversation that saved this","이 저장된 결과를 지웁니다. 되돌릴 수 없습니다.":"This deletes the saved result. It cannot be undone.","이름 없음":"Untitled","저장 전 기억 후보":"Memory candidate (not saved)","지금은 저장돼 있지 않음":"No longer saved","지웠습니다.":"Deleted.","지웠습니다. 이 기록은 더 이상 저장돼 있지 않습니다.":"Deleted. This record is no longer saved.","프로젝트 {name}에서 보기":"Show in project {name}","이 기록을 불러오지 못했습니다.":"Could not load this record.","이 기록은 지금 저장돼 있지 않습니다. 이미 지웠거나 바뀌었을 수 있습니다.":"This record is not saved now. It may have been deleted or changed.","열 기록을 확인하세요.":"Check which record to open."});
 Object.assign(I18N["zh-CN"],{"{date}까지":"至{date}","{date}에 끝남":"已于{date}结束","{time} 저장":"{time}保存","{time} 제안 · 승인하기 전에는 기억으로 저장되지 않습니다.":"{time}提出 · 批准前不会保存为记忆。","검토 대기":"等待审核","검토하기":"审核","기록":"记录","기억과 메모":"记忆和备忘","대화에서 저장한 기억과 메모입니다. 하나를 열어 내용을 확인하거나 지울 수 있습니다.":"在对话中保存的记忆和备忘。打开一条即可查看内容或删除。","돌아가기":"返回","모델이 스스로 제안한 기억은 승인하기 전까지 저장되지 않습니다. 하나씩 열어 검토한 뒤 승인하거나 거부하세요.":"模型自行提出的记忆在批准前不会保存。请逐条打开审核，然后批准或拒绝。","승인하기 전에는 기억으로 저장되지 않습니다.":"批准前不会保存为记忆。","아직 저장한 기억이나 메모가 없습니다. 대화에서 기억하거나 메모해 달라고 요청하세요.":"还没有保存的记忆或备忘。请在对话中让 Still 记住某件事或记下一条备忘。","열기":"打开","이 기록은 이미 지워졌거나 바뀌었습니다.":"此记录已被删除或已更改。","이 기록을 남긴 대화 보기":"查看保存此记录的对话","이 저장된 결과를 지웁니다. 되돌릴 수 없습니다.":"将删除此保存的结果，无法撤销。","이름 없음":"未命名","저장 전 기억 후보":"记忆候选（未保存）","지금은 저장돼 있지 않음":"现已不再保存","지웠습니다.":"已删除。","지웠습니다. 이 기록은 더 이상 저장돼 있지 않습니다.":"已删除。此记录不再保存。","프로젝트 {name}에서 보기":"在项目 {name} 中查看","이 기록을 불러오지 못했습니다.":"无法加载此记录。","이 기록은 지금 저장돼 있지 않습니다. 이미 지웠거나 바뀌었을 수 있습니다.":"此记录现在未保存，可能已被删除或更改。","열 기록을 확인하세요.":"请确认要打开的记录。"});
 Object.assign(I18N["ja"],{"{date}까지":"{date}まで","{date}에 끝남":"{date}に終了","{time} 저장":"{time}に保存","{time} 제안 · 승인하기 전에는 기억으로 저장되지 않습니다.":"{time}に提案 · 承認するまで記憶として保存されません。","검토 대기":"確認待ち","검토하기":"確認する","기록":"記録","기억과 메모":"記憶とメモ","대화에서 저장한 기억과 메모입니다. 하나를 열어 내용을 확인하거나 지울 수 있습니다.":"会話で保存した記憶とメモです。1件ずつ開いて内容を確認したり削除したりできます。","돌아가기":"戻る","모델이 스스로 제안한 기억은 승인하기 전까지 저장되지 않습니다. 하나씩 열어 검토한 뒤 승인하거나 거부하세요.":"モデルが自ら提案した記憶は、承認するまで保存されません。1件ずつ開いて確認し、承認または拒否してください。","승인하기 전에는 기억으로 저장되지 않습니다.":"承認するまで記憶として保存されません。","아직 저장한 기억이나 메모가 없습니다. 대화에서 기억하거나 메모해 달라고 요청하세요.":"保存した記憶やメモはまだありません。会話で覚えておくことやメモを頼んでください。","열기":"開く","이 기록은 이미 지워졌거나 바뀌었습니다.":"この記録はすでに削除されたか、変更されています。","이 기록을 남긴 대화 보기":"この記録を残した会話を表示","이 저장된 결과를 지웁니다. 되돌릴 수 없습니다.":"この保存した結果を削除します。元に戻せません。","이름 없음":"名前なし","저장 전 기억 후보":"記憶の候補（未保存）","지금은 저장돼 있지 않음":"現在は保存されていません","지웠습니다.":"削除しました。","지웠습니다. 이 기록은 더 이상 저장돼 있지 않습니다.":"削除しました。この記録はもう保存されていません。","프로젝트 {name}에서 보기":"プロジェクト {name} で表示","이 기록을 불러오지 못했습니다.":"この記録を読み込めませんでした。","이 기록은 지금 저장돼 있지 않습니다. 이미 지웠거나 바뀌었을 수 있습니다.":"この記録は現在保存されていません。すでに削除されたか、変更された可能性があります。","열 기록을 확인하세요.":"開く記録を確認してください。"});
+// #1190: compact 기억 · 개인정보 pane.
+Object.assign(I18N["en"],{"밤사이 기억 정리":"Overnight memory review","Still은 대화하면서 알게 된 것을 스스로 기억합니다. 여기서는 기억한 내용을 보고 고치거나 지우고, 위치 같은 현재 맥락과 Still이 스스로 하는 일의 범위를 확인합니다.":"Still remembers what it learns in conversation on its own. Here you can read, correct or delete what it remembers, and check current context such as location and what Still may do on its own.","기억 · 개인정보 바로 가기":"Memory & privacy shortcuts","현재 맥락 · 임시 자료":"Current context · temporary material","스스로 하는 일":"What Still does on its own","확인을 기다리는 기억":"Memory waiting for confirmation","바깥에서 읽은 내용이나 다른 AI가 알려 준 사실은 저장하기 전에 대화에서 한 번 묻습니다. 따로 확인하지 않아도 나머지 기억은 그대로 쓰입니다.":"Facts that came from something read outside or from another AI are asked about once in conversation before they are saved. The rest of memory is used as usual whether or not you confirm these.","목록 보기":"Show list","{count}개 보기":"Show {count}","건별 확인 없이 결제":"Pay without asking each time","스스로 준비한 일의 연결별 변경 허용":"Connection write allowances for self-set runs","다시 허용 필요":"Needs allowing again","허용 끄기":"Turn off allowance","허용함":"Allowed","{name}의 변경 허용을 껐습니다.":"Turned off the write allowance for {name}.","허용한 연결이 없습니다. 스스로 준비한 일이 어떤 연결을 바꿔도 되는지 대화에서 말하면, 확인을 받은 뒤 여기에 표시합니다.":"No connection is allowed. Say in conversation which connection self-set runs may change; after you confirm, it appears here.","더 허용하려면 대화에서 말하세요. 확인을 받은 뒤 적용합니다.":"To allow more, say so in conversation. It applies after you confirm."});
+Object.assign(I18N["zh-CN"],{"밤사이 기억 정리":"夜间记忆整理","Still은 대화하면서 알게 된 것을 스스로 기억합니다. 여기서는 기억한 내용을 보고 고치거나 지우고, 위치 같은 현재 맥락과 Still이 스스로 하는 일의 범위를 확인합니다.":"Still 会自行记住在对话中了解到的内容。你可以在这里查看、修改或删除它记住的内容，并查看位置等当前情境以及 Still 可以自行做的事情。","기억 · 개인정보 바로 가기":"记忆与隐私快捷方式","현재 맥락 · 임시 자료":"当前情境 · 临时资料","스스로 하는 일":"Still 自行做的事","확인을 기다리는 기억":"等待确认的记忆","바깥에서 읽은 내용이나 다른 AI가 알려 준 사실은 저장하기 전에 대화에서 한 번 묻습니다. 따로 확인하지 않아도 나머지 기억은 그대로 쓰입니다.":"来自外部读取内容或其他 AI 告知的事实，会在保存前于对话中询问一次。无论是否确认，其余记忆都照常使用。","목록 보기":"查看列表","{count}개 보기":"查看 {count} 条","건별 확인 없이 결제":"无需逐次确认即可付款","스스로 준비한 일의 연결별 변경 허용":"自行安排任务的连接写入许可","다시 허용 필요":"需要重新允许","허용 끄기":"关闭许可","허용함":"已允许","{name}의 변경 허용을 껐습니다.":"已关闭 {name} 的写入许可。","허용한 연결이 없습니다. 스스로 준비한 일이 어떤 연결을 바꿔도 되는지 대화에서 말하면, 확인을 받은 뒤 여기에 표시합니다.":"尚未允许任何连接。在对话中说明自行安排的任务可以更改哪个连接，确认后会显示在这里。","더 허용하려면 대화에서 말하세요. 확인을 받은 뒤 적용합니다.":"如需允许更多，请在对话中说明。确认后生效。"});
+Object.assign(I18N["ja"],{"밤사이 기억 정리":"夜間の記憶整理","Still은 대화하면서 알게 된 것을 스스로 기억합니다. 여기서는 기억한 내용을 보고 고치거나 지우고, 위치 같은 현재 맥락과 Still이 스스로 하는 일의 범위를 확인합니다.":"Still は会話で知ったことを自分で覚えます。ここでは覚えた内容を確認・修正・削除し、位置などの現在の状況と、Still が自分で行えることの範囲を確認できます。","기억 · 개인정보 바로 가기":"記憶・プライバシーのショートカット","현재 맥락 · 임시 자료":"現在の状況・一時資料","스스로 하는 일":"Still が自分で行うこと","확인을 기다리는 기억":"確認待ちの記憶","바깥에서 읽은 내용이나 다른 AI가 알려 준 사실은 저장하기 전에 대화에서 한 번 묻습니다. 따로 확인하지 않아도 나머지 기억은 그대로 쓰입니다.":"外部で読んだ内容や別の AI から伝えられた事実は、保存する前に会話で一度確認します。確認しなくても、ほかの記憶はそのまま使われます。","목록 보기":"一覧を表示","{count}개 보기":"{count}件を表示","건별 확인 없이 결제":"毎回の確認なしで支払う","스스로 준비한 일의 연결별 변경 허용":"自主的な準備の接続別変更許可","다시 허용 필요":"再度の許可が必要","허용 끄기":"許可を解除","허용함":"許可済み","{name}의 변경 허용을 껐습니다.":"{name} の変更許可を解除しました。","허용한 연결이 없습니다. 스스로 준비한 일이 어떤 연결을 바꿔도 되는지 대화에서 말하면, 확인을 받은 뒤 여기에 표시합니다.":"許可した接続はありません。自主的に準備した作業がどの接続を変更してよいか会話で伝えると、確認のあとここに表示されます。","더 허용하려면 대화에서 말하세요. 확인을 받은 뒤 적용합니다.":"さらに許可するには会話で伝えてください。確認のあと適用します。"});
 // #616 CLI isolation profile strings.
 Object.assign(I18N["en"],{"CLI 실행 격리":"CLI isolation","엄격 격리: CLI는 작업 폴더와 Still이 전달한 도구 결과만 읽습니다. 검증한 CLI 버전에서만 실행합니다.":"Strict isolation: the CLI reads only its working folder and tool results Still passes it. Runs only on a verified CLI version.","신뢰된 로컬: CLI의 자체 도구가 Still이 추적하지 않는 이 컴퓨터의 파일을 읽을 수 있습니다.":"Trusted local: the CLI's own tools can read files on this computer that Still does not track.","엄격 격리":"Strict isolation","신뢰된 로컬":"Trusted local","검증 후 엄격 격리 사용":"Verify and use strict isolation","신뢰된 로컬 사용":"Use trusted local","엄격 격리를 검증했습니다. 다음 요청부터 적용됩니다.":"Strict isolation verified. It applies from the next request.","신뢰된 로컬로 전환했습니다. 다음 요청부터 적용됩니다.":"Switched to trusted local. It applies from the next request.","검증한 CLI 버전: {versions}":"Verified CLI versions: {versions}","제한: {limitation}":"Limitation: {limitation}","검증 전":"not verified","격리 세부 정보":"Isolation details"});
 Object.assign(I18N["zh-CN"],{"CLI 실행 격리":"CLI 运行隔离","엄격 격리: CLI는 작업 폴더와 Still이 전달한 도구 결과만 읽습니다. 검증한 CLI 버전에서만 실행합니다.":"严格隔离：CLI 只读取其工作文件夹和 Still 传递的工具结果。仅在已验证的 CLI 版本上运行。","신뢰된 로컬: CLI의 자체 도구가 Still이 추적하지 않는 이 컴퓨터의 파일을 읽을 수 있습니다.":"受信任的本地：CLI 自带的工具可以读取这台电脑上 Still 未跟踪的文件。","엄격 격리":"严格隔离","신뢰된 로컬":"受信任的本地","검증 후 엄격 격리 사용":"验证后使用严格隔离","신뢰된 로컬 사용":"使用受信任的本地","엄격 격리를 검증했습니다. 다음 요청부터 적용됩니다.":"已验证严格隔离。从下一个请求开始生效。","신뢰된 로컬로 전환했습니다. 다음 요청부터 적용됩니다.":"已切换为受信任的本地。从下一个请求开始生效。","검증한 CLI 버전: {versions}":"已验证的 CLI 版本：{versions}","제한: {limitation}":"限制：{limitation}","검증 전":"未验证","격리 세부 정보":"隔离详情"});
@@ -1842,22 +1846,27 @@ function renderMemoryCandidateSummary(space){
  const count=space?.memory_candidate_count||0;$('memory-candidates').hidden=!count;
  if(memoryCandidateReloadNeeded(true,count,memoryCandidateObservedCount)){memoryCandidateObservedCount=count;if(count)void loadMemoryCandidates();else{memoryCandidateRows=[];renderMemoryCandidates();}}
 }
+// #1190: memory rows and candidates are read by their words, not their memory key. The candidates list is quiet and collapsed; the owner is asked in
+// conversation (#818/#836), so a waiting candidate does not light the Settings attention dot.
 function renderMemoryCandidates(){
- const list=$('memory-candidate-list'),rows=memoryCandidateRows||[],fingerprint=JSON.stringify([rows.map(row=>[row.id,row.memory_key,row.created]),currentLanguage]);if(list.dataset.state===fingerprint)return;list.dataset.state=fingerprint;const focusKey=rememberFocus(list);list.replaceChildren();
- for(const row of rows)list.append(settingsRow(row.memory_key||t('기억 키 없음'),t('{time} 제안 · 승인하기 전에는 기억으로 저장되지 않습니다.',{time:formatTimeParts(row.created).relative}),t('검토 대기'),'attention',itemLink('candidate',row.id,t('검토하기'),'button-link settings-row-action')));
+ const list=$('memory-candidate-list'),rows=memoryCandidateRows||[],fingerprint=JSON.stringify([rows.map(row=>[row.id,row.memory_key,row.content,row.created]),currentLanguage]);if(list.dataset.state===fingerprint)return;list.dataset.state=fingerprint;const focusKey=rememberFocus(list);list.replaceChildren();
+ $('memory-candidate-summary').textContent=t('{count}개 보기',{count:rows.length});
+ for(const row of rows)list.append(settingsRow(memoryRowTitle(row),t('{time} 제안 · 승인하기 전에는 기억으로 저장되지 않습니다.',{time:formatTimeParts(row.created).relative}),t('확인 대기'),'neutral',itemLink('candidate',row.id,t('검토하기'),'button-link settings-row-action')));
  restoreFocus(list,focusKey);
 }
 // Memory and notes, managed where Settings manages Memory. One type family,
 // newest first, each row opening that one item; no search or cross-type list.
 async function loadSavedMemory({append=false}={}){const request=++savedMemoryLoadSequence,offset=append&&savedMemory?savedMemory.items.length:0;
- try{const page=await api('/api/personal-records?'+new URLSearchParams({filter:'saved',limit:'20',offset:String(offset)}));if(request!==savedMemoryLoadSequence)return;savedMemory={items:append&&savedMemory?[...savedMemory.items,...page.items]:page.items,has_more:Boolean(page.has_more)};setFeedback('saved-memory-feedback','');renderSavedMemory();}
+ try{const page=await api('/api/personal-records?'+new URLSearchParams({filter:'saved',limit:'10',offset:String(offset)}));if(request!==savedMemoryLoadSequence)return;savedMemory={items:append&&savedMemory?[...savedMemory.items,...page.items]:page.items,has_more:Boolean(page.has_more)};setFeedback('saved-memory-feedback','');renderSavedMemory();}
  catch(error){if(request===savedMemoryLoadSequence)setError('saved-memory-feedback',error);}}
 function memoryOriginLabel(row){return row.origin==='dream'?' · '+t('밤사이 정리'):'';}
+// #1190: a memory row (or a candidate) reads as its remembered words; the key stays technical.
+function memoryRowTitle(row){const first=String(row.content||'').split('\n').map(line=>line.trim()).find(Boolean);if(!first)return profileTitle(row.memory_key);return first.length>80?first.slice(0,79)+'…':first;}
 // #452: what a remembered fact rests on: the owner's own words, an inference or an observation (older rows: nothing).
 const MEMORY_BASIS_LABELS={owner_said:'직접 말함',inferred:'추론',observed:'관찰'};
 function memoryBasisLabel(row){const label=MEMORY_BASIS_LABELS[row.basis];return label?' · '+t(label):'';}
 function renderSavedMemory(){const list=$('saved-memory-list');if(!list||!savedMemory)return;const fingerprint=JSON.stringify([savedMemory,currentLanguage]);if(list.dataset.state===fingerprint)return;list.dataset.state=fingerprint;const focusKey=rememberFocus(list);list.replaceChildren();
- for(const row of savedMemory.items){const kind=row.type==='memory'?'memory':'note';list.append(settingsRow(itemTitle({...row,kind}),t('{time} 저장',{time:formatTimeParts(row.created).relative})+memoryOriginLabel(row)+memoryBasisLabel(row),kind==='memory'&&isProfileKey(row.memory_key)?t('프로필'):itemLabel(kind),'neutral',itemLink(kind,row.id,t('열기'),'button-link settings-row-action')));}
+ for(const row of savedMemory.items){const kind=row.type==='memory'?'memory':'note';list.append(settingsRow(kind==='memory'?memoryRowTitle(row):itemTitle({...row,kind}),t('{time} 저장',{time:formatTimeParts(row.created).relative})+memoryOriginLabel(row)+memoryBasisLabel(row),kind==='memory'&&isProfileKey(row.memory_key)?t('프로필'):itemLabel(kind),'neutral',itemLink(kind,row.id,t('열기'),'button-link settings-row-action')));}
  if(!savedMemory.items.length)list.append(element('p',t('아직 저장한 기억이나 메모가 없습니다. 대화에서 기억하거나 메모해 달라고 요청하세요.'),'settings-empty'));
  if(savedMemory.has_more){const actions=element('div',undefined,'settings-list-actions'),more=settingsAction(t('더 보기'),event=>busy(event.currentTarget,()=>loadSavedMemory({append:true})));more.dataset.focusKey='saved-memory-more';actions.append(more);list.append(actions);}
  restoreFocus(list,focusKey);}
@@ -2046,33 +2055,23 @@ let currentContextClearArmed=false,currentContextTimezoneDirty=false;
 const CURRENT_CONTEXT_KINDS={current_position_report:'요청에 답한 현재 위치',live_position_report:'실시간 위치 공유',place_reference:'장소 참고'};
 const CURRENT_CONTEXT_FRESHNESS={fresh:['최근','ok'],stale:['오래됨','neutral'],reference:['참고용','neutral']};
 let paymentAutonomyRevision=0;
+// #1190: the page shows what is allowed and turns an allowance off; allowing one is asked and
+// confirmed in conversation (settings_orchestrator ``write_allowances allow``), not pre-set per connection here.
 function renderWriteAllowances(data){
-  let list=$('write-allowances');
-  if(!list){list=document.createElement('section');list.id='write-allowances';list.className='settings-section';$('payment-autonomy-enabled').closest('section').after(list);}
-  if(!data)return;
-  if(!list.allowanceRows){
-    list.allowanceRows=new Map();list.replaceChildren();
-    list.allowanceTitle=document.createElement('h3');list.allowanceNote=document.createElement('p');
-    list.append(list.allowanceTitle,list.allowanceNote);
+  const list=$('write-allowance-list');if(!list||!data)return;
+  $('write-allowances-note').textContent=data.note||'';
+  const rows=(data.connections||[]).filter(row=>row.enabled||row.reason);
+  const fingerprint=JSON.stringify([rows,currentLanguage]);if(list.dataset.state===fingerprint)return;
+  list.dataset.state=fingerprint;const focusKey=rememberFocus(list);list.replaceChildren();
+  for(const row of rows){
+    if(!row.enabled){list.append(settingsRow(row.label,row.reason,t('다시 허용 필요'),'neutral'));continue;}
+    const off=settingsAction(t('허용 끄기'),event=>busy(event.currentTarget,async()=>{try{await api('/api/write-allowances',{connection:row.connection,enabled:false,revision:row.revision,connection_revision:row.connection_revision});setFeedback('write-allowances-feedback',t('{name}의 변경 허용을 껐습니다.',{name:row.label}));}catch(error){setError('write-allowances-feedback',error);}await refresh();}));
+    off.dataset.focusKey='allowance-off:'+row.connection;
+    list.append(settingsRow(row.label,'',t('허용함'),'active',off));
   }
-  list.allowanceTitle.textContent=data.label;list.allowanceNote.textContent=data.note;
-  const current=new Set((data.connections||[]).map(row=>row.connection));
-  for(const [key,line] of list.allowanceRows){if(!current.has(key)){line.remove();list.allowanceRows.delete(key);}}
-  for(const row of data.connections||[]){
-    let line=list.allowanceRows.get(row.connection);
-    if(!line){line=document.createElement('div');list.allowanceRows.set(row.connection,line);list.append(line);}
-    const fingerprint=JSON.stringify([row,data.enable,data.disable,data.confirm]);
-    if(line.dataset.state===fingerprint)continue;
-    line.dataset.state=fingerprint;line.replaceChildren();
-    const label=document.createElement('span'),button=document.createElement('button');
-    label.textContent=row.label+' '+(row.reason||'')+' ';button.textContent=row.enabled?data.disable:data.enable;
-    button.onclick=()=>{const enabled=!row.enabled;
-      const save=async()=>{if(line.dataset.state!==fingerprint||!line.isConnected)return;await api('/api/write-allowances',{connection:row.connection,enabled,revision:row.revision,connection_revision:row.connection_revision});await refresh();};
-      if(!enabled)return busy(button,save);
-      const confirm=document.createElement('button');confirm.textContent=data.confirm+' · '+row.label;
-      confirm.onclick=()=>busy(confirm,save);button.disabled=true;line.append(confirm);confirm.focus();
-    };line.append(label,button);
-  }
+  if(!rows.length)list.append(element('p',t('허용한 연결이 없습니다. 스스로 준비한 일이 어떤 연결을 바꿔도 되는지 대화에서 말하면, 확인을 받은 뒤 여기에 표시합니다.'),'settings-empty'));
+  else list.append(element('p',t('더 허용하려면 대화에서 말하세요. 확인을 받은 뒤 적용합니다.'),'field-hint'));
+  restoreFocus(list,focusKey);
 }
 function renderPaymentAutonomy(status){if(!status)return;paymentAutonomyRevision=status.revision||0;const toggle=$('payment-autonomy-enabled');if(!toggle.disabled&&$('payment-autonomy-preview').hidden)toggle.checked=!!status.enabled;$('payment-autonomy-risk').textContent=t(PAYMENT_AUTONOMY_RISK);}
 const PAYMENT_AUTONOMY_RISK="켜 두면 AI가 건별 확인 없이 스스로 판단해 결제·주문·송금할 수 있어요. 예약 실행 중에도 적용돼요. 웹 페이지나 도구 결과의 지시가 AI를 속여 잘못 결제하게 할 수도 있어요. 끄면 아직 보내지 않은 결제부터 다시 건별로 승인을 받아요.";
@@ -2087,16 +2086,19 @@ function renderReportControls(status){
  const pane=$('settings-privacy');if(!pane||!status)return;
  let box=$('report-controls');
  if(!box){
+  // #1190: the same group/card/switch grammar as the rest of the pane, next to what Still remembers.
   box=element('section',undefined,'settings-group');box.id='report-controls';
-  box.append(element('h2',t('알아 두기'),'settings-group-heading'));
-  const switchLabel=element('label',undefined,'check-row'),toggle=element('input');toggle.type='checkbox';toggle.id='report-look-back';
-  switchLabel.append(toggle,element('span',t('밤사이 정리')));box.append(switchLabel);
+  const card=element('div',undefined,'settings-card'),section=element('section',undefined,'settings-section'),prefs=element('div',undefined,'pref-list');
+  box.append(element('h2',t('알아 두기'),'settings-group-heading'),card);card.append(section);
+  const switchLabel=element('label',undefined,'switch'),toggle=element('input');toggle.type='checkbox';toggle.id='report-look-back';toggle.setAttribute('role','switch');
+  switchLabel.append(element('span',t('밤사이 기억 정리'),'switch-text'),toggle);prefs.append(switchLabel);section.append(prefs);
   toggle.onchange=async()=>{try{await api('/api/owner-model/request',{operation:'set',dream:toggle.checked});setFeedback('report-feedback','');}catch(error){toggle.checked=!toggle.checked;setError('report-feedback',error);}};
-  const form=element('form'),label=element('label',t('보고 시간')),input=element('input');input.id='report-times';input.type='text';label.htmlFor=input.id;
+  const form=element('form',undefined,'stack'),label=element('label',t('보고 시간')),input=element('input');input.id='report-times';input.type='text';label.htmlFor=input.id;
   input.oninput=()=>{reportTimesDirty=true;};
   const hint=element('p',t('현지 시각 HH:MM을 이른 순서로 1~4개, 쉼표로 구분해 입력해 주세요.'),'field-hint');hint.id='report-times-hint';input.setAttribute('aria-describedby',hint.id);
   const save=element('button',t('보고 시간 저장'));save.type='submit';const feedback=element('p');feedback.id='report-feedback';feedback.setAttribute('role','status');
-  form.append(label,input,hint,save,feedback);box.append(form);pane.append(box);
+  form.append(label,input,hint,save,feedback);section.append(form);
+  const remembered=$('remembered-heading')?.closest('.settings-group');if(remembered)remembered.after(box);else pane.append(box);
   form.onsubmit=event=>{event.preventDefault();return busy(save,async()=>{try{await api('/api/owner-model/request',{operation:'set',report_times:input.value.split(',').map(v=>v.trim())});reportTimesDirty=false;setFeedback('report-feedback',t('보고 시간을 저장했어요. 오늘 이미 보고를 받았다면 내일부터 적용돼요.'));}catch(error){setError('report-feedback',error);}});};
  }
  if(document.activeElement!==$('report-look-back'))$('report-look-back').checked=!!status.dream;

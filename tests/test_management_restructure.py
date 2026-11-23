@@ -81,8 +81,11 @@ class Structure(unittest.TestCase):
     def test_memory_comes_first_and_schedules_and_diagnostics_moved_out(self):
         privacy = pane("settings-privacy")
         self.assertIn("<h1>기억 · 개인정보</h1>", privacy)
-        order = [privacy.index(f'id="{marker}"') for marker in ("memory-candidates", "owner-profile", "saved-memory",
-                                                                "current-context", "context-config", "context-items")]
+        # #1190: what Still remembers first; candidates wait quietly at the end of that card, and what
+        # Still may do on its own (payment autonomy, write allowances) comes after context.
+        order = [privacy.index(f'id="{marker}"') for marker in ("owner-profile", "saved-memory", "memory-candidates",
+                                                                "current-context", "context-config", "context-items",
+                                                                "payment-autonomy", "write-allowances")]
         self.assertEqual(order, sorted(order))
         for moved in ("preparations", "activity-details", "developer-settings"):
             self.assertNotIn(f'id="{moved}"', privacy)

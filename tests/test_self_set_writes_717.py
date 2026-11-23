@@ -1122,7 +1122,8 @@ class VerifierRegressions(_Runs):
         self.held_submit_continuation('type')
 
 
-def test_review875_allowance_confirmation_survives_polling():
+def test_1190_allowances_show_state_and_turn_off_only():
+    """The page lists allowed (or invalidated) connections and turns one off; allowing is conversational."""
     import shutil,subprocess
     from pathlib import Path
     from test_settings_ui import DOM_CHECKS
@@ -1133,25 +1134,29 @@ def test_review875_allowance_confirmation_survives_polling():
     # Reuse the repository's executable DOM harness, not a source-text assertion.
     script=DOM_CHECKS.split('const source=')[0]+r'''
 Element.prototype.remove=function(){if(this.parentNode)this.parentNode.children=this.parentNode.children.filter(n=>n!==this);this.parentNode=null;};
-const root=new Element('section');root.id='write-allowances';root._root=true;
-const calls=[],ctx={document,$,api:async(path,body)=>calls.push(body),refresh:async()=>{},busy:async(button,fn)=>fn()};
-vm.createContext(ctx);vm.runInContext(part('function renderWriteAllowances(', 'function renderPaymentAutonomy('),ctx);
+const root=new Element('div');root.id='write-allowance-list';root._root=true;
+const note=new Element('p');note.id='write-allowances-note';note._root=true;
+const feedback=new Element('p');feedback.id='write-allowances-feedback';feedback._root=true;
+const calls=[],ctx={document,$,api:async(path,body)=>calls.push([path,body]),refresh:async()=>{},busy:async(button,fn)=>fn(),
+ t:(s,v)=>v?s.replace(/\{(\w+)\}/g,(m,k)=>v[k]):s,currentLanguage:'ko',rememberFocus:()=>null,restoreFocus:()=>{},
+ setFeedback:(id,text)=>{$(id).textContent=text;},setError:(id,e)=>{$(id).textContent=String(e);}};
+vm.createContext(ctx);vm.runInContext(part('function element(', 'function settingsDisclosure(')+part('function renderWriteAllowances(', 'function renderPaymentAutonomy('),ctx);
 const data={label:'Writes',note:'Risk',enable:'Allow',disable:'Off',confirm:'Confirm',connections:[
- {connection:'slot:notes',label:'Notes',revision:1,connection_revision:'a',enabled:false},
- {connection:'slot:other',label:'Other',revision:1,connection_revision:'b',enabled:false}]};
+ {connection:'slot:notes',label:'Notes',revision:1,connection_revision:'a',enabled:true},
+ {connection:'slot:other',label:'Other',revision:1,connection_revision:'b',enabled:false},
+ {connection:'slot:moved',label:'Moved',revision:2,connection_revision:'c',enabled:false,reason:'changed'}]};
 (async()=>{
  ctx.renderWriteAllowances(data);
- root.querySelectorAll('button')[0].onclick();
- const confirm=root.querySelectorAll('button').find(n=>n.textContent==='Confirm · Notes');confirm.focus();
- ctx.renderWriteAllowances(JSON.parse(JSON.stringify(data)));
- assert(confirm.isConnected,'poll must retain the confirmation');assert.equal(document.activeElement,confirm);
- data.connections[1].revision++;ctx.renderWriteAllowances(data);
- assert(confirm.isConnected,'another connection changing must not discard the draft');
- assert.equal(calls.length,0);await confirm.onclick();assert.equal(calls.length,1);
- assert.deepEqual(JSON.parse(JSON.stringify(calls[0])),{connection:'slot:notes',enabled:true,revision:1,connection_revision:'a'});
- data.connections[0].connection_revision='changed';ctx.renderWriteAllowances(data);
- assert(!confirm.isConnected,'a changed connection invalidates the old confirmation');
- assert(!root.querySelectorAll('button').some(n=>n.textContent==='Confirm · Notes'));
+ assert.equal(note.textContent,'Risk');
+ const text=root.textContent;
+ assert(!text.includes('Other'),'a connection never allowed is not listed');
+ assert(text.includes('Moved'),'an invalidated allowance is shown with its reason');
+ const buttons=root.querySelectorAll('button');
+ assert.equal(buttons.length,1,'only the allowed connection has an action, and it turns the allowance off');
+ await buttons[0].onclick({currentTarget:buttons[0]});
+ assert.deepEqual(JSON.parse(JSON.stringify(calls)),[['/api/write-allowances',{connection:'slot:notes',enabled:false,revision:1,connection_revision:'a'}]]);
+ data.connections[0].enabled=false;ctx.renderWriteAllowances(data);
+ assert.equal(root.querySelectorAll('button').length,0,'nothing on this page enables an allowance');
 })().catch(error=>{console.error(error);process.exitCode=1;});
 '''
     result=subprocess.run([node,'-e',script,str(Path(self_set_writes.__file__).parent/'web/app.js')],capture_output=True,text=True,timeout=30)
