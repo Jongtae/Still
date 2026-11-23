@@ -273,3 +273,20 @@ def test_world_sweep_runs_claude_code_on_the_api_key(tmp_path, capsys, monkeypat
     cli.run_world_sweep(args, run_scenario=fake_run, pool_factory=pool_factory, folder=tmp_path / 'reports2',
                         worker_key_loader=lambda: pytest.fail('no key for the subscription'))
     assert pools[0]['worker_api'] is None
+
+
+def test_real_cli_is_found_like_still_finds_it(tmp_path, monkeypatch):
+    """A CLI only in ``~/.local/bin`` (not on the eval's minimal PATH) is found, as Still's find_cli finds it."""
+    from agentos_eval import worker_key
+    home = tmp_path / 'home'
+    (home / '.local' / 'bin').mkdir(parents=True)
+    cli = home / '.local' / 'bin' / 'claude'
+    cli.write_text('#!/bin/sh\n')
+    cli.chmod(0o700)
+    monkeypatch.setenv('HOME', str(home))
+    monkeypatch.setenv('PATH', '/usr/bin:/bin')
+    assert worker_key._real_claude('/usr/bin:/bin') == cli.resolve()
+    if not any(os.access(f'{folder}/claude', os.X_OK) for folder in ('/opt/homebrew/bin', '/usr/local/bin')):
+        monkeypatch.setenv('HOME', str(tmp_path / 'empty'))
+        with pytest.raises(WorkerKeyError):
+            worker_key._real_claude('/usr/bin:/bin')

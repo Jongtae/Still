@@ -141,9 +141,13 @@ class WorkerApi:
         status = self.budget().status()
         return status['usd'] + self.reserve_usd <= self.cap_usd
 
-    def install(self, folder):
-        """Write the key, the wrapper config and the ``claude`` wrapper into ``folder``; returns its bin dir."""
-        real = self.real_binary or _real_claude()
+    def install(self, folder, search_path=None):
+        """Write the key, the wrapper config and the ``claude`` wrapper into ``folder``; returns its bin dir.
+
+        ``search_path`` is the sandbox server's own ``PATH``, so the wrapper runs the CLI that Still
+        itself would have found there.
+        """
+        real = self.real_binary or _real_claude(search_path)
         folder = Path(folder)
         if folder.exists():
             remove(folder)
@@ -171,9 +175,14 @@ class WorkerApi:
         return bin_dir
 
 
-def _real_claude():
-    import shutil
-    found = shutil.which('claude')
+def _real_claude(search_path=None):
+    """The real CLI, found the way Still finds it (``subscription_engines.find_cli``: ``PATH``, then
+    the official install directories such as ``~/.local/bin`` and Homebrew's)."""
+    from .paths import SRC
+    if str(SRC) not in sys.path:
+        sys.path.append(str(SRC))
+    from personal_agent.subscription_engines import find_cli
+    found = find_cli('claude', path=search_path)
     if not found:
         raise WorkerKeyError('the Claude Code CLI (claude) is not installed')
     return Path(found).resolve()

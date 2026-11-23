@@ -514,7 +514,9 @@ class Sandbox:
                 # Beside the data folder, never inside it: Still's store and its Works never see the key file.
                 self.worker_folder = (self.root / f'slot-{self.slot}.claude-api' if self.slot is not None
                                       else Path(tempfile.mkdtemp(prefix='claude-api-', dir=self.root)))
-                worker_bin = self.worker_api.install(self.worker_folder)
+                # The CLI Still would find on the server's own PATH (its install-directory fallbacks too).
+                server_path = sandbox_environment(self.data, src=self.src, engine_home=self.engine_home)['PATH']
+                worker_bin = self.worker_api.install(self.worker_folder, search_path=server_path)
             self.log = open(self.data / 'server.log', 'ab')
             env = sandbox_environment(self.data, src=self.src,
                                       telegram_root=self.telegram.root if self.telegram is not None else None,
