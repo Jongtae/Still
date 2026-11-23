@@ -93,7 +93,7 @@ where = ["src"]
 include = ["personal_agent*"]
 
 [tool.setuptools.package-data]
-personal_agent = ["web/*.html", "web/*.css", "web/*.js", "assets/*.jpg", "messages.json", "bundled_skills/*/SKILL.md", "prompts/*.md", "bundled_skills/*/references/*.md", "skill_references.json", "connector_read_operations.json", "sandbox/package.json", "sandbox/package-lock.json", "sandbox/runner.mjs"]
+personal_agent = ["web/*.html", "web/*.css", "web/*.js", "assets/*.jpg", "messages.json", "bundled_skills/*/SKILL.md", "prompts/*.md", "bundled_skills/*/references/*.md", "skill_references.json", "connector_read_operations.json", "sandbox/package.json", "sandbox/package-lock.json", "sandbox/runner.mjs", "imessage_sidecar/package.json", "imessage_sidecar/package-lock.json", "imessage_sidecar/sidecar.mjs"]
 
 [tool.uv]
 required-version = ">=0.11.33,<0.13"

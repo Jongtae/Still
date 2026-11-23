@@ -7,3 +7,4 @@ __pycache__/
 *.egg-info/
 tests/tmp*/
 output/
+node_modules/
