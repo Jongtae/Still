@@ -8,6 +8,8 @@ Nothing here runs Node, reads ``~/Library/Messages/chat.db`` or runs
 """
 import json
 import os
+import shutil
+import subprocess
 import sys
 import tempfile
 import threading
@@ -324,6 +326,30 @@ class Disconnect(Case):
         self.assertNotEqual(self.store.job(job['id']).get('delivery'), 'sent')
 
 
+    def test_a_child_that_stopped_reading_does_not_hang_disconnect(self):
+        self.pair()
+        car = self.launchers[-1]
+        stopped = threading.Event()
+        blocked = threading.Event()
+        real_stop = car.stop
+
+        def stuck(op):
+            blocked.wait(30)   # a full stdin pipe
+            return False
+
+        def stop():
+            stopped.set()
+            real_stop()
+
+        car.send_op, car.stop = stuck, stop
+        started = time.monotonic()
+        with mock.patch.object(imessage_surface, 'SCOPE_OFF_SECONDS', 0.2):
+            self.service.disconnect_imessage()
+        blocked.set()
+        self.assertTrue(stopped.is_set(), 'stop() is reached')
+        self.assertLess(time.monotonic() - started, 5)
+
+
 class WorkMode(Case):
     def test_work_mode_pauses_a_paired_surface_visibly_and_the_owner_can_approve_it(self):
         self.pair()
@@ -362,6 +388,19 @@ class InformationRoute(Case):
         audit = self.service.work_information_use(job['id'])
         self.assertEqual(audit['sent_to']['conversation'], {'surface': 'imessage', 'route': ROUTE})
         self.assertIn(ROUTE, render_korean(audit))
+
+    @unittest.skipUnless(shutil.which('node'), 'Node renders the web audit')
+    def test_the_web_audit_shows_the_route_too(self):
+        script = r"""
+const ui=require(process.argv[1]);
+class Element{constructor(){this.children=[];this.textContent='';}append(...nodes){this.children.push(...nodes);}}
+global.document={createElement:()=>new Element()};
+const box=new Element();ui.informationUseView({information_use:{sent_to:{conversation:{surface:'imessage',route:process.argv[2]}}}},box);
+const facts=box.children[0].children,index=facts.findIndex(row=>row.textContent===ui.t('대화 채널'));
+if(index<0||facts[index+1].textContent!==process.argv[2])process.exit(3);
+"""
+        web = Path(imessage_surface.__file__).with_name('web') / 'app.js'
+        subprocess.run([shutil.which('node'), '-e', script, str(web), ROUTE], check=True, capture_output=True, timeout=20)
 
     def test_a_work_from_elsewhere_names_no_imessage_route(self):
         for surface in self.service.surfaces:

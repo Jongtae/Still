@@ -38,6 +38,8 @@ EVENT_RETENTION_SECONDS = 7 * 86400
 #: How far before the newest row seen a re-installed paired scope starts again (guids dedupe the overlap).
 REPLAY_OVERLAP_MS = 10 * 60 * 1000
 PRUNE_SECONDS = 3600
+#: How long a disconnect waits for the ``scope off`` write before stopping the sidecar anyway.
+SCOPE_OFF_SECONDS = 2
 PAIRING_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'
 ERROR_CODES = ('no_disk_access', 'messages_not_signed_in', 'db_unreadable', 'bad_request')
 TAPBACK_NAMES = {'like': '+1', 'dislike': '-1', 'love': 'heart', 'laugh': 'grin'}
@@ -286,10 +288,16 @@ class IMessageSurface(DirectMessageSurface):
 
     def _stop_sidecar(self, sidecar):
         try:
-            try:
-                sidecar.send_op({'op': 'scope', 'mode': 'off'})
-            except Exception as exc:
-                LOG.warning('iMessage scope shutdown failed (%s)', type(exc).__name__)
+            def scope_off():
+                try:
+                    sidecar.send_op({'op': 'scope', 'mode': 'off'})
+                except Exception as exc:
+                    LOG.warning('iMessage scope shutdown failed (%s)', type(exc).__name__)
+            # A child that stopped reading can block the write; ``stop()`` is reached either way,
+            # and the launcher's own bounded shutdown ends that child.
+            writer = threading.Thread(target=scope_off, name='imessage-scope-off', daemon=True)
+            writer.start()
+            writer.join(SCOPE_OFF_SECONDS)
             try:
                 sidecar.stop()
             except Exception as exc:
