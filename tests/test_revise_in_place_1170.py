@@ -129,6 +129,24 @@ class ReviseInPlace(Records):
                 self.assertEqual(self.service.may_continue(self.work, 'redelegate'), (False, 'effect'))
                 self.assertEqual(revisable_record_note(self.store, self.work), '')
 
+    def test_a_preparation_replaced_within_the_work_does_not_block(self):
+        # Codex review: A scheduled, then corrected by B with replaces=A (which cancels A); B is still revisable.
+        first = self.scheduled('first goal', call_id='p1')
+        second = self.prepared('second goal')
+        base = {'scope': 's', 'call_id': 'p2', 'host_action': 'schedule_preparation'}
+        self.event('schedule_preparation', 'running', {**base, 'arguments': {'replaces': first}})
+        self.event('schedule_preparation', 'succeeded',
+                   {**base, 'evidence': {**PREPARED['evidence'], 'preparation_id': second}})
+        self.service.preparations.cancel(first)
+        self.assertEqual(self.service.may_continue(self.work, 'redelegate'), (True, None))
+        facts = json.loads(revisable_record_note(self.store, self.work).rsplit('\n', 1)[1])
+        self.assertEqual([f.get('preparation_id') for f in facts], [second])
+
+    def test_a_cancelled_preparation_nothing_replaced_still_stops(self):
+        first = self.scheduled('first goal', call_id='p1')
+        self.service.preparations.cancel(first)
+        self.assertEqual(self.service.may_continue(self.work, 'redelegate'), (False, 'effect'))
+
 
 class StillStops(Records):
     """Expected 5: what cannot be repeated safely stops re-delegation, beside a revisable record or not."""

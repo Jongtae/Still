@@ -335,7 +335,7 @@ class SettingsContinuation:
         service=self.service
         from .agent_runtime import (API_ACTIONS, EFFECT_CHANGED, EFFECT_FREE_READS, EFFECT_LEDGER_TOOLS, EFFECT_UNKNOWN,
                                     INTERNAL_STATE_ACTIONS, MAX_CONTINUATIONS, call_effects, continuation_count, dispatch_call_accounted,
-                                    dispatch_call_keys, effect_free_call, external_effect_events, keyed_change, revisable_record,
+                                    dispatch_call_keys, effect_free_call, external_effect_events, keyed_change, replaced_preparations, revisable_record,
                                     unknown_effect_targets)
         if purpose not in service.CONTINUE_PURPOSES:raise ValueError(purpose)
         reasons=[]
@@ -406,12 +406,13 @@ class SettingsContinuation:
                 or (purpose=='redelegate' and service.missing_connection_rows(scoped))):
             add('owner')
         if not carry and any(row.get('resolution')!='not-applied' for row in observed):add('effect')
+        replaced=replaced_preparations(calls)
         for action,effect,status,detail in call_effects(scoped,with_detail=True):
             if (effect==EFFECT_CHANGED and not dispatch_call_accounted(detail,accounted) and not cut_off(action,status,detail)
                     and not (carry and keyed_change(action,detail,status,observed_api))
                     # #1170: a re-delegation of this same Work revises Still's own record in place
                     # (``revisable_record_note`` names it in the brief); every other purpose still stops.
-                    and not (purpose=='redelegate' and revisable_record(action,status,detail,service.store))):add('effect')
+                    and not (purpose=='redelegate' and revisable_record(action,status,detail,service.store,replaced))):add('effect')
         return tuple(sorted(reasons,key=CONTINUE_REASONS.index))
 
     def may_continue(self, work_id, purpose, **kwargs):

@@ -3179,15 +3179,32 @@ def revisable_preparation(store,preparation_id):
  if row['accepted_by'] in (None,ACCEPTED_DAY_PLAN):return None
  return {'state':row['state']}
 
-def revisable_record(action,status,detail=None,store=None):
+def replaced_preparations(rows):
+ """The preparation ids a later call of the same Work named in ``replaces`` (#1170 review).
+
+ ``rows`` are ``(tool, status, detail)``; the argument is on the call's running record.  A replacement
+ cancels the row it replaces, so that row's call is carried on by the replacing call, which is
+ classified on its own.
+ """
+ named=set()
+ for tool,_status,detail in rows:
+  detail=detail if isinstance(detail,dict) else {}
+  if (detail.get('host_action') or tool) not in PREPARATION_ACTIONS:continue
+  arguments=detail.get('arguments') if isinstance(detail.get('arguments'),dict) else {}
+  if isinstance(arguments.get('replaces'),str) and arguments['replaces']:named.add(arguments['replaces'])
+ return frozenset(named)
+
+def revisable_record(action,status,detail=None,store=None,replaced=frozenset()):
  """Whether one ``changed`` call is a record a re-delegation of the same Work revises in place (#1170).
 
- With ``store``, a preparation must also still be revisable by this Work (``revisable_preparation``).
+ With ``store``, a preparation must also still be revisable by this Work (``revisable_preparation``),
+ or have been replaced by a later call of the same Work (``replaced``), which is judged by itself.
  """
  if action not in REVISABLE_RECORD_ACTIONS or status!='succeeded':return False
  if store is None or action not in PREPARATION_ACTIONS:return True
  evidence=(detail or {}).get('evidence') if isinstance((detail or {}).get('evidence'),dict) else {}
- return revisable_preparation(store,evidence.get('preparation_id')) is not None
+ ident=evidence.get('preparation_id')
+ return ident in replaced or revisable_preparation(store,ident) is not None
 
 def revisable_record_note(store,work_id):
  """The records this Work's attempts set up that a later attempt revises in place, as host facts, or '' (#1170).
