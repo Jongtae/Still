@@ -30,7 +30,7 @@ from .agent_runtime import (Capabilities, ToolError, not_run, cut_to_fit, run_ag
                             history_provenance, WorkBudget, PresentationBudget, WORK_TOOL_ATTEMPTS, WORK_DEADLINE_SECONDS, EFFECT_FREE_READS, explicit_search_query, outcome_from_events,
                             WORK_STOP_KEY, WORK_STOPPED, work_stop_requested, LedgerSuperseded, WorkLedger, WORK_LEDGER_KEY, goal_summary, work_source_records,
                             backfill_work_sources, recorded_private_sources, NOTES_SUMMARY_COMMANDS, WORK_SOURCES_BACKFILL_KEY, WORK_SOURCES_BACKFILL_VERSION,
-                            progress_step, OWNER_LOCAL_ACTIONS, CONNECTOR_APPROVAL_NOTE, STILL_RECORD_CONTINUATION)
+                            progress_step, OWNER_LOCAL_ACTIONS, CONNECTOR_APPROVAL_NOTE)
 from .plugins import PluginRegistry
 from .quickstart_store import INTERIM_PROJECTIONS, PREVIEW_PROJECTION, UPDATE_PROJECTION, QuickStore, copy_read_checkpoint_context, owner_words_work
 from .providers import NOT_REPORTED, ModelAdapter, ProviderError, request_json, validate_model
@@ -3453,7 +3453,6 @@ class AgentService:
         event; ``effect_call_names`` pairs a call's running and terminal records.
         """
         from .agent_runtime import EFFECT_DRAFT, EFFECT_NONE, record_effect
-        if event.get('tool')==STILL_RECORD_CONTINUATION:return set()
         trace=event.get('trace') if isinstance(event.get('trace'),dict) else {}
         action=trace.get('host_action') or event.get('tool')
         return set() if record_effect(action,trace,event.get('status')) in (EFFECT_NONE,EFFECT_DRAFT) else {action}
@@ -6193,16 +6192,6 @@ class AgentService:
                     detail = json.dumps({'epoch': effect_ledger.epoch})
                     db.execute('INSERT INTO tool_events(job_id,tool,status,detail,created) VALUES (?,?,?,?,?)',
                                (job_id, EFFECT_CONTINUATION, 'claimed', detail, time.time()))
-        fence=None
-        if following is not None and not effect and not owner_needed:
-            from .agent_runtime import still_record_fence
-            fence=still_record_fence(self.store,job_id)
-        if fence and (fence['preparations'] or fence['lines']):
-            with self.store.db() as db:
-                self.store.require_read_checkpoint_writer(db)
-                detail=json.dumps({'records':fence['preparations']+fence['lines'],**fence})
-                db.execute('INSERT INTO tool_events(job_id,tool,status,detail,created) VALUES (?,?,?,?,?)',
-                           (job_id,STILL_RECORD_CONTINUATION,'claimed',detail,time.time()))
         return following
 
     def cancel_superseded_work(self, work_ids, notify=True):
@@ -6490,7 +6479,7 @@ class AgentService:
                                      om.REVIEW_EVENT_TOOL,MEMORY_UNDO_TOOL,STEER_EVENT,REACTION_EVENT,
                                      'response_timing','connection_setup','preparation','line_held',
                                      # #842: the marker that a finished Work's prompts were queued (``sweep_after_work``).
-                                     'after_work',STILL_RECORD_CONTINUATION,
+                                     'after_work',
                                      # #1163: which brief version a Work read (``entrusted_lines.READ_EVENT``), next
                                      # to the ``entrusted_line`` read call itself.
                                      'entrusted_line_read'})  # host slot receipt, not schedule_preparation

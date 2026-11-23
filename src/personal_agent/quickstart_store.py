@@ -2278,7 +2278,6 @@ class QuickStore:
         return self._delete_memory_chain(self._memory_binding(owner_id),memory_id)
 
     def personal_space(self):
-        from .agent_runtime import STILL_RECORD_CONTINUATION
         now=time.time()
         with self.db() as db:
             db.execute('DELETE FROM context_events WHERE expires_at<=?',(now,))
@@ -2289,8 +2288,7 @@ class QuickStore:
             memories=sorted(memories,key=lambda row:row.get('created',0),reverse=True)[:50]
             results=[dict(r) for r in db.execute('SELECT id,workspace_id,job_id,content,created FROM workspace_results ORDER BY created DESC LIMIT 50')]
             context=[dict(r) for r in db.execute('SELECT id,captured_at,source_kind,expires_at,sharing_state,source_app,source_domain FROM context_events ORDER BY captured_at DESC LIMIT 100')]
-            evidence=[dict(r) for r in db.execute("SELECT tool,status,COUNT(*) AS count FROM tool_events WHERE tool NOT IN ('model',?) GROUP BY tool,status ORDER BY tool,status",
-                                                 (STILL_RECORD_CONTINUATION,))]
+            evidence=[dict(r) for r in db.execute("SELECT tool,status,COUNT(*) AS count FROM tool_events WHERE tool!='model' GROUP BY tool,status ORDER BY tool,status")]
             candidates=[dict(r) for r in db.execute("SELECT id,job_id,memory_key,content,created,state FROM memory_candidates WHERE state='pending' ORDER BY created DESC LIMIT 50")]
         return {'memories':memories,'memory_count':len(memories),'memory_candidates':candidates,'memory_candidate_count':len(candidates),'results':results,'result_count':len(results),'context':context,'context_count':len(context),'evidence':evidence}
 
@@ -2552,10 +2550,8 @@ class QuickStore:
                 """, (limit,))]
 
     def recent_tool_events(self):
-        from .agent_runtime import STILL_RECORD_CONTINUATION
         with self.db() as db:
-            rows=[dict(r) for r in db.execute("SELECT id,job_id,tool,status,detail,created FROM tool_events WHERE tool NOT IN ('model',?) ORDER BY id DESC LIMIT 30",
-                                             (STILL_RECORD_CONTINUATION,))]
+            rows=[dict(r) for r in db.execute("SELECT id,job_id,tool,status,detail,created FROM tool_events WHERE tool!='model' ORDER BY id DESC LIMIT 30")]
         events=[]
         for row in rows:
             try:trace=json.loads(row.pop('detail'))
@@ -2636,10 +2632,8 @@ class QuickStore:
         return legacy+records
 
     def task_events(self, job_id):
-        from .agent_runtime import STILL_RECORD_CONTINUATION
         with self.db() as db:
-            rows=[dict(r) for r in db.execute("SELECT id,job_id,tool,status,detail,created FROM tool_events WHERE job_id=? AND tool NOT IN ('model','response_timing',?) ORDER BY id",
-                                             (job_id,STILL_RECORD_CONTINUATION))]
+            rows=[dict(r) for r in db.execute("SELECT id,job_id,tool,status,detail,created FROM tool_events WHERE job_id=? AND tool NOT IN ('model','response_timing') ORDER BY id",(job_id,))]
         events=[]
         for row in rows:
             try:trace=json.loads(row.pop('detail'))

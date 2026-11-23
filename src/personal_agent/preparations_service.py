@@ -17,8 +17,7 @@ from . import condition_checks as checks
 from . import preparations as prep
 from . import owner_model as om
 from . import work_status as ws
-from .agent_runtime import (STILL_RECORD_CONTINUATION, WORK_STOP_KEEP, WORK_STOP_KEY, ToolError, WorkLedger,
-                            not_run, ran_field, still_record_claims)
+from .agent_runtime import WORK_STOP_KEEP, WORK_STOP_KEY, ToolError, WorkLedger, not_run, ran_field
 from .api_credentials import CredentialError
 from .conversation_handoff import JUDGMENT_NO, JUDGMENT_YES
 from .conversation_projection import earlier_turn_line
@@ -296,23 +295,6 @@ class PreparationsService:
             channel=service.preparation_channel(self.owner_last_work() if planning else job,kind,args.get('delivery'))
             if resume_offer:
                 return self.offer_line_resume(job,args.get('line'),fields,channel)
-            # #1167: a re-delegated attempt revises what this Work set up, never sets it up again (re-checked at
-            # the write).  New work none of them covers (#1170's brief) is the Judgment AI's same-goal call,
-            # asked only here; unavailable keeps the fence.  A deleted row's goal is gone, so it stays fenced.
-            # A line piece is revised in place and a resume offer is once per day, so neither is held here.
-            replaces=args.get('replaces')
-            with service.store.db() as db:
-                carried=prep.carried_preparations(db,job['id'])
-            # A revision of one carried row is judged against the other carried rows it could duplicate.
-            relevant=({key:row for key,row in carried.items() if key!=replaces}
-                      if replaces in carried and not carried[replaces]['settled'] else carried)
-            distinct=frozenset()
-            if (relevant and all(row['goal'] is not None for row in relevant.values())
-                    and service.decision_judge.same_preparation_goal(goal,[row['goal'] for row in relevant.values()],
-                                                                     work_id=job['id']).outcome==JUDGMENT_NO):
-                distinct=frozenset(relevant)
-            with service.store.db() as db:
-                prep.require_preparation_replacement(db,job['id'],replaces,distinct)
             summary=prep.proposal_summary({'kind':kind,'goal_text':goal,'due_at':due_at,'timezone':timezone,
                                            'recurrence':prep.RECURRENCE_WINDOW if window else recurrence,
                                            'every_seconds':window and window[0],'until_at':window and window[1],
@@ -342,6 +324,7 @@ class PreparationsService:
             # #766: the preparation this one takes the place of (a changed target or plan); it stops
             # once this one is scheduled.  Only in the owner's own Work, which schedules at once, so a
             # proposal never stops what is running.
+            replaces=args.get('replaces')
             current=None
             if replaces not in (None,''):
                 current=service.preparations.get(replaces) if isinstance(replaces,str) else None
@@ -377,24 +360,13 @@ class PreparationsService:
                                                  accepted_by=accepted_by,accepted_from=accepted_from,
                                                  window=window,delivery_mode=delivery_mode,title=title,offer=offer,
                                                  report_every_minutes=fields['report_every_minutes'],line_id=line_id,
-                                                 requested_until=fields['requested_until'],check=spec,db=db,replaces=replaces,
-                                                 from_schedule_tool=True,distinct=distinct)
+                                                 requested_until=fields['requested_until'],check=spec,db=db,replaces=replaces)
                     # #574: another Work's identical proposal is this one; the owner's own Work accepts it.
                     already=bool(row.get('already_proposed'))
                     if already and accepted:
                         row=service.preparations.accept(row['id'],accepted_by,accepted_from=accepted_from,db=db,replaces=replaces)
                     if db is not None and row['state']==prep.STATE_SCHEDULED and replaces!=row['id']:
                         stopped=service.preparations.cancel(replaces,db=db)
-                        carried=still_record_claims(db,job['id'])
-                        if replaces in carried and row['id'] not in carried:
-                            # The successor takes the replaced row's place in the fence, in the same commit.
-                            for claim in db.execute("SELECT id,detail FROM tool_events WHERE job_id=? AND tool=? AND status='claimed'",
-                                                    (job['id'],STILL_RECORD_CONTINUATION)).fetchall():
-                                detail=json.loads(claim['detail'])
-                                if replaces in detail.get('records',()):
-                                    for key in ('records','preparations'):
-                                        detail[key]=[row['id'] if value==replaces else value for value in detail.get(key,())]
-                                    db.execute('UPDATE tool_events SET detail=? WHERE id=?',(json.dumps(detail),claim['id']))
             except prep.PreparationRefusal as exc:
                 raise ToolError(str(exc),exc.code,**ran_field(exc)) from None
             LOG.info('preparation %s id=%s work=%s kind=%s already_proposed=%s',row['state'],row['id'],job['id'],kind,already)
@@ -2740,11 +2712,6 @@ class PreparationsService:
                     self._record_line_read(job['id'],result,held=True)
                     return result
                 if action not in ('open','revise','undo','stop','restart'):raise refused('line_invalid_action')
-                if action=='restart':
-                    # #1167: a re-delegated attempt never restarts a carried line stopped after the re-delegation.
-                    with service.store.db() as db:
-                        if args.get('line') in still_record_claims(db,job['id'],'lines'):
-                            raise refused('line_settled',args['line'])
                 if service.owner_typed_work(job):return getattr(self,'_line_'+action)(job,args)
                 # #968: a scheduled run writes only its own line: as the owner's steer asks, or its open matters.
                 authority=self.own_line_authority(job,action,args.get('line'))
@@ -2761,33 +2728,11 @@ class PreparationsService:
         service=self.service
         rules=el.split_rules(args.get('rules'))
         days=el.whole_days(args.get('account_every_days'))
-        fields={key:service._redact_known_secrets(args.get(key) or '') for key in ('task','report_promise','open_matters')}
-        rules=[service._redact_known_secrets(rule) for rule in rules]
-        # #1167: a re-delegated attempt revises its carried line, and one the owner stopped or forgot stays so.
-        # A line for work none of them covers (#1170's brief) is the same-goal judgment, asked only here;
-        # unavailable, or a forgotten line whose task is gone, keeps the fence.
-        with service.store.db() as db:
-            carried=still_record_claims(db,job['id'],'lines')
-        def readable(line_id):
-            try:return service.lines.current(line_id)
-            except Exception:return None  # unreadable: fenced
-        briefs={line_id:readable(line_id) for line_id in carried}
-        distinct=frozenset()
-        if (briefs and all(brief and brief.get('task') for brief in briefs.values())
-                and service.decision_judge.same_preparation_goal(fields['task'],[brief['task'] for brief in briefs.values()],
-                                                                 work_id=job['id']).outcome==JUDGMENT_NO):
-            distinct=frozenset(briefs)
-        with service.store.db() as db:
-            db.execute('BEGIN IMMEDIATE')
-            service.store.require_read_checkpoint_writer(db)
-            carried=sorted(set(still_record_claims(db,job['id'],'lines'))-distinct)
-            active=[line_id for line_id in carried if el.line_state(db,line_id)==el.STATE_ACTIVE]
-            if active:
-                raise not_run(ToolError(msg('lines.refused_line_exists',detail=', '.join(active)),'line_exists'))
-            if carried:
-                raise not_run(ToolError(msg('lines.refused_line_settled',detail=', '.join(carried)),'line_settled'))
-            brief=service.lines.open(job['id'],**fields,rules=rules,
-                                     account_every_days=el.ACCOUNT_DAYS if days is None else days,db=db)
+        brief=service.lines.open(job['id'],task=service._redact_known_secrets(args.get('task') or ''),
+                                 report_promise=service._redact_known_secrets(args.get('report_promise') or ''),
+                                 rules=[service._redact_known_secrets(rule) for rule in rules],
+                                 open_matters=service._redact_known_secrets(args.get('open_matters') or ''),
+                                 account_every_days=el.ACCOUNT_DAYS if days is None else days)
         try:self.ensure_line_account(job,brief)
         except prep.PreparationRefusal as exc:LOG.warning('line account not scheduled id=%s code=%s',brief['line_id'],exc.code)
         untold=self.line_notice(job,el.NOTICE_OPENED,brief['line_id'],brief['version'])

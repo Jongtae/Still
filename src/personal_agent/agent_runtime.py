@@ -2614,62 +2614,6 @@ def unknown_effect(value):
 
 
 EFFECT_CONTINUATION = 'effect_continuation'
-#: #1167: the marker of a re-delegation past this Work's own records (#1170): which ones its next
-#: attempts are fenced by, so a later attempt revises them and never sets the same one up again.
-STILL_RECORD_CONTINUATION = 'still_record_continuation'
-
-def _own_replacements(db, work_id):
- """Preparation ids a succeeded ``schedule_preparation`` call of this Work named in ``replaces``."""
- asked, succeeded = {}, set()
- for row in db.execute("SELECT status,detail FROM tool_events WHERE job_id=? AND tool='schedule_preparation'", (work_id,)):
-  try:detail = json.loads(row['detail'] or '{}')
-  except (TypeError, ValueError):continue
-  call = detail.get('call_id') if isinstance(detail, dict) else None
-  if not isinstance(call, str):continue
-  if row['status'] == 'running' and isinstance(detail.get('arguments'), dict):asked[call] = detail['arguments'].get('replaces')
-  elif row['status'] == 'succeeded':succeeded.add(call)
- return {asked[call] for call in succeeded if isinstance(asked.get(call), str)}
-
-def still_record_fence(store, work_id):
- """``{'preparations': [...], 'lines': [...]}`` a re-delegated attempt of this Work is fenced by (#1167).
-
- Read at the moment the next attempt is claimed, over every state, so a row that settled after the
- continuation rule reconciled it is still fenced (as settled).  A row this Work replaced itself has its
- successor in its place; a line's automatic account is the line's upkeep, not work the attempt scheduled.
- A row another Work proposed and this one adopted keeps its creator, so this Work's own succeeded calls
- name the rows it set up too.
- """
- from . import entrusted_lines as el, preparations as prep
- with store.db() as db:
-  tables = {row['name'] for row in db.execute("SELECT name FROM sqlite_master WHERE type='table' "
-                                            "AND name IN ('preparations','procedure_versions')")}
-  replaced = _own_replacements(db, work_id)
-  called = set()
-  for row in db.execute("SELECT detail FROM tool_events WHERE job_id=? AND tool='schedule_preparation' AND status='succeeded'",
-                        (work_id,)):
-   try:evidence = (json.loads(row['detail'] or '{}') or {}).get('evidence')
-   except (TypeError, ValueError, AttributeError):continue
-   if isinstance(evidence, dict) and isinstance(evidence.get('preparation_id'), str):called.add(evidence['preparation_id'])
-  marks = ','.join('?' for _ in called)
-  preparations = [row['id'] for row in db.execute(
-   'SELECT id FROM preparations WHERE (created_from=?' + (f' OR id IN ({marks})' if called else '') + ') '
-   'AND origin IS NOT ? ORDER BY created_at,id',
-   (work_id, *called, prep.ORIGIN_LINE_ACCOUNT)) if row['id'] not in replaced] if 'preparations' in tables else []
-  # A row the owner deleted is gone from the store; its call still names it, so it is fenced as settled.
-  if called and 'preparations' in tables:
-   held = {row['id'] for row in db.execute(f'SELECT id FROM preparations WHERE id IN ({marks})', tuple(called))}
-   preparations += sorted(called - held - replaced)
-  lines = [row['slot'][len(el.SLOT_PREFIX):] for row in db.execute(
-   'SELECT slot FROM procedure_versions WHERE work_id=? AND version=1 AND slot LIKE ? ORDER BY created,slot',
-   (work_id, el.SLOT_PREFIX+'%'))] if 'procedure_versions' in tables else []
- return {'preparations': preparations, 'lines': lines}
-
-def still_record_claims(db, work_id, kind='records'):
- """Record IDs carried into a replacement attempt of this Work: every record, ``preparations`` or ``lines``."""
- return {row['value'] for row in db.execute(
-  "SELECT record.value FROM tool_events event, json_each(CASE WHEN json_valid(event.detail) "
-  "THEN event.detail END, '$.'||?) record WHERE event.job_id=? AND event.tool=? "
-  "AND event.status='claimed' AND record.type='text'", (kind, work_id, STILL_RECORD_CONTINUATION))}
 
 
 class EffectAncestryError(ValueError):
@@ -2888,7 +2832,6 @@ def _effect_call_history(db,work_id):
  rows=db.execute("SELECT job_id,tool,status,detail FROM tool_events WHERE job_id IN ("+','.join('?' for _ in ids)+") ORDER BY id",ids)
  calls,arguments,unscoped={},{},[]
  for row in rows:
-  if row['tool']==STILL_RECORD_CONTINUATION:continue
   try:detail=json.loads(row['detail'] or '{}')
   except (TypeError,ValueError):detail=None
   if not isinstance(detail,dict):
@@ -3237,6 +3180,43 @@ def revisable_preparation(store,preparation_id):
  if row['accepted_by'] in (None,ACCEPTED_DAY_PLAN):return None
  return {'state':row['state']}
 
+def record_fact(store,action,evidence):
+ """The current facts of the Still record one succeeded call named, in any state, or None (#1167).
+
+ Still's own store is the authoritative reconciliation of its own record (RFC 9110 §9.2.2; the OpenAI
+ Agents SDK's "retry only after authoritative reconciliation"), whatever became of it since: revisable,
+ replaced, delivered, cancelled, stopped or deleted (``state: deleted``).  The next attempt reads that
+ state in its brief; no Still record is fenced (C17: a duplicate of a cancellable Still record is none of
+ its three cases; a real order or payment stays guarded at its own call).  None only for a row the Work
+ has no authority to revise (``revisable_preparation``: a daily-plan row, an unaccepted proposal).
+ """
+ from .preparations import ACCEPTED_DAY_PLAN,iso
+ from .current_context import redact_known_secrets
+ evidence=evidence if isinstance(evidence,dict) else {}
+ if action in LINE_ACTIONS:
+  ident=evidence.get('line_id')
+  if not isinstance(ident,str) or not ident:return None
+  from .entrusted_lines import EntrustedLines,LineRefusal,line_id_of
+  try:brief=EntrustedLines(store).current(line_id_of(ident))
+  except (LineRefusal,__import__("sqlite3").OperationalError):brief=None
+  if not brief:return {'line_id':ident,'state':'deleted'}
+  return {'line_id':ident,'state':brief.get('state'),**({'version':brief['version']} if isinstance(brief.get('version'),int) else {}),
+          **(revisable_line(store,ident) or {})}
+ ident=evidence.get('preparation_id')
+ if not isinstance(ident,str) or not ident:return None
+ try:
+  with store.db() as db:
+   row=db.execute('SELECT state,piece_of,accepted_by,title_text,due_at,timezone,recurrence FROM preparations WHERE id=?',
+                  (ident,)).fetchone()
+ except __import__("sqlite3").OperationalError:
+  row=None
+ if not row:return {'preparation_id':ident,'state':'deleted'}
+ if not row['piece_of'] and row['accepted_by'] in (None,ACCEPTED_DAY_PLAN):return None
+ fact={'preparation_id':ident,'state':row['state'],'due':iso(row['due_at'],row['timezone']),'recurrence':row['recurrence'] or 'none'}
+ # The owner-facing card title, never the run's goal (#1170): bounded and with stored secrets out.
+ if row['title_text']:fact['title']=redact_known_secrets(store,str(row['title_text']))[:120]
+ return {**fact,**(revisable_preparation(store,ident) or {})}
+
 def revisable_line(store,line_id):
  """``{'state', 'version'}`` when this entrusted line can still be revised in place, else None (#1170 review).
 
@@ -3277,23 +3257,22 @@ def replaced_preparations(rows):
  return frozenset(named)
 
 def revisable_record(action,status,detail=None,store=None,replaced=frozenset()):
- """Whether one ``changed`` call is a record a re-delegation of the same Work revises in place (#1170).
+ """Whether one ``changed`` call is a record a re-delegation of the same Work carries forward (#1170, #1167).
 
- With ``store``, a preparation must also still be revisable by this Work (``revisable_preparation``),
- or have been replaced by a later call of the same Work (``replaced``), which is judged by itself.
+ With ``store``, Still must hold the facts of that record (``record_fact``, any state, deleted included),
+ or a later call of the same Work replaced it (``replaced``), which is judged by itself.
  """
  if action not in REVISABLE_RECORD_ACTIONS or status!='succeeded':return False
  if store is None:return True
  evidence=(detail or {}).get('evidence') if isinstance((detail or {}).get('evidence'),dict) else {}
- if action in LINE_ACTIONS:return revisable_line(store,evidence.get('line_id')) is not None
- ident=evidence.get('preparation_id')
- return ident in replaced or revisable_preparation(store,ident) is not None
+ if action in PREPARATION_ACTIONS and evidence.get('preparation_id') in replaced:return True
+ return record_fact(store,action,evidence) is not None
 
 def revisable_record_note(store,work_id):
- """The records this Work's attempts set up that a later attempt revises in place, as host facts, or '' (#1170).
+ """The records this Work's attempts set up, with their current facts, as host facts, or '' (#1170, #1167).
 
- Read from the Work's own succeeded calls: only identifiers and states the tools returned, never
- their goals or rules.
+ Read from the Work's own succeeded calls and Still's store: identifiers, current states (``deleted`` for
+ a record that is gone), schedules and card titles, never their goals or rules.
  """
  with store.db() as db:
   # Every call of the Work: a manifest may expose either action under another tool id, and only
@@ -3318,8 +3297,7 @@ def revisable_record_note(store,work_id):
   seen.add(ident);facts.append(fact)
  current=[]
  for fact in facts:
-  now=(revisable_preparation(store,fact['preparation_id']) if fact.get('preparation_id')
-       else revisable_line(store,fact.get('line_id')))
+  now=record_fact(store,fact['tool'],fact)
   if now is None:continue
   current.append({**fact,**now})
  facts=current
@@ -3424,8 +3402,9 @@ def call_effects(rows,with_detail=False):
   return [(action,record_effect(action,detail,status),status,detail) for action,detail,status in entries]
  return [(action,record_effect(action,detail,status),status) for action,detail,status in entries]
 
-#: #618 E2: Still's dispatch, permission and continuation bookkeeping, never tool calls.
-EFFECT_LEDGER_TOOLS=frozenset({'api_dispatch','connector_permission',EFFECT_CONTINUATION,STILL_RECORD_CONTINUATION})
+#: #618 E2: Still's own effect-ledger records (an API dispatch claim, a connector permission); their
+#: outcome is read through ``external_effect_progress`` (observed or unresolved), never as a call.
+EFFECT_LEDGER_TOOLS=frozenset({'api_dispatch','connector_permission',EFFECT_CONTINUATION})
 
 def keyed_change(action,detail,status,observed_dispatch=()):
  """Whether a changed call is one Still's own replay key already guards (#618 E2).

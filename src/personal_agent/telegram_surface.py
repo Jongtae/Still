@@ -45,7 +45,7 @@ from .providers import ProviderError
 from .conversation_handoff import TELEGRAM_UNSENT_BACKOFF_FIRST, TELEGRAM_UNSENT_BACKOFF_MAX, TelegramNotSent, TelegramRejected, transient_failure
 from .conversation_surface import (PRESENCE_REACT, PRESENCE_TYPING, ConversationSurface, SurfaceCapabilities, SurfacePairing,
                                    notice_binding, notice_text)
-from .agent_runtime import STILL_RECORD_CONTINUATION, WORK_STOP_KEEP, WORK_STOP_KEY
+from .agent_runtime import WORK_STOP_KEEP, WORK_STOP_KEY
 from .messages import msg
 from .direct_message_surface import steer_if_owner_typed
 from . import owner_model as om
@@ -488,8 +488,7 @@ class TelegramSurface(ConversationSurface):
                 'awaiting_connection':msg('label.waiting_for_a_connection')}
         with service.store.db() as db:
             job=db.execute('SELECT status,delivery FROM jobs WHERE id=?',(job_id,)).fetchone()
-            rows=db.execute("SELECT tool,status FROM tool_events WHERE job_id=? AND tool NOT IN ('model',?) ORDER BY id LIMIT 12",
-                            (job_id,STILL_RECORD_CONTINUATION)).fetchall()
+            rows=db.execute('SELECT tool,status FROM tool_events WHERE job_id=? AND tool!=? ORDER BY id LIMIT 12',(job_id,'model')).fetchall()
         if not job:return msg('service.i_can_t_find_this_task')
         lines=[msg('telegram_surface.job_status', status=labels.get(job['status'], job['status']))]
         if rows:

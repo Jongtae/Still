@@ -900,53 +900,6 @@ def preparation_lineage(db, preparation_id):
     return json.loads(deleted['detail']) if deleted else None
 
 
-def carried_preparations(db, work_id):
-    """``{id: goal_text or None}`` of the preparations a re-delegation of this Work carried (#1167).
-
-    None is a carried row the owner deleted.  Each row's ``settled`` flag says whether it is no longer
-    revisable in place: it ran (a run started, even one still running), was cancelled or was deleted.
-    """
-    from .agent_runtime import still_record_claims
-    claimed = still_record_claims(db, work_id, 'preparations')
-    if not claimed:
-        return {}
-    marks = ','.join('?' for _ in claimed)
-    rows = {row['id']: row for row in db.execute(
-        f'SELECT id,state,goal_text,last_run_job_id,run_count FROM preparations WHERE id IN ({marks})', tuple(claimed))}
-    return {key: {'goal': rows[key]['goal_text'] if key in rows else None,
-                  'settled': key not in rows or rows[key]['state'] not in ACTIVE_STATES
-                  or rows[key]['last_run_job_id'] is not None or (rows[key]['run_count'] or 0) > 0}
-            for key in claimed}
-
-
-def require_preparation_replacement(db, work_id, replaces=None, distinct=frozenset()):
-    """A re-delegated attempt never sets up again what this Work already set up (#1167).
-
-    Every carried row the schedule's own goal was not judged ``distinct`` from fences it: an active one
-    is revised in place (``replaces`` names it); a settled one (ran, cancelled or deleted after the
-    re-delegation was decided) is not set up again in this Work.  ``#1170``'s brief invites new work
-    only where none of them covers it; that is the same-goal judgment, asked before this transaction.
-    """
-    from .agent_runtime import ToolError, not_run
-    carried = carried_preparations(db, work_id)
-    if replaces in carried and not carried[replaces]['settled']:
-        # A revision of one carried row: blocked only by another carried row with the same goal, active or settled.
-        blocking = {key: row for key, row in carried.items() if key != replaces and key not in distinct}
-        settled = sorted(key for key, row in blocking.items() if row['settled'])
-        if settled:
-            raise not_run(ToolError(msg('preparations.preparation_settled', ids=', '.join(settled)), 'preparation_settled'))
-        if blocking:
-            raise not_run(ToolError(msg('preparations.preparation_exists', ids=', '.join(sorted(blocking))), 'preparation_exists'))
-        return
-    carried = {key: row for key, row in carried.items() if key not in distinct}
-    settled = sorted(key for key, row in carried.items() if row['settled'])
-    if settled:
-        raise not_run(ToolError(msg('preparations.preparation_settled', ids=', '.join(settled)), 'preparation_settled'))
-    active = set(carried)
-    if active and (not isinstance(replaces, str) or replaces not in active):
-        raise not_run(ToolError(msg('preparations.preparation_exists', ids=', '.join(sorted(active))), 'preparation_exists'))
-
-
 def line_works_sql(column, *, include_deleted=False):
     """#938: SQL matching Works (by ``column``, a request key) of any row of one line.
 
@@ -1624,7 +1577,7 @@ class Preparations:
     def create(self, *, kind, goal, due_at, timezone, recurrence, channel, created_from, state,
                accepted_by=None, owner=OWNER, window=None, delivery_mode=None, title=None, offer=None, origin=None,
                report_every_minutes=None, line_id=None, max_runs=None, requested_until=None, bundle_channel=None, accepted_from=None,
-               piece_of=None, db=None, check=None, replaces=None, from_schedule_tool=False, distinct=frozenset()):
+               piece_of=None, db=None, check=None, replaces=None):
         """One new row (idempotent for the same Work, kind, goal and slot).
 
         #574: when another Work already proposed the same kind, goal, due and
@@ -1641,8 +1594,6 @@ class Preparations:
         #798: ``line_id`` is the entrusted line this row works for; the caller checked it is active.
         ``db`` joins a caller's transaction, so creation and its recovery evidence commit together.
         ``replaces`` is the validated row the caller will cancel in that transaction, excluded from the check cap.
-        ``from_schedule_tool`` checks any carried preparations inside the write transaction (#1167);
-        ``distinct`` are the carried rows this one's goal was judged different from.
 
         #938: ``piece_of`` is the slot key of the run that schedules this piece of its line (origin
         ``ORIGIN_LINE_PIECE``).  In this transaction the line must still be active (a stop at the same
@@ -1701,8 +1652,6 @@ class Preparations:
         with (self.store.db() if owns_transaction else nullcontext(db)) as db:
             if owns_transaction:db.execute('BEGIN IMMEDIATE')
             self.store.require_read_checkpoint_writer(db)
-            if from_schedule_tool:
-                require_preparation_replacement(db, created_from, replaces, distinct)
             if resume_offer:
                 brief = self._admit_line_resume(db, line_id, due_at, now)
             if piece_of is not None:
