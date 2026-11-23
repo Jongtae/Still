@@ -3180,6 +3180,43 @@ def revisable_preparation(store,preparation_id):
  if row['accepted_by'] in (None,ACCEPTED_DAY_PLAN):return None
  return {'state':row['state']}
 
+def record_fact(store,action,evidence):
+ """The current facts of the Still record one succeeded call named, in any state, or None (#1167).
+
+ Still's own store is the authoritative reconciliation of its own record (RFC 9110 §9.2.2; the OpenAI
+ Agents SDK's "retry only after authoritative reconciliation"), whatever became of it since: revisable,
+ replaced, delivered, cancelled, stopped or deleted (``state: deleted``).  The next attempt reads that
+ state in its brief; no Still record is fenced (C17: a duplicate of a cancellable Still record is none of
+ its three cases; a real order or payment stays guarded at its own call).  None only for a row the Work
+ has no authority to revise (``revisable_preparation``: a daily-plan row, an unaccepted proposal).
+ """
+ from .preparations import ACCEPTED_DAY_PLAN,iso
+ from .current_context import redact_known_secrets
+ evidence=evidence if isinstance(evidence,dict) else {}
+ if action in LINE_ACTIONS:
+  ident=evidence.get('line_id')
+  if not isinstance(ident,str) or not ident:return None
+  from .entrusted_lines import EntrustedLines,LineRefusal,line_id_of
+  try:brief=EntrustedLines(store).current(line_id_of(ident))
+  except (LineRefusal,__import__("sqlite3").OperationalError):brief=None
+  if not brief:return {'line_id':ident,'state':'deleted'}
+  return {'line_id':ident,'state':brief.get('state'),**({'version':brief['version']} if isinstance(brief.get('version'),int) else {}),
+          **(revisable_line(store,ident) or {})}
+ ident=evidence.get('preparation_id')
+ if not isinstance(ident,str) or not ident:return None
+ try:
+  with store.db() as db:
+   row=db.execute('SELECT state,piece_of,accepted_by,title_text,due_at,timezone,recurrence FROM preparations WHERE id=?',
+                  (ident,)).fetchone()
+ except __import__("sqlite3").OperationalError:
+  row=None
+ if not row:return {'preparation_id':ident,'state':'deleted'}
+ if not row['piece_of'] and row['accepted_by'] in (None,ACCEPTED_DAY_PLAN):return None
+ fact={'preparation_id':ident,'state':row['state'],'due':iso(row['due_at'],row['timezone']),'recurrence':row['recurrence'] or 'none'}
+ # The owner-facing card title, never the run's goal (#1170): bounded and with stored secrets out.
+ if row['title_text']:fact['title']=redact_known_secrets(store,str(row['title_text']))[:120]
+ return {**fact,**(revisable_preparation(store,ident) or {})}
+
 def revisable_line(store,line_id):
  """``{'state', 'version'}`` when this entrusted line can still be revised in place, else None (#1170 review).
 
@@ -3220,23 +3257,22 @@ def replaced_preparations(rows):
  return frozenset(named)
 
 def revisable_record(action,status,detail=None,store=None,replaced=frozenset()):
- """Whether one ``changed`` call is a record a re-delegation of the same Work revises in place (#1170).
+ """Whether one ``changed`` call is a record a re-delegation of the same Work carries forward (#1170, #1167).
 
- With ``store``, a preparation must also still be revisable by this Work (``revisable_preparation``),
- or have been replaced by a later call of the same Work (``replaced``), which is judged by itself.
+ With ``store``, Still must hold the facts of that record (``record_fact``, any state, deleted included),
+ or a later call of the same Work replaced it (``replaced``), which is judged by itself.
  """
  if action not in REVISABLE_RECORD_ACTIONS or status!='succeeded':return False
  if store is None:return True
  evidence=(detail or {}).get('evidence') if isinstance((detail or {}).get('evidence'),dict) else {}
- if action in LINE_ACTIONS:return revisable_line(store,evidence.get('line_id')) is not None
- ident=evidence.get('preparation_id')
- return ident in replaced or revisable_preparation(store,ident) is not None
+ if action in PREPARATION_ACTIONS and evidence.get('preparation_id') in replaced:return True
+ return record_fact(store,action,evidence) is not None
 
 def revisable_record_note(store,work_id):
- """The records this Work's attempts set up that a later attempt revises in place, as host facts, or '' (#1170).
+ """The records this Work's attempts set up, with their current facts, as host facts, or '' (#1170, #1167).
 
- Read from the Work's own succeeded calls: only identifiers and states the tools returned, never
- their goals or rules.
+ Read from the Work's own succeeded calls and Still's store: identifiers, current states (``deleted`` for
+ a record that is gone), schedules and card titles, never their goals or rules.
  """
  with store.db() as db:
   # Every call of the Work: a manifest may expose either action under another tool id, and only
@@ -3261,8 +3297,7 @@ def revisable_record_note(store,work_id):
   seen.add(ident);facts.append(fact)
  current=[]
  for fact in facts:
-  now=(revisable_preparation(store,fact['preparation_id']) if fact.get('preparation_id')
-       else revisable_line(store,fact.get('line_id')))
+  now=record_fact(store,fact['tool'],fact)
   if now is None:continue
   current.append({**fact,**now})
  facts=current

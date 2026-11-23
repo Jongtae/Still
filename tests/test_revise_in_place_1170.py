@@ -91,17 +91,18 @@ class ReviseInPlace(Records):
         self.assertIn('replaces', note)
         self.assertNotIn('SECRET-GOAL', note, 'identifiers and states only, never a goal')
 
-    def test_a_replaced_or_cancelled_preparation_is_not_offered_for_revision(self):
-        # Codex review: a replacement cancels the row it replaces; only the current row is named.
+    def test_a_replaced_or_cancelled_preparation_is_named_with_its_current_state(self):
+        # #1167: every record the Work set up is a fact for the next attempt, in its current state.
         replaced, current = self.prepared('first goal'), self.prepared('second goal')
         self.call('schedule_preparation', {'evidence': {**PREPARED['evidence'], 'preparation_id': replaced}}, 'succeeded', 'p1')
         self.call('schedule_preparation', {'evidence': {**PREPARED['evidence'], 'preparation_id': current}}, 'succeeded', 'p2')
         self.service.preparations.cancel(replaced)
         facts = json.loads(revisable_record_note(self.store, self.work).rsplit('\n', 1)[1])
-        self.assertEqual([f.get('preparation_id') for f in facts], [current])
-        self.assertEqual(facts[0]['state'], 'scheduled', 'the current state, not the recorded one')
-        self.service.preparations.cancel(current)
-        self.assertEqual(revisable_record_note(self.store, self.work), '')
+        self.assertEqual([(f.get('preparation_id'), f['state']) for f in facts],
+                         [(replaced, 'cancelled'), (current, 'scheduled')], 'the current state, not the recorded one')
+        self.service.preparations.delete(current)
+        facts = json.loads(revisable_record_note(self.store, self.work).rsplit('\n', 1)[1])
+        self.assertEqual([(f.get('preparation_id'), f['state']) for f in facts], [(replaced, 'cancelled'), (current, 'deleted')])
 
     def test_a_record_under_another_tool_id_is_named(self):
         # Codex review: a manifest may expose the action under another tool id; the recorded host action decides.
@@ -130,7 +131,8 @@ class ReviseInPlace(Records):
         with self.store.db() as db:
             db.execute("UPDATE preparations SET state='running' WHERE id=?", (piece,))
         facts = {f['preparation_id']: f for f in json.loads(revisable_record_note(self.store, self.work).rsplit('\n', 1)[1])}
-        self.assertNotIn(piece, facts)
+        self.assertEqual(facts[piece]['state'], 'running')
+        self.assertNotIn('line_piece', facts[piece])
         self.assertIn(plain, facts)
 
     def test_a_record_this_work_may_not_replace_still_stops(self):
@@ -163,18 +165,21 @@ class ReviseInPlace(Records):
         self.service.preparations.cancel(first)
         self.assertEqual(self.service.may_continue(self.work, 'redelegate'), (True, None))
         facts = json.loads(revisable_record_note(self.store, self.work).rsplit('\n', 1)[1])
-        self.assertEqual([f.get('preparation_id') for f in facts], [second])
+        self.assertEqual([(f.get('preparation_id'), f['state']) for f in facts], [(first, 'cancelled'), (second, 'scheduled')])
 
-    def test_a_cancelled_preparation_nothing_replaced_still_stops(self):
+    def test_a_cancelled_preparation_is_carried_as_a_fact(self):
+        # #1167: Still's store is the authoritative reconciliation of its own record, whatever became of it.
         first = self.scheduled('first goal', call_id='p1')
         self.service.preparations.cancel(first)
-        self.assertEqual(self.service.may_continue(self.work, 'redelegate'), (False, 'effect'))
+        self.assertEqual(self.service.may_continue(self.work, 'redelegate'), (True, None))
+        self.assertIn('"state": "cancelled"', revisable_record_note(self.store, self.work))
 
-    def test_a_stopped_line_is_no_record_to_revise(self):
-        # Codex review: revise refuses a stopped line; restarting it is the owner's own operation.
-        self.line(stopped=True)
-        self.assertEqual(self.service.may_continue(self.work, 'redelegate'), (False, 'effect'))
-        self.assertEqual(revisable_record_note(self.store, self.work), '')
+    def test_a_stopped_line_is_carried_as_a_fact(self):
+        # #1167: revise refuses a stopped line; the next attempt reads that it is stopped.
+        line = self.line(stopped=True)
+        self.assertEqual(self.service.may_continue(self.work, 'redelegate'), (True, None))
+        facts = json.loads(revisable_record_note(self.store, self.work).rsplit('\n', 1)[1])
+        self.assertEqual([(f['line_id'], f['state']) for f in facts], [(line, 'stopped')])
 
     def test_a_work_the_owner_did_not_type_still_stops(self):
         # Codex review: a scheduled, steered or line run has narrower replacement rules and its own
