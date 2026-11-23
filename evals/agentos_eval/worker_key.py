@@ -127,9 +127,11 @@ class WorkerApi:
     @classmethod
     def from_environ(cls, key, budget_path, environ=None, **overrides):
         environ = os.environ if environ is None else environ
-        budget = JudgeBudget.from_environ(budget_path, environ)
+        cap = overrides.pop('cap_usd', None)
+        if cap is None:
+            cap = JudgeBudget.from_environ(budget_path, environ).cap
         reserve = float(environ.get('AGENTOS_EVAL_WORKER_RESERVE_USD') or DEFAULT_RESERVE_USD)
-        return cls(key, budget_path, budget.cap, reserve, **overrides)
+        return cls(key, budget_path, float(cap), reserve, **overrides)
 
     def budget(self):
         return JudgeBudget(self.budget_path, cap_usd=self.cap_usd)
@@ -329,10 +331,11 @@ def _local_model(url):
     return host in ('127.0.0.1', 'localhost', '::1')
 
 
-def select_worker_api(workers, claude_auth='api', key_loader=None, budget_path=None):
+def select_worker_api(workers, claude_auth='api', key_loader=None, budget_path=None, cap_usd=None):
     """The API-key setup for the Claude Code sandboxes of a run, or None (no Claude Code worker, or the
     subscription chosen).  Shared by the scenario task and the world sweep, so ``--claude-auth`` means the
-    same on both routes."""
+    same on both routes.  ``cap_usd`` is the run's ``--cap-usd``; without it the daily cap comes from
+    ``AGENTOS_EVAL_JUDGE_CAP_USD`` or the default, as for the judge."""
     if 'claude-code' not in tuple(workers):
         return None
     if claude_auth not in ('api', 'subscription'):
@@ -345,7 +348,7 @@ def select_worker_api(workers, claude_auth='api', key_loader=None, budget_path=N
         key = (key_loader or load_worker_key)()
     except WorkerKeyError as exc:
         raise SystemExit(str(exc)) from None
-    api = WorkerApi.from_environ(key, budget_path or eval_home() / 'judge-budget.json')
+    api = WorkerApi.from_environ(key, budget_path or eval_home() / 'judge-budget.json', cap_usd=cap_usd)
     print(f"Claude Code worker: Anthropic API key from {'Keychain' if key.source == 'keychain' else key.source}, "
           f"worker process only; counted against the daily eval cap USD {api.cap_usd:g} "
           f"(reserve USD {api.reserve_usd:g} per launch, settled to the CLI's per-model cost).")

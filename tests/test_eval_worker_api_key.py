@@ -227,8 +227,9 @@ def test_task_selects_the_api_key_only_for_claude_code(tmp_path):
         claude_worker_api('claude-code', key_loader=lambda: (_ for _ in ()).throw(WorkerKeyError('none')))
 
 
-def test_world_sweep_runs_claude_code_on_the_api_key(tmp_path, capsys):
+def test_world_sweep_runs_claude_code_on_the_api_key(tmp_path, capsys, monkeypatch):
     """``sweep --world shop --worker claude-code`` takes the same API-key route as a scenario sweep."""
+    monkeypatch.delenv('AGENTOS_EVAL_JUDGE_CAP_USD', raising=False)
     from argparse import Namespace
     from agentos_eval import cli
     pools, ran = [], []
@@ -254,10 +255,18 @@ def test_world_sweep_runs_claude_code_on_the_api_key(tmp_path, capsys):
     assert cli.run_world_sweep(args, run_scenario=fake_run, pool_factory=pool_factory, folder=tmp_path / 'reports',
                                worker_key_loader=lambda: WorkerKey(SENTINEL, 'keychain')) == 0
     assert ran == ['claude-code'] and pools[0]['worker_api'].key.reveal() == SENTINEL
+    assert pools[0]['worker_api'].cap_usd == 10.0  # no --cap-usd: the default daily cap
     out = capsys.readouterr().out
     assert 'API key from Keychain' in out and 'USD 0.3' in out
     report = next((tmp_path / 'reports').rglob('*.json')).read_text()
     assert SENTINEL not in report
+    # --cap-usd bounds the world route's worker, a zero cap included.
+    for cap in (5.0, 0.0):
+        args.cap_usd = cap
+        pools.clear()
+        cli.run_world_sweep(args, run_scenario=fake_run, pool_factory=pool_factory, folder=tmp_path / f'r{cap}',
+                            worker_key_loader=lambda: WorkerKey(SENTINEL, 'keychain'))
+        assert pools[0]['worker_api'].cap_usd == cap
     # The subscription choice gives the world pool no API worker.
     args.claude_auth = 'subscription'
     pools.clear()

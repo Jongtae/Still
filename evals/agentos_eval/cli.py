@@ -221,7 +221,8 @@ def run_world_sweep(args, run_scenario=None, pool_factory=None, folder=None, wor
     # #545: a browser world's Claude Code route honours --claude-auth like a scenario sweep.
     from .worker_key import select_worker_api
     claude_auth = getattr(args, 'claude_auth', 'api')
-    worker_api = select_worker_api(chosen, claude_auth, key_loader=worker_key_loader)
+    worker_api = select_worker_api(chosen, claude_auth, key_loader=worker_key_loader,
+                                   cap_usd=getattr(args, 'cap_usd', None))
     if 'claude-code' in chosen:
         run['claude_auth'] = claude_auth
     pool = (pool_factory or SandboxPool)(size=args.instances, seed=seed, keep=args.keep_sandboxes,
@@ -259,6 +260,9 @@ def run_world_sweep(args, run_scenario=None, pool_factory=None, folder=None, wor
 
 
 def cmd_sweep(args, folder=None, inspect_eval=None, task_factory=None, key_loader=None):
+    # The run's spending cap applies to every route, the world sweep included (#545).
+    if args.cap_usd is not None:
+        os.environ['AGENTOS_EVAL_JUDGE_CAP_USD'] = str(args.cap_usd)
     if args.world:
         return run_world_sweep(args)
     if inspect_eval is None or task_factory is None:
@@ -266,8 +270,6 @@ def cmd_sweep(args, folder=None, inspect_eval=None, task_factory=None, key_loade
         inspect_eval = inspect_eval or default_eval
         task_factory = task_factory or agentos_secretary
     judge = selected_judge(args.judge)
-    if args.cap_usd is not None:
-        os.environ['AGENTOS_EVAL_JUDGE_CAP_USD'] = str(args.cap_usd)
     if getattr(args, 'max_judge_calls', None) is not None:
         os.environ['AGENTOS_EVAL_JUDGE_MAX_CALLS'] = str(args.max_judge_calls)
     key_source = judge_notice(judge, key_loader)
