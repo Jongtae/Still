@@ -127,13 +127,19 @@ class ApiCredentials:
         self.key = getattr(store, 'api_slot_key', None) or platform_key(store_account(store.root), KEY_SERVICE)
 
     def _cipher(self, create=False):
-        value = self.key.get()
-        if value is None and create:
-            # stage calls this inside QuickStore's secret-file lock. Existing
-            # ciphertext belongs to a recoverable key, never a replacement key.
-            if any(self.store.secret_items(prefix) for prefix in ENCRYPTED_PREFIXES):
-                raise CredentialError()
-            value = self.key.create()
+        try:
+            value = self.key.get()
+            if value is None and create:
+                # stage calls this inside QuickStore's secret-file lock. Existing
+                # ciphertext belongs to a recoverable key, never a replacement key.
+                if any(self.store.secret_items(prefix) for prefix in ENCRYPTED_PREFIXES):
+                    raise CredentialError()
+                value = self.key.create()
+        except CredentialError:
+            raise
+        except Exception:
+            # #1126 review: a locked or failing keyring is an unavailable key to every caller.
+            raise CredentialError() from None
         if value is None:
             raise CredentialError()
         return Fernet(value)
@@ -260,24 +266,53 @@ class ApiCredentials:
                                  lambda: self.assert_current(name, slot))
 
     def _write_bound(self, key, binding, text, current=lambda: None):
+        try:
+            return self.store_sealed(self._seal(key, binding, text, current))
+        except Exception:
+            return False
+
+    def _seal(self, key, binding, text, current=lambda: None):
+        """#1126 review: everything a state save needs from the key, done before the save itself.
+
+        Checks the state (empty discards it; otherwise a JSON object of at most ``MAX_STATE_BYTES``, else
+        ``ValueError``) and encrypts it.  ``CredentialError`` when the key is unavailable, so a caller can
+        report that before it relies on the save.  ``store_sealed`` then needs no key lookup.
+        """
         if not isinstance(text, str) or not text.strip():
             try:
-                self._discard_bound(key)
+                missing = self.key.get() is None
             except Exception:
-                return False  # Codex review on #259: an unreadable state is kept, never dropped unretired
-            return True
+                raise CredentialError() from None
+            if missing:
+                if key in self.store.secret_items(key):
+                    raise CredentialError()  # An old state that cannot be retired is kept, never dropped.
+                return {'key': key, 'value': None, 'plain': [], 'cipher': None}
+            return {'key': key, 'value': None, 'plain': [], 'cipher': self._cipher()}
+        if len(text.encode()) > MAX_STATE_BYTES or not isinstance(json.loads(text), dict):
+            raise ValueError('run state must be a JSON object of at most 16 KB')
+        current()
+        payload = {'version': 1, 'binding': binding(), 'state': text}
+        encoded = json.dumps(payload, separators=(',', ':')).encode()
+        cipher = self._cipher(create=True)
+        return {'key': key, 'value': cipher.encrypt(encoded).decode(), 'plain': sorted(set(plain_state_values(text))),
+                'cipher': cipher}
+
+    def store_sealed(self, sealed):
+        """Write a ``_seal`` result; False when the store refused it (an unreadable old state is kept, never
+        dropped unretired: Codex review on #259)."""
+        cipher, plain = sealed['cipher'], set(sealed['plain'])
+
+        def retire(old):
+            if cipher is None:
+                raise CredentialError()
+            return [value for value in self._state_strings(old, cipher) if value not in plain]
         try:
-            if len(text.encode()) > MAX_STATE_BYTES or not isinstance(json.loads(text), dict):
-                return False
-            current()
-            payload = {'version': 1, 'binding': binding(), 'state': text}
-            encoded = json.dumps(payload, separators=(',', ':')).encode()
             # The old state's values are retired and the new state written under one lock (Codex review).
             # #778: a value the new state declares plain is not retired, and its earlier mark is dropped.
-            plain = set(plain_state_values(text))
-            self.store.swap_secret(key, self._cipher(create=True).encrypt(encoded).decode(),
-                                   lambda old: [value for value in self._state_strings(old) if value not in plain],
-                                   release=sorted(plain), origin='state')
+            if sealed['value'] is None:
+                self.store.swap_secret(sealed['key'], None, retire, origin='state')
+            else:
+                self.store.swap_secret(sealed['key'], sealed['value'], retire, release=sealed['plain'], origin='state')
         except Exception:
             return False
         return True
@@ -293,6 +328,10 @@ class ApiCredentials:
     def write_check_state(self, check_id, digest, text):
         """Save the check's state under the same rules as a set's run state; False when refused."""
         return self._write_bound(CHECK_STATE_PREFIX + check_id, lambda: {'check': check_id, 'digest': digest}, text)
+
+    def seal_check_state(self, check_id, digest, text):
+        """The check's state, checked and encrypted for ``store_sealed``; raises like ``_seal``."""
+        return self._seal(CHECK_STATE_PREFIX + check_id, lambda: {'check': check_id, 'digest': digest}, text)
 
     def discard_check_state(self, check_id):
         """Remove the check's state after retiring its values; raises when it cannot be read."""

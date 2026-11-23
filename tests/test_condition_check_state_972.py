@@ -287,3 +287,48 @@ def test_a_saved_check_state_keeps_its_key_from_being_replaced(keyed):
     assert not credentials.write_check_state(row['id'], 'other-check-code', json.dumps({'n': 1}))
     assert c.store.api_slot_key.get() is None
     assert c.store.secret_items(CHECK_STATE_PREFIX) == before
+
+
+class LockedKey(MemoryKey):
+    """A keyring that is locked: no key can be read or created."""
+
+    def create(self):
+        from personal_agent.browser_jar import JarError
+        raise JarError('keyring locked')
+
+
+def test_a_state_that_cannot_be_sealed_pauses_the_check_with_an_owner_notice(case):
+    # #1126 review: with no ciphertext yet, a locked keyring is only seen by the save; a check that runs on
+    # from an empty state would never reach a hold threshold, so it pauses where the owner sees it.
+    c = case
+    c.store.api_slot_key = LockedKey()
+    row = prepared(c)
+    run(c, json.dumps({'below_since': 100}))
+    assert current(c, row)['state'] == prep.STATE_PAUSED
+    assert status(c, row)['paused'] == 'setup_missing'
+    assert not c.store.secret_items(CHECK_STATE_PREFIX)
+    with c.store.db() as db:
+        notices = [item['content'] for item in db.execute("SELECT content FROM messages WHERE job_id LIKE 'check:%'")]
+    assert notices
+
+
+def test_a_state_the_store_refuses_after_acceptance_pauses_the_check(keyed, monkeypatch):
+    c = keyed
+    row = prepared(c)
+    monkeypatch.setattr(ApiCredentials, 'store_sealed', lambda self, sealed: False)
+    run(c, json.dumps({'reported': True}), stdout='hit')
+    assert wake_job(c, row)
+    assert status(c, row)['paused'] == 'state_unsaved'
+    finish(c, row)
+    assert current(c, row)['state'] == prep.STATE_PAUSED
+    with c.store.db() as db:
+        assert db.execute("SELECT 1 FROM messages WHERE job_id LIKE 'check:%'").fetchone()
+
+
+def test_a_quiet_run_whose_state_the_store_refuses_pauses_the_check(keyed, monkeypatch):
+    c = keyed
+    row = prepared(c)
+    monkeypatch.setattr(ApiCredentials, 'store_sealed', lambda self, sealed: False)
+    run(c, json.dumps({'below_since': 100}))
+    assert current(c, row)['state'] == prep.STATE_PAUSED
+    assert status(c, row)['paused'] == 'state_unsaved'

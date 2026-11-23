@@ -253,18 +253,53 @@ class ConditionChecks:
                 # An unavailable key can prevent even the redactor from running.
                 result = {'pause': 'setup_missing'}
         state = result.pop('state', None) if result else None
-        if self._settle(row, result, claimed_at=claimed_at) and state is not None:
-            self._commit_state(row, json.loads(row['check_spec'])['digest'], state)
+        sealed = None
+        if state is not None:
+            # #1126 review: a state the check relies on is never lost silently.  Everything the save needs
+            # from the key happens before the result settles, so an unavailable key pauses the check with
+            # an owner notice instead of letting it run on from an empty state.
+            try:
+                sealed = ApiCredentials(self.store).seal_check_state(row['id'], json.loads(row['check_spec'])['digest'], state)
+            except CredentialError:
+                result = {'pause': 'setup_missing'}
+            except ValueError:
+                result = {**result, 'kind': 'failure'}  # The runner already checked it; never counted as saved.
+        if self._settle(row, result, claimed_at=claimed_at) and sealed is not None:
+            self._commit_state(row, sealed)
         return True
 
-    def _commit_state(self, row, digest, text):
-        """Save the state after its run's result was accepted, outside any SQLite transaction.
+    def _commit_state(self, row, sealed):
+        """Store the sealed state after its run's result was accepted, outside any SQLite transaction.
 
         A stop between the two leaves the earlier state, so the next run sees the condition again: a
-        repeated report, never a lost one (D5).
+        repeated report, never a lost one (D5).  A store that refuses it pauses the check with an owner
+        notice, the same way an unavailable key does, so the check never counts on a state it lost.
         """
-        if not ApiCredentials(self.store).write_check_state(row['id'], digest, text):
-            LOG.warning('condition check state not saved')
+        if ApiCredentials(self.store).store_sealed(sealed):
+            return
+        LOG.warning('condition check state not saved')
+        try:
+            title = redact_known_secrets(self.store, prep.owner_title(row))
+        except CredentialError:
+            title = row['id']
+        destination = self.service.preparations_service.notice_destination(self.preparations.notice_channel(row))
+        now = self.preparations.clock()
+        with self.store.db() as db:
+            db.execute('BEGIN IMMEDIATE')
+            current = db.execute('SELECT * FROM preparations WHERE id=?', (row['id'],)).fetchone()
+            if (not current or current['state'] not in (prep.STATE_SCHEDULED, prep.STATE_RUNNING)
+                    or current['check_spec'] != row['check_spec']):
+                return
+            status = json.loads(current['check_status'] or '{}')
+            status['paused'] = 'state_unsaved'
+            if current['state'] == prep.STATE_RUNNING:
+                # The hit's Work is running: the row pauses when it returns, as an owner pause would.
+                db.execute('UPDATE preparations SET run_return_state=?,updated_at=?,check_status=? WHERE id=?',
+                           (prep.STATE_PAUSED, now, json.dumps(status), row['id']))
+            else:
+                db.execute('UPDATE preparations SET state=?,updated_at=?,check_status=? WHERE id=?',
+                           (prep.STATE_PAUSED, now, json.dumps(status), row['id']))
+            self._notice(db, current, title, 'state_unsaved', now, destination)
 
     def _run(self, row, spec, pending=None):
         from .agent_runtime import outside_result_source

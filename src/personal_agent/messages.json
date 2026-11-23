@@ -35,6 +35,12 @@
   "ja": "3回連続で失敗しました。",
   "zh": "已连续失败三次。"
  },
+ "checks.state_unsaved": {
+  "ko": "검사 상태를 저장하지 못해서 멈췄어요. 다시 켜면 이전 상태부터 이어서 확인해요.",
+  "en": "The check state could not be saved, so the check is paused. Resuming it continues from the earlier state.",
+  "ja": "チェックの状態を保存できなかったため、一時停止しました。再開すると以前の状態から確認を続けます。",
+  "zh": "无法保存检查状态，因此已暂停检查。恢复后会从之前的状态继续检查。"
+ },
  "checks.setup_missing": {
   "ko": "비밀값 묶음을 다시 연결해야 해요.",
   "en": "A secret set needs to be connected again.",
