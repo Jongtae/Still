@@ -505,6 +505,7 @@ class CodeRunner:
     library_hints = True
     persist_states = True
     withhold_truncated_output = False
+    count_allowed_requests = False
 
     def __init__(self, store, work_id, *, popen=subprocess.Popen, node=None, interrupted=None,
                  install=ensure_runtime, clock=time.monotonic, approvals=None, provide_node=node_runtime.ensure,
@@ -605,6 +606,7 @@ class CodeRunner:
         # #233: first, so a run refused below never reports an earlier run's requests as its own.
         self.sent = []
         self.allowed_hosts = set()
+        self.allowed_requests = {}
         self.started = False
         self.changed_state = False
         rerun = False
@@ -1191,7 +1193,12 @@ class CodeRunner:
                         recorded.append(entry)
                     allow, reason = self._decide(message, policy, check=recorded is not None)
                     if allow and phase == 'run':
-                        self.allowed_hosts.add(_host(message.get('host'))[:253])
+                        allowed_host = _host(message.get('host'))[:253]
+                        self.allowed_hosts.add(allowed_host)
+                        if self.count_allowed_requests:
+                            name = _hostname(allowed_host)
+                            if name in self.allowed_requests or len(self.allowed_requests) < MAX_HOSTS:
+                                self.allowed_requests[name] = self.allowed_requests.get(name, 0) + 1
                     if allow and len(self.sent) < MAX_CHECKED_REQUESTS:
                         pairs = message.get('headers') if isinstance(message.get('headers'), list) else []
                         parts = [message.get('path'), message.get('query'), message.get('bodyText'),

@@ -196,10 +196,7 @@ class PreparationsService:
             if (kind!=prep.KIND_PREPARE or recurrence is not None or
                     any(args.get(key) not in (None,'') for key in ('every_minutes','report_every_minutes'))):
                 raise prep.PreparationRefusal('invalid_check')
-            from . import intranet
-            from .code_run import _hostname
-            declared=lambda host:intranet.host_declared(service.store,_hostname(host))
-            check_args,interval=checks.parse(args['check'],declared)
+            check_args,interval=checks.parse_for_store(service.store,args['check'])
             until_at=prep.parse_due(args.get('until'),timezone,timezone,now)[0]
             if not due_at<until_at<=due_at+prep.MAX_WINDOW_SECONDS:
                 raise prep.PreparationRefusal('invalid_check')
@@ -725,6 +722,8 @@ class PreparationsService:
         row = {**(self.service.preparations.get(event['preparation_id']) or {'goal_text': ''}),
                **event.get('snapshot', {})}
         operation = event['target'].split('.')[-1]
+        check_specs = ({side: json.loads(event[side]['check_spec']) for side in ('before', 'after')}
+                       if operation == 'check' else {})
         # #968: a rewritten goal is shown at every place it changed, before and after (none left out:
         # past a bound the receipt counts the rest and points to the whole goal in Settings).
         hunks = (prep.changed_hunks(event['before']['goal_text'], event['after']['goal_text'])
@@ -745,6 +744,11 @@ class PreparationsService:
             used += size
             shortened = shortened or displayed != hunk
         def summary(side):
+            if operation == 'check':
+                spec = check_specs[side]
+                return msg('checks.change_spec', lang, seconds=spec['every_seconds'], digest=spec['digest'][:12],
+                           hosts=', '.join(spec['arguments']['hosts']) or '-',
+                           secrets=', '.join(spec['arguments']['secrets']) or '-')
             schedule = {**row, **event[side]}
             text = prep.proposal_summary(schedule, self.service.home_zone(), brief=False, lang=lang)
             if shown:
@@ -769,6 +773,8 @@ class PreparationsService:
                    undo=msg('button.undo', lang))
         if event.get('outside_content'):
             text += '\n' + msg('preparations.self_change_outside', lang)
+        if check_specs and check_specs['before']['arguments']['code'] != check_specs['after']['arguments']['code']:
+            text += '\n' + msg('checks.code_changed', lang)
         if shortened:
             text += '\n' + msg('preparations.self_change_excerpt', lang)
         return self.service._redact_known_secrets(text)
@@ -1331,24 +1337,22 @@ class PreparationsService:
         """Undo only the cancellations recorded on this message."""
         return {'inline_keyboard':[[{'text':msg('button.restore_reservation'),'callback_data':f"p7p:{notification_id}:restore"}]]}
 
-    def undo_self_change(self, fingerprint):
+    def undo_self_change(self, fingerprint, *, preparation_id=None):
         """#1097: the self-change notice's button: undo exactly the run whose receipt it shows.
 
         True when undone; False when the row changed since (owner edit, another run, an
         earlier undo), so a stale button never reverts a later change.
         """
+        if not isinstance(fingerprint,str):return False
         service=self.service
         with service.store.db() as db:
             receipt=db.execute("SELECT detail FROM tool_events WHERE tool='preparation_self_change' "
                                "AND json_extract(detail,'$.fingerprint')=?",(fingerprint,)).fetchone()
         if not receipt:return False
         event=json.loads(receipt['detail'])
-        row=service.preparations.get(event['preparation_id'])
-        current=json.loads((row or {}).get('self_change') or '{}')
-        if (not row or current.get('run_key')!=event.get('run_key') or not any(
-                prep.Preparations.self_undoable(row,operation) for operation in prep.SELF_CHANGE_OPERATIONS)):
+        if preparation_id is not None and event['preparation_id'] != preparation_id:
             return False
-        try:service.preparations.restore(row['id'])
+        try:service.preparations.restore(event['preparation_id'],self_change_run_key=event['run_key'])
         except prep.PreparationRefusal:return False
         return True
 
@@ -1464,6 +1468,7 @@ class PreparationsService:
         """The Settings 준비해 둔 일 list: owner's own view (#659)."""
         service=self.service
         home_zone=service.home_zone()
+        day=service.preparations.budget_day(service.preparations.clock())
         rows=[]
         lines={brief['line_id']:brief['task'] for brief in service.lines.lines()}
         # #1005: a line's finished pieces come back once per line in ``piece_groups``.
@@ -1505,17 +1510,23 @@ class PreparationsService:
                 rows[-1]['resume_offer_fingerprint']=prep.digest([row])
             if row.get('check_spec'):
                 try:
-                    view=checks.owner_view(service.store,row)
+                    view=checks.owner_view(service.store,row,day,home_zone)
                     labels={lang:service._redact_known_secrets(prep.schedule_text(row,home_zone,lang))
                             for lang in LANGUAGES}
                 except CredentialError:
                     view={'code':'[redacted]'}
                     labels=dict.fromkeys(LANGUAGES,'[redacted]')
                 rows[-1]['check']=view
+                if prep.Preparations.self_undoable(row,'check'):
+                    rows[-1]['undo_check']=json.loads(row['self_change'])['fingerprint']
                 rows[-1]['every_minutes']=None
                 rows[-1]['recurrence_labels']=labels
         # #575: the page uses the same catalog in its selected language.
-        labels={'check_code':'checks.code',**{'budget_'+key:'scheduled_budget.'+key for key in ('label','help')}, 'save':'label.save', 'accept':'button.preparation_accept','decline':'button.preparation_decline',
+        labels={'check_code':'checks.code','check_undo':'button.undo','check_undone':'preparations.self_change_undone',
+                **{'check_'+key:'checks.'+key for key in ('today','last_run','allowed_requests','result_quiet',
+                   'result_hit','result_failure','result_none','failures','state_unsaved','setup_missing','library',
+                   'credential','requested_pause')},
+                **{'budget_'+key:'scheduled_budget.'+key for key in ('label','help')}, 'save':'label.save', 'accept':'button.preparation_accept','decline':'button.preparation_decline',
                 **{'delivery_'+mode:'preparations.delivery_'+mode for mode in ('send','keep','when_needed')},
                 **{operation:'settings_orchestrator.label_preparations_'+operation for operation in ('pause','resume','edit','run_now')},
                 **{field:'preparations.field_'+field for field in ('due','recurrence','every_minutes','until','max_runs',
@@ -1526,7 +1537,7 @@ class PreparationsService:
                 'pieces_finished':'preparations.pieces_finished','pieces_newest':'preparations.pieces_newest'}
         # The same daily notice is visible in local Settings when no sending surface is paired.
         from .telegram_locale import translate
-        notice_id = prep.SCHEDULED_USAGE_PREFIX + service.preparations.budget_day(service.preparations.clock())
+        notice_id = prep.SCHEDULED_USAGE_PREFIX + day
         with service.store.db() as db:
             notice = db.execute('SELECT content FROM messages WHERE job_id=? ORDER BY id LIMIT 1', (notice_id,)).fetchone()
         budget = {**service.preparations.budget_settings(), 'max':prep.MAX_SCHEDULED_DAILY_CALLS,
@@ -1585,7 +1596,12 @@ class PreparationsService:
         elif operation=='delete':service.preparations.delete(preparation_id)
         elif operation=='pause':service.preparations.pause(preparation_id)
         elif operation=='resume':service.preparations.resume(preparation_id)
-        elif operation=='restore':service.restore_preparation(preparation_id)
+        elif operation=='restore':
+            fingerprint=body.get('fingerprint')
+            if fingerprint is None:
+                service.restore_preparation(preparation_id)
+            elif not self.undo_self_change(fingerprint,preparation_id=preparation_id):
+                raise ValueError(msg('preparations.self_change_undo_stale'))
         elif operation=='edit':service.preparations.edit(preparation_id,**{key:value for key,value in body.items() if key not in ('operation','id')})
         elif operation=='run_now':
             row=service.preparations.get(preparation_id)
@@ -2304,6 +2320,19 @@ class PreparationsService:
         entry={'line_id':brief['line_id'],'version':brief['version'],'state':brief['state'],'task':brief['task'],
                'report_promise':brief['report_promise'],
                'last_report':prep.local_text(delivered[0]['at'],zone) if delivered else None}
+        day=service.preparations.budget_day(service.preparations.clock())
+        for row in rows:
+            if not row.get('check_spec'):continue
+            spec=json.loads(row['check_spec'])
+            status=json.loads(row['check_status'] or '{}')
+            today=checks.daily_status(status,day)
+            try:
+                title=service._redact_known_secrets(prep.owner_title(row))
+            except CredentialError:
+                title='[redacted]'
+            entry.setdefault('checks',[]).append({'title':title,'every_seconds':spec['every_seconds'],
+                'last_result':status.get('last_result'),'runs':today.get('runs',0),'wakes':today.get('wakes',0),
+                'daily_wakes':checks.DAILY_WAKES})
         if self.waiting_line(brief):entry['state']='waiting';return entry
         if brief['state']!=el.STATE_ACTIVE:return entry
         active=[row for row in rows if row['state'] in prep.ACTIVE_STATES]
@@ -2562,6 +2591,38 @@ class PreparationsService:
             text+=' '+msg('lines.account_piece_paused')
         return text
 
+    def line_checks_account(self, row, job):
+        """Pin the cumulative counts and their delta to the slot whose account first reads them."""
+        store=self.service.store
+        slot=prep.slot_key(job['request_key'])
+        with store.db() as db:
+            db.execute('BEGIN IMMEDIATE')
+            store.require_read_checkpoint_writer(db)
+            account=db.execute('SELECT * FROM preparations WHERE id=?',(row['id'],)).fetchone()
+            if not account:return ''
+            saved=json.loads(account['check_status'] or '{}')
+            if saved.get('slot')==slot:
+                delta=saved['delta']
+            elif prep.Preparations.owns_running(account,job):
+                # Include deleted rows through their existing lineage receipts so the line total only grows.
+                counts={'runs':0,'wakes':0}
+                observations=db.execute(
+                    "SELECT check_status AS detail FROM preparations WHERE line_id=? AND check_spec IS NOT NULL "
+                    "UNION ALL SELECT json_extract(detail,'$.check_totals') FROM tool_events "
+                    "WHERE tool='preparation_lineage' AND status='deleted' AND json_extract(detail,'$.line_id')=? "
+                    "AND json_extract(detail,'$.check_totals') IS NOT NULL", (row['line_id'],row['line_id'])).fetchall()
+                if not observations:return ''
+                for item in observations:
+                    for key,value in checks.totals(json.loads(item['detail'] or '{}')).items():
+                        counts[key]+=value
+                previous=saved.get('totals',{})
+                delta={key:count-previous.get(key,0) for key,count in counts.items()}
+                db.execute('UPDATE preparations SET check_status=? WHERE id=?',
+                           (json.dumps(dict(slot=slot,totals=counts,delta=delta)),row['id']))
+            else:
+                return ''
+        return msg('lines.account_checks',**delta)
+
     # -- #968: a scheduled run revises its own plan ---------------------------------------------
 
     def own_running_row(self, job):
@@ -2812,6 +2873,8 @@ class PreparationsService:
             lead=msg('lines.account_input')
             pieces=self.line_pieces_account(row,job)
             if pieces:lead+='\n'+pieces
+            check_counts=self.line_checks_account(row,job)
+            if check_counts:lead+='\n'+check_counts
         else:
             lead=msg('lines.run_input')
             # #938 (D2): a run that may continue its line in pieces is told how, in one general sentence.

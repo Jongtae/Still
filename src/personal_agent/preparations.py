@@ -89,7 +89,7 @@ BLOCKED_NOTICE_PREFIX = 'preparation_blocked:'
 # The existing preparation-status notice transport also carries self-change receipts.
 SELF_CHANGE_NOTICE_PREFIX = BLOCKED_NOTICE_PREFIX + 'self-change:'
 #: #717, #968: what a run may change of its own preparation, each undone by the owner's restore.
-SELF_CHANGE_OPERATIONS = ('edit', 'pause', 'cancel', 'goal')
+SELF_CHANGE_OPERATIONS = ('edit', 'pause', 'cancel', 'goal', 'check')
 EXPIRED_NOTICE_KIND = 'preparation_window_elapsed'
 # #867: owner-wide scheduled Work admissions, independent of the chosen AI route.
 SCHEDULED_BUDGET_KEY = 'scheduled_work_budget'
@@ -404,6 +404,8 @@ REFUSALS = {
     'invalid_check': 'A check requires a prepare window and the arguments of a successful code_run.',
     'check_not_proven': 'Run these code_run arguments in this Work first. The run must exit 0 without a state change or approval request.',
     'check_credential': 'Use a secret set for credentials in a condition check.',
+    'check_widened': msg('checks.widened'),
+    'check_window': msg('checks.window'),
     'too_many_checks': 'Still allows up to 10 scheduled or running condition checks.',
     'not_proposed': '이미 처리된 준비입니다.',
     'expired': '지켜보는 기간이 이미 끝나 시작하지 않았습니다.',
@@ -1804,18 +1806,36 @@ class Preparations:
         """Schedule the periodic account if absent, inside the caller's transaction."""
         from .entrusted_lines import account_rule, excerpt
         line_id = brief['line_id']
-        rows = db.execute('SELECT state,channel FROM preparations WHERE line_id=? AND origin=? ORDER BY created_at DESC',
+        rows = db.execute('SELECT state,channel,check_status FROM preparations WHERE line_id=? AND origin=? ORDER BY created_at DESC',
                           (line_id, ORIGIN_LINE_ACCOUNT)).fetchall()
         if any(row['state'] in ACTIVE_STATES for row in rows) or (rows and not replace_inactive):
             return None
         days = brief['account_every_days']
-        return self.create(kind=KIND_PREPARE, goal=LINE_ACCOUNT_GOAL, due_at=self.clock() + days * 86400,
+        account = self.create(kind=KIND_PREPARE, goal=LINE_ACCOUNT_GOAL, due_at=self.clock() + days * 86400,
                            timezone=str(self._owner_zone(db) or 'UTC'), recurrence=normalize_rrule(account_rule(days)),
                            channel=channel or (rows[0]['channel'] if rows else CHANNEL_TELEGRAM),
                            bundle_channel=bundle_channel, created_from=created_from,
                            state=STATE_SCHEDULED, accepted_by=accepted_by, origin=ORIGIN_LINE_ACCOUNT,
                            title=excerpt(msg('lines.account_title', task=brief['task']), TITLE_MAX_CHARS),
                            line_id=line_id, db=db)
+        snapshots = [row['check_status'] for row in rows if row['check_status']]
+        deleted = db.execute("SELECT json_extract(detail,'$.check_account') FROM tool_events "
+                             "WHERE tool='preparation_lineage' AND status='deleted' "
+                             "AND json_extract(detail,'$.line_id')=? AND json_extract(detail,'$.check_account') IS NOT NULL "
+                             "ORDER BY json_extract(detail,'$.check_account.totals.runs') DESC, "
+                             "json_extract(detail,'$.check_account.totals.wakes') DESC LIMIT 1", (line_id,)).fetchone()
+        if deleted:
+            snapshots.append(deleted[0])
+        if snapshots:
+            # The totals only increase. Deletion order may differ from the order in which accounts reported them.
+            def reported(snapshot):
+                counts = json.loads(snapshot)['totals']
+                return counts['runs'], counts['wakes']
+
+            previous = max(snapshots, key=reported)
+            db.execute('UPDATE preparations SET check_status=? WHERE id=?', (previous, account['id']))
+            account['check_status'] = previous
+        return account
 
     def accept(self, preparation_id, accepted_by, *, accepted_from=None, db=None, replaces=None, offer_digest=None):
         """``proposed`` → ``scheduled``: the owner's explicit yes.
@@ -1943,14 +1963,26 @@ class Preparations:
         return {key: value for key, value in updates.items() if value != row[key]}
 
     def change_own(self, preparation_id, work_id, operation, changes=None, *, reason='', notify_to=None):
-        """Atomic current-slot narrowing (or, #968, the run's own goal), receipt and outbox. Never creates a settings draft.
+        """Atomic current-slot change, receipt and outbox. Never creates a settings draft.
 
         Adopt sqlite3 BEGIN IMMEDIATE and TelegramStore.queue_notification(db=...).
         tool_events retains fingerprints even when the bounded settings audit rolls off.
         """
-        now = self.clock()
         fingerprint = hashlib.sha256(json.dumps([preparation_id, work_id, operation, changes],
                                                sort_keys=True).encode()).hexdigest()
+        if operation == 'check':
+            from . import condition_checks as checks
+            previous_row = self.get(preparation_id)
+            if (not self.owns_running(previous_row, self.store.job(work_id)) or not previous_row['check_spec']
+                    or not isinstance(changes, dict) or set(changes) != {'check'}):
+                raise PreparationRefusal('self_change_refused')
+            old_spec = json.loads(previous_row['check_spec'])
+            # A saved argument might only have become a known secret since setup.
+            if checks._redact(self.store, old_spec['arguments']) != old_spec['arguments']:
+                raise PreparationRefusal('check_credential')
+            arguments, interval = checks.parse_for_store(self.store, changes['check'])
+            spec = checks.prove(self.store, work_id, arguments, interval)
+        now = self.clock()
         with self.store.db() as db:
             db.execute('BEGIN IMMEDIATE')
             self.store.require_read_checkpoint_writer(db)
@@ -1967,6 +1999,14 @@ class Preparations:
                 if row.get('check_spec'):
                     raise PreparationRefusal('self_change_refused')
                 updates = self.narrowing_values(row, changes, now)
+            elif operation == 'check':
+                if row['check_spec'] != previous_row['check_spec'] or spec == old_spec:
+                    raise PreparationRefusal('self_change_refused')
+                if any(set(arguments[key]) - set(old_spec['arguments'][key]) for key in ('hosts', 'secrets')):
+                    raise PreparationRefusal('check_widened')
+                if now + interval > row['until_at']:
+                    raise PreparationRefusal('check_window')
+                updates = {'check_spec': json.dumps(spec, sort_keys=True)}
             elif operation == 'goal':
                 # #968: the run's own instruction for the next runs; the caller decided it may.
                 goal = (changes or {}).get('goal') if isinstance(changes, dict) else None
@@ -2000,6 +2040,14 @@ class Preparations:
                     [previous['target'].split('.')[-1]]), operation]))
             else:
                 combined['operations'] = [operation]
+            if operation == 'check':
+                status = json.loads(row['check_status'] or '{}')
+                # A repair clears an automatic failure pause. An explicit self-pause still takes effect.
+                if ('~wake-' in event['run_key'] and status.get('paused')
+                        and 'pause' not in combined['operations']):
+                    updates['run_return_state'] = None
+                updates.update(every_seconds=interval, check_next_at=now + interval,
+                               check_status=self._reset_check_result(status))
             updates.update(updated_at=revision, own_run_revision=revision, self_change=json.dumps(combined))
             db.execute(f"UPDATE preparations SET {','.join(k + '=?' for k in updates)} WHERE id=?",
                        (*updates.values(), preparation_id))
@@ -2018,6 +2066,12 @@ class Preparations:
                 self.store.telegram.queue_notification(work_id, *destination[:2],
                     SELF_CHANGE_NOTICE_PREFIX + fingerprint, fingerprint, surface=destination[2], db=db, created=now)
         return event
+
+    @staticmethod
+    def _reset_check_result(status):
+        for key in ('failures', 'pending', 'paused', 'last_result'):
+            status.pop(key, None)
+        return json.dumps(status)
 
     @staticmethod
     def _self_change_values(row, values):
@@ -2058,6 +2112,12 @@ class Preparations:
         event = json.loads(row['self_change'])
         updates = self._self_change_values(row, event['before'])
         now = self.clock()
+        if 'check_spec' in updates:
+            # The spec is the receipt value. Derive the cadence and leave the counters alone.
+            interval = json.loads(updates['check_spec'])['every_seconds']
+            updates.update(every_seconds=interval,
+                           check_next_at=min(row['until_at'], now + interval),
+                           check_status=self._reset_check_result(json.loads(row['check_status'] or '{}')))
         updates.update(self_change_undone=1, updated_at=max(now, math.nextafter(row['updated_at'], math.inf)))
         if row['state'] not in ACTIVE_STATES:
             active = db.execute('SELECT count(*) FROM preparations WHERE state IN (?,?,?,?)', ACTIVE_STATES).fetchone()[0]
@@ -2077,7 +2137,7 @@ class Preparations:
             if return_state == STATE_SCHEDULED and row.get('check_spec'):
                 if now >= restored['until_at'] or row['run_count'] >= restored['max_runs']:
                     raise PreparationRefusal('resume_expired')
-                updates['check_next_at'] = min(restored['until_at'], max(now, row['check_next_at']))
+                updates.setdefault('check_next_at', min(restored['until_at'], max(now, row['check_next_at'])))
             elif return_state != STATE_PAUSED and (row['state'] != STATE_SCHEDULED or following < now):
                 if following <= now:
                     following = (next_window_slot(restored, now) if row['recurrence'] == RECURRENCE_WINDOW
@@ -2139,16 +2199,21 @@ class Preparations:
                 return self._undo_self_change(db, row)
         return self._resume(preparation_id, STATE_PAUSED)
 
-    def restore(self, preparation_id, *, cancelled_at=None):
+    def restore(self, preparation_id, *, cancelled_at=None, self_change_run_key=None):
         """Undo cancellation at a future slot; an optional revision binds a notice's undo."""
         # Owner-only restore also reapplies the audited bounds after a self-narrow.
         with self.store.db() as db:
             db.execute('BEGIN IMMEDIATE')
             self.store.require_read_checkpoint_writer(db)
             row = db.execute('SELECT * FROM preparations WHERE id=?', (preparation_id,)).fetchone()
+            if self_change_run_key is not None and (not row or
+                    json.loads(row['self_change'] or '{}').get('run_key') != self_change_run_key):
+                raise PreparationRefusal('self_change_refused')
             if row and (cancelled_at is None or row['updated_at'] == cancelled_at) and any(
                     self.self_undoable(dict(row), operation) for operation in SELF_CHANGE_OPERATIONS):
                 return self._undo_self_change(db, row)
+            if self_change_run_key is not None:
+                raise PreparationRefusal('self_change_refused')
         return self._resume(preparation_id, STATE_CANCELLED, cancelled_at=cancelled_at)
 
     def _resume(self, preparation_id, state, *, cancelled_at=None):
@@ -2358,7 +2423,7 @@ class Preparations:
         with self.store.db() as db:
             db.execute('BEGIN IMMEDIATE')
             self.store.require_read_checkpoint_writer(db)
-            row = db.execute('SELECT state,line_id,origin,created_from,piece_of FROM preparations WHERE id=?',
+            row = db.execute('SELECT state,line_id,origin,created_from,piece_of,check_spec,check_status FROM preparations WHERE id=?',
                              (preparation_id,)).fetchone()
             if row is None:
                 raise PreparationRefusal('not_found')
@@ -2368,6 +2433,11 @@ class Preparations:
                 # A later piece can still carry dispatch receipts from the deleted row's Works.
                 # Keep only the host linkage, with no goal or result text.
                 lineage = {key: row[key] for key in ('line_id', 'origin', 'created_from', 'piece_of')}
+                if row['check_spec']:
+                    from .condition_checks import totals
+                    lineage['check_totals'] = totals(json.loads(row['check_status'] or '{}'))
+                elif row['origin'] == ORIGIN_LINE_ACCOUNT and row['check_status']:
+                    lineage['check_account'] = json.loads(row['check_status'])
                 db.execute('INSERT INTO tool_events(job_id,tool,status,detail,created) VALUES (?,?,?,?,?)',
                            (preparation_id, 'preparation_lineage', 'deleted', json.dumps(lineage), self.clock()))
             db.execute('DELETE FROM preparations WHERE id=?', (preparation_id,))
@@ -2969,8 +3039,14 @@ class Preparations:
             if current['kind'] == KIND_PREPARE and job and ws.has_delivered_result(job['status']) and answer is not None:
                 updates.update(prepared_result_ref=job['id'], prepared_at=now, prepared_text=answer)
             if current.get('check_spec'):
+                change = json.loads(current['self_change'] or '{}')
+                if (change.get('run_key') == slot_key(job['request_key'] if job else None)
+                        and change.get('after', {}).get('check_spec')):
+                    # A replacement waits a full interval after the current Work returns.
+                    updates['check_next_at'] = min(current['until_at'], max(
+                        current['check_next_at'], now + current['every_seconds']))
                 following = None if closed_early or now >= current['until_at'] or current['run_count'] >= current['max_runs'] \
-                    else current['check_next_at']
+                    else updates.get('check_next_at', current['check_next_at'])
             elif current['recurrence'] == RECURRENCE_WINDOW:
                 following = None if closed_early else next_window_slot(current, now)
             else:

@@ -262,7 +262,7 @@ Proposed, for the owner to accept or change:
 
 ## Implementation slices
 
-Delivered so far: slice 1 without the check state ([#1021](https://github.com/Jongtae/Still/pull/1021)), then the check state of D4, shipped as `CHECKSTATEFILE`: without an underscore, no secret set's `<SET>_<FIELD>` variable, such as a set named `check`, can take the same name and the worker guidance sentence of slice 2. Replacing a check from the woken run (D6) and the owner view (D7) remain.
+Slice 1 shipped in [#1021](https://github.com/Jongtae/Still/pull/1021). D4 check state followed as `CHECKSTATEFILE`. The name has no underscore, so it cannot collide with a secret set's `<SET>_<FIELD>` variable. The worker guidance, D6 (replacing the check from its woken run), and D7 (the owner view and periodic account) are delivered.
 
 1. **Check runner and setup.** D1 to D5, D8 to D11: storage, the proving rule, the runner thread, the `CodeRunner` seam, the wake transaction, stop and forget, the negative tests, the contract amendments and the escalated review.
 2. **Replacing a check from the woken run** (D6) and the worker guidance as message content: one general sentence in the `schedule_preparation` description on writing a check (silence is quiet, keep hold and edge state in `CHECK_STATE_FILE`, prove it first). It names no task, site or domain (C16).

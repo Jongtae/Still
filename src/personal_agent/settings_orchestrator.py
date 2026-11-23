@@ -395,11 +395,22 @@ class SettingsOrchestrator:
         return rows
 
     def _activity(self):
+        from . import condition_checks as checks
+        from .api_credentials import CredentialError
+
         audit = self.store.config("settings_audit", [])
         if not isinstance(audit, list):
             return []
-        return [{key: item[key] for key in ("at", "target", "before", "after", "terminal", "error_class") if key in item}
-                for item in audit[-20:] if isinstance(item, dict) and item.get("terminal") != "drafted"]
+        activity = [{key: item[key] for key in ("at", "target", "before", "after", "terminal", "error_class") if key in item}
+                    for item in audit[-20:] if isinstance(item, dict) and item.get("terminal") != "drafted"]
+        for item in activity:
+            if item.get('target') == 'preparations.check':
+                for side in ('before', 'after'):
+                    try:
+                        item[side] = {'check': checks.spec_summary(self.store, json.loads(item[side]['check_spec']))}
+                    except CredentialError:
+                        item[side] = {'check': '[redacted]'}
+        return activity
 
     @staticmethod
     def _summary(rows):
@@ -626,7 +637,7 @@ class SettingsOrchestrator:
         from . import preparations as prep
         states = self._preparation_states()
         rows = [row for row in self.service.preparations.rows() if row.get("state") in states
-                or any(prep.Preparations.self_undoable(row, change) for change in ("edit", "goal"))]
+                or any(prep.Preparations.self_undoable(row, change) for change in ("edit", "goal", "check"))]
         labels = {row["id"]: self._preparation_label(row, full=False) for row in rows}
         # #904: the complete reservation list belongs only on cancel, not every operation/option.
         listed = "\n".join(self._preparation_label(row) for row in rows) or msg('label.none')
@@ -2005,25 +2016,32 @@ class SettingsOrchestrator:
     def _apply_own_run(self, owner, channel, work_id, args, own_preparation, own_goal=None):
         """#717: current-slot state, audit and notice commit together; no confirm authority.
 
-        #968: an ``edit`` may carry ``goal``, the preparation's own brief for its next runs; it applies
-        only when ``own_goal`` allows it, as its own receipt beside any narrowing in the same call.
+        An ``edit`` may instead carry only ``goal`` (#968) or ``check`` (#972).
         """
         from . import preparations as prep
+        from . import condition_checks as checks
+        from .code_run import MAX_CODE_BYTES
         refused = {"state": "not_proposed", "unattended": True, "category": args.get('category'),
                    "setting": args.get('setting'), "applied": False,
                    "next_step": msg('preparations.self_change_refused')}
         value = args.get('value')
-        if not isinstance(value, str) or len(value) > 4000 + prep.BRIEF_MAX_CHARS:
+        # JSON escapes can take up to six characters per byte of source.
+        if not isinstance(value, str) or len(value) > 6 * MAX_CODE_BYTES + 8192:
             return refused
         from .current_context import redact_known_secrets
-        if redact_known_secrets(self.store, value) != value:
-            return refused
         try:
-            changes = json.loads(value) if args['setting'] == 'edit' else None
-            if changes is not None and not isinstance(changes, dict):
+            operation = args['setting']
+            changes = json.loads(value) if operation == 'edit' else {}
+            if not isinstance(changes, dict):
                 return refused
-            target = changes.pop('id', None) if changes is not None else value
+            target = changes.pop('id', None) if operation == 'edit' else value
             if target != own_preparation:
+                return refused
+            if 'check' in changes:
+                if set(changes) != {'check'}:
+                    return refused
+                operation = 'check'
+            elif len(value) > 4000 + prep.BRIEF_MAX_CHARS or redact_known_secrets(self.store, value) != value:
                 return refused
             row = self.service.preparations.get(target)
             if not row:
@@ -2031,11 +2049,12 @@ class SettingsOrchestrator:
             notices = self.service.preparations_service
             destination = notices.self_change_destination(row)
             reason = redact_known_secrets(self.store, str(args.get('reason') or '')[:2000])
-            goal = changes.pop('goal', None) if changes is not None else None
+            goal = changes.pop('goal', None)
             if goal is None:
-                if len(value) > 4000:
+                if operation != 'check' and len(value) > 4000:
                     return refused
-                event = self.service.preparations.change_own(target, work_id, args['setting'], changes,
+                event = self.service.preparations.change_own(target, work_id, operation,
+                                                           changes if args['setting'] == 'edit' else None,
                                                            reason=reason, notify_to=destination)
             else:
                 # The goal is its own change: one receipt, never half of a mixed edit.
@@ -2049,10 +2068,21 @@ class SettingsOrchestrator:
                     return {**refused, "next_step": msg('preparations.self_change_goal_refused')}
                 event = self.service.preparations.change_own(target, work_id, 'goal', {'goal': goal},
                                                            reason=reason, notify_to=destination)
-        except (prep.PreparationRefusal, ValueError, TypeError):
+        except prep.PreparationRefusal as exc:
+            if operation == 'check' and exc.code != 'self_change_refused':
+                return {**refused, "code": exc.code, "next_step": str(exc)}
             return refused
+        except (ValueError, TypeError, RecursionError):
+            return refused
+        after = event['after']
+        if operation == 'check':
+            from .api_credentials import CredentialError
+            try:
+                after = {'check': checks.spec_summary(self.store, json.loads(after['check_spec']))}
+            except CredentialError:
+                after = {'check': '[redacted]'}
         return {"state": "applied", "draft_id": event['draft_ref'], "category": "preparations",
-                "setting": args['setting'], "after": event['after'], "applied": True, "own_run": True,
+                "setting": args['setting'], "after": after, "applied": True, "own_run": True,
                 "next_step": msg('preparations.self_change_applied')}
 
     def _own_proposal_edit(self, args, work_id):
