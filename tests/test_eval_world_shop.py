@@ -20,6 +20,7 @@ No live model, browser engine, account or site is used.  A live run of the
 same scenarios is documented in ``evals/README.md`` and is not performed here.
 """
 import json
+import types
 import os
 import subprocess
 import sys
@@ -459,6 +460,42 @@ def test_an_irreversible_press_the_owner_did_not_ask_for_still_waits(still, requ
                                             requested=requested)
     assert service._browser_request(job['id'])['state'] == 'requested'
     assert shop_world.state.snapshot()['cart'] and job['status'] != 'succeeded'
+
+
+def test_the_owner_request_judgment_reads_the_owners_corrections(still, monkeypatch):
+    # #1159 review: a correction made while the Work runs is part of what the owner asked; the latest wins.
+    seen = []
+    monkeypatch.setattr(QuickStore, 'work_steer_texts', lambda self, job_id: ['Keep the cart as it is; only add milk.'])
+
+    def keep_the_cart(facts):
+        seen.append(facts['owner_message'])
+        return 'Keep the cart' not in facts['owner_message']
+
+    shop_world, service, job, drivers = run(still, 'clear-then-add', judged=emptying_is_irreversible,
+                                            requested=keep_the_cart)
+    assert seen and 'Empty my cart' in seen[0] and seen[0].rstrip().endswith('Keep the cart as it is; only add milk.')
+    assert service._browser_request(job['id'])['state'] == 'requested'
+
+
+def test_a_correction_after_the_owner_request_approval_voids_it_before_dispatch(tmp_path):
+    from personal_agent import self_set_writes
+    from personal_agent.agent_runtime import ToolError
+    store = QuickStore(tmp_path / 'state')
+    job_id = store.enqueue('Empty my cart.', 'steer-void', owner_typed=True)
+    ticket = {'digest': 'd', 'allowance': False, 'authorized_by': 'owner-request', 'owner_steers': 0}
+    with store.db() as db:
+        ticket['event'] = db.execute('INSERT INTO tool_events(job_id,tool,status,detail,created) VALUES (?,?,?,?,?)',
+                                     (job_id, self_set_writes.ACTION, 'dispatching', json.dumps(ticket), 0)).lastrowid
+    service = types.SimpleNamespace(store=store, work_stopped=lambda work_id: False)
+    job = {'id': job_id}
+    with store.db() as db:
+        self_set_writes.recheck(service, job, ticket, db=db)  # no correction yet: the ticket stands
+    with store.db() as db:
+        db.execute('INSERT INTO work_steers(source_job_id,job_id,content,created) VALUES (?,?,?,?)',
+                   ('later', job_id, 'Keep the cart.', 1))
+    with pytest.raises(ToolError) as refused, store.db() as db:
+        self_set_writes.recheck(service, job, ticket, db=db)
+    assert refused.value.code == 'allowance_changed'
 
 
 def adding_is_a_payment(context, candidates, question):

@@ -113,6 +113,9 @@ def recheck(service, job, ticket, *, db=None):
             mode = allowance(service, key, db=db)
             current = current and mode['enabled'] and mode['revision'] == revision and key in known and (
                 mode['connection_revision'] == known[key]['connection_revision'] == ticket.get('connection_revisions', {}).get(key))
+    if current and ticket.get('authorized_by') == 'owner-request':
+        # #1158: the owner's request stood as the approval; a correction since then voids it.
+        current = db.execute('SELECT count(*) FROM work_steers WHERE job_id=?', (job['id'],)).fetchone()[0] == ticket.get('owner_steers')
     if not current or service.work_stopped(job['id']):
         raise not_run(ToolError(msg('write_allowances.changed'), 'allowance_changed'))
 
@@ -238,7 +241,7 @@ def authorize(service, job, binding, connection, operation, target, names=(), *,
     # again.  A judgment reads the owner's words against the element, which stays untrusted page
     # data, so a press only a page asked for, or one broader than the request, still asks.
     # Payments never reach it (above, and the judgment's own question).
-    requested = False
+    requested, steers = False, []
     if effect == 'irreversible' and browser_press and not service.unattended_work(job) and service.owner_typed_work(job):
         try:
             from .conversation_handoff import JUDGMENT_YES
@@ -247,13 +250,21 @@ def authorize(service, job, binding, connection, operation, target, names=(), *,
             # The page and the values bind the judgment to the site and record pressed (#1159 review);
             # they passed action_input_safe above, and known secrets are redacted again here.
             shown = service._redact_known_secrets(json.dumps(values, ensure_ascii=False)[:600]) if values else ''
+            # #1159 review: the owner's corrections while the Work runs are part of what they asked;
+            # the ticket keeps their count so a newer correction voids it before dispatch.
+            steers = service.store.work_steer_texts(job['id'])
+            asked = (service.store.job(job['id']) or job).get('message') or ''
+            if steers:
+                asked += '\n\nLater, while this Work ran, the owner said (oldest first; the latest wins):\n' + \
+                    '\n'.join(f'- {text}' for text in steers)
             requested = service.decision_judge.press_requested(
-                (service.store.job(job['id']) or job).get('message'), operation, tuple(names), job['id'],
+                asked, operation, tuple(names), job['id'],
                 page=service._redact_known_secrets(f'{address.scheme}://{address.netloc}{address.path}'),
                 values=shown).outcome == JUDGMENT_YES
         except Exception:
             requested = False
     covered = reversible or requested
+    owner_steers = len(steers) if requested else None
     scoped = scoped_binding(binding)
     digest = service._browser_step_keys(scoped)['digest']
     label = service._redact_known_secrets(f'{connection or "browser"} / {operation} / {target}' +
@@ -295,7 +306,8 @@ def authorize(service, job, binding, connection, operation, target, names=(), *,
                   'connection_revisions': {key: value['connection_revision'] for key,value in modes.items()} if allowed else {},
                   'authorized_by': ('connection-allowance' if allowed else 'reversible' if reversible
                                     else 'owner-request' if requested else 'owner-step'),
-                  'authorized_at': time.time()}
+                  'authorized_at': time.time(),
+                  **({'owner_steers': owner_steers} if owner_steers is not None else {})}
         ticket['event'] = db.execute('INSERT INTO tool_events(job_id,tool,status,detail,created) VALUES (?,?,?,?,?)',
             (job['id'], ACTION, 'dispatching', json.dumps(ticket), time.time())).lastrowid
     # The token is host-local and never goes into an event/connector receipt.
