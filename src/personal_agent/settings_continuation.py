@@ -336,7 +336,7 @@ class SettingsContinuation:
         from .agent_runtime import (API_ACTIONS, EFFECT_CHANGED, EFFECT_FREE_READS, EFFECT_LEDGER_TOOLS, EFFECT_UNKNOWN,
                                     INTERNAL_STATE_ACTIONS, MAX_CONTINUATIONS, call_effects, continuation_count, dispatch_call_accounted,
                                     dispatch_call_keys, effect_free_call, external_effect_events, keyed_change,
-                                    STILL_RECORD_ACTIONS, STILL_RECORD_CONTINUATION, STILL_RECORD_KINDS, still_records,
+                                    STILL_RECORD_ACTIONS, STILL_RECORD_CONTINUATION, STILL_RECORD_KINDS, still_record_ids,
                                     unknown_effect_targets)
         if purpose not in service.CONTINUE_PURPOSES:raise ValueError(purpose)
         reasons=[]
@@ -418,7 +418,7 @@ class SettingsContinuation:
                 record_id=evidence.get(kind+'_id') if isinstance(evidence,dict) else None
                 if isinstance(record_id,str) and record_id:
                     if record_ids is None:
-                        record_ids={(row['record'],row['id']) for row in still_records(service.store,work_id)}
+                        record_ids=still_record_ids(service.store,work_id)
                     if (kind,record_id) in record_ids:continue
             add('effect')
         return tuple(sorted(reasons,key=CONTINUE_REASONS.index))

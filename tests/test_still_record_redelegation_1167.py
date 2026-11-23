@@ -14,6 +14,10 @@ from personal_agent import preparations as prep
 from personal_agent.agent_runtime import ToolError
 from personal_agent.api_requests import ApiRequests, save_slot
 
+from personal_agent.providers import ModelAdapter
+
+from test_openai_responses_994 import responses_reply
+from test_orchestrator import Harness, plan
 from test_preparations import _Case, call, finish
 
 POST = {'slot': 'alpha', 'url': 'https://alpha.example/change', 'method': 'POST', 'effect': 'mutate', 'body': '{"v":1}'}
@@ -80,19 +84,6 @@ class Reconciled(StillRecords):
         [kept] = self.active(work)
         self.assertEqual(kept['id'], replaced['preparation_id'])
         self.assertNotEqual(kept['id'], row['id'])
-
-    def test_the_whole_loop_re_delegates_and_leaves_one_preparation(self):
-        # The real worker re-delegated: its second attempt tries a new row, is refused, then replaces.
-        work, row = self.scheduled_work()
-        self.step(work, following=object())
-        self.script = [{'content': None, 'tool_calls': [call('2', 'schedule_preparation', **self.schedule_args(row))]},
-                       {'content': None, 'tool_calls': [call('3', 'schedule_preparation',
-                                                             **self.schedule_args(row, replaces=row['id']))]},
-                       finish('g', '3')]
-        with self.store.db() as db:
-            db.execute("UPDATE jobs SET status='queued',response=NULL WHERE id=?", (work,))
-        self.service.run_one()
-        self.assertEqual(len(self.active(work)), 1)
 
     def test_without_a_re_delegation_two_preparations_in_one_work_stay_allowed(self):
         work, row = self.scheduled_work()
@@ -166,3 +157,82 @@ class OutsideEffectsUnchanged(StillRecords):
         work = self.store.enqueue('알림 하나 맞춰 줘', 'k1167', owner_typed=True)
         self.event(work, 'schedule_preparation', 'running', {'scope': 's', 'call_id': 'p1', 'host_action': 'schedule_preparation'})
         self.assertIn('unknown', self.service.continuation_reasons(work, 'redelegate'))
+
+
+class ScriptedWorker:
+    """The direct OpenAI route, scripted per orchestration attempt, so the real agent loop records every call.
+
+    ``attempt()`` names the current attempt; ``steps[attempt]`` are its tool calls (``(id, name, args)`` or a
+    callable returning one) or replies, and once they are spent the worker answers with its last reply.
+    """
+
+    def __init__(self, attempt, steps):
+        self.attempt, self.steps, self.bodies = attempt, {key: list(value) for key, value in steps.items()}, {}
+
+    def __call__(self, url, body, headers=None, timeout=60):
+        names = [tool['name'] for tool in body.get('tools') or []]
+        if 'agentos_connection_probe' in names:
+            return responses_reply({'role': 'assistant', 'tool_calls': [
+                {'id': 'p1', 'type': 'function', 'function': {'name': 'agentos_connection_probe', 'arguments': '{}'}}]}, body['model'])
+        if not names:
+            return responses_reply({'role': 'assistant', 'content': 'ok'}, body['model'])
+        attempt = self.attempt()
+        self.bodies.setdefault(attempt, []).append(json.dumps(body, ensure_ascii=False))
+        steps = self.steps[attempt]
+        step = steps.pop(0) if len(steps) > 1 else steps[0]
+        step = step() if callable(step) else step
+        if isinstance(step, str):
+            return responses_reply({'role': 'assistant', 'content': step}, body['model'])
+        ident, name, args = step
+        return responses_reply({'role': 'assistant', 'tool_calls': [
+            {'id': ident, 'type': 'function', 'function': {'name': name, 'arguments': json.dumps(args, ensure_ascii=False)}}]},
+            body['model'])
+
+
+class RealOrchestration(Harness):
+    """The real ``Orchestration.next`` over a scripted Judgment AI, with a worker whose calls the real loop records."""
+
+    def test_a_not_reached_attempt_re_delegates_and_the_next_revises_the_same_preparation(self):
+        from datetime import datetime, timedelta, timezone
+
+        def due(days):
+            return (datetime.now(timezone.utc) + timedelta(days=days)).strftime('%Y-%m-%dT%H:%M:%S+00:00')
+        args = {'kind': 'reminder', 'goal': '출발 시간입니다.', 'timezone': 'Asia/Seoul'}
+        first = {}
+        job = {}
+
+        def attempt():
+            return max(1, len(self.events(job['id'], 'planned'))) if job else 1
+
+        def replacing():
+            with self.store.db() as db:
+                first['id'] = db.execute('SELECT id FROM preparations ORDER BY created_at LIMIT 1').fetchone()['id']
+            return 'c3', 'schedule_preparation', {**args, 'due': due(2), 'replaces': first['id']}
+        worker = ScriptedWorker(attempt, {1: [('c1', 'schedule_preparation', {**args, 'due': due(1)}), '알림을 맞췄어요.'],
+                                          2: [('c2', 'schedule_preparation', {**args, 'due': due(2)}), replacing, '알림을 바꿨어요.']})
+        self.service.adapter = ModelAdapter(worker)
+        self.use_main('openai')
+        self.script([plan('openai', 'Set the reminder.'), plan('openai', 'Finish what is missing.')],
+                    goals=[False] * 4 + [True] * 4)
+        job['id'] = self.store.enqueue('내일 출발하라고 알려줘', 'k1167-loop', owner_typed=True, owner_words=True)
+        self.assertTrue(self.service.run_one())
+        job = job['id']
+        evaluated = [detail for _status, detail in self.events(job, 'evaluated')]
+        # Attempt 1 was judged not reached; the real next() re-delegated instead of stopping on effect.
+        self.assertEqual([(detail['outcome'], detail['next']) for detail in evaluated][:1], [('not_reached', 'redelegate')], evaluated)
+        self.assertEqual(len(evaluated), 2, evaluated)
+        # Attempt 2's brief names the preparation Still already holds.
+        self.assertIn(first['id'], worker.bodies[2][0])
+        # A new row without replaces is refused; replaces revises it, leaving one active preparation.
+        with self.store.db() as db:
+            calls = [(row['status'], json.loads(row['detail'])) for row in db.execute(
+                "SELECT status,detail FROM tool_events WHERE job_id=? AND tool='schedule_preparation' AND status!='running' ORDER BY id",
+                (job,))]
+            active = db.execute('SELECT id FROM preparations WHERE created_from=? AND state IN (?,?,?,?)',
+                                (job, *prep.ACTIVE_STATES)).fetchall()
+            replaced = db.execute('SELECT state FROM preparations WHERE id=?', (first['id'],)).fetchone()['state']
+        self.assertEqual([(status, detail.get('code')) for status, detail in calls],
+                         [('succeeded', None), ('failed', 'preparation_exists'), ('succeeded', None)])
+        self.assertEqual(replaced, prep.STATE_CANCELLED)
+        self.assertEqual([row['id'] for row in active], [calls[2][1]['evidence']['preparation_id']])
+        self.assertNotEqual(active[0]['id'], first['id'])

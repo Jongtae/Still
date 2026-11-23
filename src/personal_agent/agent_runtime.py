@@ -2621,6 +2621,23 @@ STILL_RECORD_CONTINUATION = 'still_record_continuation'
 STILL_RECORD_KINDS = {'schedule_preparation': 'preparation', 'entrusted_line': 'line'}
 STILL_RECORD_ACTIONS = frozenset(STILL_RECORD_KINDS)
 
+def still_record_ids(store, work_id):
+ """``{(kind, id)}`` of every record this Work made that Still still holds, in any state (#1167).
+
+ A row the Work replaced or the owner cancelled is still known to Still, so its call is reconciled;
+ only ``still_records`` (what the next attempt may revise) is limited to current rows.
+ """
+ from . import entrusted_lines as el
+ with store.db() as db:
+  tables = {row['name'] for row in db.execute("SELECT name FROM sqlite_master WHERE type='table' "
+                                            "AND name IN ('preparations','procedure_versions')")}
+  ids = {('preparation', row['id']) for row in db.execute('SELECT id FROM preparations WHERE created_from=?', (work_id,))
+         } if 'preparations' in tables else set()
+  if 'procedure_versions' in tables:
+   ids |= {('line', row['slot'][len(el.SLOT_PREFIX):]) for row in db.execute(
+    'SELECT slot FROM procedure_versions WHERE work_id=? AND version=1 AND slot LIKE ?', (work_id, el.SLOT_PREFIX+'%'))}
+ return ids
+
 def still_records(store, work_id):
  """Read this Work's own current records, bounded by the stores' admission limits."""
  from . import entrusted_lines as el, preparations as prep
