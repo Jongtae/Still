@@ -907,7 +907,7 @@ def require_preparation_replacement(db, work_id, replaces=None):
     ran or was cancelled after the re-delegation was decided: nothing more is scheduled in this Work.
     """
     from .agent_runtime import ToolError, not_run, still_record_claims
-    claimed = still_record_claims(db, work_id)
+    claimed = still_record_claims(db, work_id, 'preparations')
     if not claimed:
         return
     marks = ','.join('?' for _ in claimed)
@@ -915,8 +915,9 @@ def require_preparation_replacement(db, work_id, replaces=None):
                       tuple(claimed)).fetchall()
     states = {row['id']: row['state'] for row in rows}
     # A run already started (even one still running) settles it too: revising it could deliver twice.
-    settled = sorted(row['id'] for row in rows if row['state'] not in ACTIVE_STATES
-                     or row['last_run_job_id'] is not None or (row['run_count'] or 0) > 0)
+    # A carried row the owner deleted is gone from the store: settled too, never silently unfenced.
+    settled = sorted({row['id'] for row in rows if row['state'] not in ACTIVE_STATES
+                      or row['last_run_job_id'] is not None or (row['run_count'] or 0) > 0} | (claimed - set(states)))
     if settled:
         raise not_run(ToolError(msg('preparations.preparation_settled', ids=', '.join(settled)), 'preparation_settled'))
     active = set(states)

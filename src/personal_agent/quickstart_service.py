@@ -6211,7 +6211,8 @@ class AgentService:
         if following is not None and records:
             with self.store.db() as db:
                 self.store.require_read_checkpoint_writer(db)
-                detail=json.dumps({'records':[row['id'] for row in records]})
+                detail=json.dumps({'records':[row['id'] for row in records],
+                                   'preparations':[row['id'] for row in records if row['record']=='preparation']})
                 db.execute('INSERT INTO tool_events(job_id,tool,status,detail,created) VALUES (?,?,?,?,?)',
                            (job_id,STILL_RECORD_CONTINUATION,'claimed',detail,time.time()))
         return following

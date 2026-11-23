@@ -2689,12 +2689,12 @@ def still_record_note(store, work_id, *, records=None):
  records = still_records(store, work_id) if records is None else records
  return prompt('still_record_continuation') + '\n' + json.dumps(records, ensure_ascii=False) if records else ''
 
-def still_record_claims(db, work_id):
- """Record IDs carried into a replacement attempt of this Work."""
+def still_record_claims(db, work_id, kind='records'):
+ """Record IDs carried into a replacement attempt of this Work: every record, or ``kind='preparations'``."""
  return {row['value'] for row in db.execute(
   "SELECT record.value FROM tool_events event, json_each(CASE WHEN json_valid(event.detail) "
-  "THEN event.detail END, '$.records') record WHERE event.job_id=? AND event.tool=? "
-  "AND event.status='claimed' AND record.type='text'", (work_id, STILL_RECORD_CONTINUATION))}
+  "THEN event.detail END, '$.'||?) record WHERE event.job_id=? AND event.tool=? "
+  "AND event.status='claimed' AND record.type='text'", (kind, work_id, STILL_RECORD_CONTINUATION))}
 
 
 class EffectAncestryError(ValueError):

@@ -96,23 +96,25 @@ class Reconciled(StillRecords):
         self.assertIn(successor, str(refused.exception))
 
     def test_a_carried_preparation_that_settles_after_re_delegation_stays_fenced(self):
-        # Codex P2: it fired, or the owner cancelled it, after the re-delegation was decided.
-        for settle in ('ran', 'cancelled'):
+        # Codex P2: it fired, or the owner cancelled or deleted it, after the re-delegation was decided.
+        for settle in ('ran', 'cancelled', 'deleted'):
             with self.subTest(settle=settle):
                 work, row = self.scheduled_work(title=settle)
                 self.step(work, following=object())
                 if settle == 'ran':
                     self.now = row['due_at'] + 1
                     self.tick()
-                else:
+                elif settle == 'cancelled':
                     self.service.preparations.cancel(row['id'])
+                else:
+                    self.service.preparations.delete(row['id'])
                 schedule = self.service.preparation_scheduler(self.store.job(work), '')
                 for extra in ({}, {'replaces': row['id']}):
                     with self.assertRaises(ToolError) as refused:
                         schedule(self.schedule_args(row, **extra))
                     self.assertEqual(refused.exception.code, 'preparation_settled')
                 self.assertEqual([other['id'] for other in self.service.preparations.rows() if other['created_from'] == work],
-                                 [row['id']], 'nothing new was scheduled')
+                                 [] if settle == 'deleted' else [row['id']], 'nothing new was scheduled')
 
     def test_without_a_re_delegation_two_preparations_in_one_work_stay_allowed(self):
         work, row = self.scheduled_work()

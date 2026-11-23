@@ -380,7 +380,8 @@ class PreparationsService:
                                                     (job['id'],STILL_RECORD_CONTINUATION)).fetchall():
                                 detail=json.loads(claim['detail'])
                                 if replaces in detail.get('records',()):
-                                    detail['records']=[row['id'] if value==replaces else value for value in detail['records']]
+                                    for key in ('records','preparations'):
+                                        detail[key]=[row['id'] if value==replaces else value for value in detail.get(key,())]
                                     db.execute('UPDATE tool_events SET detail=? WHERE id=?',(json.dumps(detail),claim['id']))
             except prep.PreparationRefusal as exc:
                 raise ToolError(str(exc),exc.code,**ran_field(exc)) from None
