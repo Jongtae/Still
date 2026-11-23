@@ -763,3 +763,100 @@ test('nothing is re-read while no emitted from-me row is waiting for its outcome
   assert.equal(kit.queries.length, afterBackfill, 'settled rows and inbound rows start no re-reads');
   await sidecar.stop();
 });
+
+// ---- #1179 second live finding: send into the paired conversation's chat ---------------
+// imessage-kit 3.0.0 sends to a 1:1 recipient with `buddy "<handle>"` (even when given a 1:1 chat
+// id, its resolveTarget reduces it to the address). On the owner's Mac that send was "not
+// delivered", while `chat id "<chat guid>"` into the existing conversation arrived. The sidecar
+// therefore hands the kit's own send pipeline a `chat` target (the kit escapes it and builds
+// `set targetChat to chat id "..."`); the address is only the fallback when no chat exists.
+
+/** A kit with chat rows (`listChats`) and the 3.0.0 sender pipeline, recording each send job. */
+function chatKit(chats = []) {
+  const kit = new FakeKit();
+  kit.chats = chats;
+  kit.chatQueries = [];
+  kit.jobs = [];
+  kit.listChats = async (query = {}) => {
+    kit.chatQueries.push(query);
+    return kit.chats.filter((chat) => (!query.kind || chat.kind === query.kind)
+      && (!query.chatId || chat.chatId === query.chatId || chat.chatId.endsWith(`;${query.chatId}`)));
+  };
+  kit.sender = {
+    async runPipeline(job) {
+      kit.jobs.push(job);
+      if (kit.sendError) throw kit.sendError;
+    },
+  };
+  return kit;
+}
+
+function chat(chatId, overrides = {}) {
+  return { chatId, kind: 'dm', service: 'iMessage', name: null, lastMessageAt: new Date(), ...overrides };
+}
+
+test('a send goes to the paired conversation\'s chat id, not the bare address', async () => {
+  const kit = chatKit([chat(`any;-;${OWNER}`)]);
+  const sidecar = await start(kit);
+  await sidecar.send({ op: 'scope', mode: 'paired', handle: OWNER, since_ms: 0 });
+  await sidecar.send({ op: 'send', id: 'r1', to: OWNER, text: 'hi' });
+  assert.deepEqual(kit.jobs.map((job) => [job.target, job.text, job.attachments]),
+    [[{ method: 'chat', identifier: `any;-;${OWNER}` }, 'hi', []]]);
+  assert.deepEqual(kit.sends, [], 'no buddy send by address');
+  assert.deepEqual(sidecar.of('sent'), [{ ev: 'sent', id: 'r1' }]);
+  await sidecar.stop();
+});
+
+test('the chat id is the one Messages has, whatever its service prefix', async () => {
+  const kit = chatKit([chat(`iMessage;-;${OWNER}`)]);
+  const sidecar = await start(kit);
+  await sidecar.send({ op: 'scope', mode: 'paired', handle: OWNER, since_ms: 0 });
+  await sidecar.send({ op: 'send', id: 'r1', to: OWNER, text: 'hi' });
+  assert.deepEqual(kit.jobs.map((job) => job.target), [{ method: 'chat', identifier: `iMessage;-;${OWNER}` }]);
+  await sidecar.stop();
+});
+
+test('without a 1:1 chat for the paired handle the send falls back to the address', async () => {
+  const kit = chatKit([
+    chat(`any;-;${OTHER}`),
+    chat('any;+;chat987654', { kind: 'group' }),
+  ]);
+  const sidecar = await start(kit);
+  await sidecar.send({ op: 'scope', mode: 'paired', handle: OWNER, since_ms: 0 });
+  await sidecar.send({ op: 'send', id: 'r1', to: OWNER, text: 'hi' });
+  assert.deepEqual(kit.jobs, [], 'never another conversation or a group');
+  assert.deepEqual(kit.sends, [{ to: OWNER, text: 'hi' }]);
+  assert.deepEqual(sidecar.of('sent'), [{ ev: 'sent', id: 'r1' }]);
+  await sidecar.stop();
+});
+
+test('a chat lookup that fails falls back to the address and the send still reports', async () => {
+  const kit = chatKit();
+  kit.listChats = async () => { throw kitError('DATABASE', 'Failed to list chats: disk I/O error'); };
+  const sidecar = await start(kit);
+  await sidecar.send({ op: 'scope', mode: 'paired', handle: OWNER, since_ms: 0 });
+  await sidecar.send({ op: 'send', id: 'r1', to: OWNER, text: 'hi' });
+  assert.deepEqual(kit.sends, [{ to: OWNER, text: 'hi' }]);
+  assert.deepEqual(sidecar.of('sent'), [{ ev: 'sent', id: 'r1' }]);
+  await sidecar.stop();
+});
+
+test('a failed send into the chat names its reason like any other send', async () => {
+  const kit = chatKit([chat(`any;-;${OWNER}`)]);
+  kit.sendError = kitError('SEND', 'Messages app is not running');
+  const sidecar = await start(kit);
+  await sidecar.send({ op: 'scope', mode: 'paired', handle: OWNER, since_ms: 0 });
+  await sidecar.send({ op: 'send', id: 'r1', to: OWNER, text: 'hi' });
+  assert.deepEqual(sidecar.of('send_failed'), [{ ev: 'send_failed', id: 'r1', reason: 'messages_not_running' }]);
+  await sidecar.stop();
+});
+
+test('a refused send looks up no chat', async () => {
+  const kit = chatKit([chat(`any;-;${OTHER}`)]);
+  const sidecar = await start(kit);
+  await sidecar.send({ op: 'scope', mode: 'paired', handle: OWNER, since_ms: 0 });
+  await sidecar.send({ op: 'send', id: 'r1', to: OTHER, text: 'elsewhere' });
+  assert.deepEqual(kit.chatQueries, []);
+  assert.deepEqual(kit.jobs, []);
+  await sidecar.stop();
+});
