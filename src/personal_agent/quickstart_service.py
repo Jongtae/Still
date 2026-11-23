@@ -148,6 +148,14 @@ LOG=logging.getLogger('personal_agent.service')
 TELEGRAM_RECEIVE_GRACE_SECONDS=10
 #: #999: the stored result of a queued message its running Work received as steering.
 STEER_FOLDED_TEXT=msg('steer.applied_now')
+#: #1170: what the worker, the plan and the outcome judgment are told when the follow-up judgment found
+#: that the owner's message corrects the Work it follows up (``FOLLOWUP_CORRECTION``).  A later explicit
+#: owner instruction supersedes the earlier condition the same owner set; it names no task and grants nothing.
+CORRECTION_NOTE=('The follow-up judgment found that the owner\'s message corrects or replaces what they asked for '
+                 'or set up in that earlier Work. Their message is the current instruction: where it changes a '
+                 'condition, rule, plan or scheduled work set there, it replaces it. Carry the change out, revising '
+                 'that plan, rule or scheduled work in place, instead of keeping the earlier condition. Still\'s '
+                 'approvals and the owner\'s autonomy settings still apply to every effect.')
 #: #308 S4: the stored result of one the running Work answered after one second pass (S1).
 STEER_SECOND_PASS_TEXT=msg('steer.applied_second_pass')
 #: #308 S4: the ``owner_steer`` event naming why a steer runs as its own Work, and what the owner is told.
@@ -156,7 +164,7 @@ STEER_NOT_APPLIED_REASONS={
     'finished':'steer.not_applied.finished', 'continued':'steer.not_applied.continued',
     'effect':'steer.not_applied.effect', 'unknown':'steer.not_applied.unknown', 'owner':'steer.not_applied.owner', 'budget':'steer.not_applied.budget',
     'stopped':'steer.not_applied.stopped', 'route':'steer.not_applied.route', 'failed':'steer.not_applied.failed',
-    'new_request':'steer.not_applied.new_request'}
+    'new_request':'steer.not_applied.new_request', 'short':'steer.not_applied.short'}
 #: #308 S1: how long a finishing Work waits for steer judgments still running (the judgment is a few seconds).
 STEER_JUDGMENT_WAIT_SECONDS=8
 #: #970: the lane for commands Still answers itself (D2a), and the tool-capable Work lanes (D1).
@@ -5703,6 +5711,9 @@ class AgentService:
             # a follow-up about it cannot see what was asked.
             hosts=self.sign_in_asks(related)
             if hosts:lines.append('[Still] During that exchange Still asked the owner to sign in at: '+', '.join(hosts))
+            if lines and current.get('relation_kind')==FOLLOWUP_CORRECTION:
+                # #1170: last, so the bound that keeps the end of this text (``CONTINUES_CHARS``) keeps it.
+                lines.append('[Still] '+CORRECTION_NOTE)
             return '\n'.join(lines)
         except Exception:
             LOG.info('continued exchange unavailable job=%s',job.get('id'))
@@ -10154,6 +10165,10 @@ class AgentService:
         # (claimed, then the process or provider failed): the message runs as its own Work.
         steered=self.store.job(job.get('related_job_id')) if job.get('relation_kind')=='steer' else None
         if not steered or not ws.has_delivered_result(steered.get('status')):return False
+        # #1170: the outcome judgment read this message with the request (``evaluate_answer``) and found
+        # the reply did not serve them, so nothing shows it was handled: it runs as its own Work, which
+        # says why first (``steer_disposition_notice``), instead of being settled as applied.
+        if steered.get('goal_outcome')==ws.GOAL_NOT_REACHED:return False
         # #308 S4: applied in the reply being written, or by the one second pass (S1).
         events=self._steer_events(steered['id'])
         text=STEER_SECOND_PASS_TEXT if 'continued' in events and 'continuation_failed' not in events else STEER_FOLDED_TEXT
@@ -10193,6 +10208,8 @@ class AgentService:
             events=self._steer_events(steered['id'])
             reason=(events.get(STEER_NOT_APPLIED) or {}).get('reason')
             if not reason and 'continuation_failed' in events:reason='failed'
+            # #1170: its reply, which had this message, was judged not to serve the request (``fold_delivered_steer``).
+            if not reason and steered.get('goal_outcome')==ws.GOAL_NOT_REACHED:reason='short'
             if not reason:
                 status=str(steered.get('status') or '')
                 reason=('unknown' if ws.is_effect_unknown(status) else 'owner' if status.startswith('awaiting_')

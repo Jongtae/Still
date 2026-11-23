@@ -40,6 +40,7 @@ from .browser_session import BROWSER_WAIT_SECONDS
 from .quickstart_service import (
     BROWSER_LOGIN_SECONDS,
     CONTINUATION_EFFECT_NOTE_HEAD,
+    CORRECTION_NOTE,
     LANE_COMMAND,
     LANE_WORK,
     LOG,
@@ -61,11 +62,13 @@ from .quickstart_service import (
 DISPATCH_CLAIMS=8
 
 
-def related_work_note(work_id):
+def related_work_note(work_id, relation=None):
+    """The worker's host note naming the Work this message follows up; #1170: with what the link means."""
     if not work_id:
         return ''
-    return (f'Still host note: Related Work {work_id}. Calling search_conversation with that work_id '
-            'returns its exchange and what it read.')
+    note=(f'Still host note: Related Work {work_id}. Calling search_conversation with that work_id '
+          'returns its exchange and what it read.')
+    return note+' '+CORRECTION_NOTE if relation==FOLLOWUP_CORRECTION else note
 
 
 class _FirstTurnCommit:
@@ -1018,7 +1021,9 @@ class WorkExecutor:
             refresh=None
             run.config,run.key,run.subscription,run.attempt_test=service.attempt_route(run.orchestration,run.attempt,run.base_config,run.base_key,run.route_snapshot)
             plan_brief=run.attempt.brief(adjusted=run.attempt.number>1 and not run.attempt.steer) if run.attempt is not None else None
-            run.brief='\n\n'.join(part for part in (related_work_note(run.related_work_id),plan_brief) if part) or None
+            # #1170: the recorded follow-up relation says whether the owner's message replaces part of that Work.
+            relation=(service.store.job(job['id']) or {}).get('relation_kind') if run.related_work_id else None
+            run.brief='\n\n'.join(part for part in (related_work_note(run.related_work_id,relation),plan_brief) if part) or None
             # Every replacement worker sees the latest committed coverage as
             # host context. The original owner request stays in the conversation.
             if progress := '\n\n'.join(filter(None,(service.read_checkpoint_note(job, include_fresh=True),
