@@ -2627,6 +2627,18 @@ class QuickStore:
             events.append({**row,'trace':trace if isinstance(trace,dict) else {'error':'실행 근거 형식이 올바르지 않습니다.'}})
         return events
 
+    def model_turn_traces(self, job_id):
+        """#1139: the recorded details of this Work's direct-API model turns that reported usage."""
+        with self.db() as db:
+            rows=db.execute("SELECT detail FROM tool_events WHERE job_id=? AND tool='model' AND status='responded' "
+                            "AND detail LIKE '%\"usage\"%' ORDER BY id",(job_id,)).fetchall()
+        traces=[]
+        for (detail,) in rows:
+            try:trace=json.loads(detail)
+            except (TypeError,ValueError):continue
+            if isinstance(trace,dict):traces.append(trace)
+        return traces
+
     def task_artifacts(self, job_id):
         with self.db() as db:
             artifacts=[dict(row) for row in db.execute('SELECT id,workspace_id,job_id,created FROM workspace_results WHERE job_id=? ORDER BY created DESC',(job_id,))]
