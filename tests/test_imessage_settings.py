@@ -367,6 +367,36 @@ class Disconnect(Case):
         self.service.stop_surfaces()
         self.assertTrue(finished.is_set(), 'shutdown returned only after the child was stopped')
 
+    def test_service_shutdown_waits_for_a_start_that_is_reaping_a_failed_child(self):
+        reaped = threading.Event()
+        release = threading.Event()
+        starts = []
+        self.surface.starter_spawn = lambda target: starts.append(threading.Thread(target=target, daemon=True)) or starts[-1].start()
+
+        class SlowFailing:
+            def __init__(self, store):
+                pass
+
+            def start(self):
+                release.wait(5)
+                time.sleep(0.3)   # the launcher waits for and terminates the child before raising
+                reaped.set()
+                raise sidecar_module.IMessageSidecarError('denied', 'no_disk_access')
+
+            def send_op(self, op):
+                return False
+
+            def stop(self):
+                pass
+
+        self.service.imessage_sidecar_factory = SlowFailing
+        self.service.start_imessage_pairing()
+        self.surface.receive()
+        self.assertTrue(wait_for(lambda: self.surface._starting is not None, 2))
+        release.set()
+        self.service.stop_surfaces()
+        self.assertTrue(reaped.is_set(), 'shutdown returned only after the start reaped its child')
+
     def test_still_main_stops_the_surfaces_before_it_exits(self):
         main = (Path(imessage_surface.__file__).with_name('quickstart.py')).read_text(encoding='utf-8')
         tail = main[main.index('    try:run()'):]

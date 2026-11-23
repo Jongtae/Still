@@ -234,6 +234,7 @@ class IMessageSurface(DirectMessageSurface):
                         self._starting = None
                         if not starting.is_set():
                             self._record_failure('not_ready')
+                self._notify_stopped()
 
     def _start_sidecar(self, starting):
         retired = None
@@ -272,6 +273,7 @@ class IMessageSurface(DirectMessageSurface):
                 with self.service.lock:
                     if self._starting is starting:
                         self._starting = None
+                self._notify_stopped()   # a start that ended (and reaped a failed child) lets shutdown finish
 
     def _record_failure(self, code):
         self.service.store.put(self.STATUS_KEY, {'state': 'error', 'code': code})
@@ -306,18 +308,27 @@ class IMessageSurface(DirectMessageSurface):
             except Exception as exc:
                 LOG.warning('iMessage sidecar shutdown failed (%s)', type(exc).__name__)
         finally:
-            with self._stopped:
+            with self.service.lock:
                 self._stopping = False
-                self._stopped.notify_all()
+            self._notify_stopped()
+
+    def _notify_stopped(self):
+        with self._stopped:
+            self._stopped.notify_all()
+
+    def _settled(self):
+        """No sidecar stop and no start (which reaps a child that failed its handshake) is under way."""
+        # Plain reads, never the service lock: a notifier may hold it while waiting for this condition's lock.
+        return not self._stopping and self._starting is None
 
     def shutdown(self):
-        """Stop the sidecar and wait for any stop already under way, so Still never exits before its child."""
+        """Stop the sidecar and wait for any stop or start under way, so Still never exits before its child."""
         with self.service.lock:
             sidecar = self._detach_sidecar()
         if sidecar is not None:
             self._stop_sidecar(sidecar)
         with self._stopped:
-            self._stopped.wait_for(lambda: not self._stopping, timeout=SHUTDOWN_SECONDS)
+            self._stopped.wait_for(self._settled, timeout=SHUTDOWN_SECONDS)
 
     def retry(self):
         with self.service.lock:
