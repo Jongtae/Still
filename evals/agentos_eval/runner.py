@@ -569,6 +569,22 @@ def prepare_judgment(client, pool, box, worker, timeout=300, clock=time.monotoni
             requalified = True
             status = client.wait_judgment(worker, timeout=timeout)
     ready = False if failure else client.judgment_ready(status, worker)
+    fallback = None
+    seeded = (status.get('active') or {}).get('transport')
+    if not ready and status.get('mode') != 'follow_main' and seeded not in (None, 'none', 'off'):
+        # #1122: the owner's own judgment route may be an API whose key the seed leaves out (a seed
+        # with no Judgment AI keeps that choice). A run
+        # without a Judgment AI measures a path the owner never runs (every press asks), so the
+        # judgment follows this worker's route instead, and the record says so.
+        try:
+            client.post('/api/decision-route/activate', {'transport': 'follow_main'})
+        except ClientError as exc:
+            failure = failure or str(exc)[:200]
+        else:
+            requalified, failure = True, None
+            status = client.wait_judgment(worker, timeout=timeout)
+            ready = client.judgment_ready(status, worker)
+            fallback = 'follow_main'
     if ready and requalified and getattr(box, 'slot', None) is not None:
         pool.store_judgment(box.slot, cache_key, box.read_config(JUDGMENT_KEYS))
     qualification = status.get('qualification') or {}
@@ -580,7 +596,7 @@ def prepare_judgment(client, pool, box, worker, timeout=300, clock=time.monotoni
             'requalified': requalified, 'cached': bool(getattr(box, 'cached', None)) and not requalified,
             'waited': round(clock() - started, 1), 'qualification': reasons,
             'cache_applied': cache_applied, 'initially_ready': initially_ready,
-            **({'failure': failure} if failure else {})}
+            **({'fallback': fallback} if fallback else {}), **({'failure': failure} if failure else {})}
 
 
 def run_scenario(scenario, worker, pool, client_factory=AgentOSClient, turn_timeout=900, poll_interval=2.0,
@@ -784,6 +800,9 @@ def run_world_scenario(scenario, pool, world_root=None, world_loader=None, clien
                 client.select_worker(worker)
                 record['judgment'] = prepare_judgment(client, pool, box, worker, judgment_timeout,
                                                       cache_key=cache_key)
+                if not record['judgment']['ready']:
+                    # Without a Judgment AI every press waits for the owner: not the owner's path.
+                    raise SandboxError('infra:judgment_ai: the sandbox has no qualified Judgment AI')
                 started = time.monotonic()
                 message = owner_message(scenario['turns'][0], instruction)
                 if getattr(world, 'completion_note', None):
