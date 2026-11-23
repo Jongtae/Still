@@ -375,6 +375,29 @@ class InstallTest(unittest.TestCase):
 
 
 class LauncherTest(unittest.TestCase):
+    def test_stop_waits_for_a_child_another_thread_is_still_terminating(self):
+        # #1143 review: a restart whose handshake failed clears the process, then reaps it; stop() must not return first.
+        process_launcher = launcher()
+        process_launcher.start()
+        child = process_launcher._process
+        real_end, ended = process_launcher._end_process, threading.Event()
+
+        def slow_end(process):
+            threading.Event().wait(0.5)
+            real_end(process)
+            ended.set()
+
+        process_launcher._end_process = slow_end
+        reaper = threading.Thread(target=process_launcher._stop_process, args=(child,), daemon=True)
+        reaper.start()
+        for _ in range(100):
+            if process_launcher._process is None:
+                break
+            threading.Event().wait(0.01)
+        process_launcher.stop()
+        self.assertTrue(ended.is_set(), 'stop() returned only after the child was reaped')
+        self.assertIsNotNone(child.returncode)
+
     def test_start_runs_the_pinned_node_on_the_installed_sidecar_and_waits_for_ready(self):
         popen = FakePopen()
         owner_store = store()

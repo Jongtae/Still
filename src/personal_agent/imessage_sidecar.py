@@ -277,6 +277,8 @@ class IMessageSidecar:
         self._ready_at = None
         self._scope = None
         self._stopping = False
+        self._reaping = set()
+        self._reaped = threading.Condition()
 
     def start(self):
         with self._start_lock:
@@ -460,13 +462,16 @@ class IMessageSidecar:
 
     def stop(self):
         with self._lock:
-            if self._stopping:
-                return
-            self._stopping = True
-            process = self._process
-            self._queue.put((None, _STOP, None))
+            process = None if self._stopping else self._process
+            if not self._stopping:
+                self._stopping = True
+                self._queue.put((None, _STOP, None))
         if process is not None:
             self._stop_process(process)
+        # A child another thread is still terminating (a restart or a start that failed its
+        # handshake) is reaped before stop() returns, so the owner's Still never exits first.
+        with self._reaped:
+            self._reaped.wait_for(lambda: not self._reaping, timeout=self._stop_seconds * 3)
 
     def _stop_process(self, process):
         with self._lock:
@@ -474,6 +479,16 @@ class IMessageSidecar:
                 return
             self._handshake.put((_STOP, None))
             self._process = self._handshake = self._ready = self._ready_at = None
+            with self._reaped:
+                self._reaping.add(process)
+        try:
+            self._end_process(process)
+        finally:
+            with self._reaped:
+                self._reaping.discard(process)
+                self._reaped.notify_all()
+
+    def _end_process(self, process):
 
         def close_stdin():
             with self._write_lock:
