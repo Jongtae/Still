@@ -3158,27 +3158,36 @@ OWNER_LOCAL_ACTIONS=frozenset({'tell_owner','save_result','save_memory',CONNECTO
 #: (``revisable_record_note``).  Each later run of such a record is its own Work, under its own approvals.
 REVISABLE_RECORD_ACTIONS=PREPARATION_ACTIONS|LINE_ACTIONS
 
-def revisable_record(action,status):
- """Whether one ``changed`` call is a record a re-delegation of the same Work revises in place (#1170)."""
- return action in REVISABLE_RECORD_ACTIONS and status=='succeeded'
+def revisable_preparation(store,preparation_id):
+ """``{'state', 'line_piece'?}`` when the current Work can still revise this preparation in place, else None.
 
-def _current_preparation(store,fact):
- """``fact`` with its preparation's current state, or None once it is no longer active (#1170 review).
-
- A replacement cancels the row it replaces, so a recorded id may name a row nothing can revise any more.
- A line keeps its id across revisions and is listed as recorded.
+ It follows the scheduler's own rule (#1170 review): an inactive row is gone (a replacement cancels the
+ row it replaces); a line's next piece is revised by scheduling it again (one child per run,
+ ``piece_of``), since ``schedule_piece`` refuses ``replaces``; any other row only when it was accepted
+ and not set up by a daily-plan run, because ``preparation_scheduler`` refuses a replacement from a
+ proposal or a plan run (``replace_not_allowed``).
  """
- if not fact.get('preparation_id'):return fact
- from .preparations import ACTIVE_STATES
+ from .preparations import ACTIVE_STATES,ACCEPTED_DAY_PLAN
+ if not isinstance(preparation_id,str) or not preparation_id:return None
  try:
   with store.db() as db:
-   row=db.execute('SELECT state,piece_of FROM preparations WHERE id=?',(fact['preparation_id'],)).fetchone()
+   row=db.execute('SELECT state,piece_of,accepted_by FROM preparations WHERE id=?',(preparation_id,)).fetchone()
  except __import__("sqlite3").OperationalError:
-  return fact
+  return None
  if not row or row['state'] not in ACTIVE_STATES:return None
- # A line's next piece is revised by scheduling it again (one child per run, ``piece_of``), never with
- # ``replaces``, which ``schedule_piece`` refuses (#1170 review).
- return {**fact,'state':row['state'],**({'line_piece':True} if row['piece_of'] else {})}
+ if row['piece_of']:return {'state':row['state'],'line_piece':True}
+ if row['accepted_by'] in (None,ACCEPTED_DAY_PLAN):return None
+ return {'state':row['state']}
+
+def revisable_record(action,status,detail=None,store=None):
+ """Whether one ``changed`` call is a record a re-delegation of the same Work revises in place (#1170).
+
+ With ``store``, a preparation must also still be revisable by this Work (``revisable_preparation``).
+ """
+ if action not in REVISABLE_RECORD_ACTIONS or status!='succeeded':return False
+ if store is None or action not in PREPARATION_ACTIONS:return True
+ evidence=(detail or {}).get('evidence') if isinstance((detail or {}).get('evidence'),dict) else {}
+ return revisable_preparation(store,evidence.get('preparation_id')) is not None
 
 def revisable_record_note(store,work_id):
  """The records this Work's attempts set up that a later attempt revises in place, as host facts, or '' (#1170).
@@ -3207,7 +3216,14 @@ def revisable_record_note(store,work_id):
   fact={'tool':action,**fact}
   if ident in seen:facts=[item for item in facts if (item.get('preparation_id') or item.get('line_id'))!=ident]
   seen.add(ident);facts.append(fact)
- facts=[fact for fact in (_current_preparation(store,fact) for fact in facts) if fact is not None]
+ current=[]
+ for fact in facts:
+  if fact.get('preparation_id'):
+   now=revisable_preparation(store,fact['preparation_id'])
+   if now is None:continue
+   fact={**fact,**now}
+  current.append(fact)
+ facts=current
  return prompt('revisable_records')+'\n'+json.dumps(facts[-12:],ensure_ascii=False) if facts else ''
 
 def record_effect(action,detail,status):

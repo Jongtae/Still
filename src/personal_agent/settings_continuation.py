@@ -411,7 +411,7 @@ class SettingsContinuation:
                     and not (carry and keyed_change(action,detail,status,observed_api))
                     # #1170: a re-delegation of this same Work revises Still's own record in place
                     # (``revisable_record_note`` names it in the brief); every other purpose still stops.
-                    and not (purpose=='redelegate' and revisable_record(action,status))):add('effect')
+                    and not (purpose=='redelegate' and revisable_record(action,status,detail,service.store))):add('effect')
         return tuple(sorted(reasons,key=CONTINUE_REASONS.index))
 
     def may_continue(self, work_id, purpose, **kwargs):

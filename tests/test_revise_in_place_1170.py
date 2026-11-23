@@ -22,9 +22,25 @@ PREPARED = {'evidence': {'preparation_id': 'prep-1170a', 'kind': 'prepare', 'sta
 LINE = {'evidence': {'line_id': 'line-1170a', 'version': 2, 'state': 'active'}}
 
 
-class ReviseInPlace(Store):
+class Records(Store):
+    def prepared(self, goal, accepted_by=None, state=None):
+        import time
+        from personal_agent import preparations as prep
+        row = self.service.preparations.create(kind='prepare', goal=goal, due_at=time.time() + 3600, timezone='UTC',
+                                               recurrence=None, channel='web', created_from=self.work,
+                                               state=state or prep.STATE_SCHEDULED,
+                                               accepted_by=accepted_by if accepted_by is not None else prep.ACCEPTED_OWNER_WORK)
+        return row['id']
+
+    def scheduled(self, goal='kept goal', call_id='p1', **kwargs):
+        ident = self.prepared(goal, **kwargs)
+        self.call('schedule_preparation', {'evidence': {**PREPARED['evidence'], 'preparation_id': ident}}, 'succeeded', call_id)
+        return ident
+
+
+class ReviseInPlace(Records):
     def records(self):
-        self.call('schedule_preparation', PREPARED, 'succeeded', 'p1')
+        self.scheduled()
         self.call('entrusted_line', LINE, 'succeeded', 'l1')
 
     def test_a_redelegation_continues_past_records_it_revises_in_place(self):
@@ -42,14 +58,6 @@ class ReviseInPlace(Store):
         # The approval, receipt and information-use records still read them as changes.
         for action, detail in (('schedule_preparation', PREPARED), ('entrusted_line', LINE)):
             self.assertEqual(record_effect(action, detail, 'succeeded'), EFFECT_CHANGED)
-
-    def prepared(self, goal):
-        import time
-        from personal_agent import preparations as prep
-        row = self.service.preparations.create(kind='prepare', goal=goal, due_at=time.time() + 3600, timezone='UTC',
-                                               recurrence=None, channel='web', created_from=self.work,
-                                               state=prep.STATE_SCHEDULED, accepted_by=prep.ACCEPTED_OWNER_WORK)
-        return row['id']
 
     def test_the_next_brief_names_each_record_by_id_only(self):
         self.assertEqual(revisable_record_note(self.store, self.work), '')
@@ -102,13 +110,32 @@ class ReviseInPlace(Store):
         self.assertNotIn('line_piece', facts[plain])
         self.assertIn('without replaces', note)
 
+    def test_a_record_this_work_may_not_replace_still_stops(self):
+        # Codex review: the scheduler refuses ``replaces`` from a daily-plan run and for a proposal, so such a
+        # record is neither a reason to re-delegate nor offered for revision.
+        from personal_agent import preparations as prep
+        for label, kwargs in (('day plan', {'accepted_by': prep.ACCEPTED_DAY_PLAN}),
+                              ('proposal', {'accepted_by': '', 'state': prep.STATE_PROPOSED})):
+            with self.subTest(label):
+                self.setUp()
+                if label == 'proposal':
+                    ident = self.prepared('offered goal', state=prep.STATE_PROPOSED)
+                    with self.store.db() as db:
+                        db.execute('UPDATE preparations SET accepted_by=NULL WHERE id=?', (ident,))
+                    self.call('schedule_preparation', {'evidence': {**PREPARED['evidence'], 'preparation_id': ident}},
+                              'succeeded', 'p1')
+                else:
+                    self.scheduled(**kwargs)
+                self.assertEqual(self.service.may_continue(self.work, 'redelegate'), (False, 'effect'))
+                self.assertEqual(revisable_record_note(self.store, self.work), '')
 
-class StillStops(Store):
+
+class StillStops(Records):
     """Expected 5: what cannot be repeated safely stops re-delegation, beside a revisable record or not."""
 
     def setUp(self):
         super().setUp()
-        self.call('schedule_preparation', PREPARED, 'succeeded', 'p1')
+        self.scheduled()
 
     def test_an_external_change_still_stops(self):
         self.call('browser_click', {'declared_effect': 'mutate', 'evidence': {'state': 'page'}}, 'succeeded', 'b1')
