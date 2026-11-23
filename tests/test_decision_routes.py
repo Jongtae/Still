@@ -351,7 +351,7 @@ class SubscriptionCliTests(Temp):
             self.assertTrue(facts['w1_reply'])
             self.assertEqual(facts['w1_owner_message_at'], 'just now')
             self.assertEqual(facts['w1_reply_at'], 'just now')
-        self.assertEqual(SUITE_VERSION, 'decision-qualification/5')
+        self.assertEqual(SUITE_VERSION, 'decision-qualification/6')
 
     def test_recorded_codex_0164_routing_failure_is_unavailable(self):
         # Captured from the real CLI with synthetic qualification input and

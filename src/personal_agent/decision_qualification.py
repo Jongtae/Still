@@ -29,7 +29,7 @@ from .conversation_handoff import (FOLLOWUP_CORRECTION, FOLLOWUP_REFERENCE, FOLL
                                    ConversationJudgments)
 from .decision import NO_CANDIDATE, DecisionContext, DecisionPolicy
 
-SUITE_VERSION = 'decision-qualification/5'
+SUITE_VERSION = 'decision-qualification/6'
 #: Every case must pass.  The suite is small and each case guards a
 #: truth/continuity property, so a partial pass does not qualify.
 PASS_THRESHOLD = 1.0
@@ -102,6 +102,9 @@ CASES = (
     # Supply synthetic conversation facts, never an expected relation label.
     # /5 (#1087): the judgment chooses the Work among the chat's recent Works
     # and the relation together; one case links past an interleaved topic.
+    # /6 (#1152): the follow-up question says that asking for something to
+    # be done with a Work's result is a reference; Codex read the
+    # "something to save" clause as covering "save that" and abstained.
     ('retry-after-failed-work', _followup('다시 해봐', [_work('research', 'failed',
         '두 후보의 장단점을 비교해줘.', '자료를 가져오다가 오류가 나서 비교를 마치지 못했어요.')], FOLLOWUP_RETRY)),
     ('correction-replaces-parameters', _followup('아니 4시로', [_work('calendar-create', 'succeeded',
