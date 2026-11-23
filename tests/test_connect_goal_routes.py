@@ -38,6 +38,11 @@ CASES = (
 )
 
 
+
+def system_text(content):
+    """The system text of a Responses input item; #1164 sends Still's static prefix as text blocks."""
+    return content if isinstance(content, str) else ''.join(block['text'] for block in content)
+
 class GoalRouteContract(unittest.TestCase):
     def test_the_owner_surface_is_a_fact_in_both_routes(self):
         # #1380 live: from Telegram the worker sent the owner to check a key on a computer.
@@ -213,8 +218,8 @@ class GoalRouteWorkerHandoff(Harness):
         self.assertIn(request, self.engine.turns[0]['prompt'])
         self.assertNotIn(notes, sent['instructions'])
         body = self.transport.bodies[0]
-        self.assertIn(notes, body['input'][0]['content'])
-        self.assertIn(agent_runtime.GOAL_FIRST_GUIDANCE, body['input'][0]['content'])
+        self.assertIn(notes, system_text(body['input'][0]['content']))
+        self.assertIn(agent_runtime.GOAL_FIRST_GUIDANCE, system_text(body['input'][0]['content']))
         self.assertEqual(body['input'][-1], {'role': 'user', 'content': request})
 
     def test_bare_limitation_is_replanned_and_unbound_proposal_stays_incomplete(self):

@@ -75,5 +75,43 @@ class OpenAICacheKeyTests(unittest.TestCase):
         self.assertNotIn('prompt_cache_key', transport.bodies[0])
 
 
+
+class OpenAIStaticBreakpointTests(unittest.TestCase):
+    """#1164: GPT-5.6+ reuses a prefix only at a cache boundary, so the static prefix gets one."""
+
+    def body(self, messages):
+        transport = Transport(OPENAI_REPLY)
+        ModelAdapter(transport).tool_turn(OPENAI, 'sk', messages, TOOLS)
+        return transport.bodies[0]
+
+    def test_the_static_prefix_ends_at_a_12h_breakpoint_and_the_text_is_unchanged(self):
+        first = self.body(work('Owner context of one Work.'))['input'][0]
+        self.assertEqual(first['role'], 'system')
+        static, rest = first['content']
+        self.assertEqual(static, {'type': 'input_text', 'text': POLICY,
+                                  'prompt_cache_breakpoint': {'mode': 'explicit', 'ttl': '12h'}})
+        self.assertEqual(rest, {'type': 'input_text', 'text': '\nOwner context of one Work.'})
+
+    def test_two_works_send_the_same_static_block(self):
+        a = self.body(work('First context.'))['input'][0]['content'][0]
+        b = self.body(work('Second context.', question='Other.'))['input'][0]['content'][0]
+        self.assertEqual(a, b)
+
+    def test_a_system_message_without_the_hint_stays_a_plain_string(self):
+        body = self.body([{'role': 'system', 'content': 'plain'}, {'role': 'user', 'content': 'hi'}])
+        self.assertEqual(body['input'][0], {'role': 'system', 'content': 'plain'})
+        self.assertNotIn('prompt_cache_breakpoint', json.dumps(body))
+
+    def test_a_prefix_that_is_the_whole_message_gets_one_block(self):
+        body = self.body([{'role': 'system', 'content': POLICY, STATIC_PREFIX_KEY: len(POLICY)},
+                          {'role': 'user', 'content': 'hi'}])
+        self.assertEqual(len(body['input'][0]['content']), 1)
+
+    def test_anthropic_never_receives_an_openai_breakpoint(self):
+        transport = Transport(ANTHROPIC_REPLY)
+        ModelAdapter(transport).tool_turn(ANTHROPIC, 'ak', work('ctx'), TOOLS)
+        self.assertNotIn('prompt_cache_breakpoint', json.dumps(transport.bodies[0]))
+
+
 if __name__ == '__main__':
     unittest.main()

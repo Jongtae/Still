@@ -104,6 +104,9 @@ STATIC_PREFIX_KEY = 'static_prefix_chars'
 #: 5-minute ones, which this order keeps.  No keep-alive requests are sent.
 ANTHROPIC_STATIC_CACHE = {'type': 'ephemeral', 'ttl': '1h'}
 ANTHROPIC_TAIL_CACHE = {'type': 'ephemeral'}
+#: #1164: OpenAI (GPT-5.6+) reuses a prefix only where a cache boundary ends, so Still's
+#: static prefix gets an explicit breakpoint; 12h like the long Anthropic entry above.
+OPENAI_STATIC_BREAKPOINT = {'mode': 'explicit', 'ttl': '12h'}
 
 
 def _numeric(value):
@@ -136,6 +139,29 @@ def api_usage(provider, data):
             if isinstance(details, dict) and _numeric(details.get(key)):out[key] = details[key]
             elif _numeric(usage.get(key)) and key not in out:out[key] = usage[key]
     return out or None
+
+
+def _openai_static_breakpoints(items, hints):
+    """#1164: split each hinted leading system item at its static prefix.
+
+    The text is unchanged (the blocks concatenate to the old string); only the
+    static block carries ``prompt_cache_breakpoint`` so later Works, whose
+    per-Work context differs, reuse the cached tools and fixed instructions.
+    """
+    for index, static in enumerate(hints):
+        if index >= len(items):
+            break
+        item = items[index]
+        content = item.get('content')
+        if (item.get('role') != 'system' or not isinstance(content, str) or not isinstance(static, int)
+                or not 0 < static <= len(content)):
+            continue
+        blocks = [{'type': 'input_text', 'text': content[:static],
+                   'prompt_cache_breakpoint': dict(OPENAI_STATIC_BREAKPOINT)}]
+        if content[static:]:
+            blocks.append({'type': 'input_text', 'text': content[static:]})
+        items[index] = {**item, 'content': blocks}
+    return items
 
 
 def openai_cache_key(model, tools, leading, hints):
@@ -382,6 +408,7 @@ class ModelAdapter:
                 cache_key=openai_cache_key(cfg['model'],body['tools'],
                                            [m for m in messages[:len(hints)] if m.get('role')=='system'],hints)
                 if cache_key:body['prompt_cache_key']=cache_key
+                _openai_static_breakpoints(body['input'],hints)
                 data=self._send(cfg['endpoint']+'/responses',body,{'Authorization':'Bearer '+key} if key else {},timeout)
                 message=_openai_message(data)
                 if not message['content'] and not message.get('tool_calls'):raise TypeError()
