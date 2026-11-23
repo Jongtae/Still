@@ -526,6 +526,61 @@ class ListAndStopTests(_LineCase):
                 self.assertEqual(result['code'], 'line_stopped')
                 self.assertNotIn(el.REF_PREFIX + brief['line_id'], text_of(body))
 
+    def read_then_schedule(self, line_id, **extra):
+        seen = []
+        def read(body):
+            return {'content': None, 'tool_calls': [call('r', 'entrusted_line', action='read', line=line_id)]}
+        def schedule(body):
+            return {'content': None, 'tool_calls': [call('s', 'schedule_preparation', offer='다음 점검 결과를 정리해 드려요.', kind='prepare', goal='내일 이어서',
+                                                          due=self.due_iso(600), **extra)]}
+        def retry(body):
+            seen.append(tool_results(body, 'schedule_preparation')[-1])
+            return {'content': None, 'tool_calls': [call('s2', 'schedule_preparation', offer='다음 점검 결과를 정리해 드려요.', kind='prepare', goal='내일 이어서',
+                                                          due=self.due_iso(900), line=extra.get('retry_line') or line_id)]}
+        def done(body):
+            seen.append(tool_results(body, 'schedule_preparation')[-1])
+            return {'content': '알겠습니다.'}
+        self.script = [read, schedule, retry, done]
+        self.receive('내일도 이어서 해 줘')
+        return seen
+
+    def test_1169_a_work_that_read_a_line_must_say_whether_a_schedule_continues_it(self):
+        brief, _work = self.open_line()
+        before = len(self.service.preparations_service.line_rows(brief['line_id']))
+        refused, ok = self.read_then_schedule(brief['line_id'])
+        self.assertEqual(refused['code'], 'line_unnamed')
+        self.assertEqual(len(self.service.preparations_service.line_rows(brief['line_id'])), before + 1)
+        self.assertNotIn('code', ok)
+
+    def test_1169_separate_work_names_none_and_joins_no_line(self):
+        brief, _work = self.open_line()
+        before = len(self.service.preparations_service.line_rows(brief['line_id']))
+        seen = []
+        def read(body):
+            return {'content': None, 'tool_calls': [call('r', 'entrusted_line', action='read', line=brief['line_id'])]}
+        def schedule(body):
+            return {'content': None, 'tool_calls': [call('s', 'schedule_preparation', offer='별개의 점검이에요.', kind='prepare', goal='별개',
+                                                          due=self.due_iso(600), line='none')]}
+        def done(body):
+            seen.append(tool_results(body, 'schedule_preparation')[-1])
+            return {'content': '알겠습니다.'}
+        self.script = [read, schedule, done]
+        self.receive('따로 하나 더 예약해 줘')
+        self.assertNotIn('code', seen[-1])
+        self.assertEqual(len(self.service.preparations_service.line_rows(brief['line_id'])), before)
+
+    def test_1169_a_work_that_read_no_line_schedules_without_naming_one(self):
+        seen = []
+        def schedule(body):
+            return {'content': None, 'tool_calls': [call('s', 'schedule_preparation', offer='한 번만 점검해요.', kind='prepare', goal='한 번',
+                                                          due=self.due_iso(600))]}
+        def done(body):
+            seen.append(tool_results(body, 'schedule_preparation')[-1])
+            return {'content': '알겠습니다.'}
+        self.script = [schedule, done]
+        self.receive('한 번만 점검해 줘')
+        self.assertNotIn('code', seen[-1])
+
     def schedule_again(self, line_id):
         seen = []
         def schedule(body):
