@@ -1292,11 +1292,12 @@ class AgentService:
           carries the Work's own progress forward, so a change Still's own replay key already
           guards is accounted, not repeated (``api_effect_replayed``, the connector input-digest
           claim): an API dispatch observed for this Work, a connector change its permission claimed.
-          For ``redelegate``, a successful Still record write is accounted by reading it back for this Work (#1167).
         - ``limit`` (``resume`` only, #627): the request already queued its one continuation count
           (``MAX_CONTINUATIONS``) - every owner-act continuation counts, a renewed allowance included.
 
         ``none`` and ``draft`` calls never block, nor does an owner-local write (``OWNER_LOCAL_ACTIONS``).
+        #1170: nor, for ``redelegate`` only, a record of Still's own that the next attempt revises in place
+        (``REVISABLE_RECORD_ACTIONS``: a scheduled preparation, an entrusted line).
         Unknown and observed external changes are read over the whole Work (and its request chain);
         ``since`` (an event id) limits the calls and owner waits to one attempt.  The reasons come in
         ``CONTINUE_REASONS`` order and read as ``CONTINUE_TEXT``; an empty tuple means the Work may continue.
@@ -6148,22 +6149,6 @@ class AgentService:
                 effect_ledger = ledger
                 effect = False
                 orchestration.continues = receipt_note
-
-        records=[]
-        note=''
-        if not effect and not owner_needed:
-            from .agent_runtime import still_record_note, still_records
-            records=still_records(self.store,job_id)
-            note=still_record_note(self.store,job_id,records=records)
-        prior_note=getattr(orchestration,'still_record_progress','')
-        if note or prior_note:
-            continues=getattr(orchestration,'continues','')
-            if prior_note and continues.endswith(prior_note):
-                continues=continues.removesuffix(prior_note).removesuffix('\n')
-            orchestration.still_record_progress=note
-            orchestration.continues='\n'.join(part for part in (continues,note) if part)
-        if note:
-            observations=note+'\n'+observations[:max(0,16000-len(note)-1)]
 
         if failed is not None:
             evaluation=WORKER_FAILED

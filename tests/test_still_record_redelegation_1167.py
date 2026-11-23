@@ -11,7 +11,8 @@ from types import SimpleNamespace
 from unittest.mock import Mock, patch
 
 from personal_agent import preparations as prep
-from personal_agent.agent_runtime import ToolError
+from personal_agent.agent_runtime import ToolError, revisable_record_note
+from personal_agent.decision import OUTCOME_DECIDED, BinaryDecision, FixtureDecisionEngine, fixture_confidence
 from personal_agent.api_requests import ApiRequests, save_slot
 
 from personal_agent.providers import ModelAdapter
@@ -62,13 +63,11 @@ class Reconciled(StillRecords):
         self.assertEqual(self.service.may_continue(work, 'redelegate'), (True, None))
 
     def test_the_replacement_brief_names_the_existing_preparation(self):
+        # #1170's brief note (the worker's host facts) names it; #1167 adds the fence below.
         work, row = self.scheduled_work(title='오후 물 알림')
         orchestration = self.step(work, following=object())
-        kwargs = orchestration.next.call_args.kwargs
-        self.assertIs(kwargs['effect'], False)
-        self.assertIn(row['id'], orchestration.continues)
-        self.assertIn(row.get('title_text') or row['goal_text'], orchestration.continues)
-        self.assertIn(prep.iso(row['due_at'], row['timezone']), orchestration.continues)
+        self.assertIs(orchestration.next.call_args.kwargs['effect'], False)
+        self.assertIn(row['id'], revisable_record_note(self.store, work))
 
     def test_the_re_delegated_attempt_revises_and_never_duplicates(self):
         work, row = self.scheduled_work()
@@ -117,16 +116,16 @@ class Reconciled(StillRecords):
                                  [] if settle == 'deleted' else [row['id']], 'nothing new was scheduled')
 
     def test_a_preparation_that_settles_before_the_marker_is_still_fenced(self):
-        # Codex P2: it is delivered between the continuation rule's read-back and the note's read.
+        # Codex P2: it is delivered between the continuation rule's read-back and the fence's read.
         import personal_agent.agent_runtime as runtime
         work, row = self.scheduled_work()
-        read = runtime.still_records
+        read = runtime.still_record_fence
 
         def settles_first(store, work_id):
             with store.db() as db:
                 db.execute('UPDATE preparations SET state=? WHERE id=?', (prep.STATE_DELIVERED, row['id']))
             return read(store, work_id)
-        with patch.object(runtime, 'still_records', settles_first):
+        with patch.object(runtime, 'still_record_fence', settles_first):
             orchestration = self.step(work, following=object())
         self.assertIs(orchestration.next.call_args.kwargs['effect'], False)
         schedule = self.service.preparation_scheduler(self.store.job(work), '')
@@ -150,6 +149,20 @@ class Reconciled(StillRecords):
                 self.assertEqual(refused.exception.code, 'line_settled')
         self.assertEqual([entry['state'] for entry in self.service.lines.lines()], ['stopped'])
 
+    def test_new_work_none_of_them_covers_is_still_set_up(self):
+        # #1170's brief invites new work only where no carried record covers it: the same-goal judgment says so.
+        work, row = self.scheduled_work()
+        self.step(work, following=object())
+
+        def judge(context, proposition):
+            if context.purpose == 'same-preparation-goal':
+                return BinaryDecision(OUTCOME_DECIDED, False, fixture_confidence())
+            return None
+        self.service.use_decision_engine(FixtureDecisionEngine(judge=judge))
+        schedule = self.service.preparation_scheduler(self.store.job(work), '')
+        schedule({**self.schedule_args(row), 'goal': '스트레칭하라고 알리기', 'title': '스트레칭'})
+        self.assertEqual(len(self.active(work)), 2)
+
     def test_without_a_re_delegation_two_preparations_in_one_work_stay_allowed(self):
         work, row = self.scheduled_work()
         schedule = self.service.preparation_scheduler(self.store.job(work), '')
@@ -171,8 +184,8 @@ class Reconciled(StillRecords):
         work = self.receive('가격 변동 확인을 맡아 줘')
         self.assertNotIn('effect', self.service.continuation_reasons(work, 'redelegate'))
         [line] = self.service.lines.lines()
-        orchestration = self.step(work, following=object())
-        self.assertIn(line['line_id'], orchestration.continues)
+        self.step(work, following=object())
+        self.assertIn(line['line_id'], revisable_record_note(self.store, work))
         handle = self.service.line_handler(self.store.job(work))
         with self.assertRaises(ToolError) as refused:
             handle({'action': 'open', 'task': '가격 변동 확인', 'report_promise': '바뀌면 알려 줘'})
@@ -186,8 +199,11 @@ class Reconciled(StillRecords):
         work = self.receive('가격 변동 확인을 맡아 줘')
         [account] = [row for row in self.service.preparations.rows()
                      if row['created_from'] == work and row['origin'] == prep.ORIGIN_LINE_ACCOUNT]
-        orchestration = self.step(work, following=object())
-        self.assertNotIn(account['id'], orchestration.continues)
+        self.step(work, following=object())
+        self.assertNotIn(account['id'], revisable_record_note(self.store, work))
+        from personal_agent.agent_runtime import still_record_claims
+        with self.store.db() as db:
+            self.assertNotIn(account['id'], still_record_claims(db, work))
         schedule = self.service.preparation_scheduler(self.store.job(work), '')
         scheduled = schedule({'kind': 'reminder', 'goal': '가격 확인하라고 알리기', 'due': self.due_iso(3600), 'title': '가격 확인'})
         self.assertTrue(scheduled['scheduled'])
@@ -213,17 +229,23 @@ class OutsideEffectsUnchanged(StillRecords):
         self.assertEqual(self.service.preparations.get(row['id'])['state'], prep.STATE_CANCELLED)
         self.assertNotIn('effect', self.service.continuation_reasons(work, 'redelegate'))
 
-    def test_a_preparation_that_already_ran_keeps_the_effect_stop(self):
-        # Codex P2: a short reminder that fired while the attempt ran is no longer revisable, so it is not reconciled.
+    def test_a_preparation_that_already_ran_is_never_set_up_again(self):
+        # Codex P2: a short reminder fired while the attempt ran.  Running, #1170 still revises it in place,
+        # so #1167's fence holds it as settled; delivered, it is no record to revise and the Work stops.
         work, row = self.scheduled_work()
         self.now = row['due_at'] + 1
         self.tick()
         self.assertEqual(self.service.preparations.get(row['id'])['state'], prep.STATE_RUNNING)
-        self.assertIn('effect', self.service.continuation_reasons(work, 'redelegate'))
+        self.step(work, following=object())
+        schedule = self.service.preparation_scheduler(self.store.job(work), '')
+        with self.assertRaises(ToolError) as refused:
+            schedule(self.schedule_args(row))
+        self.assertEqual(refused.exception.code, 'preparation_settled')
+        delivered, delivered_row = self.scheduled_work(title='delivered')
         with self.store.db() as db:  # the terminal state its delivery leaves
-            db.execute('UPDATE preparations SET state=? WHERE id=?', (prep.STATE_DELIVERED, row['id']))
-        self.assertIn('effect', self.service.continuation_reasons(work, 'redelegate'))
-        self.assertEqual(self.step(work, following=object()).next.call_args.kwargs['effect'], 'changed')
+            db.execute('UPDATE preparations SET state=? WHERE id=?', (prep.STATE_DELIVERED, delivered_row['id']))
+        self.assertIn('effect', self.service.continuation_reasons(delivered, 'redelegate'))
+        self.assertEqual(self.step(delivered, following=object()).next.call_args.kwargs['effect'], 'changed')
 
     """Negative: a record of Still's own never carries an outside change past the rule."""
 
@@ -251,10 +273,9 @@ class OutsideEffectsUnchanged(StillRecords):
         self.assertIn('effect', self.service.continuation_reasons(work, 'redelegate'))
         self.assertEqual(self.step(work, following=object()).next.call_args.kwargs['effect'], 'changed')
 
-    def test_a_record_still_cannot_read_back_stops(self):
+    def test_a_record_still_no_longer_holds_stops(self):
         work, row = self.scheduled_work()
-        with self.store.db() as db:
-            db.execute('UPDATE preparations SET created_from=? WHERE id=?', ('another-work', row['id']))
+        self.service.preparations.delete(row['id'])
         self.assertIn('effect', self.service.continuation_reasons(work, 'redelegate'))
 
     def test_other_continuations_keep_todays_rule(self):

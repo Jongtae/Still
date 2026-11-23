@@ -296,11 +296,20 @@ class PreparationsService:
             channel=service.preparation_channel(self.owner_last_work() if planning else job,kind,args.get('delivery'))
             if resume_offer:
                 return self.offer_line_resume(job,args.get('line'),fields,channel)
-            # #1167: a re-delegated attempt revises the preparation it was told exists (re-checked at the write).
+            # #1167: a re-delegated attempt revises what this Work set up, never sets it up again (re-checked at
+            # the write).  New work none of them covers (#1170's brief) is the Judgment AI's same-goal call,
+            # asked only here; unavailable keeps the fence.  A deleted row's goal is gone, so it stays fenced.
             # A line piece is revised in place and a resume offer is once per day, so neither is held here.
             replaces=args.get('replaces')
             with service.store.db() as db:
-                prep.require_preparation_replacement(db,job['id'],replaces)
+                carried=prep.carried_preparations(db,job['id'])
+            distinct=frozenset()
+            if (carried and replaces not in carried and all(row['goal'] is not None for row in carried.values())
+                    and service.decision_judge.same_preparation_goal(goal,[row['goal'] for row in carried.values()],
+                                                                     work_id=job['id']).outcome==JUDGMENT_NO):
+                distinct=frozenset(carried)
+            with service.store.db() as db:
+                prep.require_preparation_replacement(db,job['id'],replaces,distinct)
             summary=prep.proposal_summary({'kind':kind,'goal_text':goal,'due_at':due_at,'timezone':timezone,
                                            'recurrence':prep.RECURRENCE_WINDOW if window else recurrence,
                                            'every_seconds':window and window[0],'until_at':window and window[1],
@@ -366,7 +375,7 @@ class PreparationsService:
                                                  window=window,delivery_mode=delivery_mode,title=title,offer=offer,
                                                  report_every_minutes=fields['report_every_minutes'],line_id=line_id,
                                                  requested_until=fields['requested_until'],check=spec,db=db,replaces=replaces,
-                                                 from_schedule_tool=True)
+                                                 from_schedule_tool=True,distinct=distinct)
                     # #574: another Work's identical proposal is this one; the owner's own Work accepts it.
                     already=bool(row.get('already_proposed'))
                     if already and accepted:

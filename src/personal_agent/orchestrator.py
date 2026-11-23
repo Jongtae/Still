@@ -912,8 +912,7 @@ class Attempt:
     __slots__ = ('number', 'worker', 'model', 'notes', 'lens', 'sections', 'reason', 'planned',
                  'fallback', 'digest', 'signature', 'account_change', 'owner_situation', 'technical_work',
                  'lifted_from', 'ask_location', 'location_button', 'effort', 'unlisted_model', 'steer', 'context_digest',
-                 'preview', 'shown_preview', 'corrections', 'told', 'reply', 'recall_query', 'plan_reading',
-                 'still_record_progress')
+                 'preview', 'shown_preview', 'corrections', 'told', 'reply', 'recall_query', 'plan_reading')
 
     def __init__(self, number, worker, *, model='', notes='', reason='', planned=False, fallback='', effort='', lens='', recall_query=''):
         self.number, self.worker, self.model = number, worker, model
@@ -950,7 +949,6 @@ class Attempt:
         self.corrections = ()
         #: #466: the interim messages an earlier attempt of this Work already sent the owner.
         self.told = ()
-        self.still_record_progress = ''
 
     def brief(self, adjusted=False):
         """The notes section text a worker receives, or None (#820: supplementary only).
@@ -961,8 +959,6 @@ class Attempt:
         if not self.planned:
             return None
         lines = [self.notes] if self.notes else []
-        if self.still_record_progress:
-            lines.insert(0, self.still_record_progress)
         if self.lens:
             lines.append('Read and answer this message as this professional would (a way of reading and reporting, '
                          'never a permission and never extra work): ' + self.lens)
@@ -1044,7 +1040,6 @@ class Orchestration:
         #: follow-up judgment linked them ('' otherwise).  Read first for what the message refers to.
         self.continues = str(continues or '')
         self.read_progress = ''
-        self.still_record_progress = ''
         self.read_snapshot = None
         #: #1517: what the message carried besides its words ('1 photo'), for the outcome judgment.
         self.attachments = str(attachments or '')
@@ -1201,7 +1196,6 @@ class Orchestration:
         return digest({'request': self.request, 'conversation': self.conversation,
                        'sections': self.sections, 'steers': self.steers,
                        **({'read_progress': self.read_progress} if self.read_progress else {}),
-                       **({'still_records': self.still_record_progress} if self.still_record_progress else {}),
                        **({'corrections': list(self.corrections)} if getattr(self, 'corrections', ()) else {})})
 
     def _owner_context(self):
@@ -1304,8 +1298,7 @@ class Orchestration:
         return DecisionContext(PURPOSE, facts, work_id=self.work_id, qualified_strongest=True,
                                context_messages=self._turns_in(facts['recent_conversation']),
                                max_chars=MAX_CONTEXT_CHARS + len(request) + len(workers) + len(tools_text)
-                               + len(profile) + len(current) + len(connections) + CONVERSATION_CHARS
-                               + len(self.still_record_progress))
+                               + len(profile) + len(current) + len(connections) + CONVERSATION_CHARS)
 
     def plan_digest(self, candidates):
         """#1261: what a plan call over ``candidates`` would be asked, except what moves by itself
@@ -1516,7 +1509,6 @@ class Orchestration:
         attempt.shown_preview = getattr(self, 'shown_preview', '')
         attempt.corrections = tuple(getattr(self, 'corrections', ()))
         attempt.told = tuple(getattr(self, 'told', ()))
-        attempt.still_record_progress = self.still_record_progress
         attempt.signature = self.signature(worker, model, effort)
         attempt.context_digest = self._revision_context_digest()
         if (attempt.signature, attempt.digest, attempt.context_digest) in self.failed:
@@ -1808,12 +1800,9 @@ class Orchestration:
         return REACHED if verdict == 'yes' else NOT_REACHED if verdict == 'no' else UNJUDGED
 
     def _continues_text(self):
-        """The bounded earlier exchange (#980) followed by this Work's current record facts (#1167)."""
-        records = self.still_record_progress
-        continues = self.continues.removesuffix(records).rstrip('\n') if records else self.continues
-        parts = '\n'.join(part for part in (continues, self.read_progress) if part)
-        return '\n'.join(part for part in (self._redact(parts)[-CONTINUES_CHARS:], self._redact(records) if records else '')
-                         if part) or 'none'
+        """The linked earlier exchange (#980), redacted and bounded from its end, or 'none'."""
+        parts = '\n'.join(part for part in (self.continues, self.read_progress) if part)
+        return self._redact(parts)[-CONTINUES_CHARS:] or 'none'
 
     def may_judge(self):
         """Whether a judgment that can only end the Work may still be asked: not stopped, deadline not passed.

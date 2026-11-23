@@ -17,7 +17,7 @@ from .messages import msg
 from .telegram_locale import owner_language
 from .work_execution import PROCEED, REDELEGATED, WorkRun
 from .agent_runtime import Capabilities, ToolError, cut_to_fit, loop_definitions, run_agent, STEER_EVENT, steer_note, evidence_summary, turn_context, render_turn_prompt, attachment_facts, context_sections, ENGINE_UNMEDIATED, base_label, LedgerSuperseded, WorkLedger, NOTES_SUMMARY_COMMANDS
-from .agent_runtime import effect_continuation_scope, recorded_effects_response, MEMORY_OWNER, SAVED_RESULTS_ROOT
+from .agent_runtime import effect_continuation_scope, recorded_effects_response, revisable_record_note, MEMORY_OWNER, SAVED_RESULTS_ROOT
 from .providers import NOT_REPORTED, ProviderError
 from .cloud_engines import BUDGET_EXCEEDED as CLOUD_BUDGET_EXCEEDED, NOT_CONFIGURED as CLOUD_NOT_CONFIGURED, CloudLaunchError
 from .conversation_projection import BLOCKER_CLOUD_PROFILE, BLOCKER_MODEL_UNVERIFIED, BLOCKER_NO_AI_ROUTE, TERMINAL_FAILED_HEADER, BlockedTurn, context_message, answer_note, owner_cause, report_statement, verified_portion
@@ -1027,7 +1027,10 @@ class WorkExecutor:
             # Every replacement worker sees the latest committed coverage as
             # host context. The original owner request stays in the conversation.
             if progress := '\n\n'.join(filter(None,(service.read_checkpoint_note(job, include_fresh=True),
-                                                       service.effect_progress_note(job)))):
+                                                       service.effect_progress_note(job),
+                                                       # #1170: what an earlier attempt set up, to revise in place.
+                                                       revisable_record_note(service.store,job['id'])
+                                                       if service.owner_typed_work(job) else ''))):
                 run.brief='\n\n'.join(part for part in (progress,run.brief) if part)
             run.attempt_start=service.last_event_id(job['id'])
             # #308 S1: a steer claimed from now on reaches the attempt whose reply is delivered.  A
