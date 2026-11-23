@@ -78,6 +78,30 @@ class ReviseInPlace(Store):
         self.service.preparations.cancel(current)
         self.assertEqual(revisable_record_note(self.store, self.work), '')
 
+    def test_a_record_under_another_tool_id_is_named(self):
+        # Codex review: a manifest may expose the action under another tool id; the recorded host action decides.
+        kept = self.prepared('aliased goal')
+        base = {'scope': 's', 'call_id': 'alias', 'host_action': 'schedule_preparation'}
+        self.event('plan_next_check', 'running', base)
+        self.event('plan_next_check', 'succeeded', {**base, 'evidence': {**PREPARED['evidence'], 'preparation_id': kept}})
+        facts = json.loads(revisable_record_note(self.store, self.work).rsplit('\n', 1)[1])
+        self.assertEqual([f.get('preparation_id') for f in facts], [kept])
+
+    def test_a_line_piece_is_marked_to_be_scheduled_again_not_replaced(self):
+        # Codex review: schedule_piece refuses replaces; a piece is revised by scheduling it again.
+        parent, piece = self.prepared('parent run'), self.prepared('next piece')
+        # The row as schedule_piece leaves it: one child of the run that scheduled it.
+        with self.store.db() as db:
+            db.execute('UPDATE preparations SET piece_of=? WHERE id=?', (parent, piece))
+        plain = self.prepared('plain goal')
+        for ident, call_id in ((piece, 'p1'), (plain, 'p2')):
+            self.call('schedule_preparation', {'evidence': {**PREPARED['evidence'], 'preparation_id': ident}}, 'succeeded', call_id)
+        note = revisable_record_note(self.store, self.work)
+        facts = {f['preparation_id']: f for f in json.loads(note.rsplit('\n', 1)[1])}
+        self.assertTrue(facts[piece].get('line_piece'))
+        self.assertNotIn('line_piece', facts[plain])
+        self.assertIn('without replaces', note)
+
 
 class StillStops(Store):
     """Expected 5: what cannot be repeated safely stops re-delegation, beside a revisable record or not."""

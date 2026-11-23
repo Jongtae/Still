@@ -3172,10 +3172,13 @@ def _current_preparation(store,fact):
  from .preparations import ACTIVE_STATES
  try:
   with store.db() as db:
-   row=db.execute('SELECT state FROM preparations WHERE id=?',(fact['preparation_id'],)).fetchone()
+   row=db.execute('SELECT state,piece_of FROM preparations WHERE id=?',(fact['preparation_id'],)).fetchone()
  except __import__("sqlite3").OperationalError:
   return fact
- return {**fact,'state':row['state']} if row and row['state'] in ACTIVE_STATES else None
+ if not row or row['state'] not in ACTIVE_STATES:return None
+ # A line's next piece is revised by scheduling it again (one child per run, ``piece_of``), never with
+ # ``replaces``, which ``schedule_piece`` refuses (#1170 review).
+ return {**fact,'state':row['state'],**({'line_piece':True} if row['piece_of'] else {})}
 
 def revisable_record_note(store,work_id):
  """The records this Work's attempts set up that a later attempt revises in place, as host facts, or '' (#1170).
@@ -3184,8 +3187,9 @@ def revisable_record_note(store,work_id):
  their goals or rules.
  """
  with store.db() as db:
-  rows=db.execute('SELECT tool,status,detail FROM tool_events WHERE job_id=? AND tool IN (%s) ORDER BY id'
-                  %','.join('?'*len(REVISABLE_RECORD_ACTIONS)),(work_id,*sorted(REVISABLE_RECORD_ACTIONS))).fetchall()
+  # Every call of the Work: a manifest may expose either action under another tool id, and only
+  # ``call_effects`` resolves the recorded ``host_action`` (#1170 review).
+  rows=db.execute('SELECT tool,status,detail FROM tool_events WHERE job_id=? ORDER BY id',(work_id,)).fetchall()
  calls=[]
  for row in rows:
   try:detail=json.loads(row['detail'] or '{}')
