@@ -91,7 +91,7 @@ class BoundaryShape(SurfaceCase):
         self.assertEqual(self.service.surfaces, (surface, self.service.mattermost_surface, self.service.slack_surface,
                                                  self.service.terminal_surface, self.service.imessage_surface))
         self.assertIsNone(self.service.imessage_surface.pairing())
-        self.assertEqual(self.service.imessage_surface.capabilities, SurfaceCapabilities())
+        self.assertEqual(self.service.imessage_surface.capabilities, SurfaceCapabilities(wait_status=True))
         self.assertIsNone(self.service.mattermost_surface.pairing())
         self.assertIsNone(self.service.slack_surface.pairing())
         self.assertIsNone(self.service.terminal_surface.pairing())

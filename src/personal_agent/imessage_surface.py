@@ -12,12 +12,18 @@ import hmac
 import logging
 import os
 import queue
+import re
 import secrets
 import subprocess
 import sys
 import threading
 import time
 from pathlib import Path
+from textwrap import indent
+from types import SimpleNamespace
+
+from markdown_it import MarkdownIt
+from markdown_it.tree import SyntaxTreeNode
 
 from . import imessage_sidecar
 from .conversation_surface import SurfaceCapabilities
@@ -25,6 +31,7 @@ from .direct_message_surface import (DirectMessageSurface, heartbeat_outbound_pr
                                      steer_if_owner_typed)
 from .messages import catalog, msg
 from .providers import ProviderError
+from .telegram_presence import draft_frame
 
 LOG = logging.getLogger('personal_agent.imessage')
 INFORMATION_ROUTE = "iMessage via this Mac's Messages app (Apple)"
@@ -45,6 +52,119 @@ SHUTDOWN_SECONDS = 30
 PAIRING_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'
 ERROR_CODES = ('no_disk_access', 'messages_not_signed_in', 'db_unreadable', 'bad_request')
 TAPBACK_NAMES = {'like': '+1', 'dislike': '-1', 'love': 'heart', 'laugh': 'grin'}
+
+_BARE_URL = re.compile(r'[A-Za-z][A-Za-z0-9+.-]*://([^\s<>]+)')
+_URL_TRAILING_PUNCTUATION = '.,;:!?\'"*~…“”‘’。，；：！？'
+_ARITHMETIC_STAR = re.compile(r'(?<=\d)\*(?=\d)')
+_LONG_ORDERED_MARKER = re.compile(
+    r'(?m)(?:^|(?<=\r))([ \t]*(?:(?:[-+*]|[0-9]{1,9}[.)])[ \t]+)*?[0-9]{4,})\.(?=\s|$)')
+
+
+# Supply the inline rule's matcher without adding the optional linkify-it-py dependency.
+class _BareURLMatcher:
+    @staticmethod
+    def match_at_start(text: str) -> SimpleNamespace | None:
+        match = _BARE_URL.match(text)
+        if match is None:
+            return None
+        url = match[0]
+        start, end = match.span(1)
+        excess = {')': url.count(')') - url.count('('), ']': url.count(']') - url.count('[')}
+        while end > start:
+            char = url[end - 1]
+            if char not in _URL_TRAILING_PUNCTUATION:
+                if excess.get(char, 0) <= 0:
+                    break
+                excess[char] -= 1
+            end -= 1
+        return SimpleNamespace(url=url[:end]) if end > start else None
+
+
+# Keep escape and entity tokens distinguishable from ordinary text for the passthrough check.
+_MARKDOWN = MarkdownIt('commonmark', {'linkify': True}).enable(['table', 'strikethrough']).disable('text_join')
+_MARKDOWN.inline.ruler.enable('linkify')
+_MARKDOWN.linkify = _BareURLMatcher()
+_MARKDOWN.normalizeLink = _MARKDOWN.normalizeLinkText = lambda url: url
+# Messages receives the URL as text, so HTML link restrictions would expose it to Markdown parsing.
+_MARKDOWN.validateLink = lambda url: True
+_LISTS = ('bullet_list', 'ordered_list')
+
+
+def plain_text(text: str) -> str:
+    """Render Markdown for Messages, preserving the source when it has no markup."""
+    # Use private-use characters absent from the input so the original characters can be restored.
+    used = set(text)
+    markers = (chr(code) for code in range(0xE000, 0xF900) if chr(code) not in used)
+    star, dot = next(markers, None), next(markers, None)
+    if dot is None:
+        return text
+    # A star between digits is arithmetic, even within a formatted answer.
+    source = _ARITHMETIC_STAR.sub(star, text)
+    # A long dotted number at the start of a line or list item may be a date.
+    source = _LONG_ORDERED_MARKER.sub(lambda match: match[1] + dot, source)
+    env = {}
+    try:
+        tokens = _MARKDOWN.parse(source, env)
+    except Exception:
+        return text
+    if not env.get('references') and all(
+            token.type in ('paragraph_open', 'paragraph_close', 'inline', 'html_block')
+            and all(child.type in ('text', 'text_special', 'softbreak', 'html_inline') or child.markup == 'linkify'
+                    for child in token.children or ())
+            for token in tokens):
+        return text
+    rendered = _plain_blocks(SyntaxTreeNode(tokens).children).translate(str.maketrans({star: '*', dot: '.'}))
+    # The sidecar refuses empty messages, which can result from parsing a reference definition.
+    return rendered if rendered.strip() else text
+
+
+def _plain_blocks(nodes):
+    return '\n\n'.join(filter(None, map(_plain_block, nodes)))
+
+
+def _plain_block(node):
+    kind = node.type
+    if kind in ('paragraph', 'heading'):
+        return _plain_inline(node)
+    if kind in ('fence', 'code_block', 'html_block'):
+        return node.content.removesuffix('\n')
+    if kind in _LISTS:
+        start = node.attrs.get('start', 1)
+        return '\n'.join(_plain_list_item(item, '•' if kind == 'bullet_list' else f'{number}.')
+                         for number, item in enumerate(node.children, start))
+    if kind == 'table':
+        return '\n'.join(' · '.join(map(_plain_inline, row.children))
+                         for section in node.children for row in section.children)
+    return _plain_blocks(node.children)
+
+
+def _plain_list_item(item, marker):
+    body = ''
+    for child in item.children:
+        block = _plain_block(child)
+        if block:
+            separator = '\n' if child.type in _LISTS else '\n\n' if body else ''
+            body += separator + block
+    first, newline, rest = body.partition('\n')
+    return marker + (' ' + first if first else '') + newline + indent(rest, '  ')
+
+
+def _plain_inline(node):
+    if node.type in ('softbreak', 'hardbreak'):
+        return '\n'
+    if node.type == 'text_special':
+        # Escapes and entities carry their original spelling in markup.
+        return node.markup
+    label = ''.join(map(_plain_inline, node.children)) if node.children else node.content
+    if node.type == 'link':
+        url = node.attrGet('href')
+        if node.markup == 'autolink' or label == url:
+            return label
+        return f'{label} ({url})' if label else url
+    if node.type == 'image':
+        url = node.attrGet('src')
+        return f'{label} ({url})' if label else url
+    return label
 
 
 class IMessageError(ProviderError):
@@ -143,7 +263,7 @@ class IMessageSurface(DirectMessageSurface):
     name = 'imessage'
     channel_prefix = 'imessage:'
     information_route = INFORMATION_ROUTE
-    capabilities = SurfaceCapabilities()
+    capabilities = SurfaceCapabilities(wait_status=True)
     poll_seconds = 3   # the shared surface poll's interval, as Mattermost's
     reoffer_unknown_notices = False
     CONFIG_KEY, STATUS_KEY, TURNS_TABLE = CONFIG_KEY, 'imessage_status', TURNS_TABLE
@@ -192,6 +312,23 @@ class IMessageSurface(DirectMessageSurface):
 
     def present(self, action, *args):
         return False, True
+
+    def show_wait_status(self, job, state, text, now):
+        if (text is None or state.wait_status_at is not None
+                or now - job['created'] < self.service.presence_timing.draft_after):
+            return False
+        cfg = self.config()
+        if not self.owns(job) or not self._allowed(cfg, job['created']):
+            return False
+        frame = draft_frame(text, 0)
+        # A refused hand-off must not trigger another attempt on each presence tick under the lock.
+        state.wait_status_at = now
+        try:
+            self._post(cfg, frame)
+        except (self.NOT_SENT, self.ERROR):
+            return False
+        state.wait_status_text = frame
+        return True
 
     def _injected_transport(self):
         return self._transport if self._transport is not None else getattr(self.service, 'imessage_transport', None)
@@ -706,7 +843,7 @@ class IMessageSurface(DirectMessageSurface):
             transport = self._sync_scope(current)
             if transport is None:
                 raise IMessageNotSent(self._text('not_connected'))
-            text = str(text or '')
+            text = plain_text(str(text or ''))
             send_id = secrets.token_hex(16)
             store = self.service.store
             with store.db() as db:
