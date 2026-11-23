@@ -27,7 +27,7 @@ from .bounded_execution import (AgentOSMcpTools, BOUNDED_PROFILE, HOST_CLI_PROFI
                                 profile_actions, redact_reason, turn_actions)
 from .skills import SkillBinding, SkillLibrary
 from .connection_slots import relayed as relayed_slots
-from .cli_browser_relay import (RELAYED_INFORMATION_USE, RELAYED_LINES, RELAYED_LOCATION_REQUEST, RELAYED_OWNER_UPDATE, RELAYED_PREPARATIONS, RELAYED_SETTINGS,
+from .cli_browser_relay import (RELAYED_HISTORY, RELAYED_INFORMATION_USE, RELAYED_LINES, RELAYED_LOCATION_REQUEST, RELAYED_OWNER_UPDATE, RELAYED_PREPARATIONS, RELAYED_SETTINGS,
                                 SECRET_REDACTION, RelayClient, unused_browser_factory)
 from .context_observations import can_request_location
 from .local_tools import LocalTools
@@ -520,6 +520,7 @@ def serve(data, job_id, provenance=(), native_search=False, profile=BOUNDED_PROF
                                 settings=RELAYED_SETTINGS if relay is not None else None,
                                 # #826: a placeholder that lists information_use; its calls go to the service.
                                 information_use=RELAYED_INFORMATION_USE if relay is not None else None,
+                                history_reader=RELAYED_HISTORY if relay is not None else None,
                                 # #1325: token-less placeholders that list api_request for the Work's connections;
                                 # its calls go to the service, which holds the tokens.
                                 connections=((lambda: relayed_slots(connection_slots))

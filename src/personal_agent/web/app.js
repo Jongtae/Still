@@ -440,7 +440,7 @@ function parseInline(text){const out=[],re=/(\*\*([^*\n]+)\*\*)|(`([^`\n]+)`)|(\
 function parseRichText(text){const blocks=[],lines=String(text||'').replace(/\r\n?/g,'\n').split('\n'),bullet=/^\s*[-*•]\s+/,numbered=/^\s*\d+[.)]\s+/,heading=/^#{1,6}\s+/,fence=/^\s*```/;let i=0;while(i<lines.length){const line=lines[i];if(!line.trim()){i++;continue;}if(fence.test(line)){const code=[];i++;while(i<lines.length&&!fence.test(lines[i]))code.push(lines[i++]);i++;blocks.push({type:'pre',text:code.join('\n')});continue;}if(heading.test(line)){blocks.push({type:'heading',inlines:parseInline(line.replace(heading,'').replace(/\s+#+\s*$/,''))});i++;continue;}if(bullet.test(line)||numbered.test(line)){const ordered=numbered.test(line),items=[];while(i<lines.length&&(bullet.test(lines[i])||numbered.test(lines[i])))items.push(parseInline(lines[i++].replace(bullet,'').replace(numbered,'')));blocks.push({type:'list',ordered,items});continue;}const para=[];while(i<lines.length&&lines[i].trim()&&!fence.test(lines[i])&&!heading.test(lines[i])&&!bullet.test(lines[i])&&!numbered.test(lines[i]))para.push(parseInline(lines[i++]));blocks.push({type:'paragraph',lines:para});}return blocks;}
 // Owner words for internal tool ids. Unknown ids stay generic here and exact
 // under technical details.
-const TOOL_NAMES={subscription_engine:'구독 CLI 실행',model:'AI 응답',web_search:'웹 검색',list_notes:'메모 조회',save_note:'메모 저장',save_result:'결과 저장',fixture:'점검 도구',save_memory:'기억 저장',memory_undo:'기억 되돌림',local_authority:'폴더 권한',calendar_draft:'일정 초안',calendar_create:'일정 만들기',drive:'Drive 파일 조회',files:'파일 조회',picker:'파일 선택',connection:'연결 확인',weather:'날씨 조회',ask_location:'위치 확인',delegate_agent:'다른 에이전트에 맡김',browser_open:'브라우저 페이지 열기',browser_read:'브라우저 페이지 읽기',browser_find:'브라우저 페이지에서 찾기',browser_click:'브라우저에서 누르기',browser_type:'브라우저에 입력',propose_current_state:'현재 상황 기록',schedule_preparation:'준비 예약',preparation:'준비 실행',settings_read:'설정 확인',settings_change:'설정 변경 초안',find_files:'파일 찾기',read_file:'파일 읽기',drive_search:'Drive 파일 찾기',drive_read:'Drive 파일 읽기',mail_search:'메일 찾기',mail_read:'메일 읽기',list_roots:'연결 폴더 확인',list_memory:'기억 조회',calendar_query:'일정 조회',public_page_read:'공개 페이지 읽기',public_download:'공개 파일 받기',bounded_public_research:'공개 자료 조사',information_use:'사용한 정보 확인',api_request:'인증 API 호출',code_run:'코드 실행'};
+const TOOL_NAMES={subscription_engine:'구독 CLI 실행',model:'AI 응답',web_search:'웹 검색',list_notes:'메모 조회',save_note:'메모 저장',save_result:'결과 저장',fixture:'점검 도구',save_memory:'기억 저장',memory_undo:'기억 되돌림',local_authority:'폴더 권한',calendar_draft:'일정 초안',calendar_create:'일정 만들기',drive:'Drive 파일 조회',files:'파일 조회',picker:'파일 선택',connection:'연결 확인',weather:'날씨 조회',ask_location:'위치 확인',delegate_agent:'다른 에이전트에 맡김',browser_open:'브라우저 페이지 열기',browser_read:'브라우저 페이지 읽기',browser_find:'브라우저 페이지에서 찾기',browser_click:'브라우저에서 누르기',browser_type:'브라우저에 입력',propose_current_state:'현재 상황 기록',schedule_preparation:'준비 예약',preparation:'준비 실행',settings_read:'설정 확인',settings_change:'설정 변경 초안',find_files:'파일 찾기',read_file:'파일 읽기',drive_search:'Drive 파일 찾기',drive_read:'Drive 파일 읽기',browser_history_search:'Chrome 방문 기록 검색',mail_search:'메일 찾기',mail_read:'메일 읽기',list_roots:'연결 폴더 확인',list_memory:'기억 조회',calendar_query:'일정 조회',public_page_read:'공개 페이지 읽기',public_download:'공개 파일 받기',bounded_public_research:'공개 자료 조사',information_use:'사용한 정보 확인',api_request:'인증 API 호출',code_run:'코드 실행'};
 function toolName(id){return t(TOOL_NAMES[id]||'도구 실행');}
 // #559: requested, observed, failed and unknown stay distinct words.
 function eventStatusText(status){return {succeeded:t('완료'),failed:t('실패'),running:t('실행 중'),requested:t('요청함'),denied:t('거부됨'),withheld:t('보내지 않음'),unavailable:t('사용할 수 없음')}[status]||t('관찰됨');}
@@ -627,7 +627,7 @@ function provenanceView(task){const record=task.provenance,box=devNode('section'
  return box;}
 // #826 이 답변에 쓴 정보: which owner information this Work used and where it went,
 // built by the backend from Still's own records (references and short labels, never values).
-const INFO_CATEGORY={profile:()=>t('프로필'),memory:()=>t('기억'),calendar:()=>t('캘린더'),files:()=>t('파일'),current_context:()=>t('현재 상황'),notes:()=>t('메모'),browser:()=>t('로그인한 브라우저 페이지'),settings:()=>t('설정'),spliced:()=>t('요청에 붙인 자료'),prepared:()=>t('준비해 둔 답변'),records:()=>t('이전 답변의 사용 기록')};
+const INFO_CATEGORY={profile:()=>t('프로필'),memory:()=>t('기억'),calendar:()=>t('캘린더'),files:()=>t('파일'),history:()=>t('Chrome 방문 기록'),current_context:()=>t('현재 상황'),notes:()=>t('메모'),browser:()=>t('로그인한 브라우저 페이지'),settings:()=>t('설정'),spliced:()=>t('요청에 붙인 자료'),prepared:()=>t('준비해 둔 답변'),records:()=>t('이전 답변의 사용 기록')};
 Object.assign(I18N["en"],{"시도별 입력": "Input per attempt", "지침": "instructions", "제공한 도구": "tools offered", "브리지가 제공한 도구": "tools served by the bridge", "CLI 자체 도구": "CLI's own tools", "이전 시도 {count}개 생략": "{count} earlier attempts not kept"});
 Object.assign(I18N["ja"],{"시도별 입력": "試行ごとの入力", "지침": "指示", "제공한 도구": "提供したツール", "브리지가 제공한 도구": "ブリッジが提供したツール", "CLI 자체 도구": "CLI 独自のツール", "이전 시도 {count}개 생략": "以前の試行 {count} 件は保持していません"});
 Object.assign(I18N["zh-CN"],{"시도별 입력": "每次尝试的输入", "지침": "指令", "제공한 도구": "提供的工具", "브리지가 제공한 도구": "桥接提供的工具", "CLI 자체 도구": "CLI 自带工具", "이전 시도 {count}개 생략": "未保留之前的 {count} 次尝试"});
@@ -2139,6 +2139,38 @@ function paintRootList(){const box=$('root-list'),fingerprint=JSON.stringify([sa
  else{const remove=settingsAction(t('제거'),()=>{if(rootsSaving)return;pendingRootRemoval=path;setFeedback('roots-feedback','');paintRootList();rootButtons.confirm?.focus();});rootButtons[path]=remove;box.append(blockedRoots[path]?folderRow(path,blockedRoots[path],t('사용 중지됨'),'attention',remove):folderRow(path,t('읽기 전용'),t('연결됨'),'active',remove));}}}
 // #779: off this Mac (a phone on the tunnel), Settings may remove a folder but not add or change one.
 // That refusal is a "continue on the Mac" next step in the owner's language, not a raw error.
+async function loadChromeHistory(){
+ const list=$('chrome-history-profiles');
+ try{
+  const {profiles}=await api('/api/settings/chrome-history');
+  list.replaceChildren();
+  setFeedback('chrome-history-feedback',profiles.length?'':t('이 컴퓨터에서 Chrome 프로필을 찾지 못했어요.'));
+  for(const profile of profiles){
+   const row=element('div',null,'settings-row');
+   const label=element('span',profile.display_name+' ('+profile.profile_dir+')');
+   label.translate=false;
+   const button=element('button',t(profile.granted?'읽기 권한 취소':'읽기 허용'));
+   button.type='button';
+   button.onclick=()=>{
+    if(!profile.granted&&!window.confirm(label.textContent+'\n'+t('이 Chrome 프로필의 방문 기록 읽기를 허용할까요?')))return;
+    return busy(button,async()=>{
+     try{
+      const action=profile.granted?'revoke':'grant';
+      await api('/api/settings/chrome-history/'+action,{profile_dir:profile.profile_dir,confirm:!profile.granted});
+      await loadChromeHistory();
+     }catch(error){setError('chrome-history-feedback',error);}
+    });
+   };
+   row.append(label,button);
+   list.append(row);
+  }
+ }catch(error){
+  list.replaceChildren();
+  setError('chrome-history-feedback',error);
+ }
+}
+$('chrome-history-settings').ontoggle=()=>{if($('chrome-history-settings').open)void loadChromeHistory();};
+
 function folderSaveRefused(id,error){if(error?.reason==='owner_local_surface'||error?.reason==='confirm_broad_declined')setFeedback(id,t(error.message));else setError(id,error);}
 // #820: a broad folder (the home folder) is saved once the owner confirms what it includes; nothing is saved before.
 async function saveFolders(path,body){const confirm_broad=[];for(;;){try{return await api(path,confirm_broad.length?{...body,confirm_broad}:body);}catch(error){if(error.reason!=='confirm_broad'||!error.path||confirm_broad.includes(error.path))throw error;if(!window.confirm(error.message)){const declined=new Error(t('폴더를 연결하지 않았습니다.'));declined.reason='confirm_broad_declined';throw declined;}confirm_broad.push(error.path);}}}

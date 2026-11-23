@@ -69,7 +69,7 @@ READ_CATEGORIES = {
 LOOKUP_ACTIONS = frozenset(name for name, tool in HOST_TOOLS.items() if tool.lookup)
 #: Korean names of the categories, in the order the section shows them.
 CATEGORY_NAMES = {
-    'profile': '프로필', 'memory': '기억', 'calendar': '캘린더', 'files': '파일', 'ai_connection': 'AI에 연결된 서비스', 'drive': 'Google Drive', 'mail': 'Gmail', 'api': '인증 API',
+    'profile': '프로필', 'memory': '기억', 'calendar': '캘린더', 'files': '파일', 'ai_connection': 'AI에 연결된 서비스', 'drive': 'Google Drive', 'mail': 'Gmail', 'history': msg('chrome_history.label'), 'api': '인증 API',
     'current_context': '현재 상황', 'notes': '메모', 'browser': msg('information_use.signed_in_browser_pages'),
     'settings': '설정', 'spliced': msg('information_use.material_attached_to_the_request'), 'prepared': msg('information_use.prepared_answers'),
     'conversation': '이전 대화', 'records': msg('information_use.an_earlier_answer_s_information_use'), 'attention': '기다리는 동안 알린 것',
@@ -303,6 +303,16 @@ def merge_references(earlier, later):
     return merged
 
 
+def _history_time(value):
+    """A history search's window endpoint (Unix seconds) as a UTC date and time, or a dash."""
+    if type(value) not in (int, float):
+        return '—'
+    try:
+        return datetime.fromtimestamp(value, timezone.utc).strftime('%Y-%m-%d %H:%M UTC')
+    except (OverflowError, OSError, ValueError):
+        return '—'
+
+
 def _event_items(action, evidence):
     """Short labels of the owner items one successful read or write event shows."""
     evidence = evidence if isinstance(evidence, dict) else {}
@@ -374,6 +384,12 @@ def _event_items(action, evidence):
         return files or [f"일치하는 Drive 파일 {int(evidence.get('file_count') or 0)}개"]
     if action == 'drive_read':
         return [_text(evidence.get('name'))]
+    if action == 'browser_history_search':
+        return [msg('chrome_history.audit_match', profile=_text(row.get('profile')),
+                    query=_text(evidence.get('query'), QUERY_CHARS) or '—',
+                    after=_history_time(evidence.get('after')), before=_history_time(evidence.get('before')),
+                    count=row.get('row_count', 0))
+                for row in evidence.get('profiles') or () if isinstance(row, dict) and not row.get('status')]
     if action == 'mail_search':
         # #150: subjects and senders are private mail metadata; the audit counts the matches.
         return [f"일치하는 메일 {int(evidence.get('message_count') or 0)}개"]
@@ -584,10 +600,10 @@ def _work_information_use(store, job_id, redact=None, *, compare_held_values=Tru
     record = record if isinstance(record, dict) else {}
     sections = record.get('owner_information') if isinstance(record.get('owner_information'), dict) else {}
     used = {}
-    def add(category, items):
+    def add(category, items, limit=LABEL_CHARS):
         rows = used.setdefault(category, [])
         for item in items:
-            text = label(item)
+            text = label(item, limit)
             if text and text not in rows and len(rows) < MAX_ITEMS:
                 rows.append(text)
     add('profile', sections.get('profile_keys') or ())
@@ -779,7 +795,8 @@ def _work_information_use(store, job_id, redact=None, *, compare_held_values=Tru
             started[identity] = trace
         # #918: an undo is recorded on the Work after it settled (status ``recorded``, never a step).
         if (status == 'succeeded' or (action == MEMORY_UNDO_ACTION and status == 'recorded')) and action in READ_CATEGORIES:
-            add(READ_CATEGORIES[action], _event_items(action, evidence))
+            add(READ_CATEGORIES[action], _event_items(action, evidence),
+                limit=400 if action == 'browser_history_search' else LABEL_CHARS)
         if action in LOOKUP_ACTIONS and status in ('succeeded', 'failed') and (action not in ('capability_search','public_download') or evidence.get('contacted') is True):
             # A succeeded lookup's record is what its Evidence says left (``sent``, the CLI's reported
             # queries); the worker's raw arguments are not shown for it.  A failed lookup was still

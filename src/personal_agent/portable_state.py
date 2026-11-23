@@ -10,12 +10,13 @@ import tarfile
 import tempfile
 import os
 
+from .chrome_history import GRANTS_KEY as CHROME_HISTORY_GRANTS_KEY
 from .manifests import validate
 
 FORMAT = "agentos-owner-state-v1"
 ROOT = "agentos-owner-state"
 DB_RELATIVE = "private/quickstart.db"
-_RESET_CONFIG = ("telegram", "telegram_status", "model", "model_test", "model_draft_test", "subscription_engine", "tool_run", "file_roots", "file_workspace", "file_workspace_document_jobs", "capability_registry", "connector_contract_state", "connector_pending_work", "a2a_peers")
+_RESET_CONFIG = ("telegram", "telegram_status", "model", "model_test", "model_draft_test", "subscription_engine", "tool_run", "file_roots", "file_workspace", "file_workspace_document_jobs", "capability_registry", "connector_contract_state", "connector_pending_work", "a2a_peers", CHROME_HISTORY_GRANTS_KEY)
 
 def _sha256(path):
     digest = hashlib.sha256()
@@ -311,6 +312,7 @@ def restore_owner_state(archive, data):
             if name.startswith("plugins/") and name.count("/") == 1: validate(json.loads(path.read_text()))
         with sqlite3.connect(staged / DB_RELATIVE) as db:
             if not db.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='config'").fetchone(): raise ValueError("Invalid owner-state database.")
+            db.execute("DELETE FROM config WHERE key=?", (CHROME_HISTORY_GRANTS_KEY,))
             if db.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='work_read_results'").fetchone():
                 if db.execute("DELETE FROM work_read_results").rowcount:
                     if db.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='read_pages_search'").fetchone():

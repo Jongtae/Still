@@ -398,6 +398,11 @@ def RELAYED_INFORMATION_USE(*_args, **_kwargs):
     raise ToolError(RELAY_UNAVAILABLE_TEXT, 'browser_relay_unavailable')
 
 
+def RELAYED_HISTORY(*_args, **_kwargs):
+    """List the tool in the bridge. Only the service opens the granted profile."""
+    raise ToolError(RELAY_UNAVAILABLE_TEXT, 'browser_relay_unavailable')
+
+
 def RELAYED_OWNER_UPDATE(*_args, **_kwargs):
     """The bridge's ``Capabilities.owner_update`` placeholder (#407): ``tell_owner`` is listed, and
     its calls go to the service, which holds the paired Telegram chat.  Never run in the bridge."""

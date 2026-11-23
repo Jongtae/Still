@@ -176,6 +176,7 @@ FALLBACK_STEP_LINES = {
     'read_file': (None, msg('step.read_file')),
     'drive_search': (None, msg('step.drive_search')),
     'drive_read': (None, msg('step.drive_read')),
+    'browser_history_search': (None, msg('step.browser_history_search')),
     'mail_search': (None, msg('step.mail_search')),
     'mail_read': (None, msg('step.mail_read')),
     'a2a_message': (None, 'Contacting a registered counterpart'),
