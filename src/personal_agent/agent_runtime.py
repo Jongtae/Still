@@ -4730,7 +4730,7 @@ class Capabilities:
    finally:PAGE_ADDRESS_CHECK.reset(token)
    if result.get('not_modified') is True:
     if 'validators' not in plan or result.get('url')!=row['page_url']:
-     raise ProviderError('공개 페이지가 정상 응답하지 않았습니다.')
+     raise ProviderError(msg('agent_runtime.page_not_modified_unexpected'))
     self.store.inherit_outside_content(self.job_id,(row['job_id'],),name)
     content=redact_known_secrets(self.store,row['excerpt'])
     result={'tool':name,'url':row['page_url'],'retrieved_at':result['retrieved_at'],
