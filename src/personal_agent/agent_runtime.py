@@ -3162,6 +3162,21 @@ def revisable_record(action,status):
  """Whether one ``changed`` call is a record a re-delegation of the same Work revises in place (#1170)."""
  return action in REVISABLE_RECORD_ACTIONS and status=='succeeded'
 
+def _current_preparation(store,fact):
+ """``fact`` with its preparation's current state, or None once it is no longer active (#1170 review).
+
+ A replacement cancels the row it replaces, so a recorded id may name a row nothing can revise any more.
+ A line keeps its id across revisions and is listed as recorded.
+ """
+ if not fact.get('preparation_id'):return fact
+ from .preparations import ACTIVE_STATES
+ try:
+  with store.db() as db:
+   row=db.execute('SELECT state FROM preparations WHERE id=?',(fact['preparation_id'],)).fetchone()
+ except __import__("sqlite3").OperationalError:
+  return fact
+ return {**fact,'state':row['state']} if row and row['state'] in ACTIVE_STATES else None
+
 def revisable_record_note(store,work_id):
  """The records this Work's attempts set up that a later attempt revises in place, as host facts, or '' (#1170).
 
@@ -3188,6 +3203,7 @@ def revisable_record_note(store,work_id):
   fact={'tool':action,**fact}
   if ident in seen:facts=[item for item in facts if (item.get('preparation_id') or item.get('line_id'))!=ident]
   seen.add(ident);facts.append(fact)
+ facts=[fact for fact in (_current_preparation(store,fact) for fact in facts) if fact is not None]
  return prompt('revisable_records')+'\n'+json.dumps(facts[-12:],ensure_ascii=False) if facts else ''
 
 def record_effect(action,detail,status):

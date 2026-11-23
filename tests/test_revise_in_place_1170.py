@@ -43,10 +43,18 @@ class ReviseInPlace(Store):
         for action, detail in (('schedule_preparation', PREPARED), ('entrusted_line', LINE)):
             self.assertEqual(record_effect(action, detail, 'succeeded'), EFFECT_CHANGED)
 
+    def prepared(self, goal):
+        import time
+        from personal_agent import preparations as prep
+        row = self.service.preparations.create(kind='prepare', goal=goal, due_at=time.time() + 3600, timezone='UTC',
+                                               recurrence=None, channel='web', created_from=self.work,
+                                               state=prep.STATE_SCHEDULED, accepted_by=prep.ACCEPTED_OWNER_WORK)
+        return row['id']
+
     def test_the_next_brief_names_each_record_by_id_only(self):
         self.assertEqual(revisable_record_note(self.store, self.work), '')
-        self.call('schedule_preparation', {**PREPARED, 'evidence': {**PREPARED['evidence'], 'goal': 'SECRET-GOAL'}},
-                  'succeeded', 'p1')
+        kept = self.prepared('SECRET-GOAL one')
+        self.call('schedule_preparation', {'evidence': {**PREPARED['evidence'], 'preparation_id': kept}}, 'succeeded', 'p1')
         self.call('entrusted_line', LINE, 'succeeded', 'l1')
         # A read of a line is no record to revise (#1163).
         self.call('entrusted_line', {'declared_effect': 'read', 'evidence': {'line_id': 'line-read', 'version': 1}},
@@ -54,9 +62,21 @@ class ReviseInPlace(Store):
         note = revisable_record_note(self.store, self.work)
         facts = json.loads(note.rsplit('\n', 1)[1])
         self.assertEqual([(f['tool'], f.get('preparation_id') or f.get('line_id')) for f in facts],
-                         [('schedule_preparation', 'prep-1170a'), ('entrusted_line', 'line-1170a')])
+                         [('schedule_preparation', kept), ('entrusted_line', 'line-1170a')])
         self.assertIn('replaces', note)
         self.assertNotIn('SECRET-GOAL', note, 'identifiers and states only, never a goal')
+
+    def test_a_replaced_or_cancelled_preparation_is_not_offered_for_revision(self):
+        # Codex review: a replacement cancels the row it replaces; only the current row is named.
+        replaced, current = self.prepared('first goal'), self.prepared('second goal')
+        self.call('schedule_preparation', {'evidence': {**PREPARED['evidence'], 'preparation_id': replaced}}, 'succeeded', 'p1')
+        self.call('schedule_preparation', {'evidence': {**PREPARED['evidence'], 'preparation_id': current}}, 'succeeded', 'p2')
+        self.service.preparations.cancel(replaced)
+        facts = json.loads(revisable_record_note(self.store, self.work).rsplit('\n', 1)[1])
+        self.assertEqual([f.get('preparation_id') for f in facts], [current])
+        self.assertEqual(facts[0]['state'], 'scheduled', 'the current state, not the recorded one')
+        self.service.preparations.cancel(current)
+        self.assertEqual(revisable_record_note(self.store, self.work), '')
 
 
 class StillStops(Store):
