@@ -3878,7 +3878,7 @@ class AgentService:
                     'subscription_engines':self.subscription_engine_status(),
                     'subscription_execution':self.subscription_execution_profile(),
                     'telegram':{'enabled':tg.get('enabled',False),'mode':tg.get('mode','owner-token'),'username':tg.get('username',''),'paired':bool(tg.get('user_id')),'user_id':tg.get('user_id')},
-                    'file_roots':[{**root,'blocked':folder_grants.blocked(root.get('path',''),self.store)} for root in self.store.config('file_roots',[])], 'file_workspace':FileWorkspace(self.store).projection(), 'document_boundary':boundary, 'context_inbox':__import__('personal_agent.context_inbox',fromlist=['ContextInbox']).ContextInbox(self.store).status(), 'agents':[{'id':role['id'],'name':role['name'],'permissions':role['permissions'],'package_id':package['id']} for package in active_packages for role in package['roles']], 'packages':packages, 'tool_run':self.store.config('tool_run'), 'model_test':model_test, 'model_ready':self.model_ready(model,model_test), 'telegram_status':self.store.config('telegram_status'),'connectors':connectors,'google_services':self.google_service_rows(connectors,ai_routes),'google_client':self.google_client_status(),'ai_connections':{**self.ai_connections_status(),'routes':ai_routes},'current_context':self.current_state.status(),'payment_autonomy':self.payment_autonomy_settings(),'write_allowances':self.write_allowance_settings(),'browser':self.browser_status(),'work_mode':self.work_mode_status(),'intranet':self.intranet_status(),'mattermost':self.mattermost_status(),'slack':self.slack_status()}
+                    'file_roots':[{**root,'blocked':folder_grants.blocked(root.get('path',''),self.store)} for root in self.store.config('file_roots',[])], 'file_workspace':FileWorkspace(self.store).projection(), 'document_boundary':boundary, 'context_inbox':__import__('personal_agent.context_inbox',fromlist=['ContextInbox']).ContextInbox(self.store).status(), 'agents':[{'id':role['id'],'name':role['name'],'permissions':role['permissions'],'package_id':package['id']} for package in active_packages for role in package['roles']], 'packages':packages, 'tool_run':self.store.config('tool_run'), 'model_test':model_test, 'model_ready':self.model_ready(model,model_test), 'telegram_status':self.store.config('telegram_status'),'connectors':connectors,'google_services':self.google_service_rows(connectors,ai_routes),'google_client':self.google_client_status(),'ai_connections':{**self.ai_connections_status(),'routes':ai_routes},'current_context':self.current_state.status(),'payment_autonomy':self.payment_autonomy_settings(),'write_allowances':self.write_allowance_settings(),'browser':self.browser_status(),'work_mode':self.work_mode_status(),'intranet':self.intranet_status(),'mattermost':self.mattermost_status(),'slack':self.slack_status(),'imessage':self.imessage_status()}
 
     def home(self):
         """Return the minimal, credential-free read model for the owner home."""
@@ -5024,6 +5024,27 @@ class AgentService:
         from .imessage_surface import IMessageSurface
         return IMessageSurface(self)
 
+    def imessage_status(self):
+        return self.imessage_surface.status()
+
+    def start_imessage_pairing(self):
+        if not self.imessage_surface.offered():
+            raise ValueError(msg('imessage.unsupported_platform'))
+        return self.imessage_surface.start_pairing()
+
+    def cancel_imessage_pairing(self):
+        return self.imessage_surface.cancel_pairing()
+
+    def disconnect_imessage(self):
+        return self.imessage_surface.disconnect()
+
+    def retry_imessage(self):
+        return self.imessage_surface.retry()
+
+    def set_imessage_company_approved(self, body):
+        with self.lock:
+            return self.imessage_surface.set_company_approved(body.get('approved') if isinstance(body,dict) else None)
+
     def mattermost_status(self):
         return self.mattermost_surface.status()
 
@@ -5083,6 +5104,13 @@ class AgentService:
             if surface.poll_seconds is None:continue
             try:surface.receive()
             except Exception as exc:LOG.warning('%s: receiving failed (%s)',surface.name,type(exc).__name__)
+
+    def stop_surfaces(self):
+        for name in SURFACE_NAMES:
+            try:
+                shutdown=getattr(getattr(self,name+'_surface'),'shutdown',None)
+                if shutdown:shutdown()
+            except Exception as exc:LOG.warning('Surface shutdown failed (%s)',type(exc).__name__)
 
     @cached_property
     def owner_acts(self):
@@ -10493,10 +10521,13 @@ class AgentService:
                 self.stop.wait(.25)
         def poll_surfaces():
             # #213: surfaces without a long poll of their own (Mattermost; Slack's connection check, #214) are polled here.
-            interval=min((surface.poll_seconds for surface in self.surfaces if surface.poll_seconds),default=3)
-            while not self.stop.is_set():
-                self.receive_polled_surfaces()
-                self.stop.wait(interval)
+            try:
+                interval=min((surface.poll_seconds for surface in self.surfaces if surface.poll_seconds),default=3)
+                while not self.stop.is_set():
+                    self.receive_polled_surfaces()
+                    self.stop.wait(interval)
+            finally:
+                self.stop_surfaces()
         self.threads=[threading.Thread(target=work,daemon=True),threading.Thread(target=poll,daemon=True),
                       threading.Thread(target=acknowledge,daemon=True),
                       threading.Thread(target=poll_surfaces,daemon=True,name='agentos-surface-poll'),

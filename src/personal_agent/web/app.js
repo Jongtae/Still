@@ -2121,6 +2121,61 @@ function renderSlack(status){if(!status)return;const list=$('slack-status');list
 $('slack-form').onsubmit=event=>{event.preventDefault();const body={bot_token:$('slack-bot-token').value.trim(),app_token:$('slack-app-token').value.trim(),owner_user_id:$('slack-owner').value.trim()};if(!body.bot_token||!body.app_token||!body.owner_user_id){setFeedback('slack-feedback',t('봇 토큰, 앱 토큰, 멤버 ID를 모두 입력하세요.'));return;}busy(event.submitter,async()=>{try{await api('/api/slack/connect',body);$('slack-bot-token').value='';$('slack-app-token').value='';$('slack-setup').open=false;setFeedback('slack-feedback',t('Slack을 연결했습니다. 1:1 대화를 확인하세요.'));}catch(error){setError('slack-feedback',error);}await refresh();});};
 $('slack-disconnect').onclick=event=>busy(event.currentTarget,async()=>{try{await api('/api/slack/disconnect',{});setFeedback('slack-feedback',t('Slack 연결을 해제했습니다.'));}catch(error){setError('slack-feedback',error);}await refresh();});
 $('slack-company-approved').onchange=event=>{const toggle=event.currentTarget,on=toggle.checked;toggle.disabled=true;void (async()=>{try{const status=await api('/api/slack/company-approved',{approved:on});toggle.checked=!!status?.company_approved;setFeedback('slack-feedback',toggle.checked?t('회사 모드에서도 Slack을 씁니다.'):t('회사 모드에서는 Slack을 멈춥니다.'));}catch(error){toggle.checked=!on;setError('slack-feedback',error);}finally{toggle.disabled=false;}await refresh();})();};
+
+let imessagePairing=null,imessageRevision=0;
+function renderIMessage(status){
+ const section=$('imessage');section.hidden=!status?.offered;if(section.hidden){imessagePairing=null;$('imessage-code').replaceChildren();return;}
+ const list=$('imessage-status'),pairing=status.pairing&&status.pairing_expires_at>Date.now()/1000;
+ const state=status.state==='paused'?['회사 모드로 멈춤','attention']:status.state==='error'?['확인 필요','attention']:status.state==='starting'?['iMessage 시작 중…','run']:pairing?['연결 코드 대기 중','run']:status.state==='connected'?['받는 중','run']:['연결되지 않음','neutral'];
+ list.replaceChildren(settingsRow('iMessage',status.handle||'',t(state[0]),state[1]));
+ const message=status.code==='no_disk_access'&&status.disk_access_app?.name?
+  t('시스템 설정 → 개인정보 보호 및 보안 → 전체 디스크 접근 권한에서 {app}을(를) 허용한 뒤 다시 시도하세요.',{app:status.disk_access_app.name}):t(status.message);
+ if(message)list.append(element('p',message,'field-hint'));
+ if(!pairing||imessagePairing?.expires_at!==status.pairing_expires_at)imessagePairing=null;
+ const code=$('imessage-code');
+ if(imessagePairing){
+  const instruction=t('iPhone에서 이 Mac의 메시지 앱에 로그인한 별도의 Apple ID로 이 코드를 보내세요.');
+  const expiry=t('만료 시각 {time}',{time:formatTimeParts(imessagePairing.expires_at).absolute});
+  if(code.textContent!==instruction+imessagePairing.code+expiry){
+   const value=element('strong',imessagePairing.code);value.setAttribute('translate','no');
+   code.replaceChildren(element('p',instruction),value,element('p',expiry));
+  }
+ }else if(code.firstChild)code.replaceChildren();
+ $('imessage-pair').hidden=Boolean(imessagePairing||status.handle&&!pairing);
+ $('imessage-pair-cancel').hidden=!pairing;
+ $('imessage-retry').hidden=status.state!=='error';
+ $('imessage-manage').hidden=!status.handle;
+ const toggle=$('imessage-company-approved');if(!toggle.disabled)toggle.checked=!!status.company_approved;
+}
+$('imessage-company-approved').onchange=async event=>{
+ const toggle=event.currentTarget,on=toggle.checked;toggle.disabled=true;
+ try{
+  const status=await api('/api/imessage/company-approved',{approved:on});
+  imessageRevision++;toggle.checked=!!status.company_approved;renderIMessage(status);setFeedback('imessage-feedback','');
+ }catch(error){toggle.checked=!on;setError('imessage-feedback',error);}
+ finally{toggle.disabled=false;}
+ await refresh();
+};
+for(const [id,path] of [['pair','pair'],['pair-cancel','pair/cancel'],['retry','retry'],['disconnect','disconnect']]){
+ $('imessage-'+id).onclick=event=>{
+  if(id==='disconnect'&&!window.confirm(t('iMessage 연결을 해제할까요? 다시 연결하려면 새 코드가 필요합니다.')))return;
+  return busy(event.currentTarget,async()=>{
+   try{
+    const result=await api('/api/imessage/'+path,{});
+    imessageRevision++;
+    if(id==='pair'){
+     imessagePairing=result;
+     renderIMessage({...lastState?.settings?.imessage,offered:true,pairing:true,pairing_expires_at:result.expires_at});
+    }else{
+     if(id!=='retry')imessagePairing=null;
+     renderIMessage(result);
+    }
+    setFeedback('imessage-feedback','');
+   }catch(error){setError('imessage-feedback',error);}
+   await refresh();
+  });
+ };
+}
 // #390 U1: 확인이 필요한 연결 repeats, above the unchanged service order, only what the server
 // reports as needing the owner: company mode on (what it blocks), a Google connection that
 // needs sign-in again or is blocked, a connected channel stopped or in error. Each row only
@@ -2130,6 +2185,9 @@ function renderConnectionAttention(settings){const section=$('connection-attenti
  if(mode.enabled)rows.push(['work-mode',t('회사 모드 켜짐'),t('웹 검색, 공개 페이지, 브라우저, Telegram처럼 허용하지 않은 곳으로 나가는 일을 막고 있습니다.'),t('켜짐'),'neutral',t('회사 모드 보기'),()=>revealSetting($('work-mode'),$('work-mode-enabled'))]);
  for(const connector of settings?.connectors||[]){const raw=String(connector?.state||'');if(!['reauth_required','blocked'].includes(raw))continue;const view=connectorRowModel(connector);rows.push(['google:'+view.id,view.name,view.description,view.state,view.kind,t('연결 보기'),()=>revealSetting($('connector-controls'),$('connector-controls').querySelector('[data-focus-key="google-connect:'+view.id+'"]'))]);}
  for(const [id,name,status] of [['mattermost','Mattermost',settings?.mattermost],['slack','Slack',settings?.slack]]){if(!status?.connected)continue;if(!status.usable)rows.push([id,name,t('대화 채널'),t('회사 모드로 멈춤'),'attention',t('연결 보기'),()=>revealSetting($(id))]);else if(status.state==='error')rows.push([id,name,t('대화 채널'),t('확인 필요'),'attention',t('연결 보기'),()=>revealSetting($(id))]);}
+ const imessage=settings?.imessage;
+ if(imessage?.offered&&imessage.state==='paused')rows.push(['imessage','iMessage',t('대화 채널'),t('회사 모드로 멈춤'),'attention',t('연결 보기'),()=>revealSetting($('imessage-company-approved'))]);
+ else if(imessage?.offered&&imessage.state==='error')rows.push(['imessage','iMessage',t('대화 채널'),t('확인 필요'),'attention',t('연결 보기'),()=>revealSetting($('imessage'))]);
  const fingerprint=JSON.stringify([rows.map(row=>row.slice(0,6)),currentLanguage]);if(list.dataset.state===fingerprint)return;list.dataset.state=fingerprint;section.hidden=!rows.length;const focused=rememberFocus(list);list.replaceChildren();
  for(const [key,name,description,state,kind,action,go] of rows)list.append(settingsRow(name,description,state,kind,[focusKey(settingsAction(action,go),'connection-attention:'+key)]));
  restoreFocus(list,focused);}
@@ -2494,10 +2552,10 @@ $('browser-login-open').onclick=()=>{browserLoginOpen=true;renderBrowser(lastSta
 $('browser-login-cancel').onclick=()=>{browserLoginOpen=false;renderBrowser(lastState?.settings?.browser);$('browser-login-open').focus();};
 $('browser-login-form').onsubmit=event=>{event.preventDefault();const input=$('browser-login-url'),url=input.value.trim();if(!url){setFeedback('browser-feedback',t('로그인할 사이트 주소를 입력하세요.'));input.focus();return;}return startBrowserLogin(event.submitter||$('browser-login-form').querySelector('button'),url);};
 async function refresh(){
- if(!authenticated)return;if(refreshing){refreshQueued=true;return;}refreshing=true;const requestedModelRevision=modelLoadRevision,requestedRootsRevision=rootsLoadRevision,requestedFileWorkspaceRevision=fileWorkspaceLoadRevision;$('task-refresh-state').textContent=t('확인 중…');
+ if(!authenticated)return;if(refreshing){refreshQueued=true;return;}refreshing=true;const requestedModelRevision=modelLoadRevision,requestedRootsRevision=rootsLoadRevision,requestedFileWorkspaceRevision=fileWorkspaceLoadRevision,requestedIMessageRevision=imessageRevision;$('task-refresh-state').textContent=t('확인 중…');
  try{
   const [summary,home,state,space]=await Promise.all([api('/api/tasks'),api('/api/home'),api('/api/state'),api('/api/personal-space')]);const previousTasks=new Map((taskProgress?.tasks||[]).map(task=>[task.id,task]));lastHome=home;lastState=state;lastSpace=space;taskProgress=mergeTaskProgress(summary,taskProgress,state.jobs);renderTasks();for(const id of new Set([...openTraces,...openTechnical])){const before=previousTasks.get(id),after=taskProgress.tasks.find(task=>task.id===id);void refreshSelectedTaskDetail(before,after,loadTaskDetail);}renderMemoryCandidateSummary(space);refreshSavedMemory(space);renderWorkspaces(home,state);loadWorkspaceResultSummaries(home.workspaces);
-  const settings=state.settings||{};renderExecutionConnection(settings);renderFileAccess(settings);renderDecisionRoute(settings);renderSubscriptionEngines(settings.subscription_engines);renderTelegram(settings);googleClientAvailable=Boolean(settings.google_client?.available);renderConnectors(settings.google_services);renderGoogleClient(settings.google_client);renderAiConnections(settings.ai_connections);paintConnectorMethods(settings);renderSearchProviders(settings.search_providers);renderBrowser(settings.browser);renderContext(settings.context_inbox);renderCurrentContext(settings.current_context);void loadReportControls();renderPaymentAutonomy(settings.payment_autonomy);renderWriteAllowances(settings.write_allowances);renderWorkMode(settings.work_mode);renderIntranet(settings.intranet);renderMattermost(settings.mattermost);renderSlack(settings.slack);void renderA2aPeers();renderConnectionAttention(settings);renderDocumentBoundary(settings.document_boundary);renderDiagnostics(state,taskProgress.tasks);const runtime=$('runtime-badge');const runtimeState=home.state==='working'?['작업 중','run']:home.state==='attention'?['확인 필요','attention']:home.state==='ready'?['준비됨','neutral']:['상태 알 수 없음','unknown'];runtime.textContent=t(runtimeState[0]);runtime.className='badge '+runtimeState[1];document.body.classList.remove('offline');$('nav-settings-dot').classList.toggle('on',[...document.querySelectorAll('#view-settings .settings-row>.settings-state.attention')].some(node=>!node.closest('.folder-edit')&&!node.parentElement.hasAttribute('data-inactive')&&!node.parentElement.querySelector('.settings-inline-confirm')));lastSuccessfulRefresh=Date.now();
+  const settings=state.settings||{};renderExecutionConnection(settings);renderFileAccess(settings);renderDecisionRoute(settings);renderSubscriptionEngines(settings.subscription_engines);renderTelegram(settings);googleClientAvailable=Boolean(settings.google_client?.available);renderConnectors(settings.google_services);renderGoogleClient(settings.google_client);renderAiConnections(settings.ai_connections);paintConnectorMethods(settings);renderSearchProviders(settings.search_providers);renderBrowser(settings.browser);renderContext(settings.context_inbox);renderCurrentContext(settings.current_context);void loadReportControls();renderPaymentAutonomy(settings.payment_autonomy);renderWriteAllowances(settings.write_allowances);renderWorkMode(settings.work_mode);renderIntranet(settings.intranet);renderMattermost(settings.mattermost);renderSlack(settings.slack);if(requestedIMessageRevision===imessageRevision)renderIMessage(settings?.imessage);void renderA2aPeers();renderConnectionAttention(settings);renderDocumentBoundary(settings.document_boundary);renderDiagnostics(state,taskProgress.tasks);const runtime=$('runtime-badge');const runtimeState=home.state==='working'?['작업 중','run']:home.state==='attention'?['확인 필요','attention']:home.state==='ready'?['준비됨','neutral']:['상태 알 수 없음','unknown'];runtime.textContent=t(runtimeState[0]);runtime.className='badge '+runtimeState[1];document.body.classList.remove('offline');$('nav-settings-dot').classList.toggle('on',[...document.querySelectorAll('#view-settings .settings-row>.settings-state.attention')].some(node=>!node.closest('.folder-edit')&&!node.parentElement.hasAttribute('data-inactive')&&!node.parentElement.querySelector('.settings-inline-confirm')));lastSuccessfulRefresh=Date.now();
   if(requestedRootsRevision===rootsLoadRevision)renderRootList(settings.file_roots||[]);
   if(requestedFileWorkspaceRevision===fileWorkspaceLoadRevision)renderFileWorkspace(settings.file_workspace);
   void loadFolderRequests();
@@ -2507,6 +2565,7 @@ async function refresh(){
 
 async function status(){
  let state=await api('/api/status');if(!state.claimed){await api('/api/claim',{code:bootstrap});state=await api('/api/status');}claimed=state.claimed;authenticated=state.authenticated;if(!authenticated&&state.local_access){await api('/api/local-login',{});authenticated=true;}
+ if(!authenticated)renderIMessage(null);
  $('welcome').hidden=authenticated;$('management').hidden=!authenticated;$('logout').hidden=!authenticated||state.local_access;$('auth-title').textContent=claimed?t('다시 만나서 반갑습니다.'):t('나만의 Still을 시작하세요.');$('password-hint').textContent=claimed?'':t('12자 이상으로 정하세요.');setFeedback('auth-error','');$('auth-help').textContent=claimed?t('설정한 비밀번호로 로그인하세요.'):t('이 Mac에서 사용할 개인 환경을 준비합니다.');$('auth-submit').textContent=claimed?t('로그인'):t('바로 시작하기');$('password').required=claimed;$('password-option').open=claimed;$('password').minLength=claimed?1:12;$('password').autocomplete=claimed?'current-password':'new-password';
  if(authenticated){const route=routeFromLocation();activeSettings=route.settings;activeTaskTab=route.taskTab||activeTaskTab;if(route.item)openItem(route.item.kind,route.item.id,{replace:true});else{activeView=route.view;navigate(activeView,activeSettings,{replace:true,taskTab:route.taskTab});}restoreOpenRouterFlow();await refresh();await finishOpenRouter();}
 }

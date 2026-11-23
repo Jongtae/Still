@@ -1307,6 +1307,14 @@ def make_handler(service, public_hosts=(), public_access_token=''):
                     if path=='/api/slack/connect':return self.reply(200,service.connect_slack(body))
                     if path=='/api/slack/disconnect':return self.reply(200,service.disconnect_slack())
                     return self.reply(200,service.set_slack_company_approved(body))
+                if path in ('/api/imessage/pair','/api/imessage/pair/cancel','/api/imessage/disconnect',
+                            '/api/imessage/retry','/api/imessage/company-approved'):
+                    if self.tunneled():return self.reply(400,{'error':msg('imessage.local_only')})
+                    if path=='/api/imessage/pair':return self.reply(200,service.start_imessage_pairing())
+                    if path=='/api/imessage/pair/cancel':return self.reply(200,service.cancel_imessage_pairing())
+                    if path=='/api/imessage/disconnect':return self.reply(200,service.disconnect_imessage())
+                    if path=='/api/imessage/retry':return self.reply(200,service.retry_imessage())
+                    return self.reply(200,service.set_imessage_company_approved(body))
                 # #209: intranet destinations are declared in Settings on this computer only, never through a tunnel.
                 if path=='/api/intranet-destinations':
                     if self.tunneled():return self.reply(400,{'error':msg('intranet.local_only')})

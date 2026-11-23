@@ -32,6 +32,7 @@ text are never added to Evidence for this comparison.
 """
 from .manifests import HOST_TOOLS
 from .messages import msg
+from .conversation_surface import registered_surface_classes, surface_conversation
 from .bounded_execution import reported_usage
 import json
 import re
@@ -854,6 +855,11 @@ def _work_information_use(store, job_id, redact=None, *, compare_held_values=Tru
              'judgment_ai': {'calls': len(judgments), 'models': judgment_models, 'contexts': judgment_contexts,
                              'earlier_exchanges':[{'purpose':row.get('purpose'),'exchanges':row['earlier_exchanges']} for row in judgments if row.get('earlier_exchanges')]},
              'web_search_ran': bool(lookups), 'lookups': lookups[:MAX_ITEMS]}
+    if conversation := surface_conversation(job.get('channel'), job.get('chat_id')):
+        name, _ = conversation
+        route = next((surface.information_route for surface in registered_surface_classes() if surface.name == name), None)
+        if route:
+            sent_to['conversation'] = {'surface': name, 'route': label(route)}
     # #167: places the signed-in browser opened (a URL carries data to its host), and held-value matches.
     if peers:sent_to['peers'] = peers[-MAX_ITEMS:]
     sent_to['browser_destinations'] = opened
@@ -953,6 +959,8 @@ def render_korean(audit):
     sent = audit.get('sent_to') or {}
     workers = sent.get('workers') or ()
     lines.append('보낸 곳')
+    if conversation := sent.get('conversation'):
+        lines.append(msg('information_use.conversation_destination', route=conversation['route']))
     lines.append('- 작업 AI: ' + ('; '.join(_worker_text(row) for row in workers) if workers else '기록 없음'))
     # #167: said once, for a recorded worker; remote processing of the conversation is not new.
     if workers:
