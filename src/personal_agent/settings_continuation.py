@@ -322,6 +322,8 @@ class SettingsContinuation:
           carries the Work's own progress forward, so a change Still's own replay key already
           guards is accounted, not repeated (``api_effect_replayed``, the connector input-digest
           claim): an API dispatch observed for this Work, a connector change its permission claimed.
+          For ``redelegate``, Still can also reconcile a successful record write against its own
+          store for this Work and carry that record forward (#1167).
         - ``limit`` (``resume`` only, #627): the request already queued its one continuation count
           (``MAX_CONTINUATIONS``) - every owner-act continuation counts, a renewed allowance included.
 
@@ -334,6 +336,7 @@ class SettingsContinuation:
         from .agent_runtime import (API_ACTIONS, EFFECT_CHANGED, EFFECT_FREE_READS, EFFECT_LEDGER_TOOLS, EFFECT_UNKNOWN,
                                     INTERNAL_STATE_ACTIONS, MAX_CONTINUATIONS, call_effects, continuation_count, dispatch_call_accounted,
                                     dispatch_call_keys, effect_free_call, external_effect_events, keyed_change,
+                                    STILL_RECORD_ACTIONS, STILL_RECORD_CONTINUATION, STILL_RECORD_KINDS, still_records,
                                     unknown_effect_targets)
         if purpose not in service.CONTINUE_PURPOSES:raise ValueError(purpose)
         reasons=[]
@@ -364,11 +367,12 @@ class SettingsContinuation:
         accounted=dispatch_call_keys(dispatches,pending)
         calls,scoped,engine_running=[],[],False
         for row in rows:
+            tool=row['tool']
+            if tool==STILL_RECORD_CONTINUATION:continue
             try:detail=json.loads(row['detail'] or '{}')
             except (TypeError,ValueError):detail=None
             if not isinstance(detail,dict):
                 add('unknown');continue
-            tool=row['tool']
             if tool in EFFECT_LEDGER_TOOLS|service.CONTINUATION_EVENTS:continue
             if tool in service.LOCAL_NON_TOOL_EVENTS or tool=='subscription_engine':
                 # Still's own records are no calls; an unknown outcome one of them carries still counts.
@@ -404,9 +408,19 @@ class SettingsContinuation:
                 or (purpose=='redelegate' and service.missing_connection_rows(scoped))):
             add('owner')
         if not carry and any(row.get('resolution')!='not-applied' for row in observed):add('effect')
+        record_ids=None
         for action,effect,status,detail in call_effects(scoped,with_detail=True):
-            if (effect==EFFECT_CHANGED and not dispatch_call_accounted(detail,accounted) and not cut_off(action,status,detail)
-                    and not (carry and keyed_change(action,detail,status,observed_api))):add('effect')
+            if (effect!=EFFECT_CHANGED or dispatch_call_accounted(detail,accounted) or cut_off(action,status,detail)
+                    or (carry and keyed_change(action,detail,status,observed_api))):continue
+            if purpose=='redelegate' and action in STILL_RECORD_ACTIONS and status=='succeeded':
+                kind=STILL_RECORD_KINDS[action]
+                evidence=detail.get('evidence')
+                record_id=evidence.get(kind+'_id') if isinstance(evidence,dict) else None
+                if isinstance(record_id,str) and record_id:
+                    if record_ids is None:
+                        record_ids={(row['record'],row['id']) for row in still_records(service.store,work_id)}
+                    if (kind,record_id) in record_ids:continue
+            add('effect')
         return tuple(sorted(reasons,key=CONTINUE_REASONS.index))
 
     def may_continue(self, work_id, purpose, **kwargs):

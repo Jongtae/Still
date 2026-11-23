@@ -221,7 +221,7 @@ class EntrustedLines:
             row = db.execute('SELECT MIN(created) AS at FROM procedure_versions WHERE slot=?', (slot(line_id),)).fetchone()
         return row['at'] if row else None
 
-    def open(self, work_id, *, task, report_promise, rules=(), open_matters='', account_every_days=ACCOUNT_DAYS):
+    def open(self, work_id, *, task, report_promise, rules=(), open_matters='', account_every_days=ACCOUNT_DAYS, db=None):
         """A new line with its first brief version; returns the brief."""
         now = self.clock()
         brief = {'task': task, 'report_promise': report_promise, 'open_matters': open_matters,
@@ -229,8 +229,10 @@ class EntrustedLines:
                  'state': STATE_ACTIVE, 'account_every_days': account_every_days}
         source = encode(brief)
         line_id = uuid.uuid4().hex[:16]
-        with self.store.db() as db:
-            db.execute('BEGIN IMMEDIATE')
+        owns_transaction = db is None
+        with (self.store.db() if owns_transaction else nullcontext(db)) as db:
+            if owns_transaction:
+                db.execute('BEGIN IMMEDIATE')
             self.store.require_read_checkpoint_writer(db)
             count = db.execute('SELECT count(DISTINCT slot) FROM procedure_versions WHERE slot LIKE ? AND state=?',
                                (SLOT_PREFIX + '%', CURRENT)).fetchone()[0]

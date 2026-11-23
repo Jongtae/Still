@@ -30,7 +30,7 @@ from .agent_runtime import (Capabilities, ToolError, not_run, cut_to_fit, run_ag
                             history_provenance, WorkBudget, PresentationBudget, WORK_TOOL_ATTEMPTS, WORK_DEADLINE_SECONDS, EFFECT_FREE_READS, explicit_search_query, outcome_from_events,
                             WORK_STOP_KEY, WORK_STOPPED, work_stop_requested, LedgerSuperseded, WorkLedger, WORK_LEDGER_KEY, goal_summary, work_source_records,
                             backfill_work_sources, recorded_private_sources, NOTES_SUMMARY_COMMANDS, WORK_SOURCES_BACKFILL_KEY, WORK_SOURCES_BACKFILL_VERSION,
-                            progress_step, OWNER_LOCAL_ACTIONS, CONNECTOR_APPROVAL_NOTE)
+                            progress_step, OWNER_LOCAL_ACTIONS, CONNECTOR_APPROVAL_NOTE, STILL_RECORD_CONTINUATION)
 from .plugins import PluginRegistry
 from .quickstart_store import INTERIM_PROJECTIONS, PREVIEW_PROJECTION, UPDATE_PROJECTION, QuickStore, copy_read_checkpoint_context, owner_words_work
 from .providers import NOT_REPORTED, ModelAdapter, ProviderError, request_json, validate_model
@@ -1292,6 +1292,7 @@ class AgentService:
           carries the Work's own progress forward, so a change Still's own replay key already
           guards is accounted, not repeated (``api_effect_replayed``, the connector input-digest
           claim): an API dispatch observed for this Work, a connector change its permission claimed.
+          For ``redelegate``, a successful Still record write is accounted by reading it back for this Work (#1167).
         - ``limit`` (``resume`` only, #627): the request already queued its one continuation count
           (``MAX_CONTINUATIONS``) - every owner-act continuation counts, a renewed allowance included.
 
@@ -3451,6 +3452,7 @@ class AgentService:
         event; ``effect_call_names`` pairs a call's running and terminal records.
         """
         from .agent_runtime import EFFECT_DRAFT, EFFECT_NONE, record_effect
+        if event.get('tool')==STILL_RECORD_CONTINUATION:return set()
         trace=event.get('trace') if isinstance(event.get('trace'),dict) else {}
         action=trace.get('host_action') or event.get('tool')
         return set() if record_effect(action,trace,event.get('status')) in (EFFECT_NONE,EFFECT_DRAFT) else {action}
@@ -6147,6 +6149,22 @@ class AgentService:
                 effect = False
                 orchestration.continues = receipt_note
 
+        records=[]
+        note=''
+        if not effect and not owner_needed:
+            from .agent_runtime import still_record_note, still_records
+            records=still_records(self.store,job_id)
+            note=still_record_note(self.store,job_id,records=records)
+        prior_note=getattr(orchestration,'still_record_progress','')
+        if note or prior_note:
+            continues=getattr(orchestration,'continues','')
+            if prior_note and continues.endswith(prior_note):
+                continues=continues.removesuffix(prior_note).removesuffix('\n')
+            orchestration.still_record_progress=note
+            orchestration.continues='\n'.join(part for part in (continues,note) if part)
+        if note:
+            observations=note+'\n'+observations[:max(0,16000-len(note)-1)]
+
         if failed is not None:
             evaluation=WORKER_FAILED
             failed_steps='; '.join(part for part in (failed_steps,self._redact_reason(failed) or '') if part)
@@ -6190,6 +6208,12 @@ class AgentService:
                     detail = json.dumps({'epoch': effect_ledger.epoch})
                     db.execute('INSERT INTO tool_events(job_id,tool,status,detail,created) VALUES (?,?,?,?,?)',
                                (job_id, EFFECT_CONTINUATION, 'claimed', detail, time.time()))
+        if following is not None and records:
+            with self.store.db() as db:
+                self.store.require_read_checkpoint_writer(db)
+                detail=json.dumps({'records':[row['id'] for row in records]})
+                db.execute('INSERT INTO tool_events(job_id,tool,status,detail,created) VALUES (?,?,?,?,?)',
+                           (job_id,STILL_RECORD_CONTINUATION,'claimed',detail,time.time()))
         return following
 
     def cancel_superseded_work(self, work_ids, notify=True):
@@ -6477,7 +6501,7 @@ class AgentService:
                                      om.REVIEW_EVENT_TOOL,MEMORY_UNDO_TOOL,STEER_EVENT,REACTION_EVENT,
                                      'response_timing','connection_setup','preparation','line_held',
                                      # #842: the marker that a finished Work's prompts were queued (``sweep_after_work``).
-                                     'after_work',
+                                     'after_work',STILL_RECORD_CONTINUATION,
                                      # #1163: which brief version a Work read (``entrusted_lines.READ_EVENT``), next
                                      # to the ``entrusted_line`` read call itself.
                                      'entrusted_line_read'})  # host slot receipt, not schedule_preparation

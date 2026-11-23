@@ -900,6 +900,18 @@ def preparation_lineage(db, preparation_id):
     return json.loads(deleted['detail']) if deleted else None
 
 
+def require_preparation_replacement(db, work_id, replaces=None):
+    """A re-delegated Work must reuse its carried preparation while it is active."""
+    from .agent_runtime import ToolError, not_run, still_record_claims
+    claimed = still_record_claims(db, work_id)
+    if not claimed:
+        return
+    active = claimed.intersection(row['id'] for row in db.execute(
+        'SELECT id FROM preparations WHERE state IN (?,?,?,?)', ACTIVE_STATES))
+    if active and (not isinstance(replaces, str) or replaces not in active):
+        raise not_run(ToolError(msg('preparations.preparation_exists', ids=', '.join(sorted(active))), 'preparation_exists'))
+
+
 def line_works_sql(column, *, include_deleted=False):
     """#938: SQL matching Works (by ``column``, a request key) of any row of one line.
 
@@ -1577,7 +1589,7 @@ class Preparations:
     def create(self, *, kind, goal, due_at, timezone, recurrence, channel, created_from, state,
                accepted_by=None, owner=OWNER, window=None, delivery_mode=None, title=None, offer=None, origin=None,
                report_every_minutes=None, line_id=None, max_runs=None, requested_until=None, bundle_channel=None, accepted_from=None,
-               piece_of=None, db=None, check=None, replaces=None):
+               piece_of=None, db=None, check=None, replaces=None, from_schedule_tool=False):
         """One new row (idempotent for the same Work, kind, goal and slot).
 
         #574: when another Work already proposed the same kind, goal, due and
@@ -1594,6 +1606,7 @@ class Preparations:
         #798: ``line_id`` is the entrusted line this row works for; the caller checked it is active.
         ``db`` joins a caller's transaction, so creation and its recovery evidence commit together.
         ``replaces`` is the validated row the caller will cancel in that transaction, excluded from the check cap.
+        ``from_schedule_tool`` checks any carried preparations inside the write transaction (#1167).
 
         #938: ``piece_of`` is the slot key of the run that schedules this piece of its line (origin
         ``ORIGIN_LINE_PIECE``).  In this transaction the line must still be active (a stop at the same
@@ -1652,6 +1665,8 @@ class Preparations:
         with (self.store.db() if owns_transaction else nullcontext(db)) as db:
             if owns_transaction:db.execute('BEGIN IMMEDIATE')
             self.store.require_read_checkpoint_writer(db)
+            if from_schedule_tool:
+                require_preparation_replacement(db, created_from, replaces)
             if resume_offer:
                 brief = self._admit_line_resume(db, line_id, due_at, now)
             if piece_of is not None:

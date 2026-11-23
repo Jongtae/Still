@@ -2614,6 +2614,53 @@ def unknown_effect(value):
 
 
 EFFECT_CONTINUATION = 'effect_continuation'
+STILL_RECORD_CONTINUATION = 'still_record_continuation'
+
+# Host writes whose whole effect is a record Still can read back for this Work:
+# preparations.created_from or an entrusted line's opening version work_id.
+STILL_RECORD_KINDS = {'schedule_preparation': 'preparation', 'entrusted_line': 'line'}
+STILL_RECORD_ACTIONS = frozenset(STILL_RECORD_KINDS)
+
+def still_records(store, work_id):
+ """Read this Work's own current records, bounded by the stores' admission limits."""
+ from . import entrusted_lines as el, preparations as prep
+ from .current_context import redact_known_secrets
+ from .procedures import CURRENT
+ with store.db() as db:
+  tables = {row['name'] for row in db.execute("SELECT name FROM sqlite_master WHERE type='table' "
+                                            "AND name IN ('preparations','procedure_versions')")}
+  preparations = db.execute(
+   'SELECT id,kind,title_text,goal_text,due_at,timezone,recurrence,state,line_id FROM preparations '
+   'WHERE created_from=? AND state IN (?,?,?,?) ORDER BY created_at,id LIMIT ?',
+   (work_id, *prep.ACTIVE_STATES, prep.MAX_ACTIVE)).fetchall() if 'preparations' in tables else ()
+  versions = db.execute(
+   'SELECT v.slot,v.version,v.source,v.saved FROM procedure_versions opening JOIN procedure_versions v ON opening.slot=v.slot '
+   'WHERE opening.work_id=? AND opening.version=1 AND opening.slot LIKE ? AND v.state=? '
+   'ORDER BY opening.created,opening.slot LIMIT ?',
+   (work_id, el.SLOT_PREFIX+'%', CURRENT, el.MAX_LINES)).fetchall() if 'procedure_versions' in tables else ()
+ def summary(value, limit):
+  return el.excerpt(redact_known_secrets(store, value), limit)
+ records = [{'record': 'preparation', 'id': row['id'], 'kind': row['kind'],
+             'title': summary(row['title_text'] or row['goal_text'], prep.TITLE_MAX_CHARS),
+             'due': prep.iso(row['due_at'], row['timezone']), 'recurrence': row['recurrence'] or 'none',
+             'state': row['state'], 'line_id': row['line_id']} for row in preparations]
+ for row in versions:
+  brief = el.decode(dict(row))
+  if brief is not None:
+   records.append({'record': 'line', 'id': brief['line_id'], 'version': brief['version'],
+                   'state': brief['state'], 'task': summary(brief['task'], el.TASK_CHARS)})
+ return records
+
+def still_record_note(store, work_id, *, records=None):
+ records = still_records(store, work_id) if records is None else records
+ return prompt('still_record_continuation') + '\n' + json.dumps(records, ensure_ascii=False) if records else ''
+
+def still_record_claims(db, work_id):
+ """Record IDs carried into a replacement attempt of this Work."""
+ return {row['value'] for row in db.execute(
+  "SELECT record.value FROM tool_events event, json_each(CASE WHEN json_valid(event.detail) "
+  "THEN event.detail END, '$.records') record WHERE event.job_id=? AND event.tool=? "
+  "AND event.status='claimed' AND record.type='text'", (work_id, STILL_RECORD_CONTINUATION))}
 
 
 class EffectAncestryError(ValueError):
@@ -2832,6 +2879,7 @@ def _effect_call_history(db,work_id):
  rows=db.execute("SELECT job_id,tool,status,detail FROM tool_events WHERE job_id IN ("+','.join('?' for _ in ids)+") ORDER BY id",ids)
  calls,arguments,unscoped={},{},[]
  for row in rows:
+  if row['tool']==STILL_RECORD_CONTINUATION:continue
   try:detail=json.loads(row['detail'] or '{}')
   except (TypeError,ValueError):detail=None
   if not isinstance(detail,dict):
@@ -3250,9 +3298,8 @@ def call_effects(rows,with_detail=False):
   return [(action,record_effect(action,detail,status),status,detail) for action,detail,status in entries]
  return [(action,record_effect(action,detail,status),status) for action,detail,status in entries]
 
-#: #618 E2: Still's own effect-ledger records (an API dispatch claim, a connector permission); their
-#: outcome is read through ``external_effect_progress`` (observed or unresolved), never as a call.
-EFFECT_LEDGER_TOOLS=frozenset({'api_dispatch','connector_permission',EFFECT_CONTINUATION})
+#: #618 E2: Still's dispatch, permission and continuation bookkeeping, never tool calls.
+EFFECT_LEDGER_TOOLS=frozenset({'api_dispatch','connector_permission',EFFECT_CONTINUATION,STILL_RECORD_CONTINUATION})
 
 def keyed_change(action,detail,status,observed_dispatch=()):
  """Whether a changed call is one Still's own replay key already guards (#618 E2).

@@ -17,7 +17,8 @@ from . import condition_checks as checks
 from . import preparations as prep
 from . import owner_model as om
 from . import work_status as ws
-from .agent_runtime import WORK_STOP_KEEP, WORK_STOP_KEY, ToolError, WorkLedger, not_run, ran_field
+from .agent_runtime import (STILL_RECORD_CONTINUATION, WORK_STOP_KEEP, WORK_STOP_KEY, ToolError, WorkLedger,
+                            not_run, ran_field, still_record_claims)
 from .api_credentials import CredentialError
 from .conversation_handoff import JUDGMENT_NO, JUDGMENT_YES
 from .conversation_projection import earlier_turn_line
@@ -295,6 +296,11 @@ class PreparationsService:
             channel=service.preparation_channel(self.owner_last_work() if planning else job,kind,args.get('delivery'))
             if resume_offer:
                 return self.offer_line_resume(job,args.get('line'),fields,channel)
+            # #1167: a re-delegated attempt revises the preparation it was told exists (re-checked at the write).
+            # A line piece is revised in place and a resume offer is once per day, so neither is held here.
+            replaces=args.get('replaces')
+            with service.store.db() as db:
+                prep.require_preparation_replacement(db,job['id'],replaces)
             summary=prep.proposal_summary({'kind':kind,'goal_text':goal,'due_at':due_at,'timezone':timezone,
                                            'recurrence':prep.RECURRENCE_WINDOW if window else recurrence,
                                            'every_seconds':window and window[0],'until_at':window and window[1],
@@ -324,7 +330,6 @@ class PreparationsService:
             # #766: the preparation this one takes the place of (a changed target or plan); it stops
             # once this one is scheduled.  Only in the owner's own Work, which schedules at once, so a
             # proposal never stops what is running.
-            replaces=args.get('replaces')
             current=None
             if replaces not in (None,''):
                 current=service.preparations.get(replaces) if isinstance(replaces,str) else None
@@ -360,13 +365,21 @@ class PreparationsService:
                                                  accepted_by=accepted_by,accepted_from=accepted_from,
                                                  window=window,delivery_mode=delivery_mode,title=title,offer=offer,
                                                  report_every_minutes=fields['report_every_minutes'],line_id=line_id,
-                                                 requested_until=fields['requested_until'],check=spec,db=db,replaces=replaces)
+                                                 requested_until=fields['requested_until'],check=spec,db=db,replaces=replaces,
+                                                 from_schedule_tool=True)
                     # #574: another Work's identical proposal is this one; the owner's own Work accepts it.
                     already=bool(row.get('already_proposed'))
                     if already and accepted:
                         row=service.preparations.accept(row['id'],accepted_by,accepted_from=accepted_from,db=db,replaces=replaces)
                     if db is not None and row['state']==prep.STATE_SCHEDULED and replaces!=row['id']:
                         stopped=service.preparations.cancel(replaces,db=db)
+                        carried=still_record_claims(db,job['id'])
+                        if replaces in carried and row['id'] not in carried:
+                            # Fence the successor in the same commit as the replacement.
+                            db.execute("UPDATE tool_events SET detail=json_insert(detail,'$.records[#]',?) "
+                                       "WHERE job_id=? AND tool=? AND status='claimed' AND ? IN "
+                                       "(SELECT value FROM json_each(CASE WHEN json_valid(detail) THEN detail END,'$.records'))",
+                                       (row['id'],job['id'],STILL_RECORD_CONTINUATION,replaces))
             except prep.PreparationRefusal as exc:
                 raise ToolError(str(exc),exc.code,**ran_field(exc)) from None
             LOG.info('preparation %s id=%s work=%s kind=%s already_proposed=%s',row['state'],row['id'],job['id'],kind,already)
@@ -2728,11 +2741,17 @@ class PreparationsService:
         service=self.service
         rules=el.split_rules(args.get('rules'))
         days=el.whole_days(args.get('account_every_days'))
-        brief=service.lines.open(job['id'],task=service._redact_known_secrets(args.get('task') or ''),
-                                 report_promise=service._redact_known_secrets(args.get('report_promise') or ''),
-                                 rules=[service._redact_known_secrets(rule) for rule in rules],
-                                 open_matters=service._redact_known_secrets(args.get('open_matters') or ''),
-                                 account_every_days=el.ACCOUNT_DAYS if days is None else days)
+        fields={key:service._redact_known_secrets(args.get(key) or '') for key in ('task','report_promise','open_matters')}
+        rules=[service._redact_known_secrets(rule) for rule in rules]
+        with service.store.db() as db:
+            db.execute('BEGIN IMMEDIATE')
+            service.store.require_read_checkpoint_writer(db)
+            active=sorted(line_id for line_id in still_record_claims(db,job['id'])
+                          if el.line_state(db,line_id)==el.STATE_ACTIVE)
+            if active:
+                raise not_run(ToolError(msg('lines.refused_line_exists',detail=', '.join(active)),'line_exists'))
+            brief=service.lines.open(job['id'],**fields,rules=rules,
+                                     account_every_days=el.ACCOUNT_DAYS if days is None else days,db=db)
         try:self.ensure_line_account(job,brief)
         except prep.PreparationRefusal as exc:LOG.warning('line account not scheduled id=%s code=%s',brief['line_id'],exc.code)
         untold=self.line_notice(job,el.NOTICE_OPENED,brief['line_id'],brief['version'])

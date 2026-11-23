@@ -12058,6 +12058,12 @@
   "ja": "この仕事の実行が自分で変えられるのは未解決事項（open_matters）だけです。ルール、タスク、報告の約束、振り返りの間隔はオーナーの言葉でのみ変わります。変更していません。何を変えるつもりだったか実行の回答で伝えてください。",
   "zh": "此事项的运行自行只能更改其待办事项（open_matters）；规则、任务、汇报承诺和总结间隔只能由主人的话更改。未做更改；请在运行答复中说明您打算更改什么。"
  },
+ "lines.refused_line_exists": {
+  "ko": "이 작업에서 이미 활성 상태인 맡은 일이 있어요({detail}). 바꾸려면 revise에 현재 expected_version을 지정하세요.",
+  "en": "This Work already has active entrusted lines ({detail}). To change an existing line, use revise with its current expected_version.",
+  "ja": "この作業にはすでに有効な任された仕事があります（{detail}）。変更するには、現在の expected_version を指定して revise を使ってください。",
+  "zh": "此工作已有处于活动状态的受托事项（{detail}）。如需更改，请使用 revise 并指定当前的 expected_version。"
+ },
  "lines.refused_line_version_conflict": {
   "ko": "그 사이 맡은 일이 바뀌었어요(지금 버전 {detail}). 더 새 버전을 그대로 두었어요. 다시 읽고 소유자에게 알리세요.",
   "en": "The line changed in the meantime (now version {detail}); the newer version was kept. Read it again and tell the owner.",
@@ -12363,6 +12369,12 @@
   "ko": "지시문을 바꾸지 않았어요. 소유자가 말을 건넸거나 소유자가 맡긴 일의 자격을 갖춘 실행일 때만 자기 지시문을 고칠 수 있어요. 외부 내용을 읽은 뒤 소유자의 말을 근거로 하는 변경은 그 요청과 일치해야 해요. 무엇을 바꾸려 했는지 말하세요.",
   "ja": "指示文は変更していません。オーナーが言葉をかけた場合か、任せた仕事の条件を満たす実行の場合に、自分の指示文を書き直せます。外部の内容を読んだ後にオーナーの言葉を根拠とする変更は、その依頼に一致する必要があります。変更案を伝えてください。",
   "zh": "未更改指令。只有在主人发来指示，或满足主人交托事项的运行条件时，才能改写自身指令。读取外部内容后以主人指示为依据的更改必须符合该指示。请说明拟议更改。"
+ },
+ "preparations.preparation_exists": {
+  "ko": "이 작업에서 이미 진행 중이거나 제안된 준비가 있어요({ids}). 바꾸려면 replaces에 해당 준비 ID를 지정하세요.",
+  "en": "This Work already has active or proposed preparations ({ids}). To change an existing one, pass its ID in replaces.",
+  "ja": "この作業にはすでに進行中または提案済みの準備があります（{ids}）。変更するには、対象の準備 ID を replaces に指定してください。",
+  "zh": "此工作已有生效或待接受的准备事项（{ids}）。如需更改，请在 replaces 中指定该准备事项的 ID。"
  },
  "preparations.steered_replace_only": {
   "en": "Nothing was scheduled. A current run carrying the owner's steer may start new work without replaces, or replace its own preparation. It cannot replace another row.",

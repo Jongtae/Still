@@ -1,0 +1,1 @@
+Still's own store already holds the records below from an earlier attempt of this Work. Use these records as facts about what exists. If a record needs a change, use schedule_preparation with replaces set to the existing preparation ID, or entrusted_line with action revise and the current expected_version. Keep one record per purpose. Tell the owner what exists in your answer.
