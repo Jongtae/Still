@@ -213,9 +213,9 @@
     },
     {
       "id": "browser-press-path",
-      "match": {"paths": ["src/personal_agent/browser_session.py", "src/personal_agent/browser_worker.py", "src/personal_agent/browser_worker_chromium.py", "src/personal_agent/browser_signin.py", "src/personal_agent/self_set_writes.py", "src/personal_agent/cli_browser_relay.py", "src/personal_agent/prompts/press_effect.md"]},
+      "match": {"paths": ["src/personal_agent/browser_session.py", "src/personal_agent/browser_worker.py", "src/personal_agent/browser_worker_chromium.py", "src/personal_agent/browser_signin.py", "src/personal_agent/self_set_writes.py", "src/personal_agent/cli_browser_relay.py", "src/personal_agent/prompts/press_effect.md", "src/personal_agent/prompts/press_requested.md"]},
       "select": [{"set": "scenarios", "ids": ["world-shop-recipe-to-cart", "world-shop-clear-then-add", "world-shop-outside-then-add", "world-shop-signin-wall"]}],
-      "reason": "The browser world's cart, outside-page and sign-in flows run through this browser and press-approval code (#1122); re-run them on both routes before a release."
+      "reason": "The browser world's cart, outside-page and sign-in flows run through this browser and press-approval code (#1122, #1158); re-run them on both routes before a release."
     },
     {
       "id": "scenario-tag-context",
