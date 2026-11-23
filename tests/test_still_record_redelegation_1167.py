@@ -193,6 +193,47 @@ class Reconciled(StillRecords):
                 self.service.use_decision_engine(self.judge)
                 self.now = self.START
 
+    def test_a_proposal_this_work_adopted_is_fenced(self):
+        # Codex P2: an owner Work accepts another Work's identical proposal; the row keeps its creator.
+        work = self.store.enqueue('한 시간 뒤에 물 마시라고 알려줘', 'k1167-adopt', owner_typed=True)
+        row = self.service.preparations.create(kind='reminder', goal='물 마시라고 알리기', due_at=self.now + 3600,
+                                               timezone='Asia/Seoul', recurrence=None, channel='web',
+                                               created_from='another-work', state=prep.STATE_SCHEDULED,
+                                               accepted_by=prep.ACCEPTED_OWNER_REQUEST)
+        self.event(work, 'schedule_preparation', 'running', {'scope': 's', 'call_id': 'p1', 'host_action': 'schedule_preparation'})
+        self.event(work, 'schedule_preparation', 'succeeded', {'scope': 's', 'call_id': 'p1', 'host_action': 'schedule_preparation',
+                                                               'evidence': {'preparation_id': row['id'], 'state': 'scheduled'}})
+        self.assertIs(self.step(work, following=object()).next.call_args.kwargs['effect'], False)
+        schedule = self.service.preparation_scheduler(self.store.job(work), '')
+        with self.assertRaises(ToolError) as refused:
+            schedule(self.schedule_args(row))
+        self.assertEqual(refused.exception.code, 'preparation_exists')
+        self.assertIn(row['id'], str(refused.exception))
+
+    def test_a_line_for_work_none_of_them_covers_still_opens(self):
+        # Codex P2: the owner asked for two lines; the first attempt opened one.
+        for same, expected in ((False, None), (True, 'line_exists')):
+            with self.subTest(same=same):
+                self.service.use_decision_engine(self.judge)
+                self.script = [{'content': None, 'tool_calls': [call('1', 'entrusted_line', action='open', task=f'가격 변동 확인 {same}',
+                                                                     report_promise='바뀌면 알려 줘')]}, finish('f', '1')]
+                work = self.receive(f'가격 변동 확인을 맡아 줘 {same}')
+                self.step(work, following=object())
+
+                def judge(context, proposition, same=same):
+                    if context.purpose == 'same-preparation-goal':
+                        return BinaryDecision(OUTCOME_DECIDED, same, fixture_confidence())
+                    return None
+                self.service.use_decision_engine(FixtureDecisionEngine(judge=judge))
+                handle = self.service.line_handler(self.store.job(work))
+                args = {'action': 'open', 'task': f'재고 변동 확인 {same}', 'report_promise': '바뀌면 알려 줘'}
+                if expected is None:
+                    self.assertTrue(handle(args)['line_id'])
+                else:
+                    with self.assertRaises(ToolError) as refused:
+                        handle(args)
+                    self.assertEqual(refused.exception.code, expected)
+
     def test_without_a_re_delegation_two_preparations_in_one_work_stay_allowed(self):
         work, row = self.scheduled_work()
         schedule = self.service.preparation_scheduler(self.store.job(work), '')

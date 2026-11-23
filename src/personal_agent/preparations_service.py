@@ -2763,11 +2763,24 @@ class PreparationsService:
         days=el.whole_days(args.get('account_every_days'))
         fields={key:service._redact_known_secrets(args.get(key) or '') for key in ('task','report_promise','open_matters')}
         rules=[service._redact_known_secrets(rule) for rule in rules]
+        # #1167: a re-delegated attempt revises its carried line, and one the owner stopped or forgot stays so.
+        # A line for work none of them covers (#1170's brief) is the same-goal judgment, asked only here;
+        # unavailable, or a forgotten line whose task is gone, keeps the fence.
+        with service.store.db() as db:
+            carried=still_record_claims(db,job['id'],'lines')
+        def readable(line_id):
+            try:return service.lines.current(line_id)
+            except Exception:return None  # unreadable: fenced
+        briefs={line_id:readable(line_id) for line_id in carried}
+        distinct=frozenset()
+        if (briefs and all(brief and brief.get('task') for brief in briefs.values())
+                and service.decision_judge.same_preparation_goal(fields['task'],[brief['task'] for brief in briefs.values()],
+                                                                 work_id=job['id']).outcome==JUDGMENT_NO):
+            distinct=frozenset(briefs)
         with service.store.db() as db:
             db.execute('BEGIN IMMEDIATE')
             service.store.require_read_checkpoint_writer(db)
-            # #1167: a re-delegated attempt revises its carried line; one the owner stopped or forgot stays so.
-            carried=sorted(still_record_claims(db,job['id'],'lines'))
+            carried=sorted(set(still_record_claims(db,job['id'],'lines'))-distinct)
             active=[line_id for line_id in carried if el.line_state(db,line_id)==el.STATE_ACTIVE]
             if active:
                 raise not_run(ToolError(msg('lines.refused_line_exists',detail=', '.join(active)),'line_exists'))

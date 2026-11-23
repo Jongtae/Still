@@ -2636,15 +2636,25 @@ def still_record_fence(store, work_id):
  Read at the moment the next attempt is claimed, over every state, so a row that settled after the
  continuation rule reconciled it is still fenced (as settled).  A row this Work replaced itself has its
  successor in its place; a line's automatic account is the line's upkeep, not work the attempt scheduled.
+ A row another Work proposed and this one adopted keeps its creator, so this Work's own succeeded calls
+ name the rows it set up too.
  """
  from . import entrusted_lines as el, preparations as prep
  with store.db() as db:
   tables = {row['name'] for row in db.execute("SELECT name FROM sqlite_master WHERE type='table' "
                                             "AND name IN ('preparations','procedure_versions')")}
   replaced = _own_replacements(db, work_id)
+  called = set()
+  for row in db.execute("SELECT detail FROM tool_events WHERE job_id=? AND tool='schedule_preparation' AND status='succeeded'",
+                        (work_id,)):
+   try:evidence = (json.loads(row['detail'] or '{}') or {}).get('evidence')
+   except (TypeError, ValueError, AttributeError):continue
+   if isinstance(evidence, dict) and isinstance(evidence.get('preparation_id'), str):called.add(evidence['preparation_id'])
+  marks = ','.join('?' for _ in called)
   preparations = [row['id'] for row in db.execute(
-   'SELECT id FROM preparations WHERE created_from=? AND origin IS NOT ? ORDER BY created_at,id',
-   (work_id, prep.ORIGIN_LINE_ACCOUNT)) if row['id'] not in replaced] if 'preparations' in tables else []
+   'SELECT id FROM preparations WHERE (created_from=?' + (f' OR id IN ({marks})' if called else '') + ') '
+   'AND origin IS NOT ? ORDER BY created_at,id',
+   (work_id, *called, prep.ORIGIN_LINE_ACCOUNT)) if row['id'] not in replaced] if 'preparations' in tables else []
   lines = [row['slot'][len(el.SLOT_PREFIX):] for row in db.execute(
    'SELECT slot FROM procedure_versions WHERE work_id=? AND version=1 AND slot LIKE ? ORDER BY created,slot',
    (work_id, el.SLOT_PREFIX+'%'))] if 'procedure_versions' in tables else []
