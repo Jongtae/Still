@@ -12,6 +12,7 @@ import hmac
 import logging
 import os
 import queue
+import re
 import secrets
 import subprocess
 import sys
@@ -19,6 +20,7 @@ import threading
 import time
 from pathlib import Path
 from textwrap import indent
+from types import SimpleNamespace
 
 from markdown_it import MarkdownIt
 from markdown_it.tree import SyntaxTreeNode
@@ -51,8 +53,35 @@ PAIRING_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'
 ERROR_CODES = ('no_disk_access', 'messages_not_signed_in', 'db_unreadable', 'bad_request')
 TAPBACK_NAMES = {'like': '+1', 'dislike': '-1', 'love': 'heart', 'laugh': 'grin'}
 
+_BARE_URL = re.compile(r'[A-Za-z][A-Za-z0-9+.-]*://([^\s<>]+)')
+_URL_TRAILING_PUNCTUATION = '.,;:!?\'"*~…“”‘’。，；：！？'
+
+
+# Supply the inline rule's matcher without adding the optional linkify-it-py dependency.
+class _BareURLMatcher:
+    @staticmethod
+    def match_at_start(text: str) -> SimpleNamespace | None:
+        match = _BARE_URL.match(text)
+        if match is None:
+            return None
+        url = match[0]
+        start, end = match.span(1)
+        excess = {')': url.count(')') - url.count('('), ']': url.count(']') - url.count('[')}
+        while end > start:
+            char = url[end - 1]
+            if char not in _URL_TRAILING_PUNCTUATION:
+                if excess.get(char, 0) <= 0:
+                    break
+                excess[char] -= 1
+            end -= 1
+        return SimpleNamespace(url=url[:end]) if end > start else None
+
+
 # Keep escape and entity tokens distinguishable from ordinary text for the passthrough check.
-_MARKDOWN = MarkdownIt('commonmark').enable(['table', 'strikethrough']).disable('text_join')
+_MARKDOWN = MarkdownIt('commonmark', {'linkify': True}).enable(['table', 'strikethrough']).disable('text_join')
+_MARKDOWN.inline.ruler.enable('linkify')
+_MARKDOWN.linkify = _BareURLMatcher()
+_MARKDOWN.normalizeLink = _MARKDOWN.normalizeLinkText = lambda url: url
 _LISTS = ('bullet_list', 'ordered_list')
 
 
@@ -66,6 +95,7 @@ def plain_text(text: str) -> str:
     if not env.get('references') and all(
             token.type in ('paragraph_open', 'paragraph_close', 'inline', 'html_block')
             and all(child.type in ('text', 'softbreak', 'html_inline')
+                    or child.markup == 'linkify'
                     or (child.type == 'text_special' and child.markup == child.content)
                     for child in token.children or ())
             for token in tokens):
@@ -112,7 +142,7 @@ def _plain_inline(node):
     label = ''.join(map(_plain_inline, node.children)) if node.children else node.content
     if node.type == 'link':
         url = node.attrGet('href')
-        if node.markup == 'autolink' or _MARKDOWN.normalizeLink(label) == url:
+        if node.markup == 'autolink' or label == url:
             return label
         return f'{label} ({url})' if label else url
     return label
