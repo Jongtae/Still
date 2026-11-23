@@ -652,6 +652,13 @@ def worker_catalogue(service):
             reason = '' if ready else ('no_api_key' if not key else 'not_verified')
             tools = [tool for tool in package_tools if browser or tool not in BROWSER_ACTIONS]
             model = str(config.get('model') or '')
+            # #1172: the effort levels documented or listed for an API model, as for a CLI model (#1434).
+            lookup = getattr(getattr(service, 'decision_routes', None), 'api_model_efforts', None)
+            try:
+                levels = lookup(route_id, model) if model and callable(lookup) else ()
+            except Exception:
+                levels = ()
+            worker['model_efforts'] = {model: list(levels)} if levels else {}
             worker.update(available=ready, reason=reason, default_model=model, models=[model] if model else [])
             routes[route_id] = {'kind': KIND_API, 'config': config, 'key': key, 'test': test}
         # #812: the catalogue lists only what a turn is actually offered: a context-gated
