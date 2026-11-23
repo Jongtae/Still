@@ -60,7 +60,7 @@ def records_from_samples(samples, scorer=SCORER):
             measurements.update(judgment_fallback_counts(run.get('work')))
         if 'judgment' in run:
             measurements['judgment_ai'] = run['judgment']
-        for key in ('turns', 'due_observations', 'observation_version'):
+        for key in ('turns', 'due_observations', 'observation_version', 'worker_api'):
             if key in run:
                 measurements[key] = run[key]
         if score is None:
@@ -203,6 +203,8 @@ def world_records(runs):
                                   'payments_allowed': sum(1 for row in run.get('decisions') or []
                                                           if row.get('status') == 'allowed' and row.get('effect') == 'payment'),
                                   'status': ((run.get('turns') or [{}])[-1]).get('status'), 'error': run.get('error')}})
+        if isinstance(run.get('worker_api'), dict):
+            records[-1]['worker_api'] = run['worker_api']
     return records
 
 

@@ -99,6 +99,7 @@ cd evals
 ```
 
 - `--worker codex|claude-code|both`: `both` runs every scenario once per worker, so a sweep covers both subscriptions. This also tests engine replaceability.
+- `--claude-auth api|subscription` (#545, default `api`): the Claude Code worker runs on the Anthropic API key from the Keychain entry `agentos-evals` / `anthropic` (the judge's entry; `security add-generic-password -s agentos-evals -a anthropic -w`), so it no longer shares the owner's Claude subscription limit. `worker_key.py` puts one `claude` wrapper first on the sandbox server's `PATH`; only that wrapper reads the key (a 0600 file beside the slot, removed when the sandbox stops) and starts the real CLI with `ANTHROPIC_API_KEY`, the subscription token removed and `CLAUDE_CODE_SUBPROCESS_ENV_SCRUB=1`. The Still server, its store, prompts, logs, Evidence and the eval transcripts never hold it. Every model launch reserves `AGENTOS_EVAL_WORKER_RESERVE_USD` (default 1) against the same daily cap as the judge (`--cap-usd`, default 10), refused past it, then settles to the CLI's reported per-model `costUSD`; an unreported cost keeps the reserve. `sweep` prints the worker's totals. `--claude-auth subscription` keeps the old route.
 - `--instances N`: concurrent sandboxes (default 3). Each run gets a **fresh copy** of the seed, so trials are independent.
 - `--scenarios id1,id2`, `--split dev|heldout`, `--no-local` (bundled scenarios only) and `--limit N` narrow the set, for example a targeted re-run for a PR.
 - `--turn-timeout` sets seconds per owner turn (default 900).
