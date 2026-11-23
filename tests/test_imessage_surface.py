@@ -898,6 +898,83 @@ class WorkMode(IMessageCase):
         self.assertEqual(self.answer_sends(), [], 'nothing queued while it was on is sent later')
 
 
+class PlainTextAndWait(IMessageCase):
+    """#1180: answers arrive as plain text, and a long Work sends one wait message from the observed step."""
+
+    def setUp(self):
+        super().setUp()
+        self.pair()
+        self.owner_says('질문')
+        self.work = self.im_jobs()[0]
+        self.timing = self.service.presence_timing
+
+    def present(self, after):
+        return self.service.present_waiting_work(now=self.work['created'] + after)
+
+    def waits(self):
+        return [op for op in self.sidecar.sends() if op['text'] != ANSWER and op['text'] != msg('imessage.connected_hello')]
+
+    def test_a_markdown_answer_is_sent_as_plain_text_and_its_echo_settles_it(self):
+        import sys
+        markdown = '**순두부찌개** 어때요? [가게](https://example.com/s)'
+        mock.patch.object(sys.modules[__name__], 'ANSWER', markdown).start()
+        self.addCleanup(mock.patch.stopall)
+        self.assertTrue(self.service.run_one())
+        self.service.deliver_one()
+        sent = self.sidecar.sends()[-1]['text']
+        self.assertEqual(sent, '순두부찌개 어때요? 가게 (https://example.com/s)')
+        self.sidecar.from_me(OWNER, sent)
+        self.surface.receive()
+        self.assertEqual(self.store.job(self.work['id'])['delivery'], 'sent', 'the echo of the rendered text settles it')
+
+    def test_a_short_work_sends_no_wait_message(self):
+        self.present(self.timing.draft_after - 0.5)
+        self.assertEqual(self.waits(), [])
+        self.assertTrue(self.service.run_one())
+        self.service.deliver_one()
+        self.present(self.timing.draft_after + 30)
+        self.assertEqual(self.waits(), [], 'nothing after the answer')
+
+    def test_a_long_work_sends_exactly_one_wait_message_before_the_answer(self):
+        from personal_agent.telegram_presence import draft_frame
+        from personal_agent.telegram_presence import NO_STEP_LINE
+        expected = draft_frame(NO_STEP_LINE, 0)   # no words of Still's own outside developer mode (#477)
+        for after in (self.timing.draft_after + 1, self.timing.draft_after + 20, self.timing.draft_after + 300):
+            self.present(after)
+        self.assertEqual([op['text'] for op in self.waits()], [expected])
+        self.assertTrue(self.service.run_one())
+        self.service.deliver_one()
+        texts = [op['text'] for op in self.sidecar.sends()]
+        self.assertLess(texts.index(expected), texts.index(ANSWER), 'the wait message comes before the answer')
+        self.present(self.timing.draft_after + 600)
+        self.assertEqual(len(self.waits()), 1, 'never after the answer')
+
+    def test_the_wait_message_names_the_observed_step(self):
+        self.service.developer_mode = lambda: True
+        self.service.live_workers[self.work['id']] = 'Codex'
+        self.present(self.timing.draft_after + 1)
+        self.assertEqual([op['text'] for op in self.waits()], ['Codex · · ·'])
+
+    def test_an_approval_wait_sends_no_wait_message(self):
+        with mock.patch.object(self.service, '_draft_step_text', return_value=None):
+            self.present(self.timing.draft_after + 1)
+            self.present(self.timing.draft_after + 60)
+        self.assertEqual(self.waits(), [])
+
+    def test_the_wait_message_echo_never_marks_the_reply_delivered(self):
+        self.present(self.timing.draft_after + 1)
+        [wait] = self.waits()
+        self.sidecar.from_me(OWNER, wait['text'], sent=True, delivered=True)
+        self.surface.receive()
+        self.assertTrue(self.service.run_one())
+        self.service.deliver_one()
+        self.assertEqual(self.store.job(self.work['id'])['delivery'], 'sending')
+        self.sidecar.from_me(OWNER, wait['text'], sent=True, delivered=True)   # another echo of that text
+        self.surface.receive()
+        self.assertEqual(self.store.job(self.work['id'])['delivery'], 'sending')
+        self.assertIsNone(self.surface.reply_message(self.work['id'], 'handle:' + OWNER))
+
+
 if __name__ == '__main__':
     unittest.main()
 
