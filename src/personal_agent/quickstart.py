@@ -1741,6 +1741,8 @@ def main():
     finally:
         service.stop.set()
         service.a2a_peers.stop()
+        # #1143: a conversation surface's child process ends before Still does (the poll thread is a daemon).
+        service.stop_surfaces()
         # #1380: a tunnel must not outlive its server (it blocks the next link).
         service.end_tunnel_sessions('closed')
         server.server_close()

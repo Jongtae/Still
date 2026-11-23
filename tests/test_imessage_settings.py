@@ -350,6 +350,29 @@ class Disconnect(Case):
         self.assertLess(time.monotonic() - started, 5)
 
 
+    def test_service_shutdown_waits_for_a_stop_already_under_way(self):
+        self.pair()
+        car = self.launchers[-1]
+        finished = threading.Event()
+        real_stop = car.stop
+
+        def slow_stop():
+            time.sleep(0.5)   # an unresponsive child the launcher must terminate
+            real_stop()
+            finished.set()
+
+        car.stop = slow_stop
+        threading.Thread(target=self.service.disconnect_imessage, daemon=True).start()
+        self.assertTrue(wait_for(lambda: self.surface._stopping, 2), 'the disconnect started stopping')
+        self.service.stop_surfaces()
+        self.assertTrue(finished.is_set(), 'shutdown returned only after the child was stopped')
+
+    def test_still_main_stops_the_surfaces_before_it_exits(self):
+        main = (Path(imessage_surface.__file__).with_name('quickstart.py')).read_text(encoding='utf-8')
+        tail = main[main.index('    try:run()'):]
+        self.assertLess(tail.index('service.stop_surfaces()'), tail.index('for thread in service.threads:thread.join'))
+
+
 class WorkMode(Case):
     def test_work_mode_pauses_a_paired_surface_visibly_and_the_owner_can_approve_it(self):
         self.pair()
@@ -425,6 +448,9 @@ class SettingsPage(unittest.TestCase):
         # A section the host does not offer is hidden, and the add-connection chooser skips hidden sections.
         self.assertIn('<section id="imessage"', html)
         self.assertRegex(html, r'<section id="imessage"[^>]*\bhidden\b')
+        render = script[script.index('function renderIMessage('):]
+        render = render[:render.index('\nfunction ')]
+        self.assertIn('!status.disk_access_app.uncertain', render, 'a guessed app keeps the backend\'s unsure message')
         chooser = script[script.index('function openAdd('):script.index('function showAddType(')]
         self.assertIn('if(node.hidden)continue;', chooser)
         server = (Path(imessage_surface.__file__).with_name('quickstart.py')).read_text(encoding='utf-8')

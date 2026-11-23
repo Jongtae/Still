@@ -2133,7 +2133,7 @@ function renderIMessage(status){
  const list=$('imessage-status'),pairing=status.pairing&&status.pairing_expires_at>Date.now()/1000;
  const state=status.state==='paused'?['회사 모드로 멈춤','attention']:status.state==='error'?['확인 필요','attention']:status.state==='starting'?['iMessage 시작 중…','run']:pairing?['연결 코드 대기 중','run']:status.state==='connected'?['받는 중','run']:['연결되지 않음','neutral'];
  list.replaceChildren(settingsRow('iMessage',status.handle||'',t(state[0]),state[1]));
- const message=status.code==='no_disk_access'&&status.disk_access_app?.name?
+ const message=status.code==='no_disk_access'&&status.disk_access_app?.name&&!status.disk_access_app.uncertain?
   t('시스템 설정 → 개인정보 보호 및 보안 → 전체 디스크 접근 권한에서 {app}을(를) 허용한 뒤 다시 시도하세요.',{app:status.disk_access_app.name}):t(status.message);
  if(message)list.append(element('p',message,'field-hint'));
  if(!pairing||imessagePairing?.expires_at!==status.pairing_expires_at)imessagePairing=null;

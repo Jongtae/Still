@@ -40,6 +40,8 @@ REPLAY_OVERLAP_MS = 10 * 60 * 1000
 PRUNE_SECONDS = 3600
 #: How long a disconnect waits for the ``scope off`` write before stopping the sidecar anyway.
 SCOPE_OFF_SECONDS = 2
+#: How long Still's shutdown waits for a sidecar stop under way (the launcher's bounded stop ends within this).
+SHUTDOWN_SECONDS = 30
 PAIRING_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'
 ERROR_CODES = ('no_disk_access', 'messages_not_signed_in', 'db_unreadable', 'bad_request')
 TAPBACK_NAMES = {'like': '+1', 'dislike': '-1', 'love': 'heart', 'laugh': 'grin'}
@@ -163,6 +165,7 @@ class IMessageSurface(DirectMessageSurface):
         self._supervised = None
         self._starting = None
         self._stopping = False
+        self._stopped = threading.Condition()   # signalled when a sidecar stop finishes
         self._retry_at = 0
         self._backoff = 1
         self._disk_access_target = None
@@ -303,14 +306,18 @@ class IMessageSurface(DirectMessageSurface):
             except Exception as exc:
                 LOG.warning('iMessage sidecar shutdown failed (%s)', type(exc).__name__)
         finally:
-            with self.service.lock:
+            with self._stopped:
                 self._stopping = False
+                self._stopped.notify_all()
 
     def shutdown(self):
+        """Stop the sidecar and wait for any stop already under way, so Still never exits before its child."""
         with self.service.lock:
             sidecar = self._detach_sidecar()
         if sidecar is not None:
             self._stop_sidecar(sidecar)
+        with self._stopped:
+            self._stopped.wait_for(lambda: not self._stopping, timeout=SHUTDOWN_SECONDS)
 
     def retry(self):
         with self.service.lock:
