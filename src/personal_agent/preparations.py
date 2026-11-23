@@ -928,7 +928,14 @@ def require_preparation_replacement(db, work_id, replaces=None, distinct=frozens
     only where none of them covers it; that is the same-goal judgment, asked before this transaction.
     """
     from .agent_runtime import ToolError, not_run
-    carried = {key: row for key, row in carried_preparations(db, work_id).items() if key not in distinct}
+    carried = carried_preparations(db, work_id)
+    if replaces in carried and not carried[replaces]['settled']:
+        # A revision of one carried row sets nothing new up: only a settled one with the same goal blocks it.
+        blocking = sorted(key for key, row in carried.items() if key != replaces and row['settled'] and key not in distinct)
+        if blocking:
+            raise not_run(ToolError(msg('preparations.preparation_settled', ids=', '.join(blocking)), 'preparation_settled'))
+        return
+    carried = {key: row for key, row in carried.items() if key not in distinct}
     settled = sorted(key for key, row in carried.items() if row['settled'])
     if settled:
         raise not_run(ToolError(msg('preparations.preparation_settled', ids=', '.join(settled)), 'preparation_settled'))

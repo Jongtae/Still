@@ -163,6 +163,36 @@ class Reconciled(StillRecords):
         schedule({**self.schedule_args(row), 'goal': '스트레칭하라고 알리기', 'title': '스트레칭'})
         self.assertEqual(len(self.active(work)), 2)
 
+    def test_revising_one_carried_row_is_not_blocked_by_an_unrelated_one_that_ran(self):
+        # Codex P2: two carried rows; one fires; the other is still revised in place unless that would redo the first.
+        for same, expected in ((False, None), (True, 'preparation_settled')):
+            with self.subTest(same=same):
+                work, first = self.scheduled_work(title=f'first-{same}')
+                schedule = self.service.preparation_scheduler(self.store.job(work), '')
+                other = schedule({**self.schedule_args(first), 'goal': '스트레칭하라고 알리기', 'title': '스트레칭',
+                                  'due': self.due_iso(7200)})['preparation_id']
+                self.step(work, following=object())
+                self.now = first['due_at'] + 1
+                self.tick()
+
+                def judge(context, proposition, same=same):
+                    if context.purpose == 'same-preparation-goal':
+                        return BinaryDecision(OUTCOME_DECIDED, same, fixture_confidence())
+                    return None
+                self.service.use_decision_engine(FixtureDecisionEngine(judge=judge))
+                revise = self.service.preparation_scheduler(self.store.job(work), '')
+                args = {**self.schedule_args(first), 'goal': '스트레칭 두 번 하라고 알리기', 'title': '스트레칭',
+                        'due': self.due_iso(9000), 'replaces': other}
+                if expected is None:
+                    self.assertEqual(revise(args)['replaced']['preparation_id'], other)
+                else:
+                    with self.assertRaises(ToolError) as refused:
+                        revise(args)
+                    self.assertEqual(refused.exception.code, expected)
+                    self.assertEqual(self.service.preparations.get(other)['state'], prep.STATE_SCHEDULED)
+                self.service.use_decision_engine(self.judge)
+                self.now = self.START
+
     def test_without_a_re_delegation_two_preparations_in_one_work_stay_allowed(self):
         work, row = self.scheduled_work()
         schedule = self.service.preparation_scheduler(self.store.job(work), '')

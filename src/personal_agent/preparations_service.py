@@ -303,11 +303,14 @@ class PreparationsService:
             replaces=args.get('replaces')
             with service.store.db() as db:
                 carried=prep.carried_preparations(db,job['id'])
+            # A revision of one carried row is judged only against the settled others it could set up again.
+            relevant=({key:row for key,row in carried.items() if key!=replaces and row['settled']}
+                      if replaces in carried and not carried[replaces]['settled'] else carried)
             distinct=frozenset()
-            if (carried and replaces not in carried and all(row['goal'] is not None for row in carried.values())
-                    and service.decision_judge.same_preparation_goal(goal,[row['goal'] for row in carried.values()],
+            if (relevant and all(row['goal'] is not None for row in relevant.values())
+                    and service.decision_judge.same_preparation_goal(goal,[row['goal'] for row in relevant.values()],
                                                                      work_id=job['id']).outcome==JUDGMENT_NO):
-                distinct=frozenset(carried)
+                distinct=frozenset(relevant)
             with service.store.db() as db:
                 prep.require_preparation_replacement(db,job['id'],replaces,distinct)
             summary=prep.proposal_summary({'kind':kind,'goal_text':goal,'due_at':due_at,'timezone':timezone,
