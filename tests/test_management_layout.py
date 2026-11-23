@@ -43,7 +43,7 @@ class Structure(unittest.TestCase):
         self.assertEqual(HTML.count('<dialog id="add-dialog"'), 1)
         external = set(re.findall(r'<(?:section|details)[^>]*(?:id="([\w-]+)"|aria-labelledby="([\w-]+)")[^>]*data-add="external"', pane("settings-external")))
         self.assertEqual({a or b for a, b in external},
-                         {"telegram-heading", "mattermost", "slack", "connector-heading", "browser-profile", "search-providers-heading", "company-network"})
+                         {"telegram-heading", "mattermost", "slack", "imessage", "connector-heading", "browser-profile", "search-providers-heading", "company-network"})
 
     def test_add_only_editors_open_in_the_dialog_not_the_pane(self):
         for editor in ("roots-add", "owner-profile-more", "context-capture-more"):

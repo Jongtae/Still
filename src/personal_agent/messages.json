@@ -7589,7 +7589,7 @@
   "zh": "你回应的项目已处理或不再等待回复。"
  },
  "imessage.company_approved_hint": {
-  "ko": "회사에서 이 iMessage 연결을 승인했을 때만 켜세요. 끄면 회사 모드에서 iMessage를 멈춥니다.",
+  "ko": "회사에서 이 iMessage 연결을 승인했을 때만 켜세요. 끄면 회사 모드에서 iMessage를 멈춰요.",
   "en": "Turn this on only if your company approved this iMessage connection. When off, iMessage pauses in work mode.",
   "ja": "会社がこの iMessage 接続を承認した場合だけオンにしてください。オフにすると、会社モード中は iMessage が停止します。",
   "zh": "仅在公司批准此 iMessage 连接时开启。关闭后，iMessage 会在工作模式下暂停。"
@@ -7691,7 +7691,7 @@
   "zh": "用该 Apple ID 登录这台 Mac 上的“信息”。"
  },
  "imessage.setup_disk_access": {
-  "ko": "시스템 설정 → 개인정보 보호 및 보안 → 전체 디스크 접근 권한에서 Still을 실행한 앱을 허용하세요. 권한이 필요하면 위에 앱 이름이 표시됩니다.",
+  "ko": "시스템 설정 → 개인정보 보호 및 보안 → 전체 디스크 접근 권한에서 Still을 실행한 앱을 허용하세요. 권한이 필요하면 위에 앱 이름이 표시돼요.",
   "en": "In System Settings → Privacy & Security → Full Disk Access, allow the app that launched Still. Its name appears above when permission is needed.",
   "ja": "システム設定 → プライバシーとセキュリティ → フルディスクアクセスで、Still を起動したアプリを許可してください。許可が必要なときは上にアプリ名が表示されます。",
   "zh": "在系统设置 → 隐私与安全性 → 完全磁盘访问权限中，允许启动 Still 的应用。需要授权时，上方会显示应用名称。"
@@ -7733,7 +7733,7 @@
   "zh": "{time} 到期"
  },
  "imessage.disconnect_confirm": {
-  "ko": "iMessage 연결을 해제할까요? 다시 연결하려면 새 코드가 필요합니다.",
+  "ko": "iMessage 연결을 해제할까요? 다시 연결하려면 새 코드가 필요해요.",
   "en": "Disconnect iMessage? You will need a new code to reconnect.",
   "ja": "iMessage の接続を解除しますか？再接続には新しいコードが必要です。",
   "zh": "要断开 iMessage 吗？重新连接需要新的配对码。"
