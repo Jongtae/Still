@@ -242,8 +242,15 @@ def authorize(service, job, binding, connection, operation, target, names=(), *,
     if effect == 'irreversible' and browser_press and not service.unattended_work(job) and service.owner_typed_work(job):
         try:
             from .conversation_handoff import JUDGMENT_YES
+            from urllib.parse import urlsplit
+            address = urlsplit(str(target))
+            # The page and the values bind the judgment to the site and record pressed (#1159 review);
+            # they passed action_input_safe above, and known secrets are redacted again here.
+            shown = service._redact_known_secrets(json.dumps(values, ensure_ascii=False)[:600]) if values else ''
             requested = service.decision_judge.press_requested(
-                (service.store.job(job['id']) or job).get('message'), operation, tuple(names), job['id']).outcome == JUDGMENT_YES
+                (service.store.job(job['id']) or job).get('message'), operation, tuple(names), job['id'],
+                page=service._redact_known_secrets(f'{address.scheme}://{address.netloc}{address.path}'),
+                values=shown).outcome == JUDGMENT_YES
         except Exception:
             requested = False
     covered = reversible or requested

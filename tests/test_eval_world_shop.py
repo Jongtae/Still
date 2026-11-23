@@ -435,6 +435,8 @@ def emptying_is_irreversible(context, candidates, question):
 
 def asked_to_empty(facts):
     """A scripted press-requested judgment: the owner's own words asked to empty the cart."""
+    # The judgment sees where the press happens, so another site's Empty cart can be told apart (#1159 review).
+    assert facts['page'].startswith('http://127.0.0.1:') and facts['page'].endswith('/cart'), facts['page']
     return facts['element_name'] == 'Empty cart' and 'Empty my cart' in facts['owner_message']
 
 
