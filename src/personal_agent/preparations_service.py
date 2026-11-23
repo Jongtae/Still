@@ -334,7 +334,13 @@ class PreparationsService:
                     raise not_run(ToolError(str(prep.PreparationRefusal('replace_not_allowed')),'replace_not_allowed'))
             # #798: the entrusted line this row works for: the replaced row's line, kept through the
             # replacement, or the line the owner's AI continues when the owner starts the same work again.
-            line_id=self.scheduled_line(args.get('line'),current,accepted=accepted,planning=planning)
+            line_arg=args.get('line')
+            if line_arg=='none':line_arg=None
+            elif line_arg in (None,'') and current is None and accepted and not planning and service.owner_typed_work(job):
+                # #1169: a Work holding a line it read must say whether this schedule continues it.
+                held=self.held_line(job['id'])
+                if held:raise not_run(ToolError(msg('lines.refused_line_unnamed',line=held),'line_unnamed'))
+            line_id=self.scheduled_line(line_arg,current,accepted=accepted,planning=planning)
             stopped=None
             try:
                 # #582: a goal the owner declined is not set up again unless they ask for it again.
@@ -2701,7 +2707,7 @@ class PreparationsService:
                 if action=='list':return self.lines_listing()
                 if action=='read':
                     result=self.line_read(args.get('line'))
-                    self._record_line_read(job['id'],result)
+                    self._record_line_read(job['id'],result,held=True)
                     return result
                 if action not in ('open','revise','undo','stop','restart'):raise refused('line_invalid_action')
                 if service.owner_typed_work(job):return getattr(self,'_line_'+action)(job,args)
@@ -2900,7 +2906,7 @@ class PreparationsService:
         except Exception as exc:  # noqa: BLE001 - the audit record must not fail or mask the run's own outcome
             LOG.warning('line read record failed work=%s kind=%s',work_id,type(exc).__name__)
 
-    def _record_line_read(self, work_id, brief, *, once=False):
+    def _record_line_read(self, work_id, brief, *, once=False, held=False):
         with self.service.store.db() as db:
             db.execute('BEGIN IMMEDIATE')
             self.service.store.require_read_checkpoint_writer(db)
@@ -2910,8 +2916,22 @@ class PreparationsService:
                     (work_id,el.READ_EVENT,brief['line_id'])).fetchone():return
             db.execute('INSERT INTO tool_events(job_id,tool,status,detail,created) VALUES (?,?,?,?,?)',
                        # #802: as Evidence, so the information-use audit lists the line the run was given.
-                       (work_id,el.READ_EVENT,'succeeded',json.dumps({'evidence':{'line_id':brief['line_id'],'version':brief['version']}}),
+                       (work_id,el.READ_EVENT,'succeeded',json.dumps({'evidence':{'line_id':brief['line_id'],'version':brief['version'],**({'held':True} if held else {})}}),
                         self.service.preparations.clock()))
+
+    def held_line(self, work_id):
+        """#1169: the active line this Work itself read through ``entrusted_line``, or None.
+
+        Only the model's own read counts, not a brief a run was handed; the line's subject is never read.
+        """
+        with self.service.store.db() as db:
+            rows=db.execute('SELECT detail FROM tool_events WHERE job_id=? AND tool=? ORDER BY id DESC',(work_id,el.READ_EVENT)).fetchall()
+        for row in rows:
+            read=json.loads(row['detail']).get('evidence') or {}
+            if read.get('held') and read.get('line_id'):
+                brief=self.service.lines.readable(read['line_id'])
+                if brief and brief['state']==el.STATE_ACTIVE:return read['line_id']
+        return None
 
     def line_version_read(self, work_id):
         """The newest brief version this Work recorded reading, as ``(line_id, version)``, or None."""

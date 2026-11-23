@@ -12070,6 +12070,12 @@
   "ja": "この仕事は停止中です。オーナーが望むときだけ restart してください。",
   "zh": "此事项已停止。仅在主人要求时用 restart 重新开始。"
  },
+ "lines.refused_line_unnamed": {
+  "ko": "이 Work에서 읽은 맡은 일 {line}이 있어요. 이어가는 일이면 line에 그 id를 넣고, 별개의 일이면 line을 none으로 해서 다시 예약하세요.",
+  "en": "This Work read entrusted line {line}. If this schedule continues it, pass line with that id; if it is separate work, pass line as none and schedule again.",
+  "ja": "このWorkで読んだ仕事 {line} があります。続きなら line にそのIDを、別の仕事なら line を none にして再度予約してください。",
+  "zh": "此 Work 读取了受托事项 {line}。若是延续它，请在 line 中传入该 id；若是另一件事，请将 line 设为 none 后重新安排。"
+ },
  "lines.refused_line_mismatch": {
   "ko": "바꾸려는 준비는 다른 맡은 일에 속해요.",
   "en": "The replaced preparation belongs to another line.",
