@@ -3,6 +3,7 @@
 Compatible with the original Still separation of engine health/run and model
 construction; this module has no host CLI, systemd or third-party dependency.
 """
+import hashlib
 import json
 import math
 import re
@@ -135,6 +136,25 @@ def api_usage(provider, data):
             if isinstance(details, dict) and _numeric(details.get(key)):out[key] = details[key]
             elif _numeric(usage.get(key)) and key not in out:out[key] = usage[key]
     return out or None
+
+
+def openai_cache_key(model, tools, leading, hints):
+    """#1161: a stable ``prompt_cache_key`` for requests that share Still's static prefix.
+
+    OpenAI routes cache lookups by the prompt's start plus this key; a key fixed
+    for one model, tool set and static prefix lets consecutive Works and judgments
+    reach the same cached prefix.  It is a one-way hash of Still's own fixed text
+    (no owner data) and changes whenever that text or the tools change.  ``None``
+    when no leading system message marks a static prefix.
+    """
+    for index, message in enumerate(leading):
+        static = hints[index] if index < len(hints) else None
+        content = message.get('content')
+        if isinstance(static, int) and static > 0 and isinstance(content, str):
+            digest = hashlib.sha256(json.dumps([model, tools, content[:static]], sort_keys=True,
+                                               ensure_ascii=False).encode()).hexdigest()
+            return 'still-' + digest[:32]
+    return None
 
 
 def _anthropic_system(leading, hints):
@@ -359,6 +379,9 @@ class ModelAdapter:
                 body={'model':cfg['model'],'input':_openai_input(messages),'tools':_openai_tools(tools),
                       'tool_choice':choice,'store':False,'include':['reasoning.encrypted_content'],'stream':False}
                 if cfg.get('effort'):body['reasoning']={'effort':cfg['effort']}
+                cache_key=openai_cache_key(cfg['model'],body['tools'],
+                                           [m for m in messages[:len(hints)] if m.get('role')=='system'],hints)
+                if cache_key:body['prompt_cache_key']=cache_key
                 data=self._send(cfg['endpoint']+'/responses',body,{'Authorization':'Bearer '+key} if key else {},timeout)
                 message=_openai_message(data)
                 if not message['content'] and not message.get('tool_calls'):raise TypeError()
