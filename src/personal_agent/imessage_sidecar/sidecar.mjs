@@ -221,7 +221,8 @@ export async function runSidecar({
     let chat;
     try {
       const chats = await kit.listChats?.({ chatId: to, kind: 'dm' });
-      chat = chats?.find((row) => row.kind === 'dm' && dmChatHandle(row.chatId) === to);
+      const matches = chats?.filter((row) => row.kind === 'dm' && dmChatHandle(row.chatId) === to);
+      chat = matches?.find((row) => row.service === 'iMessage') ?? matches?.[0];
     } catch {
       // A lookup failure leaves the address send available.
     }

@@ -404,7 +404,9 @@ class IMessageSurface(DirectMessageSurface):
             cfg.pop('pairing')
             cfg.update(enabled=True, handle=handle, owner_user_id=owner_key(handle), channel_id=handle,
                        generation=secrets.token_hex(6), since_ms=event['ts_ms'])
-            self.service.store.put(CONFIG_KEY, cfg)
+            with self.service.store.db() as db:
+                self.service.store.put(CONFIG_KEY, cfg, db=db)
+                self._set_send_failure(db, False)
             self._sync_scope(cfg)
             self.send_owner(self._text('connected_hello'), owner=owner_key(handle), generation=cfg['generation'])
         else:
@@ -740,13 +742,13 @@ class IMessageSurface(DirectMessageSurface):
                 if send is None:
                     return
                 db.execute('UPDATE imessage_sends SET echo_guid=? WHERE id=?', (guid, send['id']))
-            elif send['state'] != 'sending' or send['generation'] != cfg['generation'] or send['handle'] != cfg['handle']:
+            elif send['generation'] != cfg['generation'] or send['handle'] != cfg['handle']:
                 return
-            if event.get('error') is not None:
+            if event.get('error') is not None and send['state'] in ('sending', 'unknown'):
                 self._settle_failed(db, send, now)
                 self._set_send_failure(db, True)
                 return
-            if event.get('delivered') is not True:
+            if send['state'] != 'sending' or event.get('delivered') is not True:
                 return
             if send['job_id']:
                 if not db.execute("UPDATE jobs SET delivery='sent' WHERE id=? AND delivery='sending'",
@@ -774,6 +776,9 @@ class IMessageSurface(DirectMessageSurface):
 
     def _settle_failed(self, db, send, now):
         db.execute("UPDATE imessage_sends SET state='failed',settled=? WHERE id=?", (now, send['id']))
+        # Expiry already settled the associated reply or notice. A late error updates only the send.
+        if send['state'] != 'sending':
+            return
         if send['notification_id'] and db.execute(
                 "SELECT COUNT(*) FROM imessage_sends WHERE notification_id=? AND state='failed'",
                 (send['notification_id'],)).fetchone()[0] < self.MAX_NOTICE_SEND_FAILURES:
