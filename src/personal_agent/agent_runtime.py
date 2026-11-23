@@ -3193,6 +3193,17 @@ def revisable_line(store,line_id):
  if not brief or brief.get('state')!=STATE_ACTIVE:return None
  return {'state':STATE_ACTIVE,**({'version':brief['version']} if isinstance(brief.get('version'),int) else {})}
 
+def revising_work(service,work_id):
+ """Whether ``work_id`` is a Work whose re-delegation revises its own records in place (#1170).
+
+ Only the owner's own typed Work: there the scheduler accepts ``replaces`` and a line revision on the
+ owner's words.  A scheduled run, a steered run or a line's run has narrower rules (its own row only,
+ one piece per run, bookkeeping receipts), so its records keep stopping re-delegation.
+ """
+ try:job=service.store.job(work_id)
+ except Exception:return False
+ return bool(job) and bool(service.owner_typed_work(job))
+
 def replaced_preparations(rows):
  """The preparation ids a later call of the same Work named in ``replaces`` (#1170 review).
 

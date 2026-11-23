@@ -23,6 +23,13 @@ LINE = {'evidence': {'line_id': 'line-1170a', 'version': 2, 'state': 'active'}}
 
 
 class Records(Store):
+    def setUp(self):
+        super().setUp()
+        # The owner's own typed Work: the one Work whose re-delegation revises its records in place.
+        with self.store.db() as db:
+            db.execute('UPDATE jobs SET owner_typed=1 WHERE id=?', (self.work,))
+        self.job = self.store.job(self.work)
+
     def prepared(self, goal, accepted_by=None, state=None):
         import time
         from personal_agent import preparations as prep
@@ -168,6 +175,14 @@ class ReviseInPlace(Records):
         self.line(stopped=True)
         self.assertEqual(self.service.may_continue(self.work, 'redelegate'), (False, 'effect'))
         self.assertEqual(revisable_record_note(self.store, self.work), '')
+
+    def test_a_work_the_owner_did_not_type_still_stops(self):
+        # Codex review: a scheduled, steered or line run has narrower replacement rules and its own
+        # bookkeeping receipts; its records keep stopping re-delegation and are not offered for revision.
+        self.records()
+        with self.store.db() as db:
+            db.execute('UPDATE jobs SET owner_typed=0 WHERE id=?', (self.work,))
+        self.assertEqual(self.service.may_continue(self.work, 'redelegate'), (False, 'effect'))
 
 
 class StillStops(Records):

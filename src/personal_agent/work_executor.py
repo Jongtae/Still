@@ -1029,7 +1029,8 @@ class WorkExecutor:
             if progress := '\n\n'.join(filter(None,(service.read_checkpoint_note(job, include_fresh=True),
                                                        service.effect_progress_note(job),
                                                        # #1170: what an earlier attempt set up, to revise in place.
-                                                       revisable_record_note(service.store,job['id'])))):
+                                                       revisable_record_note(service.store,job['id'])
+                                                       if service.owner_typed_work(job) else ''))):
                 run.brief='\n\n'.join(part for part in (progress,run.brief) if part)
             run.attempt_start=service.last_event_id(job['id'])
             # #308 S1: a steer claimed from now on reaches the attempt whose reply is delivered.  A
