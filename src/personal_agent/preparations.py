@@ -901,13 +901,25 @@ def preparation_lineage(db, preparation_id):
 
 
 def require_preparation_replacement(db, work_id, replaces=None):
-    """A re-delegated Work must reuse its carried preparation while it is active."""
+    """A re-delegated Work must reuse its carried preparation while it is active (#1167).
+
+    A replacement swaps the carried id for its successor, so a carried row that is no longer active
+    ran or was cancelled after the re-delegation was decided: nothing more is scheduled in this Work.
+    """
     from .agent_runtime import ToolError, not_run, still_record_claims
     claimed = still_record_claims(db, work_id)
     if not claimed:
         return
-    active = claimed.intersection(row['id'] for row in db.execute(
-        'SELECT id FROM preparations WHERE state IN (?,?,?,?)', ACTIVE_STATES))
+    marks = ','.join('?' for _ in claimed)
+    rows = db.execute(f'SELECT id,state,last_run_job_id,run_count FROM preparations WHERE id IN ({marks})',
+                      tuple(claimed)).fetchall()
+    states = {row['id']: row['state'] for row in rows}
+    # A run already started (even one still running) settles it too: revising it could deliver twice.
+    settled = sorted(row['id'] for row in rows if row['state'] not in ACTIVE_STATES
+                     or row['last_run_job_id'] is not None or (row['run_count'] or 0) > 0)
+    if settled:
+        raise not_run(ToolError(msg('preparations.preparation_settled', ids=', '.join(settled)), 'preparation_settled'))
+    active = set(states)
     if active and (not isinstance(replaces, str) or replaces not in active):
         raise not_run(ToolError(msg('preparations.preparation_exists', ids=', '.join(sorted(active))), 'preparation_exists'))
 

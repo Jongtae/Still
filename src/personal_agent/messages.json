@@ -12376,6 +12376,12 @@
   "ja": "この作業にはすでに進行中または提案済みの準備があります（{ids}）。変更するには、対象の準備 ID を replaces に指定してください。",
   "zh": "此工作已有生效或待接受的准备事项（{ids}）。如需更改，请在 replaces 中指定该准备事项的 ID。"
  },
+ "preparations.preparation_settled": {
+  "ko": "이 작업의 앞선 준비({ids})가 이미 실행됐거나 취소됐어요. 새로 예약하지 않았어요. 그 사실을 답에서 소유자에게 알려 주세요.",
+  "en": "This Work's earlier preparation ({ids}) already ran or was cancelled. Nothing new was scheduled. Tell the owner what happened in your answer.",
+  "ja": "この作業の先の準備（{ids}）はすでに実行されたか取り消されました。新しく予約していません。回答でオーナーに伝えてください。",
+  "zh": "此工作先前的准备事项（{ids}）已经执行或已取消。未新建预约。请在答复中告诉主人。"
+ },
  "preparations.steered_replace_only": {
   "en": "Nothing was scheduled. A current run carrying the owner's steer may start new work without replaces, or replace its own preparation. It cannot replace another row.",
   "ko": "예약하지 않았어요. 소유자의 말을 전달받은 현재 실행은 replaces 없이 새 일을 시작하거나 자기 준비를 대체할 수 있어요. 다른 준비를 대체할 수는 없어요.",

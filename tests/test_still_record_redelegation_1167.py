@@ -85,6 +85,35 @@ class Reconciled(StillRecords):
         self.assertEqual(kept['id'], replaced['preparation_id'])
         self.assertNotEqual(kept['id'], row['id'])
 
+    def test_a_replacement_moves_the_fence_to_its_successor(self):
+        work, row = self.scheduled_work()
+        self.step(work, following=object())
+        schedule = self.service.preparation_scheduler(self.store.job(work), '')
+        successor = schedule(self.schedule_args(row, replaces=row['id']))['preparation_id']
+        with self.assertRaises(ToolError) as refused:
+            schedule(self.schedule_args(row))
+        self.assertEqual(refused.exception.code, 'preparation_exists')
+        self.assertIn(successor, str(refused.exception))
+
+    def test_a_carried_preparation_that_settles_after_re_delegation_stays_fenced(self):
+        # Codex P2: it fired, or the owner cancelled it, after the re-delegation was decided.
+        for settle in ('ran', 'cancelled'):
+            with self.subTest(settle=settle):
+                work, row = self.scheduled_work(title=settle)
+                self.step(work, following=object())
+                if settle == 'ran':
+                    self.now = row['due_at'] + 1
+                    self.tick()
+                else:
+                    self.service.preparations.cancel(row['id'])
+                schedule = self.service.preparation_scheduler(self.store.job(work), '')
+                for extra in ({}, {'replaces': row['id']}):
+                    with self.assertRaises(ToolError) as refused:
+                        schedule(self.schedule_args(row, **extra))
+                    self.assertEqual(refused.exception.code, 'preparation_settled')
+                self.assertEqual([other['id'] for other in self.service.preparations.rows() if other['created_from'] == work],
+                                 [row['id']], 'nothing new was scheduled')
+
     def test_without_a_re_delegation_two_preparations_in_one_work_stay_allowed(self):
         work, row = self.scheduled_work()
         schedule = self.service.preparation_scheduler(self.store.job(work), '')

@@ -375,11 +375,13 @@ class PreparationsService:
                         stopped=service.preparations.cancel(replaces,db=db)
                         carried=still_record_claims(db,job['id'])
                         if replaces in carried and row['id'] not in carried:
-                            # Fence the successor in the same commit as the replacement.
-                            db.execute("UPDATE tool_events SET detail=json_insert(detail,'$.records[#]',?) "
-                                       "WHERE job_id=? AND tool=? AND status='claimed' AND ? IN "
-                                       "(SELECT value FROM json_each(CASE WHEN json_valid(detail) THEN detail END,'$.records'))",
-                                       (row['id'],job['id'],STILL_RECORD_CONTINUATION,replaces))
+                            # The successor takes the replaced row's place in the fence, in the same commit.
+                            for claim in db.execute("SELECT id,detail FROM tool_events WHERE job_id=? AND tool=? AND status='claimed'",
+                                                    (job['id'],STILL_RECORD_CONTINUATION)).fetchall():
+                                detail=json.loads(claim['detail'])
+                                if replaces in detail.get('records',()):
+                                    detail['records']=[row['id'] if value==replaces else value for value in detail['records']]
+                                    db.execute('UPDATE tool_events SET detail=? WHERE id=?',(json.dumps(detail),claim['id']))
             except prep.PreparationRefusal as exc:
                 raise ToolError(str(exc),exc.code,**ran_field(exc)) from None
             LOG.info('preparation %s id=%s work=%s kind=%s already_proposed=%s',row['state'],row['id'],job['id'],kind,already)
