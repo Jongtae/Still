@@ -8,7 +8,7 @@ import json
 import threading
 import time
 
-from . import api_requests, phone_input, work_mode
+from . import api_requests, phone_input, secret_miniapp, work_mode
 from .api_requests import ApiError
 from .current_context import redact_known_secrets
 from .mcp_setup import remote_url, SECRET_PATTERN, SENSITIVE
@@ -185,6 +185,43 @@ def reads_update(service, draft):
     return True
 
 
+def miniapp_available(service):
+    check = getattr(service, 'secret_miniapp_available', None)
+    return check() if check is not None else secret_miniapp.available(store=service.store)
+
+
+def send_miniapp(service, session):
+    """Offer the same fields as the Mac page with a new in-memory key."""
+    data = json.loads(session.api_draft['after'])
+    lang = phone_input.owner_language(service.store) or 'ko'
+    label = msg('api_input.connection_label', lang=lang, name=data['name'])
+    if code_draft(data):
+        fields = [{'name': item['name'], 'label': item['label']} for item in data['fields']
+                  if item['name'] not in session.api_kept]
+        save = msg('phone_input.save_continue', lang=lang)
+    else:
+        labels = {'client_id': 'client_id', 'client_secret': 'client_secret'} if data.get('oauth') else {'secret': 'api_key'}
+        fields = [{'name': name, 'label': msg('phone_input.' + text, lang=lang)} for name, text in labels.items()]
+        save = msg('phone_input.check_connection', lang=lang)
+    key = secret_miniapp.OneTimeKey()
+    spec = {'v': 1, 'kid': key.kid, 'k': key.spki_b64u(), 'title': label, 'lang': lang, 'fields': fields,
+            'too_long': msg('api_input.miniapp_too_long', lang=lang),
+            'no_bridge': msg('api_input.miniapp_open_from_button', lang=lang), 'save': save}
+    encoded = secret_miniapp.b64u(json.dumps(spec, ensure_ascii=False, separators=(',', ':')).encode())
+    link = f'{secret_miniapp.PAGE_URL}?s={encoded}'
+    job = service.store.job(session.api_draft['work_id'])
+    if work_mode.active(service.store) or not service.telegram_surface.owns(job):
+        key.destroy()
+        raise ValueError(phone_input.NOT_PAIRED_TEXT) from None
+    session.start_miniapp(link, key)
+    minutes = max(1, int((session.expires - session.clock() + 59) // 60))
+    service.telegram.call('sendMessage', {'chat_id': job['chat_id'],
+        'text': msg('api_input.miniapp_offer', lang=lang, label=label, minutes=minutes),
+        'reply_markup': {'keyboard': [[{'text': msg('api_input.miniapp_button', lang=lang), 'web_app': {'url': link}}]],
+                         'one_time_keyboard': True, 'resize_keyboard': True}})
+    return msg('api_input.link_sent', lang=lang)
+
+
 def start(service, draft):
     current(service, draft)
     data = json.loads(draft['after'])
@@ -205,29 +242,27 @@ def start(service, draft):
         if service.phone_input_session() is not None:
             raise ValueError(phone_input.BUSY_TEXT)
         session = phone_input.PhoneInput(phone_input.API_SLOT, msg('api_input.connection_label', name=data['name']), store=service.store, on_end=ended,
-                                        popen=service.phone_input_popen or phone_input.subprocess.Popen)
+                                        clock=getattr(service, 'phone_input_clock', time.time))
         session.api_draft = dict(draft)
         session.api_kept = kept_fields(service.store, data)
         session.submit_lock = threading.Lock()
         service._phone_input = session
         service._phone_input_started = True
     try:
-        # #208: in work mode the one-time page opens on this Mac only, never through a tunnel or Telegram.
-        if isinstance(service.store.job(draft['work_id']).get('chat_id'), int) and not work_mode.active(service.store):
-            cfg = service.store.config('telegram', {})
-            job = service.store.job(draft['work_id'])
-            if not cfg.get('enabled') or cfg.get('user_id') != job.get('chat_id'):
+        # #208: in work mode the one-time page opens on this Mac only.
+        job = service.store.job(draft['work_id'])
+        if isinstance(job.get('chat_id'), int) and not work_mode.active(service.store):
+            if not service.telegram_surface.owns(job):
                 raise ValueError(phone_input.NOT_PAIRED_TEXT)
-            try:
-                session.start(service.local_server_port)
-            except phone_input.PhoneInputError as exc:
-                # #520: no phone link (no tunnel tool, or it refused): the same one-time page on this Mac, and why.
-                session.start_local(service.local_server_port)
-                return msg('api_input.phone_link_unavailable', reason=str(exc), link=session.link)
-            service.telegram.call('sendMessage', {'chat_id': cfg['user_id'],
-                'text': phone_input.LINK_TEXT.format(label=session.label, minutes=10, link=session.link),
-                'link_preview_options': {'is_disabled': True}})
-            return msg('api_input.link_sent')
+            if miniapp_available(service):
+                return send_miniapp(service, session)
+            # #520: the same one-time page on this Mac, with the reason.
+            if not session.code_ok(session.code):
+                raise ValueError(msg('api_input.input_expired'))
+            session.start_local(service.local_server_port)
+            lang = phone_input.owner_language(service.store) or 'ko'
+            return msg('api_input.phone_link_unavailable', lang=lang, link=session.link,
+                       reason=msg('api_input.miniapp_unavailable', lang=lang))
         session.start_local(service.local_server_port)
         return msg('api_input.enter_credentials') + '\n' + session.link
     except (ValueError, phone_input.PhoneInputError) as exc:
@@ -295,7 +330,7 @@ def reconcile(service, orchestrator=None):
 
 
 def submit(service, session, body):
-    """HTTP-only secret boundary. One in-flight submission per input page."""
+    """Secret input boundary. One in-flight submission per input page."""
     if session.kind != phone_input.API_SLOT or not isinstance(body, dict):
         raise ValueError(msg('api_input.check_input'))
     data = json.loads(session.api_draft['after'])

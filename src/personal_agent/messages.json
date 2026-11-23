@@ -2886,10 +2886,46 @@
   "zh": "{name} API 连接"
  },
  "api_input.link_sent": {
-  "ko": "API 인증 정보를 입력할 일회용 링크를 Telegram으로 보냈어요. 확인되면 원래 작업을 이어가요.",
-  "en": "Sent a one-time link for API credentials to Telegram. The original task will resume after verification.",
-  "ja": "API 認証情報の入力用ワンタイムリンクを Telegram に送りました。確認後、元のタスクを再開します。",
-  "zh": "已向 Telegram 发送 API 凭据一次性输入链接。验证后将继续原任务。"
+  "ko": "API 인증 정보를 입력할 버튼을 Telegram으로 보냈어요. 확인되면 원래 작업을 이어가요.",
+  "en": "I sent a button to Telegram for entering your API credentials. The original task will resume after verification.",
+  "ja": "API の認証情報を入力するボタンを Telegram に送りました。確認後、元の作業を再開します。",
+  "zh": "我已将输入 API 凭据的按钮发送到 Telegram。验证后会继续原来的任务。"
+ },
+ "api_input.miniapp_offer": {
+  "ko": "아래 버튼을 눌러 {label}에 필요한 정보를 입력해 주세요. 입력 화면은 약 {minutes}분 뒤에 닫혀요.",
+  "en": "Tap the button below to enter the details for {label}. The page closes in about {minutes} minutes.",
+  "ja": "下のボタンを押して、{label}に必要な情報を入力してください。入力画面は約{minutes}分で閉じます。",
+  "zh": "请点击下方按钮，输入 {label}所需的信息。输入页面将在约 {minutes} 分钟后关闭。"
+ },
+ "api_input.miniapp_button": {
+  "ko": "인증 정보 입력",
+  "en": "Enter credentials",
+  "ja": "認証情報を入力",
+  "zh": "输入凭据"
+ },
+ "api_input.miniapp_unavailable": {
+  "ko": "지금은 휴대폰에서 입력 화면을 열 수 없어요.",
+  "en": "The phone input page is unavailable right now.",
+  "ja": "今はスマートフォンで入力画面を開けません。",
+  "zh": "目前无法在手机上打开输入页面。"
+ },
+ "api_input.miniapp_open_from_button": {
+  "ko": "Telegram 대화에 있는 버튼으로 이 화면을 열어 주세요.",
+  "en": "Open this page using the button in the Telegram chat.",
+  "ja": "Telegram のチャットにあるボタンからこの画面を開いてください。",
+  "zh": "请用 Telegram 对话中的按钮打开此页面。"
+ },
+ "api_input.miniapp_too_long": {
+  "ko": "휴대폰에서 보내기에는 입력한 내용이 너무 길어요. Still이 실행 중인 Mac에서 다시 요청해 주세요.",
+  "en": "The details are too long to send from your phone. Ask again on the Mac where Still is running.",
+  "ja": "入力内容が長すぎてスマートフォンから送信できません。Still が動いている Mac でもう一度依頼してください。",
+  "zh": "输入内容太长，无法从手机发送。请在运行 Still 的 Mac 上重新提出请求。"
+ },
+ "api_input.miniapp_closed": {
+  "ko": "이 입력 화면은 닫혔어요. 다시 요청해 주세요.",
+  "en": "This input page has closed. Please ask again.",
+  "ja": "この入力画面は閉じられました。もう一度依頼してください。",
+  "zh": "此输入页面已关闭，请重新提出请求。"
  },
  "api_input.enter_credentials": {
   "ko": "API 인증 정보는 이 일회용 화면에 입력해 주세요. 확인되면 원래 작업을 이어가요.",
