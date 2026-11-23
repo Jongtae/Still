@@ -87,7 +87,7 @@ class OneActionSource(_Store):
             # and with its location request wired, ask_location; #814: with its settings, the settings tools.
             listed = facade(self.caps(browser=lambda: None, preparations=lambda *a: None, lines=lambda *a: None,
                                       location_request=lambda *a: None, owner_update=lambda *a: None, settings=lambda *a: None,
-                                      information_use=lambda *a: None, skills=WIRED_SKILLS)).definitions()
+                                      information_use=lambda *a: None, history_reader=lambda *_: None, skills=WIRED_SKILLS)).definitions()
             with self.subTest(profile=profile):
                 self.assertEqual([tool['name'] for tool in listed], sorted(profile_actions(profile)))
                 for tool in listed:
@@ -106,7 +106,7 @@ class OneActionSource(_Store):
         self.assertEqual(isolated_engine_mcp_bridge.ISOLATED_TOOLS, ReadOnlyAgentOSMcpTools(self.caps()).definitions())
 
     def test_read_only_hint_comes_from_the_manifest_mode(self):
-        hints = {tool['name']: tool['annotations']['readOnlyHint'] for tool in AgentOSMcpTools(self.caps()).definitions()}
+        hints = {tool['name']: tool['annotations']['readOnlyHint'] for tool in AgentOSMcpTools(self.caps(history_reader=lambda *_: None)).definitions()}
         # #774: the relayed owner-state tools carry their manifest modes too.
         self.assertEqual(hints, {'list_notes': True, 'save_note': False, 'save_result': False,
                                  # #1380: this slice's code runs only read (GET/HEAD).
@@ -122,7 +122,8 @@ class OneActionSource(_Store):
                                  # #1172: the owner's Drive reads.
                                  'drive_search': True, 'drive_read': True,
                                  # #150: the owner's Gmail reads.
-                                 'mail_search': True, 'mail_read': True})
+                                 'mail_search': True, 'mail_read': True,
+                                 'browser_history_search': True})
 
     def test_no_route_keeps_its_own_schema_list(self):
         """The removed three-tool fork and the two list_notes copies stay gone."""
@@ -329,7 +330,7 @@ class EffectiveAvailability(_Store):
                                 # #1335: capability_search is a settings tool, offered only with the settings wiring.
                                 - {'schedule_preparation', 'entrusted_line', 'ask_location', 'settings_read', 'settings_change', 'capability_search', 'information_use',
                                    # #407: tell_owner is offered only with the service's interim-message wiring.
-                                   'tell_owner'}
+                                   'tell_owner', 'browser_history_search'}
                                 # #1216: no registered API slot hides api_request.
                                 - SKILL_ACTIONS - {'api_request'}))
         self.enable_context()
@@ -342,7 +343,7 @@ class EffectiveAvailability(_Store):
                                                                        location_request=lambda *a: None,
                                                                        owner_update=lambda *a: None,
                                                                        settings=lambda *a: None,
-                                                                       information_use=lambda *a: None, skills=WIRED_SKILLS)).definitions()],
+                                                                       information_use=lambda *a: None, history_reader=lambda *_: None, skills=WIRED_SKILLS)).definitions()],
                          sorted(profile_actions(BOUNDED_PROFILE)))
         self.assertEqual([t['name'] for t in ReadOnlyAgentOSMcpTools(self.caps()).definitions()], ['list_notes'])
 
@@ -453,6 +454,7 @@ class SettingsProjection(_Store):
                                              'drive_search', 'drive_read',
                                              # #150: the owner's Gmail reads, relayed the same way.
                                              'mail_search', 'mail_read',
+                                             'browser_history_search',
                                              # #1216: authenticated API calls by slot, relayed the same way.
                                              'api_request',
                                              # #1380: sandboxed code runs, relayed the same way.

@@ -91,6 +91,7 @@ HOST_TOOLS={
     # #150: read-only search and decoded body read of the owner's connected Gmail.
     'mail_search': HostTool(False, True, True, 'mail', False, None, True),
     'mail_read': HostTool(False, True, True, 'mail', False, None, True),
+    'browser_history_search': HostTool(False, True, True, 'history', False, None, False),
     # #1216: an authenticated API call by secret-slot reference (non-read needs approval).
     'api_request': HostTool(True, False, True, 'api', False, 'body', True),
     # #1380: Python the AI wrote, run in an isolated sandbox. It sends only GET/HEAD and owner-reviewed
@@ -134,6 +135,7 @@ def validate(manifest):
  tool_ids=set()
  for tool in tools:
   if not isinstance(tool,dict) or not _id(tool.get('id')) or tool['id'] in tool_ids or tool.get('host_action') not in HOST_ACTIONS:raise ValueError('허용하지 않은 도구 매니페스트입니다.')
+  if manifest.get('id') != 'builtin' and tool['host_action'] == 'browser_history_search':raise ValueError('Chrome history is reserved for owner Works.')
   if tool['id'] in RESERVED_TOOL_IDS:raise ValueError(f"도구 id '{tool['id']}'는 Still 실행 루프 전용이라 패키지에서 선언할 수 없습니다.")
   if tool.get('mode') != ('bounded_write' if tool['host_action'] in WRITE_ACTIONS else 'read_only'):raise ValueError('도구 모드는 host action의 안전 등급과 일치해야 합니다.')
   tool_ids.add(tool['id'])

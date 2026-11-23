@@ -574,7 +574,7 @@ class Element {
 }
 let focused=null;
 function descendants(node){return node.children.flatMap(child=>typeof child==='string'?[]:[child,...descendants(child)]);}
-for(const id of ['root-list','roots-feedback','root-path-input','roots-form','file-workspace-list','file-workspace-form','workspace-reference-list','workspace-reference-input','workspace-reference-add','file-workspace-path','file-workspace-feedback','file-workspace-cancel','document-boundary','document-boundary-feedback'])new Element('div').id=id;
+for(const id of ['chrome-history-settings','chrome-history-profiles','chrome-history-feedback','root-list','roots-feedback','root-path-input','roots-form','file-workspace-list','file-workspace-form','workspace-reference-list','workspace-reference-input','workspace-reference-add','file-workspace-path','file-workspace-feedback','file-workspace-cancel','document-boundary','document-boundary-feedback'])new Element('div').id=id;
 // #390 U6: the static folder picker buttons are bound once alongside the forms.
 const pickerButtons=['read','reference','result'].map(kind=>{const button=new Element('button');button.dataset.folderPick=kind;button.dataset.folderInput={read:'root-path-input',reference:'workspace-reference-input',result:'file-workspace-path'}[kind];button.hidden=true;return button;});
 const $=id=>ids.get(id),document={getElementById:$,createElement:tag=>new Element(tag),
@@ -582,15 +582,28 @@ const $=id=>ids.get(id),document={getElementById:$,createElement:tag=>new Elemen
  querySelector:selector=>pickerButtons.find(button=>selector==='[data-folder-pick="'+button.dataset.folderPick+'"]')||null};
 const part=(start,end)=>app.slice(app.indexOf(start),app.indexOf(end));
 const source=part('const LANGUAGES=','function normalizeEndpoint(')+part('function element(', 'function focusSettingsTarget(')+part('let savedRoots=', 'function renderTelegram(');
-const calls=[];let refreshes=0,refuse=null,refuseReason=null,refusePath=null,refuseOnce=false,confirmAnswer=false,confirmed=[],revisions=0,gate=null;
+const calls=[];let refreshes=0,refuse=null,refuseReason=null,refusePath=null,refuseOnce=false,confirmAnswer=false,confirmed=[],revisions=0,gate=null,historyGranted=false;
 const ctx={document,$,console,window:{confirm:text=>{confirmed.push(text);return confirmAnswer;}},invalidateRootsLoad:()=>revisions++,invalidateFileWorkspaceLoad:()=>revisions++,
- api:async(path,body)=>{calls.push({path,body});if(gate)await gate;if(refuse){const failure=new Error(refuse);if(refuseReason)failure.reason=refuseReason;if(refusePath)failure.path=refusePath;if(refuseOnce){refuse=null;refuseReason=null;refusePath=null;refuseOnce=false;}throw failure;}if(path==='/api/files/roots')return {roots:body.paths.map(path=>({path}))};if(path==='/api/file-workspace')return {references:body.references.map(path=>({path})),workspace:body.workspace};return {};},
+ api:async(path,body)=>{calls.push({path,body});if(gate)await gate;if(refuse){const failure=new Error(refuse);if(refuseReason)failure.reason=refuseReason;if(refusePath)failure.path=refusePath;if(refuseOnce){refuse=null;refuseReason=null;refusePath=null;refuseOnce=false;}throw failure;}if(path==='/api/settings/chrome-history')return {profiles:[{profile_dir:'Default',display_name:'Personal',granted:historyGranted}]};if(path.endsWith('chrome-history/grant'))historyGranted=true;if(path.endsWith('chrome-history/revoke'))historyGranted=false;if(path==='/api/files/roots')return {roots:body.paths.map(path=>({path}))};if(path==='/api/file-workspace')return {references:body.references.map(path=>({path})),workspace:body.workspace};return {};},
  refresh:async()=>{refreshes++;},busy:async(button,fn)=>fn(),setError:(id,error)=>{$(id).textContent=error?.message||String(error||'');$(id).dataset.error='1';},setFeedback:(id,text)=>{$(id).textContent=text||'';delete $(id).dataset.error;}};
 vm.createContext(ctx);vm.runInContext(source,ctx);vm.runInContext("setLanguage('ko')",ctx);
 const same=(actual,expected,message)=>assert.equal(JSON.stringify(actual),JSON.stringify(expected),message);
 const buttons=id=>descendants($(id)).filter(node=>node.tag==='button');
 const press=async(id,label)=>{const button=buttons(id).find(node=>node.textContent===label);assert(button,`${label} in ${id}`);await button.onclick({currentTarget:button});};
 (async()=>{
+ await ctx.loadChromeHistory();
+ assert($('chrome-history-profiles').textContent.includes('Personal (Default)'));
+ await press('chrome-history-profiles','읽기 허용');
+ assert(!historyGranted,'declining the Chrome grant sends no change');
+ confirmAnswer=true;
+ await press('chrome-history-profiles','읽기 허용');
+ const historyGrant=calls.find(call=>call.path==='/api/settings/chrome-history/grant');
+ same(historyGrant.body,{profile_dir:'Default',confirm:true},'the confirmed grant names one profile');
+ await press('chrome-history-profiles','읽기 권한 취소');
+ same(calls.find(call=>call.path==='/api/settings/chrome-history/revoke').body,
+      {profile_dir:'Default',confirm:false},'revocation names the same profile');
+ assert(!historyGranted);
+ confirmAnswer=false;confirmed=[];calls.length=0;
  ctx.renderRootList([]);
  assert($('root-list').textContent.includes('아직 연결한 폴더가 없습니다'),'empty AI folder list is explicit');
  ctx.renderRootList(['/tmp/a/Research','/tmp/b/Notes']);

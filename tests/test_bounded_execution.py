@@ -36,7 +36,7 @@ class _Capabilities:
 # declared profile action (Capabilities offers it only while context is on).
 # #774: the owner-state tools are relayed to the service on the trusted-local route.
 # #814: so are the owner settings tools.
-BOUNDED_NAMES = ['ask_location', 'browser_click', 'browser_find', 'browser_open', 'browser_read', 'browser_sign_in', 'browser_type',
+BOUNDED_NAMES = ['ask_location', 'browser_click', 'browser_find', 'browser_history_search', 'browser_open', 'browser_read', 'browser_sign_in', 'browser_type',
                  'calendar_query',
                  'capability_search',  # #1299: metadata-only discovery on the owner-state relay.
                  'code_run',  # #1380: sandboxed code runs, decided by the service.

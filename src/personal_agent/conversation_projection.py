@@ -76,6 +76,7 @@ TOOL_LABELS = {
     'find_files': '파일 찾기', 'read_file': '파일 읽기', 'list_roots': '연결 폴더 확인', 'public_page_read': msg('projection.read_a_public_page'),
     'public_download': msg('projection.download_a_public_file'),
     'drive_search': msg('projection.find_drive_files'), 'drive_read': msg('projection.read_drive_file'),
+    'browser_history_search': msg('step.browser_history_search'),
     'mail_search': msg('projection.find_mail'), 'mail_read': msg('projection.read_mail'), 'api_request': '인증 API 호출', 'code_run': '코드 실행',
     # #23 retired this tool; the label keeps Works recorded before then readable.
     'bounded_public_research': msg('projection.public_research'),

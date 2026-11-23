@@ -974,6 +974,8 @@ def make_handler(service, public_hosts=(), public_access_token=''):
                 return self.reply(200,{**service.a2a_peers.status(),**service.a2a_peers.conversations()})
             if path=='/api/home':return self.reply(200,service.home())
             if path=='/api/tasks':return self.reply(200,service.task_progress())
+            if path=='/api/settings/chrome-history':
+                return self.chrome_history_settings('list')
             if path=='/api/folder-requests':
                 # #505: the owner-local approval surface.  Any owner session may
                 # see that a request is waiting; only this Mac may choose/approve.
@@ -1036,6 +1038,15 @@ def make_handler(service, public_hosts=(), public_access_token=''):
                 return self.reply(200,{'settings':service.settings(),'messages':service.owner_messages(store.history(include_forgotten=True)),'jobs':jobs,'notes':store.notes(),'tool_events':store.recent_tool_events(),'evidence':{job['id']:store.evidence_summary(job['id']) for job in jobs if ws.has_delivered_result(job['status'])},'healthy':service.healthy()})
             if path=='/api/onboarding':return self.reply(200,service.onboarding())
             self.reply(404,{'error':msg('quickstart.path_not_found')})
+
+        def chrome_history_settings(self, action, body=None):
+            try:
+                settings=service.chrome_history_settings(action,body,local_surface=self.owner_local_surface())
+            except OwnerLocalRequired as exc:
+                return self.reply(403,{'error':str(exc),'reason':exc.reason})
+            except ValueError as exc:
+                return self.reply(400,{'error':str(exc)})
+            return self.reply(200,settings)
 
         def do_DELETE(self):
             if not self.valid_host():return
@@ -1178,6 +1189,8 @@ def make_handler(service, public_hosts=(), public_access_token=''):
                         return self.reply(200,handler(body))
                     except ConversationHandoffError as exc:
                         return self.reply(409,{'error':local_refusal_text(exc.reason),'reason':exc.reason})
+                if path in ('/api/settings/chrome-history/grant','/api/settings/chrome-history/revoke'):
+                    return self.chrome_history_settings(path.rsplit('/',1)[-1],body)
                 if path in ('/api/files/roots','/api/file-workspace'):
                     # #779: adding, replacing or widening a Mac folder from
                     # Settings needs this Mac, as #505's folder approval does.

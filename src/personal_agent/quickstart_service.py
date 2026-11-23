@@ -1,6 +1,6 @@
 """One personal conversation shared by web and an explicitly paired Telegram user."""
 
-from . import work_status as ws
+from . import chrome_history, work_status as ws
 from datetime import datetime
 import collections
 import concurrent.futures
@@ -139,8 +139,8 @@ class OwnerLocalRequired(Exception):
 
     reason='owner_local_surface'
 
-    def __init__(self):
-        super().__init__(SETTINGS_FOLDER_LOCAL_TEXT)
+    def __init__(self, message=SETTINGS_FOLDER_LOCAL_TEXT):
+        super().__init__(message)
 
 LOG=logging.getLogger('personal_agent.service')
 #: #65: seconds a Telegram transport failure (reset, timeout, 5xx) may last before receiving is
@@ -698,8 +698,9 @@ class AgentService:
     def __init__(self, store, adapter=None, telegram_transport=None, subscription_engines=None, execution_adapter=None,
                  isolated_engine_adapter=None, isolated_mcp_registry=None,
                  connector_registry=None, gmail=None, calendar=None, calendar_oauth=None, calendar_factory=None,
-                 browser_profile=None, telegram_file_transport=None, drive_oauth=None, drive_reader_factory=None, gmail_modify_oauth=None):
+                 browser_profile=None, telegram_file_transport=None, drive_oauth=None, drive_reader_factory=None, gmail_modify_oauth=None, chrome_root=None):
         self.store=store
+        self.chrome_history=chrome_history.ChromeHistory(store, chrome_root)
         # #656/#680: the one browser profile this installation owns (its encrypted session jar),
         # under the owner-only private directory.  The embedded WebKit worker
         # starts only when a Work's browser tool runs or the owner opens the login window.
@@ -2818,7 +2819,7 @@ class AgentService:
     # labels are also the turn's source scope for a peer (``a2a_peers.outbound_scope``).
     PROVENANCE_WITHHELD_SOURCES=frozenset({'personal-space','owner-context-inbox','connected-drive-file','connected-document',
                                            'owner-memory','owner-folder-names','owner-calendar','owner-mail','owner-settings','telegram-photo',
-                                           'conversation-history','unattributed-tool-evidence','owner-browser-session'})
+                                           'conversation-history','unattributed-tool-evidence','owner-browser-session',chrome_history.PROVENANCE})
 
     def record_turn_sent(self, job_id, *, sent, instructions, instructions_channel, private_sources=(), **fields):
         """Enforce source intake, then keep a best-effort record of what a turn sent.
@@ -4609,6 +4610,19 @@ class AgentService:
         return bool(config and isinstance(result,dict) and result.get('ok') and result.get('tools_ok')
                     and result.get('fingerprint')==self.model_fingerprint(config)
                     and isinstance(result.get('time'),(int,float)))
+
+    def chrome_history_settings(self, action, body=None, *, local_surface=False):
+        if not local_surface:
+            raise OwnerLocalRequired(msg('chrome_history.local_only'))
+        if action == 'grant':
+            if body.get('confirm') is not True:
+                raise chrome_history.HistoryError('confirm_grant')
+            self.chrome_history.grant(body.get('profile_dir'))
+        elif action == 'revoke':
+            self.chrome_history.revoke(body.get('profile_dir'))
+        elif action != 'list':
+            raise ValueError(msg('chrome_history.profile_required'))
+        return self.chrome_history.settings()
 
     def save_roots(self, body, local_surface=True):
         """Replace the Settings read-folder list.
@@ -10420,6 +10434,10 @@ class AgentService:
         return next_purge_check,next_unknown_check
 
     def start(self):
+        try:
+            chrome_history.sweep_snapshots(self.store)
+        except OSError as exc:
+            LOG.warning('Chrome history snapshot sweep failed (%s)',type(exc).__name__)
         self.a2a_peers.recover()
         self.recover_interrupted_work()
         # #794 phase 3: a purge a restart left overdue runs before any Work reads owner state.
