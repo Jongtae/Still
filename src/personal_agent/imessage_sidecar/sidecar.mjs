@@ -214,8 +214,11 @@ export async function runSidecar({
   }
 
   async function send({ id, to, text }) {
-    if (typeof id !== 'string' || !nonemptyString(text) || scope.mode !== 'paired' || to !== scope.handle) {
-      badRequest('Send requires a request ID, text, and the paired recipient.', id);
+    const allowed = () => typeof id === 'string' && nonemptyString(text) &&
+      !stopped && scope.mode === 'paired' && to === scope.handle;
+    const refusal = 'Send requires a request ID, text, and the paired recipient.';
+    if (!allowed()) {
+      badRequest(refusal, id);
       return;
     }
     let chat;
@@ -225,6 +228,10 @@ export async function runSidecar({
       chat = matches?.find((row) => row.service === 'iMessage') ?? matches?.[0];
     } catch {
       // A lookup failure leaves the address send available.
+    }
+    if (!allowed()) {
+      badRequest(refusal, id);
+      return;
     }
     try {
       // Kit 3.0.0 reduces 1:1 chat IDs to buddy sends. Use the pinned kit's reviewed runPipeline internal.
@@ -279,7 +286,7 @@ export async function runSidecar({
         break;
       }
       case 'send':
-        // Checked against the current scope now; osascript may take a while, so later ops do not wait for it.
+        // Later ops can run while the send looks up the chat or waits for osascript.
         {
           const sending = send(request).finally(() => inflight.delete(sending));
           inflight.add(sending);
