@@ -628,6 +628,9 @@ def eligible_for_capability_judgment(text):
 # regex decides in its place.
 
 JUDGMENT_UNAVAILABLE = 'unavailable'
+#: #1163: the ``Judgment.source`` of an outcome judgment the read checkpoint admission declined
+#: (a stale, stopped or spent writer), so the unavailable verdict says why.
+READ_CHECKPOINT_SOURCE = 'read-checkpoint'
 JUDGMENT_YES = 'yes'
 JUDGMENT_NO = 'no'
 
@@ -1126,6 +1129,8 @@ class ConversationJudgments:
                 from .work_download import INPUT_CHANGED
                 if result is INPUT_CHANGED:
                     return INPUT_CHANGED
+            if not result:
+                return Judgment(JUDGMENT_UNAVAILABLE, source=READ_CHECKPOINT_SOURCE)
         else:
             result = evaluate()
         return Judgment(**result) if result else Judgment(JUDGMENT_UNAVAILABLE)

@@ -2933,6 +2933,14 @@ PAGE_LOAD_EFFECTS=frozenset({'read','navigate'})
 #: could observe when it started no non-GET form submission and spent no owner approval.
 OBSERVED_INPUT_ACTIONS=frozenset({'browser_click','browser_type'})
 
+def declared_read_operation(action,args):
+ """Whether ``args`` name a read operation of the write tool ``action`` (``HostTool.read_operations``, #1163)."""
+ tool=HOST_TOOLS.get(action)
+ operations=getattr(tool,'read_operations',None)
+ if not operations or not isinstance(args,dict):return False
+ argument,values=operations
+ return isinstance(args.get(argument),str) and args[argument] in values
+
 def declared_effect(action,args):
  """``{'declared_effect': value}`` of a browser call's valid declared effect, else ``{}`` (#787).
 
@@ -2941,6 +2949,9 @@ def declared_effect(action,args):
  if action in API_ACTIONS and isinstance(args,dict):
   from .api_requests import effective_effect
   return {'declared_effect':effective_effect(args.get('method'),args.get('effect'))}
+ # #1163: a write tool's declared read operation (``HostTool.read_operations``), from the call's own
+ # arguments - the same argument its handler dispatches on - never from the model's claim.
+ if declared_read_operation(action,args):return {'declared_effect':'read'}
  value=args.get('effect') if action in BROWSER_ACTIONS and isinstance(args,dict) else None
  return {'declared_effect':value} if isinstance(value,str) and value in EFFECT['enum'] else {}
 
@@ -3210,6 +3221,8 @@ def effect_free_call(action,detail,status):
  # #1456: a code run that sent an owner-approved state-changing request changed something.
  if action in CODE_ACTIONS and isinstance(detail.get('evidence'),dict) and detail['evidence'].get('effects'):return False
  if action in EFFECT_FREE_READS-{'browser_open'} or action in INTERNAL_STATE_ACTIONS:return True
+ # #1163: a listing or lookup of a write tool (``HostTool.read_operations``), as Still recorded it.
+ if getattr(HOST_TOOLS.get(action),'read_operations',None) and detail.get('declared_effect')=='read':return True
  if page_load_only(action,detail,status):return True
  return status=='failed' and unrun_page_step(action,detail)
 
@@ -6440,9 +6453,18 @@ class GoalVerdict(str):
  retry_warranted=None
  #: #674: ``Judgment.record_check`` of the outcome judgment, or None.
  record_check=None
+ #: #1163: for ``unavailable``, a short code saying why no verdict came (``GOAL_UNAVAILABLE_REASONS``,
+ #: or ``error:<exception type>``), recorded on the run's ``concluded`` event; None otherwise.
+ reason=None
 
-def goal_verdict(outcome,gap='',note=None,retry_warranted=None):
+#: #1163: why the outcome judgment gave no verdict: no judgment route; the Work budget refused its turn;
+#: the read checkpoint admission declined it (a stale, stopped or spent writer); the judgment answered
+#: neither yes nor no; the Work's read input changed again while it was judged.
+GOAL_UNAVAILABLE_REASONS=('no_judgments','budget','read_checkpoint','undecided','input_changed')
+
+def goal_verdict(outcome,gap='',note=None,retry_warranted=None,reason=None):
  verdict=GoalVerdict(outcome);verdict.gap=gap if outcome=='no' else ''
+ verdict.reason=reason if outcome=='unavailable' else None
  # #631: a yes can still leave steps unfinished.
  verdict.note=note if outcome in ('yes','no') and isinstance(note,str) else None
  verdict.retry_warranted=retry_warranted if outcome=='no' else False
@@ -6484,7 +6506,7 @@ def goal_judgment(judgments,goal,claim,observations,failures,work_id=None,redact
  decision): every fact gets the secrets-only pass; the
  Work's saved private values are no longer masked from the owner's Judgment AI.
  """
- if judgments is None or not hasattr(judgments,'goal_reached'):return 'unavailable'
+ if judgments is None or not hasattr(judgments,'goal_reached'):return goal_verdict('unavailable',reason='no_judgments')
  clean=(lambda text:redact(text)) if redact else (lambda text:str(text or ''))
  refs=claim['evidence_refs']
  # #151: which listed items were opened and read through comes first, in room of its own, so it
@@ -6523,7 +6545,7 @@ def goal_judgment(judgments,goal,claim,observations,failures,work_id=None,redact
     # The reserve belongs to a dispatch after checkpoint registration.
     admission['admit']=lambda:budget.spend_turn(reserve=True)
    else:budget.spend_turn(reserve=True)
- except Exception:return 'unavailable'
+ except Exception:return goal_verdict('unavailable',reason='budget')
  try:judged=judgments.goal_reached(clean(goal),observed,failed,work_id=work_id,answer=reply,conversation=recent,
                                    **admission,
                                    **({'reply_source':reply_source} if reply_source!='worker' else {}),
@@ -6536,12 +6558,16 @@ def goal_judgment(judgments,goal,claim,observations,failures,work_id=None,redact
                                    **({'awaiting_owner':clean(awaiting)} if awaiting else {}),
                                    **({'recorded_effects':tuple(effects),
                                        'may_rejudge':lambda:second_judgment_allowed(judgments,budget)} if effects else {}))
- except Exception:return 'unavailable'
+ except Exception as exc:return goal_verdict('unavailable',reason='error:'+type(exc).__name__)
  if retry_on_read_change:
   from .work_download import INPUT_CHANGED
   if judged is INPUT_CHANGED:return INPUT_CHANGED
  outcome=getattr(judged,'outcome',None)
- if outcome not in ('yes','no'):return goal_verdict('unavailable')
+ if outcome not in ('yes','no'):
+  from .conversation_handoff import READ_CHECKPOINT_SOURCE
+  source=getattr(judged,'source',None)
+  return goal_verdict('unavailable',reason='budget' if getattr(judged,'refused',None) else
+                      'read_checkpoint' if source==READ_CHECKPOINT_SOURCE else 'undecided')
  note=getattr(judged,'note',None)
  note=clean(' '.join(note.split()))[:GOAL_GAP_CHARS] if isinstance(note,str) else None
  verdict=goal_verdict(outcome,clean(' '.join(str(getattr(judged,'value',None) or '').split()))[:GOAL_GAP_CHARS],note,getattr(judged,'retry_warranted',None))
@@ -6808,7 +6834,7 @@ def run_agent(adapter,config,key,history,system,capabilities,record,scope='main'
   if judgment is INPUT_CHANGED:
    note=checkpoint_progress()
    judgment=ask(note) if note else INPUT_CHANGED
-  return goal_verdict('unavailable') if judgment is INPUT_CHANGED else judgment
+  return goal_verdict('unavailable',reason='input_changed') if judgment is INPUT_CHANGED else judgment
 
  def conclude(content,claim=None,judgment=None,reply_source='worker'):
   """The run's result: ``succeeded`` needs an accepted done claim judged yes (#657)."""
@@ -6865,6 +6891,8 @@ def run_agent(adapter,config,key,history,system,capabilities,record,scope='main'
     'claim':None if claim is None else {'status':claim['status'],'evidence_refs':claim['evidence_refs']},
     'judgment':judgment,'alternatives_tried':{'count':len(alternatives),'kinds':kinds},
     'nudges':nudges,'unknown':len(result.report['unknown']),
+    # #1163: why an asked outcome judgment gave no verdict, so an unavailable one is diagnosable.
+    **({'judgment_reason':judgment.reason} if getattr(judgment,'reason',None) else {}),
     **({'record_check':judgment.record_check} if getattr(judgment,'record_check',None) else {})},ensure_ascii=False))
   return result
 

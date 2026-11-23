@@ -6438,7 +6438,10 @@ class AgentService:
                                      om.REVIEW_EVENT_TOOL,MEMORY_UNDO_TOOL,STEER_EVENT,REACTION_EVENT,
                                      'response_timing','connection_setup','preparation','line_held',
                                      # #842: the marker that a finished Work's prompts were queued (``sweep_after_work``).
-                                     'after_work'})  # host slot receipt, not schedule_preparation
+                                     'after_work',
+                                     # #1163: which brief version a Work read (``entrusted_lines.READ_EVENT``), next
+                                     # to the ``entrusted_line`` read call itself.
+                                     'entrusted_line_read'})  # host slot receipt, not schedule_preparation
 
     def workspace_authority_need(self):
         """Which folder a save-a-result request still lacks: the read first, then the write."""
@@ -10368,17 +10371,25 @@ class AgentService:
         return bool(observed or pending)
 
     def can_judge_read_checkpoint(self, work_id, _checkpoint):
-        """Use the foreground Work's existing Stop, owner-wait and effect rules."""
+        """Whether the current run of this foreground Work may have its reply judged: not stopped (#1163).
+
+        Judging a reply starts nothing and repeats nothing, so the continuation rule
+        (``may_continue``: effects, owner waits) does not decide it; a Work without a
+        checkpoint is judged with the same records.  The ledger fence (epoch, deadline,
+        Stop, turns) in ``_read_checkpoint_ready`` still refuses a stale or spent writer.
+        """
         job = self.store.job(work_id)
-        if not job or prep.preparation_of(job.get('request_key')) or self.work_stopped(work_id):
+        return bool(job) and not prep.preparation_of(job.get('request_key')) and not self.work_stopped(work_id)
+
+    def can_resume_read_checkpoint(self, work_id, checkpoint):
+        """Whether a restart may continue this Work on its own: the existing Stop, owner-wait and effect rules."""
+        from .work_download import staged_checkpoint_available
+        if not (staged_checkpoint_available(self.store, checkpoint) and self.can_judge_read_checkpoint(work_id, checkpoint)):
             return False
+        job = self.store.job(work_id)
         if not self.may_continue(work_id, 'resume', owner_waits=bool(self.work_waits_for_owner(job)))[0]:
             return False
         return self.may_continue(work_id, 'redelegate')[0]
-
-    def can_resume_read_checkpoint(self, work_id, checkpoint):
-        from .work_download import staged_checkpoint_available
-        return staged_checkpoint_available(self.store, checkpoint) and self.can_judge_read_checkpoint(work_id, checkpoint)
 
     def recover_interrupted_work(self):
         """Recover verified read checkpoints and settle other interrupted Works."""

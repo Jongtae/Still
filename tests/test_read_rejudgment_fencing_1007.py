@@ -374,7 +374,8 @@ def block(case, barrier, monkeypatch):
     for boundary in ('judgment', 'recover', 'claim')
     for barrier in ('stop', 'paused', 'expired', 'revoked', 'unknown', 'owner_wait', 'turns', 'attempts',
                     'missing_staging')
-    if boundary != 'judgment' or barrier not in ('attempts', 'missing_staging')
+    # #1163: the continuation rule (revoked, unknown, owner_wait) decides resume, not judging the reply.
+    if boundary != 'judgment' or barrier not in ('attempts', 'missing_staging', 'revoked', 'unknown', 'owner_wait')
 ])
 def test_existing_boundaries_block_reuse_and_auto_resume(case, barrier, boundary, monkeypatch):
     assert case.judge(lambda: {'winner': 'prior'}) == {'winner': 'prior'}
@@ -391,6 +392,19 @@ def test_existing_boundaries_block_reuse_and_auto_resume(case, barrier, boundary
     else:
         assert case.service._claim_queued_work() is True
         assert case.store.job(case.id)['status'] == 'interrupted'
+
+
+@pytest.mark.parametrize('barrier', ['revoked', 'unknown', 'owner_wait'])
+def test_continuation_rule_blocks_auto_resume_but_not_the_current_judgment(case, barrier, monkeypatch):
+    # #1163: a recorded effect or owner wait keeps a restart from continuing the Work on its own;
+    # the current writer's reply is still judged once, as a Work without a checkpoint is.
+    block(case, barrier, monkeypatch)
+    call = mock.Mock(return_value={'winner': 'current'})
+    assert case.judge(call) == {'winner': 'current'}
+    call.assert_called_once()
+    assert not case.service.can_resume_read_checkpoint(case.id, case.store.read_checkpoint(case.id))
+    case.store.recover(can_resume_checkpoint=case.service.can_resume_read_checkpoint)
+    assert case.store.job(case.id)['status'] == 'interrupted'
 
 
 def test_exhausted_tool_attempts_allow_outcome_judgment_but_block_auto_resume(case, monkeypatch):
