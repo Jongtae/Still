@@ -71,5 +71,29 @@ class PlainTextTest(unittest.TestCase):
         self.assertEqual(plain_text('*링크*(https://example.com/_x_)'), '링크(https://example.com/_x_)')
 
 
+    # -- prose CommonMark would misread (review of #1180): the owner gets the source, not a rewrite --
+    def test_numbers_dates_escapes_and_entities_are_sent_as_written(self):
+        for text in ('3*4*5 = 60', '가격: 10*20*30', '2026. 11. 24. 회의가 있어요.', '2026. 11. 24 회의',
+                     'use \\* in regex', 'C:\\Users\\me\\_foo_', 'AT&amp;T', 'file:///tmp/a*b*c.txt'):
+            with self.subTest(text=text):
+                self.assertEqual(plain_text(text), text)
+
+    def test_misreadable_prose_inside_markup_is_kept_too(self):
+        self.assertEqual(plain_text('**요약** 3*4*5=60'), '요약 3*4*5=60')
+        self.assertEqual(plain_text('1. 2026. 11. 24. 회의'), '1. 2026. 11. 24. 회의')
+        self.assertEqual(plain_text('- 2026. 11. 24.\n- **둘째**'), '• 2026. 11. 24.\n• 둘째')
+        self.assertEqual(plain_text('**a** use \\* here'), 'a use \\* here')
+
+    def test_korean_particles_after_bold_still_render(self):
+        self.assertEqual(plain_text('**순두부찌개**는 *따뜻해서* 좋아요'), '순두부찌개는 따뜻해서 좋아요')
+
+    def test_an_image_keeps_its_address(self):
+        self.assertEqual(plain_text('![지도](https://example.com/map.png)'), '지도 (https://example.com/map.png)')
+        self.assertEqual(plain_text('![](https://example.com/map.png)'), 'https://example.com/map.png')
+
+    def test_a_text_that_renders_to_nothing_is_sent_as_written(self):
+        self.assertEqual(plain_text('[1]: https://example.com'), '[1]: https://example.com')
+
+
 if __name__ == '__main__':
     unittest.main()

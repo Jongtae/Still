@@ -956,9 +956,21 @@ class PlainTextAndWait(IMessageCase):
         self.assertEqual([op['text'] for op in self.waits()], ['Codex · · ·'])
 
     def test_an_approval_wait_sends_no_wait_message(self):
-        with mock.patch.object(self.service, '_draft_step_text', return_value=None):
-            self.present(self.timing.draft_after + 1)
-            self.present(self.timing.draft_after + 60)
+        cfg = self.surface.config()
+        self.store.queue_notification(self.work['id'], cfg['owner_user_id'], cfg['generation'],
+                                      'context_approval_needed', 'approval-1', surface='imessage')
+        self.present(self.timing.draft_after + 1)
+        self.present(self.timing.draft_after + 60)
+        self.assertEqual(self.waits(), [], 'the approval prompt is the only surface')
+
+    def test_a_wait_message_that_could_not_be_handed_over_is_not_retried_every_tick(self):
+        attempts = []
+        real = self.surface._post
+        self.surface._post = lambda cfg, text, **kw: attempts.append(text) or real(cfg, text, **kw)
+        self.sidecar.refusing = True
+        for after in (1, 1.25, 1.5, 2, 10):
+            self.present(self.timing.draft_after + after)
+        self.assertEqual(len(attempts), 1, 'one attempt per Work, under the service lock, not one per tick')
         self.assertEqual(self.waits(), [])
 
     def test_the_wait_message_echo_never_marks_the_reply_delivered(self):
