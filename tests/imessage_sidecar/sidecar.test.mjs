@@ -417,19 +417,26 @@ test('a scope backfills rows newer than since_ms through the same filter', async
     row({ chatKind: 'group', chatId: 'chat1', text: 'group', createdAt: new Date(3_200) }),
     row({ isFromMe: true, text: 'my reply', createdAt: new Date(3_300) }),
     row({ text: 'too old', createdAt: new Date(1_000) }),
+    row({ isFromMe: true, participant: null, chatId: `any;-;${OWNER}`, text: 'reply without participant', createdAt: new Date(3_400) }),
   ];
-  kit.getMessages = async (query) => { queries.push(query); return [...history].reverse(); };
+  kit.getMessages = async (query) => {
+    queries.push(query);
+    const page = [...history].reverse().slice(query.offset ?? 0, (query.offset ?? 0) + query.limit);
+    return page;
+  };
   const sidecar = await start(kit);
   await sidecar.send({ op: 'scope', mode: 'paired', handle: OWNER, since_ms: 2_000 });
   await settle();
-  assert.equal(queries.length, 1);
+  assert.ok(queries.length >= 1);
   assert.equal(queries[0].since.getTime(), 2_000);
-  assert.equal(queries[0].participant, OWNER);
+  // The kit's participant filter is handle.id = ?, which drops outgoing rows without a handle.
+  assert.equal(queries[0].participant, undefined);
   assert.ok(Number.isInteger(queries[0].limit) && queries[0].limit > 0);
   assert.deepEqual(sidecar.of('message').map((event) => event.text), ['missed while down']);
-  assert.deepEqual(sidecar.of('from_me').map((event) => event.text), ['my reply']);
+  assert.deepEqual(sidecar.of('from_me').map((event) => event.text), ['my reply', 'reply without participant']);
+  const asked = queries.length;
   await sidecar.send({ op: 'scope', mode: 'off' });
-  assert.equal(queries.length, 1);
+  assert.equal(queries.length, asked);
   await sidecar.stop();
 });
 
@@ -533,4 +540,43 @@ test('the real entry runs through a symlinked directory and keeps stdout for pro
   assert.equal(done.status, 0, done.stderr);
   assert.deepEqual(done.stdout.trim().split('\n').map((line) => JSON.parse(line)), [{ ev: 'ready', v: 1, kit: '3.0.0' }]);
   assert.match(done.stderr, /kit diagnostics/);
+});
+
+test('a backfill pages through every row since since_ms, oldest first', async () => {
+  const kit = new FakeKit();
+  const history = Array.from({ length: 1_203 }, (_, index) => row({ text: `m${index}`, createdAt: new Date(10_000 + index) }));
+  const newestFirst = [...history].reverse();
+  const queries = [];
+  kit.getMessages = async (query) => {
+    queries.push(query);
+    const offset = query.offset ?? 0;
+    return newestFirst.slice(offset, offset + query.limit);
+  };
+  const sidecar = await start(kit);
+  await sidecar.send({ op: 'scope', mode: 'paired', handle: OWNER, since_ms: 0 });
+  for (let i = 0; i < 20 && sidecar.of('message').length < history.length; i += 1) await settle();
+  assert.ok(queries.length > 1);
+  const texts = sidecar.of('message').map((event) => event.text);
+  assert.equal(new Set(texts).size, history.length);
+  assert.deepEqual(texts, history.map((message) => message.text));
+  await sidecar.stop();
+});
+
+test('a scope change stops a backfill that is still paging', async () => {
+  const kit = new FakeKit();
+  let release;
+  const queries = [];
+  kit.getMessages = async (query) => {
+    queries.push(query);
+    if ((query.offset ?? 0) > 0) await new Promise((resolve) => { release = resolve; });
+    return Array.from({ length: query.limit }, (_, index) => row({ text: `p${query.offset ?? 0}-${index}` }));
+  };
+  const sidecar = await start(kit);
+  await sidecar.send({ op: 'scope', mode: 'paired', handle: OWNER, since_ms: 0 });
+  await sidecar.send({ op: 'scope', mode: 'off' });
+  release?.();
+  await settle();
+  assert.equal(sidecar.of('message').length, 0);
+  assert.ok(queries.length <= 2);
+  await sidecar.stop();
 });

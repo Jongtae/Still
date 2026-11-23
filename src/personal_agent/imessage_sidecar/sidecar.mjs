@@ -7,6 +7,7 @@ import { createInterface } from 'node:readline';
 import { fileURLToPath } from 'node:url';
 
 export const PROTOCOL_VERSION = 1;
+const BACKFILL_PAGE = 500;
 
 const DISK_DENIED = /unable to open|authorization denied|not authorized|operation not permitted|EPERM|EACCES|SQLITE_CANTOPEN|SQLITE_AUTH/i;
 const SIGN_IN = /signed in|not signed|sign in/i;
@@ -94,17 +95,23 @@ export async function runSidecar({ input, output, createKit, kitVersion, databas
   }
 
   async function backfill(appliedScope) {
-    const { mode, handle, since_ms } = appliedScope;
+    // The watcher starts at the current max ROWID, so rows that arrived while the sidecar was
+    // down are read here. No participant filter: the kit implements it as handle.id = ?, which
+    // drops outgoing rows without a handle. forward() applies the scope to every row, as it
+    // does for live rows; nothing outside the scope is emitted.
+    const { since_ms } = appliedScope;
     const current = () => !stopped && scope === appliedScope;
+    const rows = new Map();
     try {
-      const messages = await kit.getMessages({
-        since: new Date(since_ms),
-        limit: 500,
-        ...(mode === 'paired' ? { participant: handle } : {}),
-      });
-      if (!current()) return;
-      messages.sort((a, b) => a.createdAt - b.createdAt || a.rowId - b.rowId);
-      for (const message of messages) forward(message, message.isFromMe === true);
+      for (let offset = 0; ; offset += BACKFILL_PAGE) {
+        const page = await kit.getMessages({ since: new Date(since_ms), limit: BACKFILL_PAGE, offset });
+        if (!current()) return;
+        // Pages are newest first; a row arriving meanwhile shifts the next page by one, so keep by guid.
+        for (const message of page) rows.set(message.id, message);
+        if (page.length < BACKFILL_PAGE) break;
+      }
+      const ordered = [...rows.values()].sort((a, b) => a.createdAt - b.createdAt || a.rowId - b.rowId);
+      for (const message of ordered) forward(message, message.isFromMe === true);
     } catch (error) {
       if (current()) watchError(error, true);
     }
