@@ -28,76 +28,80 @@ class HostTool:
     #: May reach something outside Still (MCP ToolAnnotations ``openWorldHint``): a page, a service,
     #: another agent.  A write that is not open-world changes only the owner's own Still records (#1102).
     open_world: bool
+    #: #1163: for a write, the ``(argument, values)`` that make one call of it a read (a listing or a
+    #: lookup its handler answers without writing), or None.  Still records such a call's
+    #: ``declared_effect`` as ``read`` from its own arguments, so the one effect rule does not count it.
+    read_operations: tuple | None
 
 
-#: name -> (write, read_only_surface, service_held, reads, lookup, recorded_by_length, open_world)
+#: name -> (write, read_only_surface, service_held, reads, lookup, recorded_by_length, open_world, read_operations)
 HOST_TOOLS={
-    'web_search': HostTool(False, True, False, None, True, None, True),
-    'public_page_read': HostTool(False, True, False, None, True, None, True),
+    'web_search': HostTool(False, True, False, None, True, None, True, None),
+    'public_page_read': HostTool(False, True, False, None, True, None, True, None),
     # Anonymous public reads stage and redact bytes in the active Work, in the service.
-    'public_download': HostTool(False, False, True, None, True, 'url', True),
-    'weather': HostTool(False, True, False, None, True, None, True),
-    'calendar_query': HostTool(False, True, True, 'calendar', False, None, False),
-    'list_roots': HostTool(False, True, False, 'files', False, None, False),
-    'find_files': HostTool(False, True, False, 'files', False, None, False),
-    'read_file': HostTool(False, True, False, 'files', False, None, False),
-    'list_notes': HostTool(False, True, False, 'notes', False, None, False),
-    'save_note': HostTool(True, False, False, 'notes', False, None, False),
+    'public_download': HostTool(False, False, True, None, True, 'url', True, None),
+    'weather': HostTool(False, True, False, None, True, None, True, None),
+    'calendar_query': HostTool(False, True, True, 'calendar', False, None, False, None),
+    'list_roots': HostTool(False, True, False, 'files', False, None, False, None),
+    'find_files': HostTool(False, True, False, 'files', False, None, False, None),
+    'read_file': HostTool(False, True, False, 'files', False, None, False, None),
+    'list_notes': HostTool(False, True, False, 'notes', False, None, False, None),
+    'save_note': HostTool(True, False, False, 'notes', False, None, False, None),
     # #182: a new result file in the file workspace's result folder; its text is recorded by length only.
-    'save_result': HostTool(True, False, False, 'files', False, 'content', False),
-    'list_memory': HostTool(False, True, True, 'memory', False, None, False),
-    'search_memory': HostTool(False, True, True, 'memory', False, None, False),
-    'search_conversation': HostTool(False, True, True, 'conversation', False, None, False),
-    'save_memory': HostTool(True, False, True, 'memory', False, None, False),
-    'list_agents': HostTool(False, True, False, None, False, None, False),
-    'delegate_agent': HostTool(True, False, False, None, False, None, True),
+    'save_result': HostTool(True, False, False, 'files', False, 'content', False, None),
+    'list_memory': HostTool(False, True, True, 'memory', False, None, False, None),
+    'search_memory': HostTool(False, True, True, 'memory', False, None, False, None),
+    'search_conversation': HostTool(False, True, True, 'conversation', False, None, False, None),
+    'save_memory': HostTool(True, False, True, 'memory', False, None, False, None),
+    'list_agents': HostTool(False, True, False, None, False, None, False, None),
+    'delegate_agent': HostTool(True, False, False, None, False, None, True, None),
     # SEC-BROWSER-01 (#656): the owner-logged-in browser profile; a navigation or read submits no form.
-    'browser_open': HostTool(False, True, False, 'browser', False, None, True),
-    'browser_read': HostTool(False, True, False, 'browser', False, None, True),
-    'browser_find': HostTool(False, True, False, 'browser', False, None, True),
-    'browser_click': HostTool(True, True, False, 'browser', False, None, True),
-    'browser_type': HostTool(True, True, False, 'browser', False, 'text', True),
+    'browser_open': HostTool(False, True, False, 'browser', False, None, True, None),
+    'browser_read': HostTool(False, True, False, 'browser', False, None, True, None),
+    'browser_find': HostTool(False, True, False, 'browser', False, None, True, None),
+    'browser_click': HostTool(True, True, False, 'browser', False, None, True, None),
+    'browser_type': HostTool(True, True, False, 'browser', False, 'text', True, None),
     # BROWSE-09 (#953): a sign-in request for the owner, read-only on the site.
-    'browser_sign_in': HostTool(False, True, False, 'browser', False, None, True),
+    'browser_sign_in': HostTool(False, True, False, 'browser', False, None, True, None),
     # CONTEXT-STATE-01 (#627): a revisable current-state hypothesis.
-    'propose_current_state': HostTool(True, False, False, 'current_context', False, 'value', False),
+    'propose_current_state': HostTool(True, False, False, 'current_context', False, 'value', False, None),
     # SEC-ATTN-01 (#659): an owner-accepted preparation (reminder/prepare).
-    'schedule_preparation': HostTool(True, False, True, None, False, 'check', False),
+    'schedule_preparation': HostTool(True, False, True, None, False, 'check', False, None),
     # #798: the owner's entrusted lines (list/read, and owner-started writes of a brief version); a read
     # shows a line's brief and its runs' outcomes, so the information-use audit lists it.
-    'entrusted_line': HostTool(True, False, True, 'lines', False, None, False),
+    'entrusted_line': HostTool(True, False, True, 'lines', False, None, False, ('action', frozenset({'list', 'read'}))),
     # #774: ask the owner for a current position in the paired Telegram chat.
-    'ask_location': HostTool(True, False, True, None, False, None, False),
+    'ask_location': HostTool(True, False, True, None, False, None, False, None),
     # #407: one short message to the owner while the Work runs; its text is the transcript's, recorded by length.
-    'tell_owner': HostTool(True, False, True, None, False, 'text', False),
+    'tell_owner': HostTool(True, False, True, None, False, 'text', False, None),
     # #794 phase 3: the owner's exact forget, complete deletion and undo.
-    'forget_record': HostTool(True, False, True, 'memory', False, None, False),
+    'forget_record': HostTool(True, False, True, 'memory', False, None, False, ('action', frozenset({'list', 'find'}))),
     # #814: owner settings read, and a change drafted for the owner to confirm.
-    'settings_read': HostTool(False, True, True, 'settings', False, None, False),
-    'settings_change': HostTool(True, False, True, None, False, None, False),
-    'capability_search': HostTool(False, True, True, 'settings', True, None, True),
+    'settings_read': HostTool(False, True, True, 'settings', False, None, False, None),
+    'settings_change': HostTool(True, False, True, None, False, None, False, None),
+    'capability_search': HostTool(False, True, True, 'settings', True, None, True, None),
     # #826: which owner information an earlier answer used and where it went (read-only).
-    'a2a_message': HostTool(True, False, False, None, False, 'message', True),
-    'information_use': HostTool(False, True, True, 'records', False, None, False),
+    'a2a_message': HostTool(True, False, False, None, False, 'message', True, None),
+    'information_use': HostTool(False, True, True, 'records', False, None, False, None),
     # #961: read one pinned skill this Work may load, or one of its packaged text files.
-    'skill_load': HostTool(False, True, False, None, False, None, False),
-    'skill_resource': HostTool(False, True, False, None, False, None, False),
+    'skill_load': HostTool(False, True, False, None, False, None, False, None),
+    'skill_resource': HostTool(False, True, False, None, False, None, False, None),
     # #32: an advisory note in the Work's own record that no available skill had the method it needed.
     # Its note is recorded by length only; the bounded, filtered note is the call's evidence (#32 review).
-    'method_gap': HostTool(False, True, False, None, False, 'note', False),
+    'method_gap': HostTool(False, True, False, None, False, 'note', False, None),
     # #1172: read-only search and read of the owner's connected Google Drive.
-    'drive_search': HostTool(False, True, True, 'drive', False, None, True),
-    'drive_read': HostTool(False, True, True, 'drive', False, None, True),
+    'drive_search': HostTool(False, True, True, 'drive', False, None, True, None),
+    'drive_read': HostTool(False, True, True, 'drive', False, None, True, None),
     # #150: read-only search and decoded body read of the owner's connected Gmail.
-    'mail_search': HostTool(False, True, True, 'mail', False, None, True),
-    'mail_read': HostTool(False, True, True, 'mail', False, None, True),
-    'browser_history_search': HostTool(False, True, True, 'history', False, None, False),
+    'mail_search': HostTool(False, True, True, 'mail', False, None, True, None),
+    'mail_read': HostTool(False, True, True, 'mail', False, None, True, None),
+    'browser_history_search': HostTool(False, True, True, 'history', False, None, False, None),
     # #1216: an authenticated API call by secret-slot reference (non-read needs approval).
-    'api_request': HostTool(True, False, True, 'api', False, 'body', True),
+    'api_request': HostTool(True, False, True, 'api', False, 'body', True, None),
     # #1380: Python the AI wrote, run in an isolated sandbox. It sends only GET/HEAD and owner-reviewed
     # reads (``code_run.CodeRunner._decide``), so it is not a write; it becomes one if state changes are enabled.
     # #1486: a proposed function library is code too.
-    'code_run': HostTool(False, False, True, None, True, ('code', 'library'), True),
+    'code_run': HostTool(False, False, True, None, True, ('code', 'library'), True, None),
 }
 HOST_ACTIONS=set(HOST_TOOLS)
 WRITE_ACTIONS={name for name,tool in HOST_TOOLS.items() if tool.write}
