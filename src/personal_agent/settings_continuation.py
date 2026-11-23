@@ -326,6 +326,8 @@ class SettingsContinuation:
           (``MAX_CONTINUATIONS``) - every owner-act continuation counts, a renewed allowance included.
 
         ``none`` and ``draft`` calls never block, nor does an owner-local write (``OWNER_LOCAL_ACTIONS``).
+        #1170: nor, for ``redelegate`` only, a record of Still's own that the next attempt revises in place
+        (``REVISABLE_RECORD_ACTIONS``: a scheduled preparation, an entrusted line).
         Unknown and observed external changes are read over the whole Work (and its request chain);
         ``since`` (an event id) limits the calls and owner waits to one attempt.  The reasons come in
         ``CONTINUE_REASONS`` order and read as ``CONTINUE_TEXT``; an empty tuple means the Work may continue.
@@ -333,7 +335,7 @@ class SettingsContinuation:
         service=self.service
         from .agent_runtime import (API_ACTIONS, EFFECT_CHANGED, EFFECT_FREE_READS, EFFECT_LEDGER_TOOLS, EFFECT_UNKNOWN,
                                     INTERNAL_STATE_ACTIONS, MAX_CONTINUATIONS, call_effects, continuation_count, dispatch_call_accounted,
-                                    dispatch_call_keys, effect_free_call, external_effect_events, keyed_change,
+                                    dispatch_call_keys, effect_free_call, external_effect_events, keyed_change, revisable_record,
                                     unknown_effect_targets)
         if purpose not in service.CONTINUE_PURPOSES:raise ValueError(purpose)
         reasons=[]
@@ -406,7 +408,10 @@ class SettingsContinuation:
         if not carry and any(row.get('resolution')!='not-applied' for row in observed):add('effect')
         for action,effect,status,detail in call_effects(scoped,with_detail=True):
             if (effect==EFFECT_CHANGED and not dispatch_call_accounted(detail,accounted) and not cut_off(action,status,detail)
-                    and not (carry and keyed_change(action,detail,status,observed_api))):add('effect')
+                    and not (carry and keyed_change(action,detail,status,observed_api))
+                    # #1170: a re-delegation of this same Work revises Still's own record in place
+                    # (``revisable_record_note`` names it in the brief); every other purpose still stops.
+                    and not (purpose=='redelegate' and revisable_record(action,status))):add('effect')
         return tuple(sorted(reasons,key=CONTINUE_REASONS.index))
 
     def may_continue(self, work_id, purpose, **kwargs):

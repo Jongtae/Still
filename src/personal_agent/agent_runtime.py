@@ -3150,6 +3150,45 @@ EFFECT_NONE,EFFECT_DRAFT,EFFECT_CHANGED,EFFECT_UNKNOWN='none','draft','changed',
 #: Work, Memory keys), so none ever blocks continuation.  A location request is not listed: a Work
 #: that already prompted the owner for a location is not replayed (#774).
 OWNER_LOCAL_ACTIONS=frozenset({'tell_owner','save_result','save_memory',CONNECTOR_APPROVAL_NOTE})
+#: #1170: Still's own owner records that a later attempt of the same Work revises in place rather than
+#: sets up again: a scheduled preparation (``schedule_preparation replaces``, and the store's per-Work
+#: content key that returns the same row for the same call) and an entrusted line (``entrusted_line
+#: revise`` on its id and version).  They stay ``changed`` (``record_effect``) for every reader; only a
+#: re-delegation within the same Work continues past them, its brief naming each record
+#: (``revisable_record_note``).  Each later run of such a record is its own Work, under its own approvals.
+REVISABLE_RECORD_ACTIONS=PREPARATION_ACTIONS|LINE_ACTIONS
+
+def revisable_record(action,status):
+ """Whether one ``changed`` call is a record a re-delegation of the same Work revises in place (#1170)."""
+ return action in REVISABLE_RECORD_ACTIONS and status=='succeeded'
+
+def revisable_record_note(store,work_id):
+ """The records this Work's attempts set up that a later attempt revises in place, as host facts, or '' (#1170).
+
+ Read from the Work's own succeeded calls: only identifiers and states the tools returned, never
+ their goals or rules.
+ """
+ with store.db() as db:
+  rows=db.execute('SELECT tool,status,detail FROM tool_events WHERE job_id=? AND tool IN (%s) ORDER BY id'
+                  %','.join('?'*len(REVISABLE_RECORD_ACTIONS)),(work_id,*sorted(REVISABLE_RECORD_ACTIONS))).fetchall()
+ calls=[]
+ for row in rows:
+  try:detail=json.loads(row['detail'] or '{}')
+  except (TypeError,ValueError):continue
+  calls.append((row['tool'],row['status'],detail if isinstance(detail,dict) else {}))
+ facts,seen=[],set()
+ for action,effect,status,detail in call_effects(calls,with_detail=True):
+  if effect!=EFFECT_CHANGED or not revisable_record(action,status):continue
+  evidence=detail.get('evidence') if isinstance(detail.get('evidence'),dict) else {}
+  fields=(('preparation_id','kind','state','due','recurrence') if action in PREPARATION_ACTIONS
+          else ('line_id','version','state'))
+  fact={key:evidence[key] for key in fields if isinstance(evidence.get(key),(str,int,float))}
+  ident=fact.get('preparation_id') or fact.get('line_id')
+  if not ident:continue
+  fact={'tool':action,**fact}
+  if ident in seen:facts=[item for item in facts if (item.get('preparation_id') or item.get('line_id'))!=ident]
+  seen.add(ident);facts.append(fact)
+ return prompt('revisable_records')+'\n'+json.dumps(facts[-12:],ensure_ascii=False) if facts else ''
 
 def record_effect(action,detail,status):
  """The effect class of one recorded tool call (#1445, #618 E1): the one rule every consumer applies.
