@@ -8,7 +8,7 @@ re-delegated attempt never leaves a second preparation for the same Work.
 import email.utils
 import json
 from types import SimpleNamespace
-from unittest.mock import Mock
+from unittest.mock import Mock, patch
 
 from personal_agent import preparations as prep
 from personal_agent.agent_runtime import ToolError
@@ -115,6 +115,40 @@ class Reconciled(StillRecords):
                     self.assertEqual(refused.exception.code, 'preparation_settled')
                 self.assertEqual([other['id'] for other in self.service.preparations.rows() if other['created_from'] == work],
                                  [] if settle == 'deleted' else [row['id']], 'nothing new was scheduled')
+
+    def test_a_preparation_that_settles_before_the_marker_is_still_fenced(self):
+        # Codex P2: it is delivered between the continuation rule's read-back and the note's read.
+        import personal_agent.agent_runtime as runtime
+        work, row = self.scheduled_work()
+        read = runtime.still_records
+
+        def settles_first(store, work_id):
+            with store.db() as db:
+                db.execute('UPDATE preparations SET state=? WHERE id=?', (prep.STATE_DELIVERED, row['id']))
+            return read(store, work_id)
+        with patch.object(runtime, 'still_records', settles_first):
+            orchestration = self.step(work, following=object())
+        self.assertIs(orchestration.next.call_args.kwargs['effect'], False)
+        schedule = self.service.preparation_scheduler(self.store.job(work), '')
+        with self.assertRaises(ToolError) as refused:
+            schedule(self.schedule_args(row))
+        self.assertEqual(refused.exception.code, 'preparation_settled')
+
+    def test_a_carried_line_the_owner_stopped_is_neither_reopened_nor_restarted(self):
+        self.script = [{'content': None, 'tool_calls': [call('1', 'entrusted_line', action='open', task='가격 변동 확인',
+                                                             report_promise='바뀌면 알려 줘')]}, finish('f', '1')]
+        work = self.receive('가격 변동 확인을 맡아 줘')
+        [line] = self.service.lines.lines()
+        self.step(work, following=object())
+        self.service.preparations_service.stop_line(line['line_id'], work, end_line=True)
+        handle = self.service.line_handler(self.store.job(work))
+        for args in ({'action': 'open', 'task': '가격 변동 확인', 'report_promise': '바뀌면 알려 줘'},
+                     {'action': 'restart', 'line': line['line_id']}):
+            with self.subTest(action=args['action']):
+                with self.assertRaises(ToolError) as refused:
+                    handle(args)
+                self.assertEqual(refused.exception.code, 'line_settled')
+        self.assertEqual([entry['state'] for entry in self.service.lines.lines()], ['stopped'])
 
     def test_without_a_re_delegation_two_preparations_in_one_work_stay_allowed(self):
         work, row = self.scheduled_work()

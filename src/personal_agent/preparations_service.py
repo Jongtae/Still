@@ -2728,6 +2728,11 @@ class PreparationsService:
                     self._record_line_read(job['id'],result,held=True)
                     return result
                 if action not in ('open','revise','undo','stop','restart'):raise refused('line_invalid_action')
+                if action=='restart':
+                    # #1167: a re-delegated attempt never restarts a carried line stopped after the re-delegation.
+                    with service.store.db() as db:
+                        if args.get('line') in still_record_claims(db,job['id'],'lines'):
+                            raise refused('line_settled',args['line'])
                 if service.owner_typed_work(job):return getattr(self,'_line_'+action)(job,args)
                 # #968: a scheduled run writes only its own line: as the owner's steer asks, or its open matters.
                 authority=self.own_line_authority(job,action,args.get('line'))
@@ -2749,10 +2754,13 @@ class PreparationsService:
         with service.store.db() as db:
             db.execute('BEGIN IMMEDIATE')
             service.store.require_read_checkpoint_writer(db)
-            active=sorted(line_id for line_id in still_record_claims(db,job['id'])
-                          if el.line_state(db,line_id)==el.STATE_ACTIVE)
+            # #1167: a re-delegated attempt revises its carried line; one the owner stopped or forgot stays so.
+            carried=sorted(still_record_claims(db,job['id'],'lines'))
+            active=[line_id for line_id in carried if el.line_state(db,line_id)==el.STATE_ACTIVE]
             if active:
                 raise not_run(ToolError(msg('lines.refused_line_exists',detail=', '.join(active)),'line_exists'))
+            if carried:
+                raise not_run(ToolError(msg('lines.refused_line_settled',detail=', '.join(carried)),'line_settled'))
             brief=service.lines.open(job['id'],**fields,rules=rules,
                                      account_every_days=el.ACCOUNT_DAYS if days is None else days,db=db)
         try:self.ensure_line_account(job,brief)

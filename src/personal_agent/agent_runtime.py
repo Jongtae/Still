@@ -2621,6 +2621,38 @@ STILL_RECORD_CONTINUATION = 'still_record_continuation'
 STILL_RECORD_KINDS = {'schedule_preparation': 'preparation', 'entrusted_line': 'line'}
 STILL_RECORD_ACTIONS = frozenset(STILL_RECORD_KINDS)
 
+def _own_replacements(db, work_id):
+ """Preparation ids a succeeded ``schedule_preparation`` call of this Work named in ``replaces``."""
+ asked, succeeded = {}, set()
+ for row in db.execute("SELECT status,detail FROM tool_events WHERE job_id=? AND tool='schedule_preparation'", (work_id,)):
+  try:detail = json.loads(row['detail'] or '{}')
+  except (TypeError, ValueError):continue
+  call = detail.get('call_id') if isinstance(detail, dict) else None
+  if not isinstance(call, str):continue
+  if row['status'] == 'running' and isinstance(detail.get('arguments'), dict):asked[call] = detail['arguments'].get('replaces')
+  elif row['status'] == 'succeeded':succeeded.add(call)
+ return {asked[call] for call in succeeded if isinstance(asked.get(call), str)}
+
+def still_record_fence(store, work_id):
+ """``{'preparations': [...], 'lines': [...]}`` a re-delegated attempt of this Work is fenced by (#1167).
+
+ Read at the moment the next attempt is claimed, over every state, so a row that settled after the
+ continuation rule reconciled it is still fenced (as settled).  A row this Work replaced itself has its
+ successor in its place; a line's automatic account is the line's upkeep, not work the attempt scheduled.
+ """
+ from . import entrusted_lines as el, preparations as prep
+ with store.db() as db:
+  tables = {row['name'] for row in db.execute("SELECT name FROM sqlite_master WHERE type='table' "
+                                            "AND name IN ('preparations','procedure_versions')")}
+  replaced = _own_replacements(db, work_id)
+  preparations = [row['id'] for row in db.execute(
+   'SELECT id FROM preparations WHERE created_from=? AND origin IS NOT ? ORDER BY created_at,id',
+   (work_id, prep.ORIGIN_LINE_ACCOUNT)) if row['id'] not in replaced] if 'preparations' in tables else []
+  lines = [row['slot'][len(el.SLOT_PREFIX):] for row in db.execute(
+   'SELECT slot FROM procedure_versions WHERE work_id=? AND version=1 AND slot LIKE ? ORDER BY created,slot',
+   (work_id, el.SLOT_PREFIX+'%'))] if 'procedure_versions' in tables else []
+ return {'preparations': preparations, 'lines': lines}
+
 def still_record_ids(store, work_id):
  """``{(kind, id)}`` of the records this Work made that Still holds and that never ran (#1167).
 
@@ -2636,15 +2668,7 @@ def still_record_ids(store, work_id):
  with store.db() as db:
   tables = {row['name'] for row in db.execute("SELECT name FROM sqlite_master WHERE type='table' "
                                             "AND name IN ('preparations','procedure_versions')")}
-  asked, succeeded = {}, set()
-  for row in db.execute("SELECT status,detail FROM tool_events WHERE job_id=? AND tool='schedule_preparation'", (work_id,)):
-   try:detail = json.loads(row['detail'] or '{}')
-   except (TypeError, ValueError):continue
-   call = detail.get('call_id') if isinstance(detail, dict) else None
-   if not isinstance(call, str):continue
-   if row['status'] == 'running' and isinstance(detail.get('arguments'), dict):asked[call] = detail['arguments'].get('replaces')
-   elif row['status'] == 'succeeded':succeeded.add(call)
-  replaced = {asked[call] for call in succeeded if isinstance(asked.get(call), str)}
+  replaced = _own_replacements(db, work_id)
   ids = {('preparation', row['id']) for row in db.execute(
    'SELECT id,state FROM preparations WHERE created_from=? AND last_run_job_id IS NULL AND COALESCE(run_count,0)=0 '
    'AND state NOT IN (?,?,?,?,?)', (work_id, *ran)) if row['state'] != prep.STATE_CANCELLED or row['id'] in replaced
@@ -2690,7 +2714,7 @@ def still_record_note(store, work_id, *, records=None):
  return prompt('still_record_continuation') + '\n' + json.dumps(records, ensure_ascii=False) if records else ''
 
 def still_record_claims(db, work_id, kind='records'):
- """Record IDs carried into a replacement attempt of this Work: every record, or ``kind='preparations'``."""
+ """Record IDs carried into a replacement attempt of this Work: every record, ``preparations`` or ``lines``."""
  return {row['value'] for row in db.execute(
   "SELECT record.value FROM tool_events event, json_each(CASE WHEN json_valid(event.detail) "
   "THEN event.detail END, '$.'||?) record WHERE event.job_id=? AND event.tool=? "

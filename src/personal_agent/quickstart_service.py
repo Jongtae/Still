@@ -6208,11 +6208,14 @@ class AgentService:
                     detail = json.dumps({'epoch': effect_ledger.epoch})
                     db.execute('INSERT INTO tool_events(job_id,tool,status,detail,created) VALUES (?,?,?,?,?)',
                                (job_id, EFFECT_CONTINUATION, 'claimed', detail, time.time()))
-        if following is not None and records:
+        fence=None
+        if following is not None and not effect and not owner_needed:
+            from .agent_runtime import still_record_fence
+            fence=still_record_fence(self.store,job_id)
+        if fence and (fence['preparations'] or fence['lines']):
             with self.store.db() as db:
                 self.store.require_read_checkpoint_writer(db)
-                detail=json.dumps({'records':[row['id'] for row in records],
-                                   'preparations':[row['id'] for row in records if row['record']=='preparation']})
+                detail=json.dumps({'records':fence['preparations']+fence['lines'],**fence})
                 db.execute('INSERT INTO tool_events(job_id,tool,status,detail,created) VALUES (?,?,?,?,?)',
                            (job_id,STILL_RECORD_CONTINUATION,'claimed',detail,time.time()))
         return following

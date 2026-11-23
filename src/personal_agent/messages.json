@@ -12064,6 +12064,12 @@
   "ja": "この作業にはすでに有効な任された仕事があります（{detail}）。変更するには、現在の expected_version を指定して revise を使ってください。",
   "zh": "此工作已有处于活动状态的受托事项（{detail}）。如需更改，请使用 revise 并指定当前的 expected_version。"
  },
+ "lines.refused_line_settled": {
+  "ko": "이 작업의 앞선 맡은 일({detail})이 이미 멈췄거나 지워졌어요. 새로 열거나 다시 시작하지 않았어요. 그 사실을 답에서 소유자에게 알려 주세요.",
+  "en": "This Work's earlier entrusted line ({detail}) was stopped or removed. Nothing was opened or restarted. Tell the owner what happened in your answer.",
+  "ja": "この作業の先の任された仕事（{detail}）はすでに停止または削除されました。新しく開いたり再開したりしていません。回答でオーナーに伝えてください。",
+  "zh": "此工作先前的受托事项（{detail}）已停止或已删除。未新建或重新开始。请在答复中告诉主人。"
+ },
  "lines.refused_line_version_conflict": {
   "ko": "그 사이 맡은 일이 바뀌었어요(지금 버전 {detail}). 더 새 버전을 그대로 두었어요. 다시 읽고 소유자에게 알리세요.",
   "en": "The line changed in the meantime (now version {detail}); the newer version was kept. Read it again and tell the owner.",
