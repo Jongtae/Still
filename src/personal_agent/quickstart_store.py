@@ -290,7 +290,11 @@ class QuickStore:
             db.execute('CREATE TABLE IF NOT EXISTS imessage_events(guid TEXT PRIMARY KEY, created REAL NOT NULL)')
             db.execute('CREATE TABLE IF NOT EXISTS imessage_sends(id TEXT PRIMARY KEY, job_id TEXT, notification_id TEXT, '
                        'generation TEXT NOT NULL, handle TEXT NOT NULL, text_digest TEXT NOT NULL, '
-                       'state TEXT NOT NULL, created REAL NOT NULL, settled REAL)')
+                       'state TEXT NOT NULL, created REAL NOT NULL, settled REAL, echo_guid TEXT)')
+            if 'echo_guid' not in {row['name'] for row in db.execute('PRAGMA table_info(imessage_sends)')}:
+                db.execute('ALTER TABLE imessage_sends ADD COLUMN echo_guid TEXT')
+            db.execute('CREATE UNIQUE INDEX IF NOT EXISTS imessage_sends_echo ON imessage_sends(echo_guid) '
+                       'WHERE echo_guid IS NOT NULL')
             # A tapback owner act stays here until its owner-act worker finishes, so a restart replays it.
             db.execute('CREATE TABLE IF NOT EXISTS imessage_pending_acts(guid TEXT PRIMARY KEY, target TEXT NOT NULL, '
                        'emoji TEXT NOT NULL, generation TEXT NOT NULL, created REAL NOT NULL)')
