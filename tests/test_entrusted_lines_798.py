@@ -831,3 +831,29 @@ class ForgetTests(_LineCase):
         # Undo puts every version back.
         OwnerForget(self.store).undo('local-owner', receipt['receipt'])
         self.assertEqual(self.service.lines.current(brief['line_id'])['version'], 2)
+
+
+class RefFormTests(_LineCase):
+    """#1168: the ``line:<id>`` ref Still shows is accepted wherever a line is named; the bare id still is."""
+
+    def test_the_prefixed_ref_and_the_bare_id_name_the_same_line(self):
+        brief, _work = self.open_line()
+        line_id = brief['line_id']
+        for ref in (el.REF_PREFIX + line_id, line_id):
+            self.assertEqual(self.line_call('읽어 줘', action='read', line=ref)['line_id'], line_id)
+        self.line_call('바꿔 줘', action='revise', line=el.REF_PREFIX + line_id, expected_version='1', rule=RULE)
+        self.assertEqual(self.service.lines.current(line_id)['version'], 2)
+        self.assertEqual(self.line_call('되돌려 줘', action='undo', line=el.REF_PREFIX + line_id, version='2')['version'], 3)
+        stopped = self.line_call('멈춰 줘', action='stop', line=el.REF_PREFIX + line_id, scope='line')
+        self.assertEqual(stopped['state'], el.STATE_STOPPED)
+        restarted = self.line_call('다시 해 줘', action='restart', line=el.REF_PREFIX + line_id)
+        self.assertEqual(restarted['state'], el.STATE_ACTIVE)
+
+    def test_a_ref_that_names_no_line_or_another_kind_of_ref_is_not_found(self):
+        brief, _work = self.open_line()
+        for ref in ('line:nothing-here', 'nothing-here', 'procedure:' + brief['line_id'], 'line:line:' + brief['line_id']):
+            self.assertEqual(self.line_call('읽어 줘', action='read', line=ref)['code'], 'line_not_found', ref)
+
+    def test_the_parser_strips_only_the_line_prefix(self):
+        self.assertEqual((el.line_id_of('line:abc'), el.line_id_of('abc'), el.line_id_of('procedure:abc'), el.line_id_of(None)),
+                         ('abc', 'abc', 'procedure:abc', None))

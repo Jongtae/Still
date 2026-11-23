@@ -30,6 +30,16 @@ from .procedures import CURRENT, KEPT, LINE_PREFIX, ProcedureLibrary
 SLOT_PREFIX = LINE_PREFIX
 #: ``owner_forget`` reference of one whole line (every brief version).
 REF_PREFIX = 'line:'
+
+
+def line_id_of(ref):
+    """#1168: the line id of what the worker passes, the ``line:<id>`` ref Still shows or the bare id.
+
+    Any other value (including another kind of ref such as ``procedure:x``) is returned unchanged, so it
+    names no line and is refused as ``line_not_found`` where it is used."""
+    if isinstance(ref, str) and ref.startswith(REF_PREFIX):
+        return ref[len(REF_PREFIX):]
+    return ref
 STATE_ACTIVE, STATE_STOPPED = 'active', 'stopped'
 STATES = (STATE_ACTIVE, STATE_STOPPED)
 #: The whole brief format.  Nothing here names a subject, an authority or an amount.

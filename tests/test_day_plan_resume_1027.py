@@ -82,6 +82,12 @@ class ResumeOffers(Mode, _Plan, OwnerActCase):
             self.assertEqual(current, brief)
         self.assertEqual(current['rules'], brief['rules'])
 
+    def test_a_resume_offer_names_its_line_by_the_prefixed_ref_too(self):
+        brief = self.line(stop='line')
+        self.plan_calls(lambda: [self.resume_call(el.REF_PREFIX + brief['line_id'])])
+        [row] = self.offers()
+        self.assertEqual(row['line_id'], brief['line_id'])
+
     def test_owner_button_restarts_and_owner_accepts_the_row(self):
         brief = self.line(stop='line')
         work, row = self.offer(brief)
