@@ -57,5 +57,19 @@ class PlainTextTest(unittest.TestCase):
                 self.assertEqual(plain_text(text), text)
 
 
+    def test_a_bare_url_is_never_read_as_markdown(self):
+        # A URL is taken whole before emphasis is parsed, in plain and in marked-up answers alike.
+        for url in ('https://x.com/_name_', 'https://example.com/a*b*c', 'https://example.com/%EC%95%88?q=a%20b',
+                    'https://ko.wikipedia.org/wiki/서울_(도시)', 'https://example.com/a_b_c#frag_1_'):
+            with self.subTest(url=url):
+                self.assertEqual(plain_text(f'see {url} now'), f'see {url} now')
+                self.assertEqual(plain_text(f'**a** {url}'), f'a {url}')
+                self.assertEqual(plain_text(f'- {url}'), f'• {url}')
+
+    def test_sentence_punctuation_after_a_bare_url_stays_outside_it(self):
+        self.assertEqual(plain_text('**여기** https://example.com/a_b_.'), '여기 https://example.com/a_b_.')
+        self.assertEqual(plain_text('*링크*(https://example.com/_x_)'), '링크(https://example.com/_x_)')
+
+
 if __name__ == '__main__':
     unittest.main()
