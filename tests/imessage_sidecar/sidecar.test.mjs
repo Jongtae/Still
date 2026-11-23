@@ -881,3 +881,37 @@ test('a 1:1 chat on another service is still used when no iMessage chat exists',
   assert.deepEqual(kit.jobs.map((job) => job.target.identifier), [`SMS;-;${OWNER}`]);
   await sidecar.stop();
 });
+
+test('a send whose pairing ends while its chat is being looked up is refused, never dispatched', async () => {
+  for (const change of [{ op: 'scope', mode: 'off' }, { op: 'scope', mode: 'paired', handle: OTHER, since_ms: 0 }]) {
+    const kit = chatKit([chat(`any;-;${OWNER}`)]);
+    let release;
+    const lookup = kit.listChats;
+    kit.listChats = async (query) => { await new Promise((resolve) => { release = resolve; }); return lookup(query); };
+    const sidecar = await start(kit);
+    await sidecar.send({ op: 'scope', mode: 'paired', handle: OWNER, since_ms: 0 });
+    await sidecar.send({ op: 'send', id: 'r1', to: OWNER, text: 'private reply' });
+    await sidecar.send(change);
+    release();
+    await settle();
+    assert.deepEqual([kit.jobs, kit.sends], [[], []], `nothing dispatched after ${JSON.stringify(change)}`);
+    assert.deepEqual(sidecar.of('sent'), []);
+    assert.deepEqual(sidecar.of('send_failed').map((event) => [event.id, event.reason]), [['r1', 'bad_request']]);
+    await sidecar.stop();
+  }
+});
+
+test('a send whose chat lookup is still pending at stop is never dispatched', async () => {
+  const kit = chatKit([chat(`any;-;${OWNER}`)]);
+  let release;
+  const lookup = kit.listChats;
+  kit.listChats = async (query) => { await new Promise((resolve) => { release = resolve; }); return lookup(query); };
+  const sidecar = await start(kit);
+  await sidecar.send({ op: 'scope', mode: 'paired', handle: OWNER, since_ms: 0 });
+  await sidecar.send({ op: 'send', id: 'r1', to: OWNER, text: 'private reply' });
+  await sidecar.send({ op: 'stop' });
+  release();
+  await sidecar.done;
+  assert.deepEqual([kit.jobs, kit.sends], [[], []]);
+  assert.deepEqual(sidecar.of('sent'), []);
+});
