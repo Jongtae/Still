@@ -422,6 +422,11 @@ class SettingsPage(unittest.TestCase):
                        'id="imessage-status"', 'id="imessage-company-approved"'):
             self.assertIn(marker, html)
         self.assertIn('settings?.imessage', script.replace('settings.imessage', 'settings?.imessage'))
+        # A section the host does not offer is hidden, and the add-connection chooser skips hidden sections.
+        self.assertIn('<section id="imessage"', html)
+        self.assertRegex(html, r'<section id="imessage"[^>]*\bhidden\b')
+        chooser = script[script.index('function openAdd('):script.index('function showAddType(')]
+        self.assertIn('if(node.hidden)continue;', chooser)
         server = (Path(imessage_surface.__file__).with_name('quickstart.py')).read_text(encoding='utf-8')
         for path in ('/api/imessage/pair', '/api/imessage/pair/cancel', '/api/imessage/disconnect', '/api/imessage/retry',
                      '/api/imessage/company-approved'):
