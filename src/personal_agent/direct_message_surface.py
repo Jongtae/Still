@@ -311,8 +311,8 @@ class DirectMessageSurface(ConversationSurface):
     NOT_SENT = ERROR = ProviderError
     #: Delivery status after a successful terminal post. Some transports confirm it asynchronously.
     POST_REPLY_STATUS = 'sent'
-    #: Whether a returned notice post is a confirmed send. When False the surface calls
-    #: ``_notice_confirmed`` itself once the transport confirms delivery.
+    #: Whether a returned notice post is a confirmed send. When False the notice stays ``sending``
+    #: and the surface calls ``notice_delivered`` itself once it observes the delivery.
     NOTICE_CONFIRMED_ON_POST = True
     #: What the owner does at the Mac for a notice kind this surface has no way to answer.
     AT_THE_MAC = {}
@@ -721,25 +721,40 @@ class DirectMessageSurface(ConversationSurface):
                     text = f'{text}\n\n{msg(hint)}'
                 post_id = self._post_notice(cfg, text, notification, bound)
                 memory_prompt, memory_saved = bound.get('memory_prompt'), bound.get('memory_saved')
-                listed = kind in MEMORY_PROMPT_KINDS and not service.memory_open(memory_prompt)
-                service.store.update_notification(
-                    notification['id'], 'memory_listed' if listed else 'sent', post_id,
-                    json.dumps(memory_prompt) if kind in MEMORY_PROMPT_KINDS else
-                    json.dumps(memory_saved) if kind in MEMORY_SAVED_KINDS else None, delivered=True)
+                shown = (json.dumps(memory_prompt) if kind in MEMORY_PROMPT_KINDS else
+                         json.dumps(memory_saved) if kind in MEMORY_SAVED_KINDS else None)
                 if self.NOTICE_CONFIRMED_ON_POST:
-                    self._notice_confirmed(notification)
+                    self.notice_delivered(notification, post_id, shown, memory_prompt=memory_prompt)
+                elif shown is not None:
+                    # Still in flight: record what the send showed, settle nothing until it is observed.
+                    service.store.update_notification(notification['id'], 'sending', None, shown)
             except self.NOT_SENT:
                 service.store.update_notification(notification['id'], 'queued')
             except ProviderError:
                 service.store.update_notification(notification['id'], 'unknown')
         return True
 
-    def _notice_confirmed(self, notification):
-        """Bookkeeping that holds only once the owner was actually sent ``notification``."""
+    def notice_delivered(self, notification, post_id, shown=None, *, memory_prompt=None):
+        """Everything that holds only once the owner was actually sent ``notification``: its state,
+        message id and ``sent_at``, and for a watch result what the owner was last told.
+
+        ``shown``: the JSON binding a memory notice displayed (None leaves the stored one).
+        """
         from . import preparations as prep
-        if notification['kind'] != prep.NOTIFY_KIND:
-            return
+        from .quickstart_service import MEMORY_PROMPT_KINDS
         service = self.service
+        kind = notification['kind']
+        if kind in MEMORY_PROMPT_KINDS:
+            if memory_prompt is None:
+                stored = shown if shown is not None else notification.get('fingerprint')
+                memory_prompt = json.loads(stored) if stored else None
+            listed = not service.memory_open(memory_prompt)
+        else:
+            listed = False
+        service.store.update_notification(notification['id'], 'memory_listed' if listed else 'sent', post_id,
+                                          shown, delivered=True)
+        if kind != prep.NOTIFY_KIND:
+            return
         # #306 review: as on Telegram (#719), only a confirmed send is what the owner was last
         # told, so an unchanged result of the next watch run is not told again.
         try:

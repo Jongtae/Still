@@ -3132,10 +3132,6 @@ class QuickStore:
                 interrupted-=len(resumes)
             uncertain=db.execute("UPDATE jobs SET delivery='unknown' WHERE delivery='sending'").rowcount
             notifications=db.execute("UPDATE telegram_notifications SET state='unknown' WHERE state='sending'").rowcount
-            # iMessage notices may already be marked sent by the shared notice path, before their echo.
-            notifications += db.execute("UPDATE telegram_notifications SET state='unknown' "
-                                        "WHERE surface='imessage' AND state IN ('sent','memory_listed') AND id IN "
-                                        "(SELECT notification_id FROM imessage_sends WHERE state='sending')").rowcount
             db.execute("UPDATE imessage_sends SET state='unknown',settled=? WHERE state='sending'", (time.time(),))
             db.execute("UPDATE telegram_task_cards SET message_id=-2,state='unknown',created=? WHERE message_id=-1",(time.time(),))
             self.telegram.delete_interrupted_task_cards(db)

@@ -87,8 +87,10 @@ class IMessageSurface(DirectMessageSurface):
     REQUEST_KEY_PREFIX, MESSAGES = 'im', 'imessage'
     NOT_SENT, ERROR = IMessageNotSent, IMessageError
     POST_REPLY_STATUS = 'sending'
-    # A notice is confirmed by its echo, so watch bookkeeping waits for ``_observe_echo``.
+    # A notice is delivered only when its echo is observed: it stays ``sending`` until
+    # ``_observe_echo`` calls ``notice_delivered``; a failed send is queued again.
     NOTICE_CONFIRMED_ON_POST = False
+    MAX_NOTICE_SEND_FAILURES = 3
     AT_THE_MAC = {'browser_approval_needed': 'imessage.approve_at_mac',
                   'context_approval_needed': 'surface.answer_at_mac', 'browser_login_needed': 'surface.answer_at_mac'}
 
@@ -105,6 +107,7 @@ class IMessageSurface(DirectMessageSurface):
         self._reader_lock = threading.Lock()
         self.reader_spawn = lambda target: threading.Thread(target=target, name='imessage-events', daemon=True).start()
         self._acting = set()
+        self._was_ready = False
         self._acting_lock = threading.Lock()
 
     def outbound_target(self, cfg, url):
@@ -198,10 +201,30 @@ class IMessageSurface(DirectMessageSurface):
             self._sync_scope(self.config())
             return status
 
+    @staticmethod
+    def _transport_ready(transport):
+        """The transport's protocol-v1 ``ready`` frame, or None (#1142 ``IMessageSidecar.ready``)."""
+        ready = getattr(transport, 'ready', None) if transport is not None else None
+        if (isinstance(ready, dict) and type(ready.get('v')) is int and ready['v'] == 1
+                and _wire_string(ready.get('kit'), nonempty=True)):
+            return ready
+        return None
+
+    def _track_readiness(self, transport):
+        """A sidecar that became ready has forgotten its scope and any earlier error."""
+        ready = self._transport_ready(transport)
+        if ready and not self._was_ready:
+            self.service.store.put(self.STATUS_KEY, {'state': 'connected', 'kit': ready['kit']})
+            self._scope = None
+        self._was_ready = bool(ready)
+
     def status(self):
         cfg = self.config()
         live = self.service.store.config(self.STATUS_KEY, {}) or {}
-        state = live.get('state', 'disconnected') if self._sidecar() is not None else 'disconnected'
+        if self._transport_ready(self._sidecar()) is None:
+            state = 'error' if live.get('state') == 'error' else 'disconnected'
+        else:
+            state = 'error' if live.get('state') == 'error' else 'connected'
         status = {'connected': state == 'connected', 'handle_paired': bool(cfg.get('handle')),
                   'company_approved': cfg.get('company_approved') is True,
                   'usable': self._sidecar() is not None and self.usable(cfg),
@@ -220,8 +243,7 @@ class IMessageSurface(DirectMessageSurface):
             if transport is None:
                 return None
             cfg = self.config()
-            pairing_batch = bool(cfg.get('pairing'))
-            if pairing_batch and (now >= cfg['pairing']['expires_at'] or self._work_mode_refusal()):
+            if cfg.get('pairing') and (now >= cfg['pairing']['expires_at'] or self._work_mode_refusal()):
                 self.cancel_pairing()
             usable = self.usable(cfg)
             if usable:
@@ -229,6 +251,7 @@ class IMessageSurface(DirectMessageSurface):
                 self.replay_ingress()
             created = []
             self._ensure_reader(transport)
+            self._track_readiness(transport)
             while True:
                 try:
                     source, event = self._inbox.get_nowait()
@@ -236,7 +259,7 @@ class IMessageSurface(DirectMessageSurface):
                     break
                 if source is not transport:
                     continue   # buffered from a transport that was replaced
-                work_id = self._receive_event(event, now, pairing_batch)
+                work_id = self._receive_event(event, now)
                 if work_id:
                     created.append(work_id)
             self._record_seen()
@@ -272,34 +295,38 @@ class IMessageSurface(DirectMessageSurface):
         if seen > int(cfg.get('seen_ms') or 0):
             self.service.store.put(CONFIG_KEY, {**cfg, 'seen_ms': seen})
 
-    def _receive_event(self, event, now, pairing_batch):
+    def _receive_event(self, event, now):
         if not isinstance(event, dict) or not isinstance(event.get('ev'), str):
             return None
         kind = event['ev']
-        if kind == 'ready' and type(event.get('v')) is int and event['v'] == 1 and _wire_string(event.get('kit'), nonempty=True):
-            self.service.store.put(self.STATUS_KEY, {'state': 'connected', 'kit': event['kit']})
-            self._scope = None  # a restarted sidecar has forgotten its scope
-            self._sync_scope(self.config())
-        elif kind == 'error' and isinstance(event.get('code'), str) and event['code'] in ERROR_CODES and isinstance(event.get('detail'), str):
+        # Readiness comes from the transport (``_track_readiness``); its ``ready`` frames are the handshake.
+        if kind == 'error' and isinstance(event.get('code'), str) and event['code'] in ERROR_CODES and isinstance(event.get('detail'), str):
             self.service.store.put(self.STATUS_KEY, {'state': 'error', 'code': event['code']})
         elif kind == 'send_failed' and _wire_string(event.get('id'), nonempty=True) and isinstance(event.get('reason'), str):
             with self.service.store.db() as db:
                 db.execute('BEGIN IMMEDIATE')
                 row = db.execute("SELECT * FROM imessage_sends WHERE id=? AND state='sending'", (event['id'],)).fetchone()
-                if row:
+                if row and row['notification_id'] and db.execute(
+                        "SELECT COUNT(*) FROM imessage_sends WHERE notification_id=? AND state='failed'",
+                        (row['notification_id'],)).fetchone()[0] + 1 < self.MAX_NOTICE_SEND_FAILURES:
+                    # Messages refused it, so the owner was not told: queue the notice again.
+                    db.execute("UPDATE imessage_sends SET state='failed',settled=? WHERE id=?", (now, row['id']))
+                    db.execute("UPDATE telegram_notifications SET state='queued' WHERE id=? AND state='sending'",
+                               (row['notification_id'],))
+                elif row:
                     self._unknown(db, row, now)
         elif kind in ('message', 'from_me') and _valid_message(event):
-            return self._receive_message(kind, event, now, pairing_batch)
+            return self._receive_message(kind, event, now)
         # The 'sent' acknowledgement only confirms handoff to Messages.
         return None
 
-    def _receive_message(self, kind, event, now, pairing_batch):
+    def _receive_message(self, kind, event, now):
         cfg = self.config()
         owner, generation = cfg.get('owner_user_id'), cfg.get('generation')
-        if pairing_batch:
-            # Rows still buffered from pairing scope cannot turn into owner input
-            # when an earlier row in this batch ends pairing.
-            if kind == 'message' and cfg.get('pairing'):
+        if cfg.get('pairing'):
+            # Decided per row: once a row completes pairing, the rows after it in the same drain
+            # (the owner's first request, the greeting's echo) pass the paired filter below.
+            if kind == 'message':
                 self._pair_message(cfg, event)
             return None
         if not self.usable(cfg) or event['handle'] != cfg.get('handle') or event['ts_ms'] <= cfg['since_ms']:
@@ -439,13 +466,12 @@ class IMessageSurface(DirectMessageSurface):
                            (send['job_id'], cfg['owner_user_id'], now))
                 db.execute('UPDATE imessage_turns SET reply_post_id=? WHERE job_id=?', (guid, send['job_id']))
             notice = None
-            if send['notification_id'] and db.execute(
-                    "UPDATE telegram_notifications SET message_id=? WHERE id=? AND surface='imessage' "
-                    "AND state IN ('sent','memory_listed')", (guid, send['notification_id'])).rowcount:
-                notice = db.execute('SELECT * FROM telegram_notifications WHERE id=?', (send['notification_id'],)).fetchone()
+            if send['notification_id']:
+                notice = db.execute("SELECT * FROM telegram_notifications WHERE id=? AND surface='imessage' "
+                                    "AND state='sending'", (send['notification_id'],)).fetchone()
             db.execute("UPDATE imessage_sends SET state='delivered',settled=? WHERE id=?", (now, send['id']))
         if notice is not None:
-            self._notice_confirmed(dict(notice))
+            self.notice_delivered(dict(notice), guid)
         if send['job_id']:
             try:
                 job = store.job(send['job_id'])

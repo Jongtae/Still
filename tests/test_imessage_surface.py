@@ -37,6 +37,16 @@ OTHER_SECRET = 'OTHER-CONVERSATION-7f3a91'
 ANSWER = '저녁은 순두부찌개 어때요?'
 
 
+READY = {'ev': 'ready', 'v': 1, 'kit': '3.0.0'}
+
+
+def restart(sidecar, surface):
+    """The sidecar's child exits and a new one becomes ready, one surface tick apart."""
+    sidecar.ready = None
+    surface.receive()
+    sidecar.ready = dict(READY)
+
+
 def now_ms():
     return int(time.time() * 1000)
 
@@ -49,6 +59,7 @@ class FakeSidecar:
         self.queue = []
         self.down = False
         self.refusing = False    # as IMessageSidecar.send_op while stopped or restarting
+        self.ready = dict(READY)  # IMessageSidecar.ready: None while stopped or restarting
         self._guid = 0
 
     def send_op(self, op):
@@ -174,6 +185,32 @@ class Pairing(IMessageCase):
         self.assertTrue(all(op['to'] == OWNER for op in self.sidecar.sends()))
         self.assertNotIn(code, json.dumps(cfg), 'the code itself is not kept after use')
 
+    def test_rows_after_the_code_in_the_same_drain_are_read_as_paired(self):
+        code = self.surface.start_pairing()['code']
+        ts = now_ms()
+        self.sidecar.message(OWNER, code, ts_ms=ts)
+        first = self.sidecar.message(OWNER, '첫 요청', ts_ms=ts + 1)   # same drain, right after the code
+        self.sidecar.message(INTRUDER, '남의 대화', ts_ms=ts + 2)
+        self.surface.receive()
+        self.assertEqual(self.surface.config().get('handle'), OWNER)
+        self.assertEqual(len(self.im_jobs()), 1, "the owner's first request is not dropped")
+        self.sidecar.emit(**first)                                  # the paired backfill repeats it
+        self.surface.receive()
+        self.assertEqual(len(self.im_jobs()), 1)
+
+    def test_status_follows_the_transport_readiness(self):
+        self.pair()
+        self.assertTrue(self.surface.status()['connected'])
+        self.sidecar.ready = None
+        self.assertEqual(self.surface.status()['state'], 'disconnected')
+        self.sidecar.ready = dict(READY)
+        self.sidecar.emit(ev='error', code='db_unreadable', detail='')
+        self.surface.receive()
+        self.assertEqual(self.surface.status()['state'], 'error')
+        restart(self.sidecar, self.surface)
+        self.surface.receive()
+        self.assertEqual(self.surface.status()['state'], 'connected', 'a ready restart clears the error')
+
     def test_the_code_is_compared_in_constant_time(self):
         code = self.surface.start_pairing()['code']
         with mock.patch('personal_agent.imessage_surface.hmac.compare_digest', wraps=__import__('hmac').compare_digest) as compared:
@@ -256,7 +293,7 @@ class Pairing(IMessageCase):
         """The sidecar keeps no state: after it (re)starts, Still repeats the scope it must enforce."""
         since = self.pair()
         self.sidecar.ops.clear()
-        self.sidecar.emit(ev='ready', v=1, kit='3.0.0')
+        restart(self.sidecar, self.surface)
         self.surface.receive()
         scope = self.sidecar.scopes()[-1]
         self.assertEqual((scope['mode'], scope['handle']), ('paired', OWNER))
@@ -266,7 +303,7 @@ class Pairing(IMessageCase):
         since = self.pair()
         later = since + 3 * REPLAY_OVERLAP_MS
         self.owner_says('나중 메시지', ts_ms=later)
-        self.sidecar.emit(ev='ready', v=1, kit='3.0.0')
+        restart(self.sidecar, self.surface)
         self.surface.receive()
         self.assertEqual(self.sidecar.scopes()[-1]['since_ms'], later - REPLAY_OVERLAP_MS)
         self.sidecar.message(OWNER, '겹치는 구간의 옛 메시지', ts_ms=later - 1000)
@@ -274,9 +311,9 @@ class Pairing(IMessageCase):
         self.assertEqual(len(self.im_jobs()), 2, 'a row in the overlap that was never seen is still read')
 
     def test_an_unpaired_ready_sidecar_reads_nothing(self):
-        self.sidecar.emit(ev='ready', v=1, kit='3.0.0')
+        restart(self.sidecar, self.surface)
         self.surface.receive()
-        self.assertEqual([op['mode'] for op in self.sidecar.scopes()], ['off'])
+        self.assertEqual({op['mode'] for op in self.sidecar.scopes()}, {'off'})
 
     def test_disconnect_turns_reading_off(self):
         self.pair()
@@ -410,10 +447,42 @@ class Delivery(IMessageCase):
         notice, recorded = self.watch_notice()
         self.assertEqual(self.sidecar.sends()[-1]['text'], 'watch result')
         recorded.assert_not_called()
-        self.sidecar.from_me(OWNER, 'watch result')
+        self.assertEqual((notice['state'], notice['sent_at'], notice['message_id']), ('sending', None, None),
+                         'handed to the sidecar is not told')
+        echo = self.sidecar.from_me(OWNER, 'watch result')
         self.surface.receive()
         self.assertEqual(recorded.call_count, 1)
         self.assertEqual(recorded.call_args.args[:2], (self.work['id'], 'digest-1'))
+        told = self.store.notification(notice['id'])
+        self.assertEqual((told['state'], told['message_id']), ('sent', echo['guid']))
+        self.assertIsNotNone(told['sent_at'])
+
+    def test_a_failed_watch_notice_is_queued_again_and_told_once_it_echoes(self):
+        notice, recorded = self.watch_notice()
+        self.sidecar.emit(ev='send_failed', id=self.sidecar.sends()[-1]['id'], reason='osascript')
+        self.surface.receive()
+        self.assertEqual(self.store.notification(notice['id'])['state'], 'queued', 'not told, so retried')
+        recorded.assert_not_called()
+        while self.service.deliver_notification():
+            pass
+        self.assertEqual([op['text'] for op in self.sidecar.sends()].count('watch result'), 2)
+        self.sidecar.from_me(OWNER, 'watch result')
+        self.surface.receive()
+        self.assertEqual(self.store.notification(notice['id'])['state'], 'sent')
+        self.assertEqual(recorded.call_count, 1)
+
+    def test_a_notice_that_keeps_failing_stops_at_unknown(self):
+        from personal_agent.imessage_surface import IMessageSurface
+        notice, recorded = self.watch_notice()
+        for _ in range(IMessageSurface.MAX_NOTICE_SEND_FAILURES):
+            self.sidecar.emit(ev='send_failed', id=self.sidecar.sends()[-1]['id'], reason='osascript')
+            self.surface.receive()
+            while self.service.deliver_notification():
+                pass
+        self.assertEqual(self.store.notification(notice['id'])['state'], 'unknown')
+        self.assertEqual([op['text'] for op in self.sidecar.sends()].count('watch result'),
+                         IMessageSurface.MAX_NOTICE_SEND_FAILURES)
+        recorded.assert_not_called()
 
     def test_a_watch_notice_without_its_echo_is_never_recorded_as_told(self):
         notice, recorded = self.watch_notice()
@@ -527,6 +596,8 @@ class OwnerActs(IMessageCase):
         job, draft_id, notice = self.settings_notice()
         self.assertEqual(notice['surface'], 'imessage')
         self.assertTrue(any(op['to'] == OWNER for op in self.sidecar.sends()))
+        self.sidecar.from_me(OWNER, self.sidecar.sends()[-1]['text'])
+        self.surface.receive()
         self.assertEqual([item['kind'] for item in self.service.owner_acts.open_items(job)], [KIND_SETTINGS])
         with mock.patch.object(self.service.owner_acts, 'settle', wraps=self.service.owner_acts.settle) as settled:
             event, _ = self.owner_says('승인')
@@ -553,7 +624,7 @@ class OwnerActs(IMessageCase):
 
     def test_a_prompt_in_flight_across_a_restart_is_unknown(self):
         job, draft_id, notice = self.settings_notice()
-        self.assertEqual(self.store.notification(notice['id'])['state'], 'sent')
+        self.assertEqual(self.store.notification(notice['id'])['state'], 'sending', 'no echo yet')
         store = QuickStore(self.store.root)
         service = AgentService(store)
         service.recover_interrupted_work()
@@ -752,3 +823,11 @@ class RealSidecarTransport(unittest.TestCase):
         with self.store.db() as db:
             self.assertEqual(db.execute('SELECT COUNT(*) FROM imessage_sends').fetchone()[0], before,
                              'a refused send leaves no in-flight row')
+
+    def test_the_real_sidecar_reports_connected_and_disconnected(self):
+        self.surface.receive()
+        status = self.surface.status()
+        self.assertEqual((status['connected'], status['state']), (True, 'connected'))
+        self.sidecar.stop()
+        self.surface.receive()
+        self.assertEqual(self.surface.status()['state'], 'disconnected')
