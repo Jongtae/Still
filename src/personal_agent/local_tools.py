@@ -620,6 +620,23 @@ GEOCODING_SEARCH='https://geocoding-api.open-meteo.com/v1/search'
 #: Extra geocoding requests with a shortened name when a multi-word place matches nothing (#1125).
 GEOCODING_RETRIES=3
 
+def _region_matches(places, asked, searched):
+    """Candidates whose region names appear in the rest of the text that was asked (#1186).
+
+    Open-Meteo matches one place name and ignores the rest of a saved address, so a
+    building or neighbourhood label can land in another district.  The words of the
+    asked text that are not the searched name are compared with each candidate's
+    country and admin names (the geocoder's own ``admin1``..``admin4``/``country``
+    fields); when some candidates match, only those are kept.  No match keeps all.
+    """
+    rest={w.casefold() for w in asked.replace(',',' ').split()}-{w.casefold() for w in searched.split()}
+    if not rest or len(places)<2:return places
+    def score(p):
+        fields=[str(p.get(k) or '').casefold() for k in ('country','admin1','admin2','admin3','admin4')]
+        return sum(1 for w in rest if any(f and (w in f or f in w) for f in fields))
+    best=max(score(p) for p in places)
+    return [p for p in places if score(p)==best] if best else places
+
 class LocalTools:
     def __init__(self, page_reader=None, providers=None):
         # #655: the configured search providers; without an owner store none
@@ -679,11 +696,12 @@ class LocalTools:
         # several words (a district, a neighbourhood).  When the whole text matches nothing, ask
         # again with it shortened from the end, at most GEOCODING_RETRIES more requests; the
         # ambiguity check below still reports a same-named result to the worker.
-        words=city.split();places=[]
+        words=city.split();places=[];asked=city
         for index,name in enumerate([city]+[' '.join(words[:n]) for n in range(len(words)-1,0,-1)][:GEOCODING_RETRIES]):
             places=self._public_request(GEOCODING_SEARCH+'?'+urlencode({'name':name,**args}),10,first=index==0).get('results',[])
             if places:city=name;break
         if not places:raise ValueError('도시를 찾지 못했습니다. 도시와 국가를 함께 알려 주세요.')
+        places=_region_matches(places,asked,city)
         populated=sorted([p for p in places if p.get('population',0)>=100000],key=lambda p:p['population'],reverse=True)
         if len(populated)==1:places=populated
         exact=[p for p in places if str(p.get('name','')).casefold()==city.strip().casefold()]
@@ -692,7 +710,7 @@ class LocalTools:
         if len({(p.get('country_code'),p.get('admin1')) for p in places})>1:
             raise ValueError('같은 이름의 지역이 여러 곳입니다. 국가와 지역을 더 구체적으로 알려 주세요: '+', '.join(str(p.get('name'))+' '+str(p.get('admin1',''))+' '+str(p.get('country','')) for p in places[:3]))
         # #233: the city already went to the geocoding host, so a refusal of its coordinates is not "not sent".
-        return self._forecast(place['latitude'],place['longitude'],{k:place.get(k) for k in ('name','country','admin1','latitude','longitude')})
+        return self._forecast(place['latitude'],place['longitude'],{**{k:place.get(k) for k in ('name','country','admin1','admin2','latitude','longitude')},'searched_text':asked})
 
     def forecast(self, latitude, longitude, location=None):
         """The forecast for a caller's own coordinates (a resolved location ref, #627).
