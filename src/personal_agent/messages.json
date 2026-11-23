@@ -7378,6 +7378,42 @@
   "ja": "リアクションした項目はすでに処理済みか、もう待機していません。何も変更していません。",
   "zh": "你回应的项目已处理或不再等待。没有做任何更改。"
  },
+ "imessage.approve_at_mac": {
+  "ko": "Mac의 Still에서 이 요청을 승인하거나 거절해 주세요.",
+  "en": "Approve or decline this request in Still on your Mac.",
+  "ja": "Mac の Still でこのリクエストを承認または拒否してください。",
+  "zh": "请在 Mac 上的 Still 中批准或拒绝此请求。"
+ },
+ "imessage.connected_hello": {
+  "ko": "Still이 연결되었어요. 이제 여기서 Still과 대화할 수 있어요.",
+  "en": "Still is connected. You can now talk to Still here.",
+  "ja": "Still が接続されました。ここで Still と話せます。",
+  "zh": "Still 已连接。现在可以在这里与 Still 对话。"
+ },
+ "imessage.not_connected": {
+  "ko": "iMessage에 메시지를 보낼 수 없어요. Mac의 Still에서 연결을 확인해 주세요.",
+  "en": "Could not send an iMessage. Check the connection in Still on your Mac.",
+  "ja": "iMessage を送信できませんでした。Mac の Still で接続を確認してください。",
+  "zh": "无法发送 iMessage。请在 Mac 上的 Still 中检查连接。"
+ },
+ "imessage.work_mode_unapproved": {
+  "ko": "회사 모드에서 이 iMessage 연결을 사용하려면 먼저 '회사 모드에서도 사용'을 켜 주세요.",
+  "en": "To use this iMessage connection in work mode, switch on 'Use in work mode too' first.",
+  "ja": "会社モードでこの iMessage 接続を使うには、先に「会社モードでも使う」をオンにしてください。",
+  "zh": "如需在工作模式下使用此 iMessage 连接，请先开启“在工作模式下也使用”。"
+ },
+ "imessage.act_stale": {
+  "ko": "반응한 항목은 이미 처리됐거나 더 이상 응답을 기다리지 않아요.",
+  "en": "The item you reacted to was already answered or is no longer waiting.",
+  "ja": "リアクションした項目はすでに処理済みか、もう返答を待っていません。",
+  "zh": "你回应的项目已处理或不再等待回复。"
+ },
+ "imessage.receive_failed": {
+  "ko": "iMessage를 받지 못했어요. Mac의 Still에서 연결을 확인해 주세요.",
+  "en": "Could not receive iMessages. Check the connection in Still on your Mac.",
+  "ja": "iMessage を受信できませんでした。Mac の Still で接続を確認してください。",
+  "zh": "无法接收 iMessage。请在 Mac 上的 Still 中检查连接。"
+ },
  "slack.not_connected": {
   "ko": "Slack이 연결되어 있지 않아요. 설정 > 외부 연결에서 연결해 주세요.",
   "en": "Slack is not connected. Connect it in Settings > External connections.",

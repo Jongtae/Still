@@ -90,6 +90,8 @@ class ConversationSurface(ABC):
     #: Seconds between two ``receive`` passes on the service's shared surface poll, or None when the
     #: surface runs its own receive loop (Telegram's long poll).
     poll_seconds = None
+    #: Whether recovery may reoffer an owner prompt whose delivery is unknown.
+    reoffer_unknown_notices = True
 
     def claims_channel(self, channel):
         """Whether ``channel`` is one of this surface's (current or earlier pairing)."""
@@ -212,7 +214,7 @@ class ConversationSurface(ABC):
 
 #: #213: the owner conversation surfaces Still composes, by ``name`` (and so by ``channel_prefix``).
 #: #438: the terminal where the owner started Still.
-SURFACE_NAMES = ('telegram', 'mattermost', 'slack', 'terminal')
+SURFACE_NAMES = ('telegram', 'mattermost', 'slack', 'terminal', 'imessage')
 
 
 def registered_surfaces(service):
@@ -224,7 +226,9 @@ def registered_surfaces(service):
     from .mattermost_surface import MattermostSurface
     from .slack_surface import SlackSurface
     from .terminal_surface import TerminalSurface
-    return (TelegramSurface(service), MattermostSurface(service), SlackSurface(service), TerminalSurface(service))
+    from .imessage_surface import IMessageSurface
+    return (TelegramSurface(service), MattermostSurface(service), SlackSurface(service), TerminalSurface(service),
+            IMessageSurface(service))
 
 
 
@@ -404,16 +408,18 @@ def settle_unknown_deliveries(service, now=None):
     since = now - DELIVERY_UNKNOWN_TELL_SECONDS
     reoffered, told = 0, 0
     with service.lock:
+        no_reoffer = {surface.name for surface in service.surfaces if not surface.reoffer_unknown_notices}
         marks = dict(store.config(REOFFERED_KEY, {}) or {})
         kept = dict(marks)
         with store.db() as db:
             rows = [dict(row) for row in db.execute(
-                "SELECT n.id,n.job_id,n.kind,n.fingerprint FROM telegram_notifications n "
+                "SELECT n.id,n.job_id,n.kind,n.fingerprint,n.surface FROM telegram_notifications n "
                 "JOIN jobs j ON j.id=n.job_id WHERE n.state='unknown' AND j.created>=?", (since,))]
             tell = set()
             for row in rows:
                 binding = row['fingerprint'] or ''
-                if row['kind'] in OWNER_PROMPT_KINDS and marks.get(row['id']) != binding:
+                if (row['surface'] not in no_reoffer and row['kind'] in OWNER_PROMPT_KINDS
+                        and marks.get(row['id']) != binding):
                     if store.telegram.reoffer_unknown(row['id'], db):
                         marks[row['id']] = binding
                         reoffered += 1

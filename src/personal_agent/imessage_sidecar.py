@@ -282,6 +282,15 @@ class IMessageSidecar:
         with self._start_lock:
             return self._start()
 
+    @property
+    def ready(self):
+        """The ``ready`` frame of the child carrying messages now, or None while stopped or restarting.
+
+        ``events()`` consumes ``ready`` frames for the handshake, so this is how a caller sees readiness.
+        """
+        with self._lock:
+            return None if self._ready is None else self._ready.copy()
+
     def _start(self):
         with self._lock:
             if self._stopping:
