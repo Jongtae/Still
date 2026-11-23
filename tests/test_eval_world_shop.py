@@ -498,6 +498,16 @@ def test_a_correction_after_the_owner_request_approval_voids_it_before_dispatch(
     assert refused.value.code == 'allowance_changed'
 
 
+def test_a_press_state_too_large_to_show_whole_falls_back_to_explicit_approval(still, monkeypatch):
+    # #1159 review: a value cut to fit could hide the recipient or record; the owner is asked instead.
+    from personal_agent import self_set_writes
+    monkeypatch.setattr(self_set_writes, 'PRESS_REQUESTED_VALUES_LIMIT', -1)
+    asked = []
+    shop_world, service, job, drivers = run(still, 'clear-then-add', judged=emptying_is_irreversible,
+                                            requested=lambda facts: asked.append(facts) or True)
+    assert asked == [] and service._browser_request(job['id'])['state'] == 'requested'
+
+
 def adding_is_a_payment(context, candidates, question):
     if context.purpose != 'press-effect':
         return None

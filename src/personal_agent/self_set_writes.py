@@ -177,6 +177,10 @@ def _plain_or_json(value):
     return json.dumps(value, ensure_ascii=False, sort_keys=True)
 
 
+#: #1158: the largest press state (typed or submitted values, as JSON) the owner-request judgment reads whole.
+PRESS_REQUESTED_VALUES_LIMIT = 2000
+
+
 def authorize(service, job, binding, connection, operation, target, names=(), *, effect=None, description=None, request=True, values=None,
               note='', require_note=False, link=False):
     """``link`` (#971): the browser session's own snapshot found the press target a plain
@@ -242,14 +246,18 @@ def authorize(service, job, binding, connection, operation, target, names=(), *,
     # data, so a press only a page asked for, or one broader than the request, still asks.
     # Payments never reach it (above, and the judgment's own question).
     requested, steers = False, []
-    if effect == 'irreversible' and browser_press and not service.unattended_work(job) and service.owner_typed_work(job):
+    # #1159 review: the judgment sees the press's whole state or does not run; a cut value could hide the
+    # recipient or record, so a state larger than the bound falls back to the owner's explicit approval.
+    whole = json.dumps(values, ensure_ascii=False) if values else ''
+    if (effect == 'irreversible' and browser_press and len(whole) <= PRESS_REQUESTED_VALUES_LIMIT
+            and not service.unattended_work(job) and service.owner_typed_work(job)):
         try:
             from .conversation_handoff import JUDGMENT_YES
             from urllib.parse import urlsplit
             address = urlsplit(str(target))
             # The page and the values bind the judgment to the site and record pressed (#1159 review);
             # they passed action_input_safe above, and known secrets are redacted again here.
-            shown = service._redact_known_secrets(json.dumps(values, ensure_ascii=False)[:600]) if values else ''
+            shown = service._redact_known_secrets(whole)
             # #1159 review: the owner's corrections while the Work runs are part of what they asked;
             # the ticket keeps their count so a newer correction voids it before dispatch.
             steers = service.store.work_steer_texts(job['id'])
