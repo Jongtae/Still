@@ -114,7 +114,35 @@ class Reconciled(StillRecords):
         self.assertEqual(refused.exception.code, 'line_exists')
 
 
+    def test_a_line_account_is_neither_carried_nor_fenced(self):
+        # Codex P2: opening a line sets up its automatic account; the next attempt may still schedule the line's work.
+        self.script = [{'content': None, 'tool_calls': [call('1', 'entrusted_line', action='open', task='가격 변동 확인',
+                                                             report_promise='바뀌면 알려 줘')]}, finish('f', '1')]
+        work = self.receive('가격 변동 확인을 맡아 줘')
+        [account] = [row for row in self.service.preparations.rows()
+                     if row['created_from'] == work and row['origin'] == prep.ORIGIN_LINE_ACCOUNT]
+        orchestration = self.step(work, following=object())
+        self.assertNotIn(account['id'], orchestration.continues)
+        schedule = self.service.preparation_scheduler(self.store.job(work), '')
+        scheduled = schedule({'kind': 'reminder', 'goal': '가격 확인하라고 알리기', 'due': self.due_iso(3600), 'title': '가격 확인'})
+        self.assertTrue(scheduled['scheduled'])
+        kept = self.service.preparations.get(account['id'])
+        self.assertEqual((kept['state'], kept['updated_at']), (account['state'], account['updated_at']))
+
+
 class OutsideEffectsUnchanged(StillRecords):
+    def test_a_preparation_that_already_ran_keeps_the_effect_stop(self):
+        # Codex P2: a short reminder that fired while the attempt ran is no longer revisable, so it is not reconciled.
+        work, row = self.scheduled_work()
+        self.now = row['due_at'] + 1
+        self.tick()
+        self.assertEqual(self.service.preparations.get(row['id'])['state'], prep.STATE_RUNNING)
+        self.assertIn('effect', self.service.continuation_reasons(work, 'redelegate'))
+        with self.store.db() as db:  # the terminal state its delivery leaves
+            db.execute('UPDATE preparations SET state=? WHERE id=?', (prep.STATE_DELIVERED, row['id']))
+        self.assertIn('effect', self.service.continuation_reasons(work, 'redelegate'))
+        self.assertEqual(self.step(work, following=object()).next.call_args.kwargs['effect'], 'changed')
+
     """Negative: a record of Still's own never carries an outside change past the rule."""
 
     def test_an_api_dispatch_next_to_a_preparation_still_stops(self):

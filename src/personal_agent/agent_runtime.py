@@ -2622,17 +2622,21 @@ STILL_RECORD_KINDS = {'schedule_preparation': 'preparation', 'entrusted_line': '
 STILL_RECORD_ACTIONS = frozenset(STILL_RECORD_KINDS)
 
 def still_record_ids(store, work_id):
- """``{(kind, id)}`` of every record this Work made that Still still holds, in any state (#1167).
+ """``{(kind, id)}`` of the records this Work made that Still holds and that never ran (#1167).
 
- A row the Work replaced or the owner cancelled is still known to Still, so its call is reconciled;
- only ``still_records`` (what the next attempt may revise) is limited to current rows.
+ A row the Work replaced or the owner cancelled is still known to Still, so its call is reconciled.
+ A preparation that already ran (a run started, or it was delivered, failed or expired) is not: its
+ run may have acted outside, and the next attempt could repeat it, so the Work keeps the effect stop.
+ Only ``still_records`` (what the next attempt may revise) is limited to current rows.
  """
- from . import entrusted_lines as el
+ from . import entrusted_lines as el, preparations as prep
+ ran = (prep.STATE_RUNNING, prep.STATE_DELIVERED, prep.STATE_UNKNOWN, prep.STATE_FAILED, prep.STATE_EXPIRED)
  with store.db() as db:
   tables = {row['name'] for row in db.execute("SELECT name FROM sqlite_master WHERE type='table' "
                                             "AND name IN ('preparations','procedure_versions')")}
-  ids = {('preparation', row['id']) for row in db.execute('SELECT id FROM preparations WHERE created_from=?', (work_id,))
-         } if 'preparations' in tables else set()
+  ids = {('preparation', row['id']) for row in db.execute(
+   'SELECT id FROM preparations WHERE created_from=? AND last_run_job_id IS NULL AND COALESCE(run_count,0)=0 '
+   'AND state NOT IN (?,?,?,?,?)', (work_id, *ran))} if 'preparations' in tables else set()
   if 'procedure_versions' in tables:
    ids |= {('line', row['slot'][len(el.SLOT_PREFIX):]) for row in db.execute(
     'SELECT slot FROM procedure_versions WHERE work_id=? AND version=1 AND slot LIKE ?', (work_id, el.SLOT_PREFIX+'%'))}
@@ -2648,8 +2652,9 @@ def still_records(store, work_id):
                                             "AND name IN ('preparations','procedure_versions')")}
   preparations = db.execute(
    'SELECT id,kind,title_text,goal_text,due_at,timezone,recurrence,state,line_id FROM preparations '
-   'WHERE created_from=? AND state IN (?,?,?,?) ORDER BY created_at,id LIMIT ?',
-   (work_id, *prep.ACTIVE_STATES, prep.MAX_ACTIVE)).fetchall() if 'preparations' in tables else ()
+   # A line's automatic account is the line's own upkeep, not work the attempt scheduled: never carried or fenced.
+   'WHERE created_from=? AND state IN (?,?,?,?) AND origin IS NOT ? ORDER BY created_at,id LIMIT ?',
+   (work_id, *prep.ACTIVE_STATES, prep.ORIGIN_LINE_ACCOUNT, prep.MAX_ACTIVE)).fetchall() if 'preparations' in tables else ()
   versions = db.execute(
    'SELECT v.slot,v.version,v.source,v.saved FROM procedure_versions opening JOIN procedure_versions v ON opening.slot=v.slot '
    'WHERE opening.work_id=? AND opening.version=1 AND opening.slot LIKE ? AND v.state=? '
