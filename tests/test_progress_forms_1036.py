@@ -29,6 +29,31 @@ def test_cases_cover_every_domain_variant_and_both_reader_profiles():
             assert 'Judge only' in scenario['turns'][0]['note'] and 'reader' in scenario['good_secretary']
 
 
+#: #1116: the reader preference Still sees in the owner turn, one per profile.
+STATED = {'short': '나는 알림을 짧게 받는 게 좋아', 'evidence': '나는 알림에 근거도 같이 보고 싶어'}
+
+
+def test_the_reader_preference_is_stated_in_the_owner_turn_still_receives():
+    found = meta()
+    sent = {}
+    for scenario in sc.load(dirs=[ROOT / 'evals/scenarios'], include_local=False):
+        if scenario['id'] not in found:
+            continue
+        [turn] = scenario['turns']
+        message = sc.owner_message(turn)
+        reader = found[scenario['id']]['reader']
+        other = 'evidence' if reader == 'short' else 'short'
+        assert STATED[reader] in message and STATED[other] not in message
+        assert turn['note_in_message'] is False and 'states this preference in the turn' in turn['note']
+        sent[scenario['id']] = message
+    # The two profiles of one case differ only in the stated preference, so a reply difference is adaptation.
+    for ident, message in sent.items():
+        if ident.endswith('-short'):
+            twin = sent[ident[:-len('short')] + 'evidence']
+            assert twin != message
+            strip = lambda text: text.split('나는 알림')[0]
+            assert strip(twin) == strip(message)
+
 def test_the_962_durable_fact_scenario_judges_passing_mention():
     [scenario] = sc.load(dirs=[ROOT / 'evals/scenarios'], include_local=False, ids=['communication-durable-fact-in-passing'])
     assert {'reader_form', 'conversational'} <= set(scenario['rubric'])
