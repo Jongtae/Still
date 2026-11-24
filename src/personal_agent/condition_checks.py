@@ -632,6 +632,10 @@ class ConditionChecks:
                         else:
                             accepted = False
                         next_at = self._next_day(now, db)
+                    elif not result.get('dispatched'):
+                        # #1195 review: a check that keeps running past the cap keeps its earlier state,
+                        # so a report-once hit no Work received is found again once a wake is available.
+                        accepted = False
                 else:
                     accepted = False
             if pause:

@@ -443,3 +443,20 @@ def test_non_payment_mutation_still_uses_the_write_gate(case, monkeypatch):
     notice, = notices(case, row)
     assert notice['job_id'].endswith(f":effect:{effect['id']}")
     assert POST['bodyText'] in notice_text(case.service, notice, notice_binding(case.service, notice))
+
+
+def test_an_unwoken_hit_past_the_wake_cap_keeps_the_earlier_state(case):
+    # #1195 review: a check allowed past the cap must not commit a report-once state for a hit no Work received.
+    from test_condition_check_state_972 import StateProcess, saved
+    row = setup_check(case)
+    switch(case, True)
+    day = case.preps.budget_day(case.clock[0])
+    with case.store.db() as db:
+        db.execute('UPDATE preparations SET check_status=? WHERE id=?',
+                   (json.dumps({'day': day, 'runs': checks.DAILY_WAKES, 'wakes': checks.DAILY_WAKES}), row['id']))
+    process = StateProcess(json.dumps({'reported': True}), result={'stdout': 'level crossed'})
+    case.processes.append(process)
+    assert case.checks.run_due()
+    assert not current(case, row)['last_run_job_id']
+    assert saved(case, row) in (None, '', '{}')
+    assert current(case, row)['check_next_at'] <= case.clock[0] + 15
