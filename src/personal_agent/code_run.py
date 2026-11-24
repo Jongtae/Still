@@ -506,6 +506,7 @@ class CodeRunner:
     persist_states = True
     withhold_truncated_output = False
     count_allowed_requests = False
+    require_success_for_observed_effects = False
 
     def __init__(self, store, work_id, *, popen=subprocess.Popen, node=None, interrupted=None,
                  install=ensure_runtime, clock=time.monotonic, approvals=None, provide_node=node_runtime.ensure,
@@ -898,16 +899,18 @@ class CodeRunner:
                          for row in recorded)
 
     def _settle(self, outcome, result):
-        """#1456: a sent state-changing request is settled ``observed`` once the run ended on its own.
+        """#1456: settle state-changing claims from the sandbox run outcome.
 
-        The sandbox shows Still each request, not its response; the run's code sees the response and
-        its output says what happened.  A run cut off (timeout) leaves the dispatch unknown, so no later
-        attempt sends another state change until it is resolved.
+        The sandbox shows Still each request, not its response. A cut-off run leaves the dispatch
+        unknown. Checks also leave it unknown on a failed exit, which can be a transport failure.
         """
         from .api_requests import ApiError, ApiRequests
+        exit_status = outcome.get('exit_status')
+        observed = (not outcome.get('timed_out') and exit_status is not None
+                    and (not self.require_success_for_observed_effects or exit_status == 0))
         if self._claims:
             result['effects'] = [{'method': method, 'host': host, 'path': path} for _claim, method, host, path in self._claims]
-            if outcome.get('timed_out') or outcome.get('exit_status') is None:
+            if not observed:
                 result['effect'] = 'unknown'
             else:
                 for claim, *_rest in self._claims:
@@ -916,7 +919,7 @@ class CodeRunner:
                     except ApiError:
                         result['effect'] = 'unknown'
         for ticket in self.__dict__.pop('_write_tickets',[]):
-            self.approvals.self_set_write_finished(ticket,observed=not outcome.get('timed_out') and outcome.get('exit_status') is not None)
+            self.approvals.self_set_write_finished(ticket, observed=observed)
         if self._asked:
             result['approval_requested'] = list(self._asked)
         self._asked, self._claims = [], []
@@ -1166,7 +1169,7 @@ class CodeRunner:
             lines.put(None)
         threading.Thread(target=pump, daemon=True).start()
         deadline = self.clock() + timeout + RUNNER_GRACE
-        on_dispatch = getattr(self.approvals, 'api_effect_dispatched', None)
+        on_claim = getattr(self.approvals, 'api_effect_claimed', None)
         try:
             process.stdin.write(json.dumps(config) + '\n')
             # #233: the runner process exists and has its configuration, so the code may run and send from
@@ -1201,10 +1204,10 @@ class CodeRunner:
                         recorded.append(entry)
                     claims = len(self._claims)
                     allow, reason = self._decide(message, policy, check=recorded is not None)
-                    dispatched = callable(on_dispatch) and len(self._claims) > claims
-                    if dispatched:
+                    if callable(on_claim) and len(self._claims) > claims:
                         receipt, method, host, path = self._claims[-1]
                         exact = self._exact_request_label(method, host, path, message.get('query'), message['bodyText'])
+                        on_claim(receipt, exact)
                     if allow and phase == 'run':
                         allowed_host = _host(message.get('host'))[:253]
                         self.allowed_hosts.add(allowed_host)
@@ -1223,8 +1226,6 @@ class CodeRunner:
                                      'allowed': allow})
                     process.stdin.write(json.dumps({'id': message.get('id'), 'allow': allow, 'reason': reason}) + '\n')
                     process.stdin.flush()
-                    if dispatched:
-                        on_dispatch(receipt, exact)
                 elif message.get('type') == 'result':
                     output = {stream: str(message.get(stream) or '') for stream in ('stdout', 'stderr')}
                     if self.withhold_truncated_output:

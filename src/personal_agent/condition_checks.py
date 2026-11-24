@@ -159,7 +159,7 @@ class CheckApprovals:
         self.service = service
         self.row = row
         self.digest = digest
-        self.dispatched = {}
+        self.claimed = {}
         # Use the preparation's unattended standing without opening a Work or consuming a slot.
         self.job = {'id': record_id, 'request_key': prep.request_key(row['id'], row['check_next_at'])}
 
@@ -195,20 +195,34 @@ class CheckApprovals:
         # Authorizing a request precedes dispatch. Checks use the preparation's status channel.
         pass
 
-    def api_effect_dispatched(self, receipt, exact):
+    def api_effect_claimed(self, receipt, exact):
+        self.claimed[receipt] = exact
+
+    def publish_dispatch_notices(self):
+        if not self.claimed:
+            return []
         row = self.row
         preparations = self.service.preparations
-        notice = f"check:{row['id']}:effect:{receipt}"
-        message = msg('checks.dispatched') + '\n\n' + exact
         now = preparations.clock()
         destination = self.service.preparations_service.notice_destination(preparations.notice_channel(row))
+        messages = []
         with self.service.store.db() as db:
-            db.execute('INSERT INTO messages(role,content,channel,created,job_id) SELECT ?,?,?,?,? '
-                       'WHERE NOT EXISTS (SELECT 1 FROM messages WHERE job_id=?)',
-                       ('assistant', message, 'web', now, notice, notice))
-            preparations._queue_status_notice(db, row, notice, prep.CHECK_DISPATCH_NOTICE_KIND, now,
-                                              destination=destination)
-        self.dispatched[receipt] = message
+            db.execute('BEGIN IMMEDIATE')
+            for receipt, exact in self.claimed.items():
+                event = db.execute("SELECT status FROM tool_events WHERE id=? AND job_id=? AND tool='api_dispatch'",
+                                   (receipt, self.job['id'])).fetchone()
+                if not event:
+                    continue
+                key = 'checks.dispatched' if event['status'] == 'observed' else 'checks.dispatch_unconfirmed'
+                message = msg(key) + '\n\n' + exact
+                notice = f"{self.job['id']}:effect:{receipt}"
+                db.execute('INSERT INTO messages(role,content,channel,created,job_id) SELECT ?,?,?,?,? '
+                           'WHERE NOT EXISTS (SELECT 1 FROM messages WHERE job_id=?)',
+                           ('assistant', message, 'web', now, notice, notice))
+                preparations._queue_status_notice(db, row, notice, prep.CHECK_DISPATCH_NOTICE_KIND, now,
+                                                  destination=destination)
+                messages.append(message)
+        return messages
 
     def self_set_write(self, *args, **kwargs):
         try:
@@ -236,6 +250,7 @@ class CheckRunner(CodeRunner):
     persist_states = False  # A check's writes are scratch data.
     withhold_truncated_output = True
     count_allowed_requests = True
+    require_success_for_observed_effects = True
 
     def __init__(self, store, record_id, *, pinned, check_state=None, **kwargs):
         super().__init__(store, record_id, **kwargs)
@@ -462,7 +477,7 @@ class ConditionChecks:
                     pinned[name] = ProcedureLibrary._row(found)
         if pending:
             return _redact(self.store, pending['result'])
-        record_id = 'check:' + row['id']
+        record_id = prep.CHECK_RECORD_PREFIX + row['id']
         approvals = None
         if row.get('accepted_by') in prep.OWNER_ACCEPTED and _spec_digest(spec) == spec['digest']:
             current = self.preparations.get(row['id'])
@@ -502,8 +517,9 @@ class ConditionChecks:
             LOG.warning('condition check run failed kind=%s', type(exc).__name__)
             outside = outside_result_source('code_run', 'code_run', args, dispatched_error=True) if runner.started else None
             kind, output = 'failure', msg('checks.failed')
+        finally:
+            dispatched = approvals.publish_dispatch_notices() if approvals else []
 
-        dispatched = list(approvals.dispatched.values()) if approvals else []
         if dispatched and kind == 'quiet':
             kind = 'hit'
         # The sandbox proxy records allow decisions before transport. Do not infer contact.

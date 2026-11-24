@@ -2651,6 +2651,23 @@ def effect_work_chain(db, work_id):
  return chain
 
 
+def effect_record_ids(db, work_id):
+ """The effect ledger scope, including preparation checks that run without a Work."""
+ from .preparations import CHECK_RECORD_PREFIX, REQUEST_KEY_PREFIX
+ if isinstance(work_id, str) and work_id.startswith(CHECK_RECORD_PREFIX):
+  # A check has no request chain. Its preparation's Works keep their own receipt IDs.
+  preparation = work_id.removeprefix(CHECK_RECORD_PREFIX)
+  works = db.execute('SELECT id FROM jobs WHERE request_key GLOB ?',
+                     (f'{REQUEST_KEY_PREFIX}{preparation}:*',))
+  return {work_id, *(work['id'] for work in works)}
+ if not db.execute('SELECT 1 FROM jobs WHERE id=?', (work_id,)).fetchone():
+  return {work_id}
+ chain = effect_work_chain(db, work_id)
+ return {work['id'] for work in chain} | {
+  CHECK_RECORD_PREFIX + preparation for work in chain if (preparation := preparation_of(work['request_key']))
+ }
+
+
 def effect_continuation_scope(store, work_id, *, db=None, dispatches=None):
  """Whether writes must use a replay-fenced route for this Work's carried effects."""
  from .preparations import ORIGIN_LINE_PIECE
@@ -2696,17 +2713,15 @@ def external_effect_events(store, work_id, *, attributed_to=None, db=None):
 
  Reuse the existing Work relation validation and tool events. API claims live
  on the original Work, with the dispatching Work attributed in their evidence.
- By default results span the request chain and its line-piece ancestors.
- ``attributed_to`` selects only one
- Work's effects: API evidence names the Work, falling back to the event's Work
+ By default results span the request chain, its line-piece ancestors and their
+ checks. A check also sees the Works started for its preparation.
+ ``attributed_to`` selects one Work's effects. API evidence names the Work, falling back to the event's Work
  for older records; connector events belong to the Work on their own row.
- No raw arguments or new durable store. Missing historical Work IDs have no
- claims; mutation admission separately requires a current Work.
+ No raw arguments or new durable store. Mutation admission separately requires
+ a current Work or check.
  """
  with (store.db() if db is None else nullcontext(db)) as db:
-  exists=db.execute('SELECT 1 FROM jobs WHERE id=?',(work_id,)).fetchone()
-  chain=effect_work_chain(db,work_id) if exists else [{'id':work_id}]
-  ids=[work['id'] for work in chain]
+  ids=list(effect_record_ids(db,work_id))
   rows=db.execute("SELECT id,job_id,tool,status,detail FROM tool_events WHERE job_id IN ("+
     ','.join('?' for _ in ids)+") AND tool IN ('connector_permission','connector_read','api_dispatch') ORDER BY id",ids).fetchall()
  claims={};observed=[]
@@ -2826,9 +2841,7 @@ def _unknown_effect_targets(observed,claims,calls,unscoped,*,include_claims=True
 
 def _effect_call_history(db,work_id):
  """Classify recorded calls once per Work, preserving running-event target fields."""
- exists=db.execute('SELECT 1 FROM jobs WHERE id=?',(work_id,)).fetchone()
- chain=effect_work_chain(db,work_id) if exists else [{'id':work_id}]
- ids=[work['id'] for work in chain]
+ ids=list(effect_record_ids(db,work_id))
  rows=db.execute("SELECT job_id,tool,status,detail FROM tool_events WHERE job_id IN ("+','.join('?' for _ in ids)+") ORDER BY id",ids)
  calls,arguments,unscoped={},{},[]
  for row in rows:

@@ -1,12 +1,14 @@
 """#1194: current standing authority for proven condition checks."""
+from datetime import datetime, timezone
 import json
 
 import pytest
 
 from personal_agent import code_run, condition_checks as checks, preparations as prep
-from personal_agent.api_requests import save_slot
+from personal_agent.api_requests import UNKNOWN_EFFECT_TEXT, save_slot
 from personal_agent.browser_jar import MemoryKey
 from personal_agent.conversation_surface import notice_binding, notice_text
+from personal_agent.messages import msg
 from personal_agent.quickstart_service import UNATTENDED_APPROVAL_TEXT
 from test_code_run import FakeProcess
 from test_condition_checks_972 import (  # noqa: F401 - fixture
@@ -30,19 +32,21 @@ POST = {'method': 'POST', 'host': HOST, 'path': '/orders', 'bodyText': '{"order_
 class Transport(FakeProcess):
     """The sandbox proxy forwards only requests authorized by the host."""
 
-    def __init__(self, sent, *, request=POST, stdout=''):
-        super().__init__(requests=[request], result={'stdout': stdout})
+    def __init__(self, sent, *, request=POST, stdout='', failure=None):
+        super().__init__(requests=[request], result={'stdout': stdout, 'exit': int(failure == 'exit')},
+                         error='proxy stopped' if failure == 'proxy' else None)
         self.request = request
         self.sent = sent
+        self.failure = failure
 
     def write(self, text):
         super().write(text)
         message = json.loads(text)
-        if message.get('allow') is True:
+        if message.get('allow') is True and not self.failure:
             self.sent.append(self.request)
 
 
-def setup_check(c, *, money=True, owner_accepted=True, telegram=False):
+def setup_check(c, *, money=True, owner_accepted=True, telegram=False, line=None):
     if telegram:
         c.store.put('telegram', {'enabled': True, 'user_id': 42, 'generation': 'fixture'})
         c.owner = c.store.enqueue('Run on a condition', 'telegram-owner', channel='telegram:fixture',
@@ -52,7 +56,7 @@ def setup_check(c, *, money=True, owner_accepted=True, telegram=False):
               code={'fields': ['TOKEN']})
     c.service.use_decision_engine(engine(preparation=owner_accepted))
     assert prove(c, ARGS_WITH_SET)['check_proof']
-    row = schedule(c, ARGS_WITH_SET, delivery='send' if telegram else None)
+    row = schedule(c, ARGS_WITH_SET, delivery='send' if telegram else None, line=line)
     assert row['accepted_by'] in (prep.OWNER_ACCEPTED if owner_accepted else prep.SELF_SET)
     return row
 
@@ -63,6 +67,21 @@ def run_due(c, sent, **kwargs):
     assert c.checks.run_due()
     assert len(process.decisions) == 1
     return process.decisions[0]
+
+
+def run_work(c, job, sent, **kwargs):
+    with c.store.db() as db:
+        db.execute("UPDATE jobs SET status='running' WHERE id=?", (job['id'],))
+    process = Transport(sent, **kwargs)
+    runner = code_run.CodeRunner(c.store, job['id'], approvals=c.service.browser_approvals_for(job),
+                                 popen=lambda *args, **kwargs: process, **WIRE)
+    if kwargs.get('failure') == 'proxy':
+        with pytest.raises(code_run.CodeRunError):
+            runner.run(ARGS_WITH_SET)
+    else:
+        runner.run(ARGS_WITH_SET)
+    decision, = process.decisions
+    return decision
 
 
 def receipts(c, row, tool='api_dispatch'):
@@ -105,6 +124,7 @@ def test_owner_accepted_check_sends_and_records_payment(case):
     assert (notice['surface'], notice['chat_id'], notice['state']) == ('telegram', 42, 'queued')
     assert notice['job_id'].endswith(f":effect:{effect['id']}")
     text = notice_text(case.service, notice, notice_binding(case.service, notice))
+    assert text.startswith(msg('checks.dispatched'))
     exact = f'POST {HOST}/orders'
     assert exact in text and '?limit=2' in text and 'fixture-1' in text
     assert '[redacted]' in text and SECRET not in text
@@ -160,6 +180,116 @@ def test_second_check_run_refuses_same_order_identity(case):
     assert sent == [POST]
     assert len(receipts(case, row)) == len(receipts(case, row, 'payment_autonomy')) == 1
     assert len(notices(case, row)) == 1
+
+
+@pytest.mark.parametrize('failure', [None, 'exit', 'proxy'])
+def test_woken_work_cannot_repeat_the_check_dispatch(case, failure):
+    row = setup_check(case)
+    switch(case, True)
+    sent = []
+    assert run_due(case, sent, failure=failure)['allow']
+    receipt, = receipts(case, row)
+    assert receipt['status'] == ('dispatching' if failure else 'observed')
+
+    decision = run_work(case, wake_job(case, row), sent)
+    assert not decision['allow']
+    if failure:
+        assert decision['reason'] == UNKNOWN_EFFECT_TEXT
+        other = dict(POST, bodyText='{"order_id":"fixture-2"}')
+        decision = run_work(case, wake_job(case, row), sent, request=other)
+        assert not decision['allow'] and decision['reason'] == UNKNOWN_EFFECT_TEXT
+        assert not sent
+    else:
+        assert '이미 보낸 API 동작' in decision['reason']
+        assert sent == [POST]
+
+
+@pytest.mark.parametrize('failure', [None, 'exit'])
+def test_unrelated_preparation_can_send_the_same_request(case, failure):
+    row = setup_check(case)
+    switch(case, True)
+    sent = []
+    assert run_due(case, sent, failure=failure)['allow']
+    other = schedule(case, ARGS_WITH_SET, goal='Make the independent change')
+    assert row['id'] != other['id']
+    job_id = case.preps.run_now(other['id'], channel='web', chat_id=None)
+    assert run_work(case, case.store.job(job_id), sent)['allow']
+    assert sent == ([POST] if failure else [POST, POST])
+
+
+def test_line_piece_inherits_its_parent_preparations_check_receipt(case):
+    line = case.service.lines.open(case.owner, task='Watch a condition', report_promise='Report findings')['line_id']
+    row = setup_check(case, line=line)
+    switch(case, True)
+    sent = []
+    assert run_due(case, sent)['allow']
+    parent = wake_job(case, row)
+    with case.store.db() as db:
+        db.execute("UPDATE jobs SET status='running' WHERE id=?", (parent['id'],))
+    result = case.service.preparation_scheduler(case.store.job(parent['id']), '')({
+        'offer': 'Check the result', 'kind': 'prepare', 'goal': 'Verify the recorded change',
+        'due': datetime.fromtimestamp(case.clock[0] + 600, timezone.utc).isoformat(),
+    })
+    finish(case, row)
+    piece = case.preps.get(result['preparation_id'])
+    assert piece['origin'] == prep.ORIGIN_LINE_PIECE
+    case.clock[0] = piece['due_at']
+    job_id = case.preps.start(piece, channel='web', chat_id=None, now=case.clock[0])
+    decision = run_work(case, case.store.job(job_id), sent)
+    assert not decision['allow'] and '이미 보낸 API 동작' in decision['reason']
+    assert sent == [POST]
+
+
+@pytest.mark.parametrize('failure', [None, 'proxy'])
+def test_check_cannot_repeat_a_work_dispatch_for_the_same_preparation(case, failure):
+    row = setup_check(case)
+    switch(case, True)
+    sent = []
+    job_id = case.preps.run_now(row['id'], channel='web', chat_id=None)
+    assert run_work(case, case.store.job(job_id), sent, failure=failure)['allow']
+    finish(case, row)
+
+    decision = run_due(case, sent)
+    assert not decision['allow']
+    if failure:
+        assert decision['reason'] == UNKNOWN_EFFECT_TEXT
+        assert not sent
+    else:
+        assert '이미 보낸 API 동작' in decision['reason']
+        assert sent == [POST]
+    assert not receipts(case, row)
+
+
+@pytest.mark.parametrize('failure', ['exit', 'proxy'])
+def test_failed_transport_notifies_once_without_claiming_a_send(case, failure, monkeypatch):
+    row = setup_check(case, telegram=True)
+    switch(case, True)
+    day = case.preps.budget_day(case.clock[0])
+    with case.store.db() as db:
+        db.execute('UPDATE preparations SET check_status=? WHERE id=?',
+                   (json.dumps({'day': day, 'runs': checks.DAILY_WAKES, 'wakes': checks.DAILY_WAKES}), row['id']))
+    sent = []
+    request = dict(POST, bodyText=json.dumps({'order_id': 'fixture-1', 'token': SECRET}))
+    assert run_due(case, sent, request=request, failure=failure)['allow']
+    assert not sent and not current(case, row)['last_run_job_id']
+    effect, = receipts(case, row)
+    assert effect['status'] == 'dispatching'
+    notice, = notices(case, row)
+    assert notice['job_id'].endswith(f":effect:{effect['id']}")
+    shown = []
+
+    def send(chat_id, text, reply_markup=None):
+        shown.append((chat_id, text))
+        return {'message_id': 7}
+
+    monkeypatch.setattr(case.service.telegram, 'send_message', send)
+    assert case.service.deliver_notification()
+    assert not case.service.deliver_notification()
+    (chat_id, text), = shown
+    assert chat_id == 42 and text.startswith(msg('checks.dispatch_unconfirmed'))
+    assert msg('checks.dispatched') not in text
+    assert f'POST {HOST}/orders' in text and 'fixture-1' in text
+    assert '[redacted]' in text and SECRET not in text
 
 
 def test_autonomy_disabled_after_proof_refuses_without_asking(case, monkeypatch):

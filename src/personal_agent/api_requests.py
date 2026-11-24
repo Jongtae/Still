@@ -1072,17 +1072,16 @@ class ApiRequests:
         raise ApiError(APPROVAL_TEXT, 'approval_required', requires='api-step-approval')
 
     def _effect_identities(self, slot, method, url, body):
-        """Use the request root for new claims; recognize older roots along a piece handoff."""
+        """Use the request root for new claims and recognize all roots in the effect scope."""
         from .browser_session import keyed_step_binding, step_binding
-        from .agent_runtime import WorkLedger, effect_work_chain
+        from .agent_runtime import WorkLedger, effect_record_ids
         if callable(getattr(self.approvals, 'api_effect_evidence', None)):
-            # A host-managed execution keeps its own receipt history across runs.
-            root, ancestors = self.work_id, (self.work_id,)
+            # A host-managed check keeps its own receipt ID across runs.
+            root = self.work_id
         else:
             with self.store.db() as db:
                 try:
                     root = WorkLedger.request_chain(db, self.work_id)[-1]['id']
-                    ancestors = {work['id'] for work in effect_work_chain(db, self.work_id)}
                 except ValueError:
                     raise ApiError('현재 작업을 확인할 수 없어 실행하지 않았습니다.', 'api_work_inactive') from None
 
@@ -1090,12 +1089,14 @@ class ApiRequests:
             binding = step_binding(work_id, 'api_dispatch', '', json.dumps([slot_name, method, url]), argument=body or '')
             return keyed_step_binding(self.store, binding)['digest']
 
-        def replay_keys(receipts):
+        def replay_keys(db, receipts):
             # Use the historical slot names as well, even if a slot was removed.
             # They label the credential registration, not the HTTP request.
             names = {row['identity'] for _, row in receipts
                      if row.get('kind') == 'api-slot' and isinstance(row.get('identity'), str)}
-            return {digest(work_id, name) for work_id in ancestors for name in names}
+            if not names:
+                return set()
+            return {digest(work_id, name) for work_id in effect_record_ids(db, self.work_id) for name in names}
 
         return digest(root, slot['name']), replay_keys
 
@@ -1156,7 +1157,7 @@ class ApiRequests:
             target = effect_target(TARGET_API, slot['name'], slot.get('hosts') or ())
             dispatches = external_effect_events(self.store, self.work_id, db=db)
             refusal = effect_mutation_refusal(db, self.store, self.work_id, target,
-                                             replay_keys=replay_keys([*dispatches[0], *dispatches[1]]),
+                                             replay_keys=replay_keys(db, [*dispatches[0], *dispatches[1]]),
                                              dispatches=dispatches, approved_next=approved_next)
             if refusal == 'effect_unknown':
                 raise ApiError(UNKNOWN_EFFECT_TEXT, 'effect_unknown', effect='unknown', ran=False)

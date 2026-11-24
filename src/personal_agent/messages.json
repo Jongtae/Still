@@ -120,10 +120,16 @@
   "zh": "条件检查产生输出时运行此准备任务。"
  },
  "checks.dispatched": {
-  "ko": "조건 검사가 아래 요청을 보냈어요.",
-  "en": "The condition check sent this request.",
-  "ja": "条件チェックが以下のリクエストを送信しました。",
-  "zh": "条件检查已发送以下请求。"
+  "ko": "조건 검사가 아래 요청을 보냈어요. 상대가 접수했는지는 그쪽 기록으로 확인해야 해요.",
+  "en": "The condition check sent this request. Whether it was accepted shows only in the destination’s own records.",
+  "ja": "条件チェックが以下のリクエストを送信しました。受け付けられたかどうかは送信先の記録で確認する必要があります。",
+  "zh": "条件检查已发送以下请求。是否被受理需以对方的记录为准。"
+ },
+ "checks.dispatch_unconfirmed": {
+  "ko": "조건 검사가 아래 요청을 보내려고 했어요. 요청이 목적지에 도착했는지는 아직 확인되지 않았어요.",
+  "en": "The condition check tried to send this request. It’s not yet confirmed whether it reached the destination.",
+  "ja": "条件チェックが以下のリクエストの送信を試みました。送信先に届いたかどうかはまだ確認できていません。",
+  "zh": "条件检查尝试发送以下请求，目前还无法确认请求是否到达目的地。"
  },
  "checks.failed": {
   "ko": "코드 실행을 마치지 못했어요.",
