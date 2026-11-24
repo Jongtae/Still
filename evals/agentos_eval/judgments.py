@@ -37,7 +37,7 @@ INPUTS = {
     'steers_running_work': ({'running_request', 'utterance'}, {'shown_plan'}),
     'answers_open_question': ({'earlier_request', 'earlier_reply', 'utterance'}, set()),
     'parked_work_withdrawn': ({'utterance'}, set()),
-    'connector_effect': ({'tool_name', 'argument_names', 'owner_request'}, {'target'}),  # #1066: target = a browser press's role, name, form fields
+    'connector_effect': ({'tool_name', 'argument_names', 'owner_request'}, {'target', 'form_method'}),  # #1066: target = a browser press's role, name, form fields; #1192: its form's method
     'status_projection': ({'facts'}, set()),
     'owner_act_answer': ({'act', 'items'}, {'target'}),
     'goal_reached': ({'request', 'observations', 'answer'}, {'failed_steps', 'conversation', 'owner_context', 'plan_reading'}),

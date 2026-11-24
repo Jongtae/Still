@@ -860,7 +860,7 @@ class ConversationJudgments:
         return {'item': data['item'], 'answer': data['answer'], 'rest': data['rest'].strip(),
                 'parts': sorted({part for part in data.get('parts') or () if part > 0})}
 
-    def connector_effect(self, tool_name, argument_names, owner_request, work_id=None, *, target=None):
+    def connector_effect(self, tool_name, argument_names, owner_request, work_id=None, *, target=None, form_method=''):
         """Classify an unknown operation from minimized metadata, never argument values.
 
         A model read is still not an owner-reviewed read. This judgment can
@@ -871,12 +871,14 @@ class ConversationJudgments:
         own page snapshot.  The question is then about pressing a page element, where showing
         or opening content and going to another page are reads; asked as a connector operation,
         a menu or sign-in button had no effect the metadata established and every such press
-        waited for the owner.
+        waited for the owner.  ``form_method`` (#1192): the method of the element's form from the
+        same snapshot (``get``, ``post``); a nameless search button in a GET form was judged none.
         """
         if target is not None:
             role, name, *fields = [*map(str, target), '', ''][:max(2, len(target))]
             context=self._context('press-effect',{'operation':tool_name,'element_role':role,'element_name':name,
-                                  'form_fields':', '.join(fields) or 'none (not in a form)'},work_id=work_id)
+                                  'form_fields':', '.join(fields) or ('none named' if form_method else 'none (not in a form)'),
+                                  'form_method':str(form_method or '').lower() or 'none (not in a form or unknown)'},work_id=work_id)
             question=PRESS_EFFECT_QUESTION
         else:
             context=self._context('connector-effect',{'tool_name':tool_name,

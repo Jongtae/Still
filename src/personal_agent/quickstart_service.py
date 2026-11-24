@@ -7638,10 +7638,10 @@ class AgentService:
             return self.preparations.wait_refusal(db,job['id'],stamp,self_set_write=True) is None
 
     def self_set_write(self, job, binding, connection, operation, target, names=(), *, effect=None, description=None, request=True, values=None,
-                       note='', require_note=False, link=False):
+                       note='', require_note=False, link=False, form_method=''):
         from .self_set_writes import authorize
         return authorize(self,job,binding,connection,operation,target,names,effect=effect,description=description,request=request,values=values,
-                         note=note,require_note=require_note,link=link)
+                         note=note,require_note=require_note,link=link,form_method=form_method)
 
     def self_set_write_check(self, job, ticket, *, db=None):
         from .self_set_writes import recheck

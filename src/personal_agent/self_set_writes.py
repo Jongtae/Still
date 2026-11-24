@@ -182,11 +182,13 @@ PRESS_REQUESTED_VALUES_LIMIT = 2000
 
 
 def authorize(service, job, binding, connection, operation, target, names=(), *, effect=None, description=None, request=True, values=None,
-              note='', require_note=False, link=False):
+              note='', require_note=False, link=False, form_method=''):
     """``link`` (#971): the browser session's own snapshot found the press target a plain
     link (``browser_session.link_address``) under no payment/commit/submit floor, and the
     step declares reading or navigating.  Where presses are narrowed the answer is then
-    ``FOLLOW_LINK``: the session opens that address like ``browser_open``, unjudged."""
+    ``FOLLOW_LINK``: the session opens that address like ``browser_open``, unjudged.
+    ``form_method`` (#1192): the method of the press's form from the same snapshot, given to the
+    press-effect judgment as evidence; it decides nothing on its own."""
     barrier = service.__dict__.get('_native_intake_barriers', {}).get(job['id'])
     awaiting = barrier is not None and barrier.pending()
     browser_press = connection is None and operation in ('browser_click', 'browser_type')
@@ -222,7 +224,7 @@ def authorize(service, job, binding, connection, operation, target, names=(), *,
                 metadata += ' @ ' + page.scheme + '://' + page.netloc
             # #1063: a press is judged as a press, with its target's role, name and form fields in order.
             effect = service.decision_judge.connector_effect(metadata, sorted(names), '', job['id'],
-                                                             **({'target': tuple(names)} if browser_press else {}))
+                                                             **({'target': tuple(names), 'form_method': form_method} if browser_press else {}))
         except Exception:
             effect = None
     if browser_press and effect in ('read', 'navigate'):
