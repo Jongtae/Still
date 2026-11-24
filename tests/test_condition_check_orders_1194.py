@@ -460,3 +460,53 @@ def test_an_unwoken_hit_past_the_wake_cap_keeps_the_earlier_state(case):
     assert not current(case, row)['last_run_job_id']
     assert saved(case, row) in (None, '', '{}')
     assert current(case, row)['check_next_at'] <= case.clock[0] + 15
+
+
+class TokenProcess(Transport):
+    """Writes a fresh access token to its set's state file and sends it in the order, as check code would."""
+
+    def __init__(self, sent, token, *, state=None, **kwargs):
+        super().__init__(sent, request=dict(POST, bodyText=json.dumps({'order_id': 'fixture-1', 'access': token})),
+                         **kwargs)
+        self.state = json.dumps({'access_token': token}) if state is None else state
+
+    def _lines(self):
+        from personal_agent.api_requests import env_name
+        from pathlib import Path
+        name = self.config['env'].get(env_name('fixture', 'STATE_FILE'))
+        if name:
+            Path(name).write_text(self.state)
+        yield from super()._lines()
+
+
+@pytest.mark.parametrize('failure', [None, 'proxy'])
+def test_a_token_the_run_left_in_its_state_never_reaches_the_notice_or_the_ai(case, failure):
+    # #1195 review: a run-local token is unknown to the store-wide redactor.
+    token = 'fresh-run-token-0123456789abcdef'
+    row = setup_check(case, telegram=True)
+    switch(case, True)
+    sent = []
+    process = TokenProcess(sent, token, failure=failure)
+    case.processes.append(process)
+    assert case.checks.run_due()
+    notice, = notices(case, row)
+    with case.store.db() as db:
+        message = db.execute('SELECT content FROM messages WHERE job_id=?', (notice['job_id'],)).fetchone()
+    assert token not in message['content'] and 'fixture-1' in message['content']
+    job = wake_job(case, row)
+    assert token not in json.dumps(checks.handoff_event(case.store, job)['trace'])
+    assert token not in json.dumps(case.service.preparation_history(job))
+
+
+def test_an_unreadable_state_withholds_the_request_content(case):
+    token = 'fresh-run-token-0123456789abcdef'
+    row = setup_check(case, telegram=True)
+    switch(case, True)
+    process = TokenProcess([], token, state='not json ' + token)
+    case.processes.append(process)
+    assert case.checks.run_due()
+    notice, = notices(case, row)
+    with case.store.db() as db:
+        message = db.execute('SELECT content FROM messages WHERE job_id=?', (notice['job_id'],)).fetchone()
+    assert token not in message['content'] and 'fixture-1' not in message['content']
+    assert msg('checks.dispatch_withheld') in message['content'] and f'POST {HOST}' in message['content']

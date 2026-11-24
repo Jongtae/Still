@@ -119,6 +119,12 @@
   "ja": "条件チェックに出力があると、この準備が実行されます。",
   "zh": "条件检查产生输出时运行此准备任务。"
  },
+ "checks.dispatch_withheld": {
+  "ko": "요청 내용은 보여 주지 않았어요. 실행이 상태 파일에 남긴 값을 확인할 수 없어 그 값을 가릴 수 없었어요.",
+  "en": "The request's content was withheld: the values the run left in its state file could not be checked, so they could not be redacted.",
+  "ja": "リクエストの内容は表示しませんでした。実行が状態ファイルに残した値を確認できず、伏せられなかったためです。",
+  "zh": "未显示请求内容：无法确认运行在状态文件中留下的值，因此无法将其隐藏。"
+ },
  "checks.dispatched": {
   "ko": "조건 검사가 아래 요청을 보냈어요. 상대가 접수했는지는 그쪽 기록으로 확인해야 해요.",
   "en": "The condition check sent this request. Whether it was accepted shows only in the destination’s own records.",

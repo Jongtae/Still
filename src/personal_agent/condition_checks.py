@@ -13,7 +13,7 @@ import time
 from . import preparations as prep
 from .api_credentials import MAX_STATE_BYTES, ApiCredentials, CredentialError
 from .api_requests import ApiError
-from .code_run import MAX_HOSTS, CodeRunError, CodeRunner, _arguments, _hostname, check_arguments_digest, read_run_file
+from .code_run import APPROVAL_EXACT_LABEL, MAX_HOSTS, CodeRunError, CodeRunner, _arguments, _hostname, check_arguments_digest, read_run_file
 from .current_context import redact_known_secrets
 from .direct_message_surface import redact_provenance_values
 from .messages import msg
@@ -195,10 +195,19 @@ class CheckApprovals:
         # Authorizing a request precedes dispatch. Checks use the preparation's status channel.
         pass
 
-    def api_effect_claimed(self, receipt, exact):
-        self.claimed[receipt] = exact
+    def api_effect_claimed(self, receipt, request):
+        self.claimed[receipt] = request
 
-    def publish_dispatch_notices(self):
+    @staticmethod
+    def _label(runner, request):
+        """The exact request with stored and this run's state values redacted, or only where it went."""
+        method, host, path, query, body = request
+        if runner.scratch_secrets is None:
+            # Like the run's output (#1126): values that cannot be known are never shown.
+            return f"{APPROVAL_EXACT_LABEL} {method} {host}\n{msg('checks.dispatch_withheld')}"
+        return runner._exact_request_label(method, host, path, query, body, extra_values=runner.scratch_secrets)
+
+    def publish_dispatch_notices(self, runner):
         if not self.claimed:
             return []
         row = self.row
@@ -208,7 +217,8 @@ class CheckApprovals:
         messages = []
         with self.service.store.db() as db:
             db.execute('BEGIN IMMEDIATE')
-            for receipt, exact in self.claimed.items():
+            for receipt, request in self.claimed.items():
+                exact = self._label(runner, request)
                 event = db.execute("SELECT status FROM tool_events WHERE id=? AND job_id=? AND tool='api_dispatch'",
                                    (receipt, self.job['id'])).fetchone()
                 if not event:
@@ -518,7 +528,7 @@ class ConditionChecks:
             outside = outside_result_source('code_run', 'code_run', args, dispatched_error=True) if runner.started else None
             kind, output = 'failure', msg('checks.failed')
         finally:
-            dispatched = approvals.publish_dispatch_notices() if approvals else []
+            dispatched = approvals.publish_dispatch_notices(runner) if approvals else []
 
         if dispatched and kind == 'quiet':
             kind = 'hit'

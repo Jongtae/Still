@@ -610,6 +610,9 @@ class CodeRunner:
         self.allowed_requests = {}
         self.started = False
         self.changed_state = False
+        #: #1195 review: the values this run put in its state files, for redacting what it sent; None when
+        #: they are not known (the run did not finish reading them, or a changed state was unreadable).
+        self.scratch_secrets = None
         rerun = False
         # Live 2026-10-14: a resumed Work rewrote the code that asked for approval, so the request no
         # longer matched the approval.  ``rerun: approved`` runs exactly the run that asked.
@@ -674,9 +677,14 @@ class CodeRunner:
                 path.write_bytes(download)
                 path.chmod(0o400)
                 download_options['download_file'] = str(path)
-            outcome = self._session(node, runtime, workdir, command, policy, roots, timeout, requests, 'run',
-                                    masked=masked, plain=plain, **download_options)
+            try:
+                outcome = self._session(node, runtime, workdir, command, policy, roots, timeout, requests, 'run',
+                                        masked=masked, plain=plain, **download_options)
+            except Exception:
+                self.scratch_secrets = self._scratch_values(states)
+                raise
             saved, scratch_secrets = self._save_states(states)
+            self.scratch_secrets = None if self._state_unknown else scratch_secrets
             kept = self._keep_libraries(libraries, workdir, outcome, (node, runtime, prefix, policy, roots, masked, plain))
         result = self._result(code, packages, hosts, outcome, requests, names, scratch_secrets=scratch_secrets)
         if getattr(self, '_state_unknown', False):
@@ -960,6 +968,14 @@ class CodeRunner:
                 self.changed_state = True
         return saved, scratch_secrets
 
+    def _scratch_values(self, states):
+        """The state values of a run that stopped early, without saving them; None when not all are known."""
+        from .api_credentials import MAX_STATE_BYTES
+        scratch = set()
+        for name, (_slot, path) in states.items():
+            self._state_secrets(read_run_file(path, MAX_STATE_BYTES), self._state_before[name], scratch)
+        return None if self._state_unknown else scratch
+
     def _state_secrets(self, text, before, scratch_secrets):
         """#1126 review: the values a run put in a state file are redacted from its output, saved or not.
 
@@ -1106,11 +1122,12 @@ class CodeRunner:
         elif ticket:self.approvals.self_set_write_release(ticket)
         return result
 
-    def _exact_request_label(self, method, host, path, query, body):
+    def _exact_request_label(self, method, host, path, query, body, extra_values=()):
         from .current_context import redact_known_secrets
+        scratch = {'extra_values': extra_values} if extra_values else {}
         shown = ' '.join(part for part in (f'?{query}' if query else '', body) if part)
-        shown = redact_known_secrets(self.store, shown)
-        exact = f"{APPROVAL_EXACT_LABEL} {method} {host}{redact_known_secrets(self.store, path)}"
+        shown = redact_known_secrets(self.store, shown, **scratch)
+        exact = f"{APPROVAL_EXACT_LABEL} {method} {host}{redact_known_secrets(self.store, path, **scratch)}"
         return exact + (f"\n{APPROVAL_CONTENT_LABEL} {shown}" if shown else '')
 
     def _claim_state_change(self, api, slot, identity, replay_keys, method, effect, host, path, *,
@@ -1206,8 +1223,8 @@ class CodeRunner:
                     allow, reason = self._decide(message, policy, check=recorded is not None)
                     if callable(on_claim) and len(self._claims) > claims:
                         receipt, method, host, path = self._claims[-1]
-                        exact = self._exact_request_label(method, host, path, message.get('query'), message['bodyText'])
-                        on_claim(receipt, exact)
+                        # Rendered after the run, once its state values are known (#1195 review).
+                        on_claim(receipt, (method, host, path, message.get('query'), message['bodyText']))
                     if allow and phase == 'run':
                         allowed_host = _host(message.get('host'))[:253]
                         self.allowed_hosts.add(allowed_host)
