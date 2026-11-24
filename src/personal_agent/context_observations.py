@@ -74,6 +74,12 @@ CLAIMS_DDL = '''
             CREATE TABLE IF NOT EXISTS current_context_exposures(
               job_id TEXT NOT NULL, source_ref TEXT NOT NULL, revision TEXT NOT NULL, strings_json TEXT NOT NULL,
               created REAL NOT NULL, PRIMARY KEY(job_id, source_ref));
+            CREATE TABLE IF NOT EXISTS place_resolutions(
+              memory_id TEXT PRIMARY KEY, memory_key TEXT NOT NULL, latitude REAL NOT NULL, longitude REAL NOT NULL,
+              region_json TEXT NOT NULL, resolved_at REAL NOT NULL);
+            CREATE TRIGGER IF NOT EXISTS place_resolutions_memory_delete AFTER DELETE ON memories BEGIN
+              DELETE FROM place_resolutions WHERE memory_id=OLD.id;
+            END;
 '''
 
 DEFAULT_SETTINGS = {'version': POLICY_VERSION, 'enabled': False, 'epoch': 0, 'cutoff': 0.0, 'timezone': ''}
