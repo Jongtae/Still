@@ -710,7 +710,9 @@ class LocalTools:
         if len({(p.get('country_code'),p.get('admin1')) for p in places})>1:
             raise ValueError('같은 이름의 지역이 여러 곳입니다. 국가와 지역을 더 구체적으로 알려 주세요: '+', '.join(str(p.get('name'))+' '+str(p.get('admin1',''))+' '+str(p.get('country','')) for p in places[:3]))
         # #233: the city already went to the geocoding host, so a refusal of its coordinates is not "not sent".
-        return self._forecast(place['latitude'],place['longitude'],{**{k:place.get(k) for k in ('name','country','admin1','admin2','latitude','longitude')},'searched_text':asked})
+        location={k:place.get(k) for k in ('name','country','country_code','admin1','admin2','admin3','admin4',
+                                           'latitude','longitude')}
+        return self._forecast(place['latitude'],place['longitude'],{**location,'searched_text':asked})
 
     def forecast(self, latitude, longitude, location=None):
         """The forecast for a caller's own coordinates (a resolved location ref, #627).

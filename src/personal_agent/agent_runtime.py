@@ -5128,6 +5128,9 @@ class Capabilities:
     # What the ref stood for, so the answer cannot present a shared pin or
     # a saved anchor as a measured current position.
     location=dict(result.get('location') or {})
+    if 'memory_id' in resolved:
+     self.current_context().keep_place_resolution(resolved['source']['ref'],resolved['memory_id'],location)
+    if 'region' in resolved:location['region']=resolved['region']
     if 'latitude' in args:location['name']=resolved.get('label') or (msg('agent_runtime.shared_current_location') if resolved['source']['kind'] in ('current_position_report','live_position_report') else msg('agent_runtime.shared_place'))
     result={**result,'location':location,'location_source':resolved['source']}
    return result

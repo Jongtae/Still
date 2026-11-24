@@ -844,6 +844,30 @@ class CurrentContext:
 
     # --- location refs at dispatch (S3 under the pilot) --------------------
 
+    def keep_place_resolution(self, ref, memory_id, location):
+        """Keep the first valid geocode for this revision of a saved place."""
+        from .local_tools import _check_coordinates
+
+        if not isinstance(ref, str) or not ref.startswith(PROFILE_PREFIX) or not isinstance(location, dict):
+            return
+        anchor = self._place_anchor('profile.' + ref[len(PROFILE_PREFIX):])
+        if anchor is None or anchor['memory_id'] != memory_id:
+            return
+        latitude, longitude = location.get('latitude'), location.get('longitude')
+        try:
+            _check_coordinates(latitude, longitude)
+        except ValueError:
+            return
+        region = {key: redact_known_secrets(self.store, location[key])
+                  for key in ('name', 'country', 'country_code', 'admin1', 'admin2', 'admin3', 'admin4')
+                  if isinstance(location.get(key), str) and location[key]}
+        with self.store.db() as db:
+            # A correction or deletion may have arrived since the anchor check.
+            db.execute("INSERT INTO place_resolutions SELECT id, memory_key, ?, ?, ?, ? FROM memories "
+                       "WHERE id=? AND memory_key=? AND state='current' ON CONFLICT(memory_id) DO NOTHING",
+                       (latitude, longitude, json.dumps(region, ensure_ascii=False), self.now(),
+                        memory_id, anchor['memory_key']))
+
     def resolve_location(self, job_id, ref, now=None):
         """The admitted source behind one opaque location ref, checked now.
 
@@ -851,7 +875,8 @@ class CurrentContext:
         generation, usable for this Work (context on, or requested for this
         task), unexpired; a position must still be fresh.  Returns rounded
         coordinates.  ``profile:place.<name>``: a current ``profile.place.*``
-        Memory anchor, redacted; returns its label.  Anything else refuses.
+        Memory anchor, redacted; returns its label and any kept geocode for
+        that Memory row.  Anything else refuses.
         """
         now = self.now() if now is None else now
         if not isinstance(ref, str):
@@ -860,8 +885,17 @@ class CurrentContext:
             anchor = self._place_anchor('profile.' + ref[len(PROFILE_PREFIX):])
             if anchor is None or not anchor['label'].strip() or anchor['label'] == '[redacted]':
                 raise refusal('location_ref_unknown')
-            return {'label': anchor['label'],
-                    'source': {'ref': ref, 'kind': 'profile_place_anchor',
+            with self.store.db() as db:
+                kept = db.execute('SELECT latitude, longitude, region_json FROM place_resolutions WHERE memory_id=?',
+                                  (anchor['memory_id'],)).fetchone()
+            source = {'ref': ref, 'kind': 'profile_place_anchor'}
+            if kept is not None:
+                return {'label': anchor['label'], 'latitude': approx(kept['latitude']),
+                        'longitude': approx(kept['longitude']), 'region': json.loads(kept['region_json']),
+                        'source': {**source, 'resolved': 'kept',
+                                   'basis': "owner-saved place's stored geocode, not a measured position"}}
+            return {'label': anchor['label'], 'memory_id': anchor['memory_id'],
+                    'source': {**source, 'resolved': 'by_name',
                                'basis': 'owner-saved place (canonical Memory), not a measured position'}}
         if not ref.startswith(OBS_PREFIX):
             raise refusal('location_ref_unknown')
