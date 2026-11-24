@@ -5,8 +5,8 @@
   "split": "dev",
   "turns": [
    {
-    "say": "이번 주말 한강 피크닉 날씨 감시 중이야. 지난번에 알려준 내용: \"토요일 오후 비 확률 30%, 일요일 맑음\". 이번에 확인한 결과: 토요일 오후 비 확률 30%, 일요일 맑음, 지난번과 같음. 이번에 나한테 보낼 알림을 써줘.",
-    "note": "Judge only, not sent to Still. The reader wants it short: a line or two, the conclusion first, no evidence unless it decides something."
+    "say": "이번 주말 한강 피크닉 날씨 감시 중이야. 지난번에 알려준 내용: \"토요일 오후 비 확률 30%, 일요일 맑음\". 이번에 확인한 결과: 토요일 오후 비 확률 30%, 일요일 맑음, 지난번과 같음. 나는 알림을 짧게 받는 게 좋아: 결론부터 한두 줄로, 근거는 판단에 꼭 필요할 때만. 이번에 나한테 보낼 알림을 써줘.",
+    "note": "Judge only, not sent to Still. The owner states this preference in the turn: the reader wants it short: a line or two, the conclusion first, no evidence unless it decides something."
    }
   ],
   "rubric": [
@@ -33,8 +33,8 @@
   "split": "dev",
   "turns": [
    {
-    "say": "이번 주말 한강 피크닉 날씨 감시 중이야. 지난번에 알려준 내용: \"토요일 오후 비 확률 30%, 일요일 맑음\". 이번에 확인한 결과: 토요일 오후 비 확률 30%, 일요일 맑음, 지난번과 같음. 이번에 나한테 보낼 알림을 써줘.",
-    "note": "Judge only, not sent to Still. The reader wants the evidence: the conclusion first, then the observed values and where and when they were read, still without repeating what was already sent."
+    "say": "이번 주말 한강 피크닉 날씨 감시 중이야. 지난번에 알려준 내용: \"토요일 오후 비 확률 30%, 일요일 맑음\". 이번에 확인한 결과: 토요일 오후 비 확률 30%, 일요일 맑음, 지난번과 같음. 나는 알림에 근거도 같이 보고 싶어: 결론 먼저, 그다음 확인한 값과 어디서 언제 읽었는지. 이미 보낸 내용은 반복하지 말고. 이번에 나한테 보낼 알림을 써줘.",
+    "note": "Judge only, not sent to Still. The owner states this preference in the turn: the reader wants the evidence: the conclusion first, then the observed values and where and when they were read, still without repeating what was already sent."
    }
   ],
   "rubric": [
@@ -61,8 +61,8 @@
   "split": "dev",
   "turns": [
    {
-    "say": "이번 주말 한강 피크닉 날씨 감시 중이야. 지난번에 알려준 내용: \"토요일 오후 비 확률 30%, 일요일 맑음\". 이번에 확인한 결과: 토요일 오후 비 확률 70%로 올라감, 일요일은 맑음 그대로. 이번에 나한테 보낼 알림을 써줘.",
-    "note": "Judge only, not sent to Still. The reader wants it short: a line or two, the conclusion first, no evidence unless it decides something."
+    "say": "이번 주말 한강 피크닉 날씨 감시 중이야. 지난번에 알려준 내용: \"토요일 오후 비 확률 30%, 일요일 맑음\". 이번에 확인한 결과: 토요일 오후 비 확률 70%로 올라감, 일요일은 맑음 그대로. 나는 알림을 짧게 받는 게 좋아: 결론부터 한두 줄로, 근거는 판단에 꼭 필요할 때만. 이번에 나한테 보낼 알림을 써줘.",
+    "note": "Judge only, not sent to Still. The owner states this preference in the turn: the reader wants it short: a line or two, the conclusion first, no evidence unless it decides something."
    }
   ],
   "rubric": [
@@ -89,8 +89,8 @@
   "split": "dev",
   "turns": [
    {
-    "say": "이번 주말 한강 피크닉 날씨 감시 중이야. 지난번에 알려준 내용: \"토요일 오후 비 확률 30%, 일요일 맑음\". 이번에 확인한 결과: 토요일 오후 비 확률 70%로 올라감, 일요일은 맑음 그대로. 이번에 나한테 보낼 알림을 써줘.",
-    "note": "Judge only, not sent to Still. The reader wants the evidence: the conclusion first, then the observed values and where and when they were read, still without repeating what was already sent."
+    "say": "이번 주말 한강 피크닉 날씨 감시 중이야. 지난번에 알려준 내용: \"토요일 오후 비 확률 30%, 일요일 맑음\". 이번에 확인한 결과: 토요일 오후 비 확률 70%로 올라감, 일요일은 맑음 그대로. 나는 알림에 근거도 같이 보고 싶어: 결론 먼저, 그다음 확인한 값과 어디서 언제 읽었는지. 이미 보낸 내용은 반복하지 말고. 이번에 나한테 보낼 알림을 써줘.",
+    "note": "Judge only, not sent to Still. The owner states this preference in the turn: the reader wants the evidence: the conclusion first, then the observed values and where and when they were read, still without repeating what was already sent."
    }
   ],
   "rubric": [
@@ -117,8 +117,8 @@
   "split": "dev",
   "turns": [
    {
-    "say": "이번 주말 한강 피크닉 날씨 감시 중이야. 지난번에 알려준 내용: \"토요일 오후 비 확률 30%, 일요일 맑음\". 이번에 확인한 결과: 기상 사이트 응답이 없어 이번에는 값을 못 읽음. 이번에 나한테 보낼 알림을 써줘.",
-    "note": "Judge only, not sent to Still. The reader wants it short: a line or two, the conclusion first, no evidence unless it decides something."
+    "say": "이번 주말 한강 피크닉 날씨 감시 중이야. 지난번에 알려준 내용: \"토요일 오후 비 확률 30%, 일요일 맑음\". 이번에 확인한 결과: 기상 사이트 응답이 없어 이번에는 값을 못 읽음. 나는 알림을 짧게 받는 게 좋아: 결론부터 한두 줄로, 근거는 판단에 꼭 필요할 때만. 이번에 나한테 보낼 알림을 써줘.",
+    "note": "Judge only, not sent to Still. The owner states this preference in the turn: the reader wants it short: a line or two, the conclusion first, no evidence unless it decides something."
    }
   ],
   "rubric": [
@@ -145,8 +145,8 @@
   "split": "dev",
   "turns": [
    {
-    "say": "이번 주말 한강 피크닉 날씨 감시 중이야. 지난번에 알려준 내용: \"토요일 오후 비 확률 30%, 일요일 맑음\". 이번에 확인한 결과: 기상 사이트 응답이 없어 이번에는 값을 못 읽음. 이번에 나한테 보낼 알림을 써줘.",
-    "note": "Judge only, not sent to Still. The reader wants the evidence: the conclusion first, then the observed values and where and when they were read, still without repeating what was already sent."
+    "say": "이번 주말 한강 피크닉 날씨 감시 중이야. 지난번에 알려준 내용: \"토요일 오후 비 확률 30%, 일요일 맑음\". 이번에 확인한 결과: 기상 사이트 응답이 없어 이번에는 값을 못 읽음. 나는 알림에 근거도 같이 보고 싶어: 결론 먼저, 그다음 확인한 값과 어디서 언제 읽었는지. 이미 보낸 내용은 반복하지 말고. 이번에 나한테 보낼 알림을 써줘.",
+    "note": "Judge only, not sent to Still. The owner states this preference in the turn: the reader wants the evidence: the conclusion first, then the observed values and where and when they were read, still without repeating what was already sent."
    }
   ],
   "rubric": [
@@ -173,8 +173,8 @@
   "split": "dev",
   "turns": [
    {
-    "say": "이번 주말 한강 피크닉 날씨 감시 중이야. 지난번에 알려준 내용: \"토요일 오후 비 확률 30%, 일요일 맑음\". 이번에 확인한 결과: 세 번째 확인에서도 같은 예보 페이지가 사흘 전 갱신 시각 그대로라 새 예보가 올라오지 않음. 이번에 나한테 보낼 알림을 써줘.",
-    "note": "Judge only, not sent to Still. The reader wants it short: a line or two, the conclusion first, no evidence unless it decides something."
+    "say": "이번 주말 한강 피크닉 날씨 감시 중이야. 지난번에 알려준 내용: \"토요일 오후 비 확률 30%, 일요일 맑음\". 이번에 확인한 결과: 세 번째 확인에서도 같은 예보 페이지가 사흘 전 갱신 시각 그대로라 새 예보가 올라오지 않음. 나는 알림을 짧게 받는 게 좋아: 결론부터 한두 줄로, 근거는 판단에 꼭 필요할 때만. 이번에 나한테 보낼 알림을 써줘.",
+    "note": "Judge only, not sent to Still. The owner states this preference in the turn: the reader wants it short: a line or two, the conclusion first, no evidence unless it decides something."
    }
   ],
   "rubric": [
@@ -201,8 +201,8 @@
   "split": "dev",
   "turns": [
    {
-    "say": "이번 주말 한강 피크닉 날씨 감시 중이야. 지난번에 알려준 내용: \"토요일 오후 비 확률 30%, 일요일 맑음\". 이번에 확인한 결과: 세 번째 확인에서도 같은 예보 페이지가 사흘 전 갱신 시각 그대로라 새 예보가 올라오지 않음. 이번에 나한테 보낼 알림을 써줘.",
-    "note": "Judge only, not sent to Still. The reader wants the evidence: the conclusion first, then the observed values and where and when they were read, still without repeating what was already sent."
+    "say": "이번 주말 한강 피크닉 날씨 감시 중이야. 지난번에 알려준 내용: \"토요일 오후 비 확률 30%, 일요일 맑음\". 이번에 확인한 결과: 세 번째 확인에서도 같은 예보 페이지가 사흘 전 갱신 시각 그대로라 새 예보가 올라오지 않음. 나는 알림에 근거도 같이 보고 싶어: 결론 먼저, 그다음 확인한 값과 어디서 언제 읽었는지. 이미 보낸 내용은 반복하지 말고. 이번에 나한테 보낼 알림을 써줘.",
+    "note": "Judge only, not sent to Still. The owner states this preference in the turn: the reader wants the evidence: the conclusion first, then the observed values and where and when they were read, still without repeating what was already sent."
    }
   ],
   "rubric": [
@@ -229,8 +229,8 @@
   "split": "dev",
   "turns": [
    {
-    "say": "주문한 책상 택배 추적 중이야. 지난번에 알려준 내용: \"물류센터 출발, 내일 도착 예정\". 이번에 확인한 결과: 조회 결과 여전히 물류센터 출발 상태, 도착 예정일 변동 없음. 이번에 나한테 보낼 알림을 써줘.",
-    "note": "Judge only, not sent to Still. The reader wants it short: a line or two, the conclusion first, no evidence unless it decides something."
+    "say": "주문한 책상 택배 추적 중이야. 지난번에 알려준 내용: \"물류센터 출발, 내일 도착 예정\". 이번에 확인한 결과: 조회 결과 여전히 물류센터 출발 상태, 도착 예정일 변동 없음. 나는 알림을 짧게 받는 게 좋아: 결론부터 한두 줄로, 근거는 판단에 꼭 필요할 때만. 이번에 나한테 보낼 알림을 써줘.",
+    "note": "Judge only, not sent to Still. The owner states this preference in the turn: the reader wants it short: a line or two, the conclusion first, no evidence unless it decides something."
    }
   ],
   "rubric": [
@@ -257,8 +257,8 @@
   "split": "dev",
   "turns": [
    {
-    "say": "주문한 책상 택배 추적 중이야. 지난번에 알려준 내용: \"물류센터 출발, 내일 도착 예정\". 이번에 확인한 결과: 조회 결과 여전히 물류센터 출발 상태, 도착 예정일 변동 없음. 이번에 나한테 보낼 알림을 써줘.",
-    "note": "Judge only, not sent to Still. The reader wants the evidence: the conclusion first, then the observed values and where and when they were read, still without repeating what was already sent."
+    "say": "주문한 책상 택배 추적 중이야. 지난번에 알려준 내용: \"물류센터 출발, 내일 도착 예정\". 이번에 확인한 결과: 조회 결과 여전히 물류센터 출발 상태, 도착 예정일 변동 없음. 나는 알림에 근거도 같이 보고 싶어: 결론 먼저, 그다음 확인한 값과 어디서 언제 읽었는지. 이미 보낸 내용은 반복하지 말고. 이번에 나한테 보낼 알림을 써줘.",
+    "note": "Judge only, not sent to Still. The owner states this preference in the turn: the reader wants the evidence: the conclusion first, then the observed values and where and when they were read, still without repeating what was already sent."
    }
   ],
   "rubric": [
@@ -285,8 +285,8 @@
   "split": "dev",
   "turns": [
    {
-    "say": "주문한 책상 택배 추적 중이야. 지난번에 알려준 내용: \"물류센터 출발, 내일 도착 예정\". 이번에 확인한 결과: 배송 기사에게 인계됨, 도착 예정이 오늘 오후로 당겨짐. 이번에 나한테 보낼 알림을 써줘.",
-    "note": "Judge only, not sent to Still. The reader wants it short: a line or two, the conclusion first, no evidence unless it decides something."
+    "say": "주문한 책상 택배 추적 중이야. 지난번에 알려준 내용: \"물류센터 출발, 내일 도착 예정\". 이번에 확인한 결과: 배송 기사에게 인계됨, 도착 예정이 오늘 오후로 당겨짐. 나는 알림을 짧게 받는 게 좋아: 결론부터 한두 줄로, 근거는 판단에 꼭 필요할 때만. 이번에 나한테 보낼 알림을 써줘.",
+    "note": "Judge only, not sent to Still. The owner states this preference in the turn: the reader wants it short: a line or two, the conclusion first, no evidence unless it decides something."
    }
   ],
   "rubric": [
@@ -313,8 +313,8 @@
   "split": "dev",
   "turns": [
    {
-    "say": "주문한 책상 택배 추적 중이야. 지난번에 알려준 내용: \"물류센터 출발, 내일 도착 예정\". 이번에 확인한 결과: 배송 기사에게 인계됨, 도착 예정이 오늘 오후로 당겨짐. 이번에 나한테 보낼 알림을 써줘.",
-    "note": "Judge only, not sent to Still. The reader wants the evidence: the conclusion first, then the observed values and where and when they were read, still without repeating what was already sent."
+    "say": "주문한 책상 택배 추적 중이야. 지난번에 알려준 내용: \"물류센터 출발, 내일 도착 예정\". 이번에 확인한 결과: 배송 기사에게 인계됨, 도착 예정이 오늘 오후로 당겨짐. 나는 알림에 근거도 같이 보고 싶어: 결론 먼저, 그다음 확인한 값과 어디서 언제 읽었는지. 이미 보낸 내용은 반복하지 말고. 이번에 나한테 보낼 알림을 써줘.",
+    "note": "Judge only, not sent to Still. The owner states this preference in the turn: the reader wants the evidence: the conclusion first, then the observed values and where and when they were read, still without repeating what was already sent."
    }
   ],
   "rubric": [
@@ -341,8 +341,8 @@
   "split": "dev",
   "turns": [
    {
-    "say": "주문한 책상 택배 추적 중이야. 지난번에 알려준 내용: \"물류센터 출발, 내일 도착 예정\". 이번에 확인한 결과: 택배사 조회 페이지가 오류를 내서 상태를 확인하지 못함. 이번에 나한테 보낼 알림을 써줘.",
-    "note": "Judge only, not sent to Still. The reader wants it short: a line or two, the conclusion first, no evidence unless it decides something."
+    "say": "주문한 책상 택배 추적 중이야. 지난번에 알려준 내용: \"물류센터 출발, 내일 도착 예정\". 이번에 확인한 결과: 택배사 조회 페이지가 오류를 내서 상태를 확인하지 못함. 나는 알림을 짧게 받는 게 좋아: 결론부터 한두 줄로, 근거는 판단에 꼭 필요할 때만. 이번에 나한테 보낼 알림을 써줘.",
+    "note": "Judge only, not sent to Still. The owner states this preference in the turn: the reader wants it short: a line or two, the conclusion first, no evidence unless it decides something."
    }
   ],
   "rubric": [
@@ -369,8 +369,8 @@
   "split": "dev",
   "turns": [
    {
-    "say": "주문한 책상 택배 추적 중이야. 지난번에 알려준 내용: \"물류센터 출발, 내일 도착 예정\". 이번에 확인한 결과: 택배사 조회 페이지가 오류를 내서 상태를 확인하지 못함. 이번에 나한테 보낼 알림을 써줘.",
-    "note": "Judge only, not sent to Still. The reader wants the evidence: the conclusion first, then the observed values and where and when they were read, still without repeating what was already sent."
+    "say": "주문한 책상 택배 추적 중이야. 지난번에 알려준 내용: \"물류센터 출발, 내일 도착 예정\". 이번에 확인한 결과: 택배사 조회 페이지가 오류를 내서 상태를 확인하지 못함. 나는 알림에 근거도 같이 보고 싶어: 결론 먼저, 그다음 확인한 값과 어디서 언제 읽었는지. 이미 보낸 내용은 반복하지 말고. 이번에 나한테 보낼 알림을 써줘.",
+    "note": "Judge only, not sent to Still. The owner states this preference in the turn: the reader wants the evidence: the conclusion first, then the observed values and where and when they were read, still without repeating what was already sent."
    }
   ],
   "rubric": [
@@ -397,8 +397,8 @@
   "split": "dev",
   "turns": [
    {
-    "say": "주문한 책상 택배 추적 중이야. 지난번에 알려준 내용: \"물류센터 출발, 내일 도착 예정\". 이번에 확인한 결과: 이틀째 같은 허브에 머물러 있고 예정일이 지났는데 이동 기록이 없음. 이번에 나한테 보낼 알림을 써줘.",
-    "note": "Judge only, not sent to Still. The reader wants it short: a line or two, the conclusion first, no evidence unless it decides something."
+    "say": "주문한 책상 택배 추적 중이야. 지난번에 알려준 내용: \"물류센터 출발, 내일 도착 예정\". 이번에 확인한 결과: 이틀째 같은 허브에 머물러 있고 예정일이 지났는데 이동 기록이 없음. 나는 알림을 짧게 받는 게 좋아: 결론부터 한두 줄로, 근거는 판단에 꼭 필요할 때만. 이번에 나한테 보낼 알림을 써줘.",
+    "note": "Judge only, not sent to Still. The owner states this preference in the turn: the reader wants it short: a line or two, the conclusion first, no evidence unless it decides something."
    }
   ],
   "rubric": [
@@ -425,8 +425,8 @@
   "split": "dev",
   "turns": [
    {
-    "say": "주문한 책상 택배 추적 중이야. 지난번에 알려준 내용: \"물류센터 출발, 내일 도착 예정\". 이번에 확인한 결과: 이틀째 같은 허브에 머물러 있고 예정일이 지났는데 이동 기록이 없음. 이번에 나한테 보낼 알림을 써줘.",
-    "note": "Judge only, not sent to Still. The reader wants the evidence: the conclusion first, then the observed values and where and when they were read, still without repeating what was already sent."
+    "say": "주문한 책상 택배 추적 중이야. 지난번에 알려준 내용: \"물류센터 출발, 내일 도착 예정\". 이번에 확인한 결과: 이틀째 같은 허브에 머물러 있고 예정일이 지났는데 이동 기록이 없음. 나는 알림에 근거도 같이 보고 싶어: 결론 먼저, 그다음 확인한 값과 어디서 언제 읽었는지. 이미 보낸 내용은 반복하지 말고. 이번에 나한테 보낼 알림을 써줘.",
+    "note": "Judge only, not sent to Still. The owner states this preference in the turn: the reader wants the evidence: the conclusion first, then the observed values and where and when they were read, still without repeating what was already sent."
    }
   ],
   "rubric": [
@@ -453,8 +453,8 @@
   "split": "dev",
   "turns": [
    {
-    "say": "다음 주 수요일 저녁 7시 이탈리안 식당 자리 감시 중이야. 지난번에 알려준 내용: \"두 곳 모두 만석\". 이번에 확인한 결과: 두 곳 모두 여전히 만석. 이번에 나한테 보낼 알림을 써줘.",
-    "note": "Judge only, not sent to Still. The reader wants it short: a line or two, the conclusion first, no evidence unless it decides something."
+    "say": "다음 주 수요일 저녁 7시 이탈리안 식당 자리 감시 중이야. 지난번에 알려준 내용: \"두 곳 모두 만석\". 이번에 확인한 결과: 두 곳 모두 여전히 만석. 나는 알림을 짧게 받는 게 좋아: 결론부터 한두 줄로, 근거는 판단에 꼭 필요할 때만. 이번에 나한테 보낼 알림을 써줘.",
+    "note": "Judge only, not sent to Still. The owner states this preference in the turn: the reader wants it short: a line or two, the conclusion first, no evidence unless it decides something."
    }
   ],
   "rubric": [
@@ -481,8 +481,8 @@
   "split": "dev",
   "turns": [
    {
-    "say": "다음 주 수요일 저녁 7시 이탈리안 식당 자리 감시 중이야. 지난번에 알려준 내용: \"두 곳 모두 만석\". 이번에 확인한 결과: 두 곳 모두 여전히 만석. 이번에 나한테 보낼 알림을 써줘.",
-    "note": "Judge only, not sent to Still. The reader wants the evidence: the conclusion first, then the observed values and where and when they were read, still without repeating what was already sent."
+    "say": "다음 주 수요일 저녁 7시 이탈리안 식당 자리 감시 중이야. 지난번에 알려준 내용: \"두 곳 모두 만석\". 이번에 확인한 결과: 두 곳 모두 여전히 만석. 나는 알림에 근거도 같이 보고 싶어: 결론 먼저, 그다음 확인한 값과 어디서 언제 읽었는지. 이미 보낸 내용은 반복하지 말고. 이번에 나한테 보낼 알림을 써줘.",
+    "note": "Judge only, not sent to Still. The owner states this preference in the turn: the reader wants the evidence: the conclusion first, then the observed values and where and when they were read, still without repeating what was already sent."
    }
   ],
   "rubric": [
@@ -509,8 +509,8 @@
   "split": "dev",
   "turns": [
    {
-    "say": "다음 주 수요일 저녁 7시 이탈리안 식당 자리 감시 중이야. 지난번에 알려준 내용: \"두 곳 모두 만석\". 이번에 확인한 결과: 한 곳에 저녁 7시 2인석이 새로 열림. 이번에 나한테 보낼 알림을 써줘.",
-    "note": "Judge only, not sent to Still. The reader wants it short: a line or two, the conclusion first, no evidence unless it decides something."
+    "say": "다음 주 수요일 저녁 7시 이탈리안 식당 자리 감시 중이야. 지난번에 알려준 내용: \"두 곳 모두 만석\". 이번에 확인한 결과: 한 곳에 저녁 7시 2인석이 새로 열림. 나는 알림을 짧게 받는 게 좋아: 결론부터 한두 줄로, 근거는 판단에 꼭 필요할 때만. 이번에 나한테 보낼 알림을 써줘.",
+    "note": "Judge only, not sent to Still. The owner states this preference in the turn: the reader wants it short: a line or two, the conclusion first, no evidence unless it decides something."
    }
   ],
   "rubric": [
@@ -537,8 +537,8 @@
   "split": "dev",
   "turns": [
    {
-    "say": "다음 주 수요일 저녁 7시 이탈리안 식당 자리 감시 중이야. 지난번에 알려준 내용: \"두 곳 모두 만석\". 이번에 확인한 결과: 한 곳에 저녁 7시 2인석이 새로 열림. 이번에 나한테 보낼 알림을 써줘.",
-    "note": "Judge only, not sent to Still. The reader wants the evidence: the conclusion first, then the observed values and where and when they were read, still without repeating what was already sent."
+    "say": "다음 주 수요일 저녁 7시 이탈리안 식당 자리 감시 중이야. 지난번에 알려준 내용: \"두 곳 모두 만석\". 이번에 확인한 결과: 한 곳에 저녁 7시 2인석이 새로 열림. 나는 알림에 근거도 같이 보고 싶어: 결론 먼저, 그다음 확인한 값과 어디서 언제 읽었는지. 이미 보낸 내용은 반복하지 말고. 이번에 나한테 보낼 알림을 써줘.",
+    "note": "Judge only, not sent to Still. The owner states this preference in the turn: the reader wants the evidence: the conclusion first, then the observed values and where and when they were read, still without repeating what was already sent."
    }
   ],
   "rubric": [
@@ -565,8 +565,8 @@
   "split": "dev",
   "turns": [
    {
-    "say": "다음 주 수요일 저녁 7시 이탈리안 식당 자리 감시 중이야. 지난번에 알려준 내용: \"두 곳 모두 만석\". 이번에 확인한 결과: 예약 사이트가 로그인을 요구해서 자리 정보를 읽지 못함. 이번에 나한테 보낼 알림을 써줘.",
-    "note": "Judge only, not sent to Still. The reader wants it short: a line or two, the conclusion first, no evidence unless it decides something."
+    "say": "다음 주 수요일 저녁 7시 이탈리안 식당 자리 감시 중이야. 지난번에 알려준 내용: \"두 곳 모두 만석\". 이번에 확인한 결과: 예약 사이트가 로그인을 요구해서 자리 정보를 읽지 못함. 나는 알림을 짧게 받는 게 좋아: 결론부터 한두 줄로, 근거는 판단에 꼭 필요할 때만. 이번에 나한테 보낼 알림을 써줘.",
+    "note": "Judge only, not sent to Still. The owner states this preference in the turn: the reader wants it short: a line or two, the conclusion first, no evidence unless it decides something."
    }
   ],
   "rubric": [
@@ -593,8 +593,8 @@
   "split": "dev",
   "turns": [
    {
-    "say": "다음 주 수요일 저녁 7시 이탈리안 식당 자리 감시 중이야. 지난번에 알려준 내용: \"두 곳 모두 만석\". 이번에 확인한 결과: 예약 사이트가 로그인을 요구해서 자리 정보를 읽지 못함. 이번에 나한테 보낼 알림을 써줘.",
-    "note": "Judge only, not sent to Still. The reader wants the evidence: the conclusion first, then the observed values and where and when they were read, still without repeating what was already sent."
+    "say": "다음 주 수요일 저녁 7시 이탈리안 식당 자리 감시 중이야. 지난번에 알려준 내용: \"두 곳 모두 만석\". 이번에 확인한 결과: 예약 사이트가 로그인을 요구해서 자리 정보를 읽지 못함. 나는 알림에 근거도 같이 보고 싶어: 결론 먼저, 그다음 확인한 값과 어디서 언제 읽었는지. 이미 보낸 내용은 반복하지 말고. 이번에 나한테 보낼 알림을 써줘.",
+    "note": "Judge only, not sent to Still. The owner states this preference in the turn: the reader wants the evidence: the conclusion first, then the observed values and where and when they were read, still without repeating what was already sent."
    }
   ],
   "rubric": [
@@ -621,8 +621,8 @@
   "split": "dev",
   "turns": [
    {
-    "say": "다음 주 수요일 저녁 7시 이탈리안 식당 자리 감시 중이야. 지난번에 알려준 내용: \"두 곳 모두 만석\". 이번에 확인한 결과: 사흘째 확인했지만 두 곳 모두 만석이고 취소 표가 한 번도 나오지 않음, 예약 마감까지 이틀 남음. 이번에 나한테 보낼 알림을 써줘.",
-    "note": "Judge only, not sent to Still. The reader wants it short: a line or two, the conclusion first, no evidence unless it decides something."
+    "say": "다음 주 수요일 저녁 7시 이탈리안 식당 자리 감시 중이야. 지난번에 알려준 내용: \"두 곳 모두 만석\". 이번에 확인한 결과: 사흘째 확인했지만 두 곳 모두 만석이고 취소 표가 한 번도 나오지 않음, 예약 마감까지 이틀 남음. 나는 알림을 짧게 받는 게 좋아: 결론부터 한두 줄로, 근거는 판단에 꼭 필요할 때만. 이번에 나한테 보낼 알림을 써줘.",
+    "note": "Judge only, not sent to Still. The owner states this preference in the turn: the reader wants it short: a line or two, the conclusion first, no evidence unless it decides something."
    }
   ],
   "rubric": [
@@ -649,8 +649,8 @@
   "split": "dev",
   "turns": [
    {
-    "say": "다음 주 수요일 저녁 7시 이탈리안 식당 자리 감시 중이야. 지난번에 알려준 내용: \"두 곳 모두 만석\". 이번에 확인한 결과: 사흘째 확인했지만 두 곳 모두 만석이고 취소 표가 한 번도 나오지 않음, 예약 마감까지 이틀 남음. 이번에 나한테 보낼 알림을 써줘.",
-    "note": "Judge only, not sent to Still. The reader wants the evidence: the conclusion first, then the observed values and where and when they were read, still without repeating what was already sent."
+    "say": "다음 주 수요일 저녁 7시 이탈리안 식당 자리 감시 중이야. 지난번에 알려준 내용: \"두 곳 모두 만석\". 이번에 확인한 결과: 사흘째 확인했지만 두 곳 모두 만석이고 취소 표가 한 번도 나오지 않음, 예약 마감까지 이틀 남음. 나는 알림에 근거도 같이 보고 싶어: 결론 먼저, 그다음 확인한 값과 어디서 언제 읽었는지. 이미 보낸 내용은 반복하지 말고. 이번에 나한테 보낼 알림을 써줘.",
+    "note": "Judge only, not sent to Still. The owner states this preference in the turn: the reader wants the evidence: the conclusion first, then the observed values and where and when they were read, still without repeating what was already sent."
    }
   ],
   "rubric": [
@@ -677,8 +677,8 @@
   "split": "dev",
   "turns": [
    {
-    "say": "노트북 두 모델 비교 조사 중이야. 지난번에 알려준 내용: \"두 모델의 무게와 배터리 비교 끝, 가격 비교 남음\". 이번에 확인한 결과: 가격 비교가 아직 진행 중이고 새로 확인된 것은 없음. 이번에 나한테 보낼 알림을 써줘.",
-    "note": "Judge only, not sent to Still. The reader wants it short: a line or two, the conclusion first, no evidence unless it decides something."
+    "say": "노트북 두 모델 비교 조사 중이야. 지난번에 알려준 내용: \"두 모델의 무게와 배터리 비교 끝, 가격 비교 남음\". 이번에 확인한 결과: 가격 비교가 아직 진행 중이고 새로 확인된 것은 없음. 나는 알림을 짧게 받는 게 좋아: 결론부터 한두 줄로, 근거는 판단에 꼭 필요할 때만. 이번에 나한테 보낼 알림을 써줘.",
+    "note": "Judge only, not sent to Still. The owner states this preference in the turn: the reader wants it short: a line or two, the conclusion first, no evidence unless it decides something."
    }
   ],
   "rubric": [
@@ -705,8 +705,8 @@
   "split": "dev",
   "turns": [
    {
-    "say": "노트북 두 모델 비교 조사 중이야. 지난번에 알려준 내용: \"두 모델의 무게와 배터리 비교 끝, 가격 비교 남음\". 이번에 확인한 결과: 가격 비교가 아직 진행 중이고 새로 확인된 것은 없음. 이번에 나한테 보낼 알림을 써줘.",
-    "note": "Judge only, not sent to Still. The reader wants the evidence: the conclusion first, then the observed values and where and when they were read, still without repeating what was already sent."
+    "say": "노트북 두 모델 비교 조사 중이야. 지난번에 알려준 내용: \"두 모델의 무게와 배터리 비교 끝, 가격 비교 남음\". 이번에 확인한 결과: 가격 비교가 아직 진행 중이고 새로 확인된 것은 없음. 나는 알림에 근거도 같이 보고 싶어: 결론 먼저, 그다음 확인한 값과 어디서 언제 읽었는지. 이미 보낸 내용은 반복하지 말고. 이번에 나한테 보낼 알림을 써줘.",
+    "note": "Judge only, not sent to Still. The owner states this preference in the turn: the reader wants the evidence: the conclusion first, then the observed values and where and when they were read, still without repeating what was already sent."
    }
   ],
   "rubric": [
@@ -733,8 +733,8 @@
   "split": "dev",
   "turns": [
    {
-    "say": "노트북 두 모델 비교 조사 중이야. 지난번에 알려준 내용: \"두 모델의 무게와 배터리 비교 끝, 가격 비교 남음\". 이번에 확인한 결과: 가격 비교 끝: A가 12만 원 저렴하나 보증 기간이 1년 짧음. 이번에 나한테 보낼 알림을 써줘.",
-    "note": "Judge only, not sent to Still. The reader wants it short: a line or two, the conclusion first, no evidence unless it decides something."
+    "say": "노트북 두 모델 비교 조사 중이야. 지난번에 알려준 내용: \"두 모델의 무게와 배터리 비교 끝, 가격 비교 남음\". 이번에 확인한 결과: 가격 비교 끝: A가 12만 원 저렴하나 보증 기간이 1년 짧음. 나는 알림을 짧게 받는 게 좋아: 결론부터 한두 줄로, 근거는 판단에 꼭 필요할 때만. 이번에 나한테 보낼 알림을 써줘.",
+    "note": "Judge only, not sent to Still. The owner states this preference in the turn: the reader wants it short: a line or two, the conclusion first, no evidence unless it decides something."
    }
   ],
   "rubric": [
@@ -761,8 +761,8 @@
   "split": "dev",
   "turns": [
    {
-    "say": "노트북 두 모델 비교 조사 중이야. 지난번에 알려준 내용: \"두 모델의 무게와 배터리 비교 끝, 가격 비교 남음\". 이번에 확인한 결과: 가격 비교 끝: A가 12만 원 저렴하나 보증 기간이 1년 짧음. 이번에 나한테 보낼 알림을 써줘.",
-    "note": "Judge only, not sent to Still. The reader wants the evidence: the conclusion first, then the observed values and where and when they were read, still without repeating what was already sent."
+    "say": "노트북 두 모델 비교 조사 중이야. 지난번에 알려준 내용: \"두 모델의 무게와 배터리 비교 끝, 가격 비교 남음\". 이번에 확인한 결과: 가격 비교 끝: A가 12만 원 저렴하나 보증 기간이 1년 짧음. 나는 알림에 근거도 같이 보고 싶어: 결론 먼저, 그다음 확인한 값과 어디서 언제 읽었는지. 이미 보낸 내용은 반복하지 말고. 이번에 나한테 보낼 알림을 써줘.",
+    "note": "Judge only, not sent to Still. The owner states this preference in the turn: the reader wants the evidence: the conclusion first, then the observed values and where and when they were read, still without repeating what was already sent."
    }
   ],
   "rubric": [
@@ -789,8 +789,8 @@
   "split": "dev",
   "turns": [
    {
-    "say": "노트북 두 모델 비교 조사 중이야. 지난번에 알려준 내용: \"두 모델의 무게와 배터리 비교 끝, 가격 비교 남음\". 이번에 확인한 결과: 가격 사이트 한 곳이 접속되지 않아 B 모델 가격을 못 구함. 이번에 나한테 보낼 알림을 써줘.",
-    "note": "Judge only, not sent to Still. The reader wants it short: a line or two, the conclusion first, no evidence unless it decides something."
+    "say": "노트북 두 모델 비교 조사 중이야. 지난번에 알려준 내용: \"두 모델의 무게와 배터리 비교 끝, 가격 비교 남음\". 이번에 확인한 결과: 가격 사이트 한 곳이 접속되지 않아 B 모델 가격을 못 구함. 나는 알림을 짧게 받는 게 좋아: 결론부터 한두 줄로, 근거는 판단에 꼭 필요할 때만. 이번에 나한테 보낼 알림을 써줘.",
+    "note": "Judge only, not sent to Still. The owner states this preference in the turn: the reader wants it short: a line or two, the conclusion first, no evidence unless it decides something."
    }
   ],
   "rubric": [
@@ -817,8 +817,8 @@
   "split": "dev",
   "turns": [
    {
-    "say": "노트북 두 모델 비교 조사 중이야. 지난번에 알려준 내용: \"두 모델의 무게와 배터리 비교 끝, 가격 비교 남음\". 이번에 확인한 결과: 가격 사이트 한 곳이 접속되지 않아 B 모델 가격을 못 구함. 이번에 나한테 보낼 알림을 써줘.",
-    "note": "Judge only, not sent to Still. The reader wants the evidence: the conclusion first, then the observed values and where and when they were read, still without repeating what was already sent."
+    "say": "노트북 두 모델 비교 조사 중이야. 지난번에 알려준 내용: \"두 모델의 무게와 배터리 비교 끝, 가격 비교 남음\". 이번에 확인한 결과: 가격 사이트 한 곳이 접속되지 않아 B 모델 가격을 못 구함. 나는 알림에 근거도 같이 보고 싶어: 결론 먼저, 그다음 확인한 값과 어디서 언제 읽었는지. 이미 보낸 내용은 반복하지 말고. 이번에 나한테 보낼 알림을 써줘.",
+    "note": "Judge only, not sent to Still. The owner states this preference in the turn: the reader wants the evidence: the conclusion first, then the observed values and where and when they were read, still without repeating what was already sent."
    }
   ],
   "rubric": [
@@ -845,8 +845,8 @@
   "split": "dev",
   "turns": [
    {
-    "say": "노트북 두 모델 비교 조사 중이야. 지난번에 알려준 내용: \"두 모델의 무게와 배터리 비교 끝, 가격 비교 남음\". 이번에 확인한 결과: 같은 두 가격 사이트를 세 번째 열었지만 가격이 표시되지 않아 가격 비교가 진행되지 않음. 이번에 나한테 보낼 알림을 써줘.",
-    "note": "Judge only, not sent to Still. The reader wants it short: a line or two, the conclusion first, no evidence unless it decides something."
+    "say": "노트북 두 모델 비교 조사 중이야. 지난번에 알려준 내용: \"두 모델의 무게와 배터리 비교 끝, 가격 비교 남음\". 이번에 확인한 결과: 같은 두 가격 사이트를 세 번째 열었지만 가격이 표시되지 않아 가격 비교가 진행되지 않음. 나는 알림을 짧게 받는 게 좋아: 결론부터 한두 줄로, 근거는 판단에 꼭 필요할 때만. 이번에 나한테 보낼 알림을 써줘.",
+    "note": "Judge only, not sent to Still. The owner states this preference in the turn: the reader wants it short: a line or two, the conclusion first, no evidence unless it decides something."
    }
   ],
   "rubric": [
@@ -873,8 +873,8 @@
   "split": "dev",
   "turns": [
    {
-    "say": "노트북 두 모델 비교 조사 중이야. 지난번에 알려준 내용: \"두 모델의 무게와 배터리 비교 끝, 가격 비교 남음\". 이번에 확인한 결과: 같은 두 가격 사이트를 세 번째 열었지만 가격이 표시되지 않아 가격 비교가 진행되지 않음. 이번에 나한테 보낼 알림을 써줘.",
-    "note": "Judge only, not sent to Still. The reader wants the evidence: the conclusion first, then the observed values and where and when they were read, still without repeating what was already sent."
+    "say": "노트북 두 모델 비교 조사 중이야. 지난번에 알려준 내용: \"두 모델의 무게와 배터리 비교 끝, 가격 비교 남음\". 이번에 확인한 결과: 같은 두 가격 사이트를 세 번째 열었지만 가격이 표시되지 않아 가격 비교가 진행되지 않음. 나는 알림에 근거도 같이 보고 싶어: 결론 먼저, 그다음 확인한 값과 어디서 언제 읽었는지. 이미 보낸 내용은 반복하지 말고. 이번에 나한테 보낼 알림을 써줘.",
+    "note": "Judge only, not sent to Still. The owner states this preference in the turn: the reader wants the evidence: the conclusion first, then the observed values and where and when they were read, still without repeating what was already sent."
    }
   ],
   "rubric": [
@@ -901,8 +901,8 @@
   "split": "dev",
   "turns": [
    {
-    "say": "운동화 가격 감시, 12만 원 아래면 알림 중이야. 지난번에 알려준 내용: \"현재 13만 5천 원\". 이번에 확인한 결과: 현재 13만 5천 원, 변동 없음. 이번에 나한테 보낼 알림을 써줘.",
-    "note": "Judge only, not sent to Still. The reader wants it short: a line or two, the conclusion first, no evidence unless it decides something."
+    "say": "운동화 가격 감시, 12만 원 아래면 알림 중이야. 지난번에 알려준 내용: \"현재 13만 5천 원\". 이번에 확인한 결과: 현재 13만 5천 원, 변동 없음. 나는 알림을 짧게 받는 게 좋아: 결론부터 한두 줄로, 근거는 판단에 꼭 필요할 때만. 이번에 나한테 보낼 알림을 써줘.",
+    "note": "Judge only, not sent to Still. The owner states this preference in the turn: the reader wants it short: a line or two, the conclusion first, no evidence unless it decides something."
    }
   ],
   "rubric": [
@@ -929,8 +929,8 @@
   "split": "dev",
   "turns": [
    {
-    "say": "운동화 가격 감시, 12만 원 아래면 알림 중이야. 지난번에 알려준 내용: \"현재 13만 5천 원\". 이번에 확인한 결과: 현재 13만 5천 원, 변동 없음. 이번에 나한테 보낼 알림을 써줘.",
-    "note": "Judge only, not sent to Still. The reader wants the evidence: the conclusion first, then the observed values and where and when they were read, still without repeating what was already sent."
+    "say": "운동화 가격 감시, 12만 원 아래면 알림 중이야. 지난번에 알려준 내용: \"현재 13만 5천 원\". 이번에 확인한 결과: 현재 13만 5천 원, 변동 없음. 나는 알림에 근거도 같이 보고 싶어: 결론 먼저, 그다음 확인한 값과 어디서 언제 읽었는지. 이미 보낸 내용은 반복하지 말고. 이번에 나한테 보낼 알림을 써줘.",
+    "note": "Judge only, not sent to Still. The owner states this preference in the turn: the reader wants the evidence: the conclusion first, then the observed values and where and when they were read, still without repeating what was already sent."
    }
   ],
   "rubric": [
@@ -957,8 +957,8 @@
   "split": "dev",
   "turns": [
    {
-    "say": "운동화 가격 감시, 12만 원 아래면 알림 중이야. 지난번에 알려준 내용: \"현재 13만 5천 원\". 이번에 확인한 결과: 현재 11만 8천 원으로 내려 목표가 아래로 들어옴. 이번에 나한테 보낼 알림을 써줘.",
-    "note": "Judge only, not sent to Still. The reader wants it short: a line or two, the conclusion first, no evidence unless it decides something."
+    "say": "운동화 가격 감시, 12만 원 아래면 알림 중이야. 지난번에 알려준 내용: \"현재 13만 5천 원\". 이번에 확인한 결과: 현재 11만 8천 원으로 내려 목표가 아래로 들어옴. 나는 알림을 짧게 받는 게 좋아: 결론부터 한두 줄로, 근거는 판단에 꼭 필요할 때만. 이번에 나한테 보낼 알림을 써줘.",
+    "note": "Judge only, not sent to Still. The owner states this preference in the turn: the reader wants it short: a line or two, the conclusion first, no evidence unless it decides something."
    }
   ],
   "rubric": [
@@ -985,8 +985,8 @@
   "split": "dev",
   "turns": [
    {
-    "say": "운동화 가격 감시, 12만 원 아래면 알림 중이야. 지난번에 알려준 내용: \"현재 13만 5천 원\". 이번에 확인한 결과: 현재 11만 8천 원으로 내려 목표가 아래로 들어옴. 이번에 나한테 보낼 알림을 써줘.",
-    "note": "Judge only, not sent to Still. The reader wants the evidence: the conclusion first, then the observed values and where and when they were read, still without repeating what was already sent."
+    "say": "운동화 가격 감시, 12만 원 아래면 알림 중이야. 지난번에 알려준 내용: \"현재 13만 5천 원\". 이번에 확인한 결과: 현재 11만 8천 원으로 내려 목표가 아래로 들어옴. 나는 알림에 근거도 같이 보고 싶어: 결론 먼저, 그다음 확인한 값과 어디서 언제 읽었는지. 이미 보낸 내용은 반복하지 말고. 이번에 나한테 보낼 알림을 써줘.",
+    "note": "Judge only, not sent to Still. The owner states this preference in the turn: the reader wants the evidence: the conclusion first, then the observed values and where and when they were read, still without repeating what was already sent."
    }
   ],
   "rubric": [
@@ -1013,8 +1013,8 @@
   "split": "dev",
   "turns": [
    {
-    "say": "운동화 가격 감시, 12만 원 아래면 알림 중이야. 지난번에 알려준 내용: \"현재 13만 5천 원\". 이번에 확인한 결과: 상품 페이지 구조가 달라져 가격을 읽지 못함. 이번에 나한테 보낼 알림을 써줘.",
-    "note": "Judge only, not sent to Still. The reader wants it short: a line or two, the conclusion first, no evidence unless it decides something."
+    "say": "운동화 가격 감시, 12만 원 아래면 알림 중이야. 지난번에 알려준 내용: \"현재 13만 5천 원\". 이번에 확인한 결과: 상품 페이지 구조가 달라져 가격을 읽지 못함. 나는 알림을 짧게 받는 게 좋아: 결론부터 한두 줄로, 근거는 판단에 꼭 필요할 때만. 이번에 나한테 보낼 알림을 써줘.",
+    "note": "Judge only, not sent to Still. The owner states this preference in the turn: the reader wants it short: a line or two, the conclusion first, no evidence unless it decides something."
    }
   ],
   "rubric": [
@@ -1041,8 +1041,8 @@
   "split": "dev",
   "turns": [
    {
-    "say": "운동화 가격 감시, 12만 원 아래면 알림 중이야. 지난번에 알려준 내용: \"현재 13만 5천 원\". 이번에 확인한 결과: 상품 페이지 구조가 달라져 가격을 읽지 못함. 이번에 나한테 보낼 알림을 써줘.",
-    "note": "Judge only, not sent to Still. The reader wants the evidence: the conclusion first, then the observed values and where and when they were read, still without repeating what was already sent."
+    "say": "운동화 가격 감시, 12만 원 아래면 알림 중이야. 지난번에 알려준 내용: \"현재 13만 5천 원\". 이번에 확인한 결과: 상품 페이지 구조가 달라져 가격을 읽지 못함. 나는 알림에 근거도 같이 보고 싶어: 결론 먼저, 그다음 확인한 값과 어디서 언제 읽었는지. 이미 보낸 내용은 반복하지 말고. 이번에 나한테 보낼 알림을 써줘.",
+    "note": "Judge only, not sent to Still. The owner states this preference in the turn: the reader wants the evidence: the conclusion first, then the observed values and where and when they were read, still without repeating what was already sent."
    }
   ],
   "rubric": [
@@ -1069,8 +1069,8 @@
   "split": "dev",
   "turns": [
    {
-    "say": "운동화 가격 감시, 12만 원 아래면 알림 중이야. 지난번에 알려준 내용: \"현재 13만 5천 원\". 이번에 확인한 결과: 열흘째 13만 5천 원에서 움직이지 않고 할인 행사 일정도 안 나옴. 이번에 나한테 보낼 알림을 써줘.",
-    "note": "Judge only, not sent to Still. The reader wants it short: a line or two, the conclusion first, no evidence unless it decides something."
+    "say": "운동화 가격 감시, 12만 원 아래면 알림 중이야. 지난번에 알려준 내용: \"현재 13만 5천 원\". 이번에 확인한 결과: 열흘째 13만 5천 원에서 움직이지 않고 할인 행사 일정도 안 나옴. 나는 알림을 짧게 받는 게 좋아: 결론부터 한두 줄로, 근거는 판단에 꼭 필요할 때만. 이번에 나한테 보낼 알림을 써줘.",
+    "note": "Judge only, not sent to Still. The owner states this preference in the turn: the reader wants it short: a line or two, the conclusion first, no evidence unless it decides something."
    }
   ],
   "rubric": [
@@ -1097,8 +1097,8 @@
   "split": "dev",
   "turns": [
    {
-    "say": "운동화 가격 감시, 12만 원 아래면 알림 중이야. 지난번에 알려준 내용: \"현재 13만 5천 원\". 이번에 확인한 결과: 열흘째 13만 5천 원에서 움직이지 않고 할인 행사 일정도 안 나옴. 이번에 나한테 보낼 알림을 써줘.",
-    "note": "Judge only, not sent to Still. The reader wants the evidence: the conclusion first, then the observed values and where and when they were read, still without repeating what was already sent."
+    "say": "운동화 가격 감시, 12만 원 아래면 알림 중이야. 지난번에 알려준 내용: \"현재 13만 5천 원\". 이번에 확인한 결과: 열흘째 13만 5천 원에서 움직이지 않고 할인 행사 일정도 안 나옴. 나는 알림에 근거도 같이 보고 싶어: 결론 먼저, 그다음 확인한 값과 어디서 언제 읽었는지. 이미 보낸 내용은 반복하지 말고. 이번에 나한테 보낼 알림을 써줘.",
+    "note": "Judge only, not sent to Still. The owner states this preference in the turn: the reader wants the evidence: the conclusion first, then the observed values and where and when they were read, still without repeating what was already sent."
    }
   ],
   "rubric": [
@@ -1125,8 +1125,8 @@
   "split": "heldout",
   "turns": [
    {
-    "say": "견적 요청 메일 회신 확인 중이야. 지난번에 알려준 내용: \"아직 회신 없음, 발송 3일째\". 이번에 확인한 결과: 받은편지함에 새 회신이 없음, 발송 4일째. 이번에 나한테 보낼 알림을 써줘.",
-    "note": "Judge only, not sent to Still. The reader wants it short: a line or two, the conclusion first, no evidence unless it decides something."
+    "say": "견적 요청 메일 회신 확인 중이야. 지난번에 알려준 내용: \"아직 회신 없음, 발송 3일째\". 이번에 확인한 결과: 받은편지함에 새 회신이 없음, 발송 4일째. 나는 알림을 짧게 받는 게 좋아: 결론부터 한두 줄로, 근거는 판단에 꼭 필요할 때만. 이번에 나한테 보낼 알림을 써줘.",
+    "note": "Judge only, not sent to Still. The owner states this preference in the turn: the reader wants it short: a line or two, the conclusion first, no evidence unless it decides something."
    }
   ],
   "rubric": [
@@ -1153,8 +1153,8 @@
   "split": "heldout",
   "turns": [
    {
-    "say": "견적 요청 메일 회신 확인 중이야. 지난번에 알려준 내용: \"아직 회신 없음, 발송 3일째\". 이번에 확인한 결과: 받은편지함에 새 회신이 없음, 발송 4일째. 이번에 나한테 보낼 알림을 써줘.",
-    "note": "Judge only, not sent to Still. The reader wants the evidence: the conclusion first, then the observed values and where and when they were read, still without repeating what was already sent."
+    "say": "견적 요청 메일 회신 확인 중이야. 지난번에 알려준 내용: \"아직 회신 없음, 발송 3일째\". 이번에 확인한 결과: 받은편지함에 새 회신이 없음, 발송 4일째. 나는 알림에 근거도 같이 보고 싶어: 결론 먼저, 그다음 확인한 값과 어디서 언제 읽었는지. 이미 보낸 내용은 반복하지 말고. 이번에 나한테 보낼 알림을 써줘.",
+    "note": "Judge only, not sent to Still. The owner states this preference in the turn: the reader wants the evidence: the conclusion first, then the observed values and where and when they were read, still without repeating what was already sent."
    }
   ],
   "rubric": [
@@ -1181,8 +1181,8 @@
   "split": "heldout",
   "turns": [
    {
-    "say": "견적 요청 메일 회신 확인 중이야. 지난번에 알려준 내용: \"아직 회신 없음, 발송 3일째\". 이번에 확인한 결과: 업체에서 견적서를 보냄: 총 240만 원, 유효기간 이번 금요일까지. 이번에 나한테 보낼 알림을 써줘.",
-    "note": "Judge only, not sent to Still. The reader wants it short: a line or two, the conclusion first, no evidence unless it decides something."
+    "say": "견적 요청 메일 회신 확인 중이야. 지난번에 알려준 내용: \"아직 회신 없음, 발송 3일째\". 이번에 확인한 결과: 업체에서 견적서를 보냄: 총 240만 원, 유효기간 이번 금요일까지. 나는 알림을 짧게 받는 게 좋아: 결론부터 한두 줄로, 근거는 판단에 꼭 필요할 때만. 이번에 나한테 보낼 알림을 써줘.",
+    "note": "Judge only, not sent to Still. The owner states this preference in the turn: the reader wants it short: a line or two, the conclusion first, no evidence unless it decides something."
    }
   ],
   "rubric": [
@@ -1209,8 +1209,8 @@
   "split": "heldout",
   "turns": [
    {
-    "say": "견적 요청 메일 회신 확인 중이야. 지난번에 알려준 내용: \"아직 회신 없음, 발송 3일째\". 이번에 확인한 결과: 업체에서 견적서를 보냄: 총 240만 원, 유효기간 이번 금요일까지. 이번에 나한테 보낼 알림을 써줘.",
-    "note": "Judge only, not sent to Still. The reader wants the evidence: the conclusion first, then the observed values and where and when they were read, still without repeating what was already sent."
+    "say": "견적 요청 메일 회신 확인 중이야. 지난번에 알려준 내용: \"아직 회신 없음, 발송 3일째\". 이번에 확인한 결과: 업체에서 견적서를 보냄: 총 240만 원, 유효기간 이번 금요일까지. 나는 알림에 근거도 같이 보고 싶어: 결론 먼저, 그다음 확인한 값과 어디서 언제 읽었는지. 이미 보낸 내용은 반복하지 말고. 이번에 나한테 보낼 알림을 써줘.",
+    "note": "Judge only, not sent to Still. The owner states this preference in the turn: the reader wants the evidence: the conclusion first, then the observed values and where and when they were read, still without repeating what was already sent."
    }
   ],
   "rubric": [
@@ -1237,8 +1237,8 @@
   "split": "heldout",
   "turns": [
    {
-    "say": "견적 요청 메일 회신 확인 중이야. 지난번에 알려준 내용: \"아직 회신 없음, 발송 3일째\". 이번에 확인한 결과: 메일 계정 연결이 끊겨 받은편지함을 읽지 못함. 이번에 나한테 보낼 알림을 써줘.",
-    "note": "Judge only, not sent to Still. The reader wants it short: a line or two, the conclusion first, no evidence unless it decides something."
+    "say": "견적 요청 메일 회신 확인 중이야. 지난번에 알려준 내용: \"아직 회신 없음, 발송 3일째\". 이번에 확인한 결과: 메일 계정 연결이 끊겨 받은편지함을 읽지 못함. 나는 알림을 짧게 받는 게 좋아: 결론부터 한두 줄로, 근거는 판단에 꼭 필요할 때만. 이번에 나한테 보낼 알림을 써줘.",
+    "note": "Judge only, not sent to Still. The owner states this preference in the turn: the reader wants it short: a line or two, the conclusion first, no evidence unless it decides something."
    }
   ],
   "rubric": [
@@ -1265,8 +1265,8 @@
   "split": "heldout",
   "turns": [
    {
-    "say": "견적 요청 메일 회신 확인 중이야. 지난번에 알려준 내용: \"아직 회신 없음, 발송 3일째\". 이번에 확인한 결과: 메일 계정 연결이 끊겨 받은편지함을 읽지 못함. 이번에 나한테 보낼 알림을 써줘.",
-    "note": "Judge only, not sent to Still. The reader wants the evidence: the conclusion first, then the observed values and where and when they were read, still without repeating what was already sent."
+    "say": "견적 요청 메일 회신 확인 중이야. 지난번에 알려준 내용: \"아직 회신 없음, 발송 3일째\". 이번에 확인한 결과: 메일 계정 연결이 끊겨 받은편지함을 읽지 못함. 나는 알림에 근거도 같이 보고 싶어: 결론 먼저, 그다음 확인한 값과 어디서 언제 읽었는지. 이미 보낸 내용은 반복하지 말고. 이번에 나한테 보낼 알림을 써줘.",
+    "note": "Judge only, not sent to Still. The owner states this preference in the turn: the reader wants the evidence: the conclusion first, then the observed values and where and when they were read, still without repeating what was already sent."
    }
   ],
   "rubric": [
@@ -1293,8 +1293,8 @@
   "split": "heldout",
   "turns": [
    {
-    "say": "견적 요청 메일 회신 확인 중이야. 지난번에 알려준 내용: \"아직 회신 없음, 발송 3일째\". 이번에 확인한 결과: 발송 7일째인데 회신이 없고 업체 사이트의 문의 접수도 확인되지 않음. 이번에 나한테 보낼 알림을 써줘.",
-    "note": "Judge only, not sent to Still. The reader wants it short: a line or two, the conclusion first, no evidence unless it decides something."
+    "say": "견적 요청 메일 회신 확인 중이야. 지난번에 알려준 내용: \"아직 회신 없음, 발송 3일째\". 이번에 확인한 결과: 발송 7일째인데 회신이 없고 업체 사이트의 문의 접수도 확인되지 않음. 나는 알림을 짧게 받는 게 좋아: 결론부터 한두 줄로, 근거는 판단에 꼭 필요할 때만. 이번에 나한테 보낼 알림을 써줘.",
+    "note": "Judge only, not sent to Still. The owner states this preference in the turn: the reader wants it short: a line or two, the conclusion first, no evidence unless it decides something."
    }
   ],
   "rubric": [
@@ -1321,8 +1321,8 @@
   "split": "heldout",
   "turns": [
    {
-    "say": "견적 요청 메일 회신 확인 중이야. 지난번에 알려준 내용: \"아직 회신 없음, 발송 3일째\". 이번에 확인한 결과: 발송 7일째인데 회신이 없고 업체 사이트의 문의 접수도 확인되지 않음. 이번에 나한테 보낼 알림을 써줘.",
-    "note": "Judge only, not sent to Still. The reader wants the evidence: the conclusion first, then the observed values and where and when they were read, still without repeating what was already sent."
+    "say": "견적 요청 메일 회신 확인 중이야. 지난번에 알려준 내용: \"아직 회신 없음, 발송 3일째\". 이번에 확인한 결과: 발송 7일째인데 회신이 없고 업체 사이트의 문의 접수도 확인되지 않음. 나는 알림에 근거도 같이 보고 싶어: 결론 먼저, 그다음 확인한 값과 어디서 언제 읽었는지. 이미 보낸 내용은 반복하지 말고. 이번에 나한테 보낼 알림을 써줘.",
+    "note": "Judge only, not sent to Still. The owner states this preference in the turn: the reader wants the evidence: the conclusion first, then the observed values and where and when they were read, still without repeating what was already sent."
    }
   ],
   "rubric": [
@@ -1349,8 +1349,8 @@
   "split": "heldout",
   "turns": [
    {
-    "say": "보유 종목 A 주가 점검, 5% 이상 움직이면 알림 중이야. 지난번에 알려준 내용: \"전일 대비 +0.8%\". 이번에 확인한 결과: 오늘 장 중 +0.9%, 알림 기준 안쪽. 이번에 나한테 보낼 알림을 써줘.",
-    "note": "Judge only, not sent to Still. The reader wants it short: a line or two, the conclusion first, no evidence unless it decides something."
+    "say": "보유 종목 A 주가 점검, 5% 이상 움직이면 알림 중이야. 지난번에 알려준 내용: \"전일 대비 +0.8%\". 이번에 확인한 결과: 오늘 장 중 +0.9%, 알림 기준 안쪽. 나는 알림을 짧게 받는 게 좋아: 결론부터 한두 줄로, 근거는 판단에 꼭 필요할 때만. 이번에 나한테 보낼 알림을 써줘.",
+    "note": "Judge only, not sent to Still. The owner states this preference in the turn: the reader wants it short: a line or two, the conclusion first, no evidence unless it decides something."
    }
   ],
   "rubric": [
@@ -1377,8 +1377,8 @@
   "split": "heldout",
   "turns": [
    {
-    "say": "보유 종목 A 주가 점검, 5% 이상 움직이면 알림 중이야. 지난번에 알려준 내용: \"전일 대비 +0.8%\". 이번에 확인한 결과: 오늘 장 중 +0.9%, 알림 기준 안쪽. 이번에 나한테 보낼 알림을 써줘.",
-    "note": "Judge only, not sent to Still. The reader wants the evidence: the conclusion first, then the observed values and where and when they were read, still without repeating what was already sent."
+    "say": "보유 종목 A 주가 점검, 5% 이상 움직이면 알림 중이야. 지난번에 알려준 내용: \"전일 대비 +0.8%\". 이번에 확인한 결과: 오늘 장 중 +0.9%, 알림 기준 안쪽. 나는 알림에 근거도 같이 보고 싶어: 결론 먼저, 그다음 확인한 값과 어디서 언제 읽었는지. 이미 보낸 내용은 반복하지 말고. 이번에 나한테 보낼 알림을 써줘.",
+    "note": "Judge only, not sent to Still. The owner states this preference in the turn: the reader wants the evidence: the conclusion first, then the observed values and where and when they were read, still without repeating what was already sent."
    }
   ],
   "rubric": [
@@ -1405,8 +1405,8 @@
   "split": "heldout",
   "turns": [
    {
-    "say": "보유 종목 A 주가 점검, 5% 이상 움직이면 알림 중이야. 지난번에 알려준 내용: \"전일 대비 +0.8%\". 이번에 확인한 결과: 오늘 장 중 -5.4%로 기준 넘음, 같은 업종 다른 종목도 비슷하게 하락. 이번에 나한테 보낼 알림을 써줘.",
-    "note": "Judge only, not sent to Still. The reader wants it short: a line or two, the conclusion first, no evidence unless it decides something."
+    "say": "보유 종목 A 주가 점검, 5% 이상 움직이면 알림 중이야. 지난번에 알려준 내용: \"전일 대비 +0.8%\". 이번에 확인한 결과: 오늘 장 중 -5.4%로 기준 넘음, 같은 업종 다른 종목도 비슷하게 하락. 나는 알림을 짧게 받는 게 좋아: 결론부터 한두 줄로, 근거는 판단에 꼭 필요할 때만. 이번에 나한테 보낼 알림을 써줘.",
+    "note": "Judge only, not sent to Still. The owner states this preference in the turn: the reader wants it short: a line or two, the conclusion first, no evidence unless it decides something."
    }
   ],
   "rubric": [
@@ -1433,8 +1433,8 @@
   "split": "heldout",
   "turns": [
    {
-    "say": "보유 종목 A 주가 점검, 5% 이상 움직이면 알림 중이야. 지난번에 알려준 내용: \"전일 대비 +0.8%\". 이번에 확인한 결과: 오늘 장 중 -5.4%로 기준 넘음, 같은 업종 다른 종목도 비슷하게 하락. 이번에 나한테 보낼 알림을 써줘.",
-    "note": "Judge only, not sent to Still. The reader wants the evidence: the conclusion first, then the observed values and where and when they were read, still without repeating what was already sent."
+    "say": "보유 종목 A 주가 점검, 5% 이상 움직이면 알림 중이야. 지난번에 알려준 내용: \"전일 대비 +0.8%\". 이번에 확인한 결과: 오늘 장 중 -5.4%로 기준 넘음, 같은 업종 다른 종목도 비슷하게 하락. 나는 알림에 근거도 같이 보고 싶어: 결론 먼저, 그다음 확인한 값과 어디서 언제 읽었는지. 이미 보낸 내용은 반복하지 말고. 이번에 나한테 보낼 알림을 써줘.",
+    "note": "Judge only, not sent to Still. The owner states this preference in the turn: the reader wants the evidence: the conclusion first, then the observed values and where and when they were read, still without repeating what was already sent."
    }
   ],
   "rubric": [
@@ -1461,8 +1461,8 @@
   "split": "heldout",
   "turns": [
    {
-    "say": "보유 종목 A 주가 점검, 5% 이상 움직이면 알림 중이야. 지난번에 알려준 내용: \"전일 대비 +0.8%\". 이번에 확인한 결과: 시세 제공처 호출이 실패해 현재가를 가져오지 못함. 이번에 나한테 보낼 알림을 써줘.",
-    "note": "Judge only, not sent to Still. The reader wants it short: a line or two, the conclusion first, no evidence unless it decides something."
+    "say": "보유 종목 A 주가 점검, 5% 이상 움직이면 알림 중이야. 지난번에 알려준 내용: \"전일 대비 +0.8%\". 이번에 확인한 결과: 시세 제공처 호출이 실패해 현재가를 가져오지 못함. 나는 알림을 짧게 받는 게 좋아: 결론부터 한두 줄로, 근거는 판단에 꼭 필요할 때만. 이번에 나한테 보낼 알림을 써줘.",
+    "note": "Judge only, not sent to Still. The owner states this preference in the turn: the reader wants it short: a line or two, the conclusion first, no evidence unless it decides something."
    }
   ],
   "rubric": [
@@ -1489,8 +1489,8 @@
   "split": "heldout",
   "turns": [
    {
-    "say": "보유 종목 A 주가 점검, 5% 이상 움직이면 알림 중이야. 지난번에 알려준 내용: \"전일 대비 +0.8%\". 이번에 확인한 결과: 시세 제공처 호출이 실패해 현재가를 가져오지 못함. 이번에 나한테 보낼 알림을 써줘.",
-    "note": "Judge only, not sent to Still. The reader wants the evidence: the conclusion first, then the observed values and where and when they were read, still without repeating what was already sent."
+    "say": "보유 종목 A 주가 점검, 5% 이상 움직이면 알림 중이야. 지난번에 알려준 내용: \"전일 대비 +0.8%\". 이번에 확인한 결과: 시세 제공처 호출이 실패해 현재가를 가져오지 못함. 나는 알림에 근거도 같이 보고 싶어: 결론 먼저, 그다음 확인한 값과 어디서 언제 읽었는지. 이미 보낸 내용은 반복하지 말고. 이번에 나한테 보낼 알림을 써줘.",
+    "note": "Judge only, not sent to Still. The owner states this preference in the turn: the reader wants the evidence: the conclusion first, then the observed values and where and when they were read, still without repeating what was already sent."
    }
   ],
   "rubric": [
@@ -1517,8 +1517,8 @@
   "split": "heldout",
   "turns": [
    {
-    "say": "보유 종목 A 주가 점검, 5% 이상 움직이면 알림 중이야. 지난번에 알려준 내용: \"전일 대비 +0.8%\". 이번에 확인한 결과: 장이 열려 있는데 시세 값이 한 시간째 같은 숫자로 갱신되지 않음. 이번에 나한테 보낼 알림을 써줘.",
-    "note": "Judge only, not sent to Still. The reader wants it short: a line or two, the conclusion first, no evidence unless it decides something."
+    "say": "보유 종목 A 주가 점검, 5% 이상 움직이면 알림 중이야. 지난번에 알려준 내용: \"전일 대비 +0.8%\". 이번에 확인한 결과: 장이 열려 있는데 시세 값이 한 시간째 같은 숫자로 갱신되지 않음. 나는 알림을 짧게 받는 게 좋아: 결론부터 한두 줄로, 근거는 판단에 꼭 필요할 때만. 이번에 나한테 보낼 알림을 써줘.",
+    "note": "Judge only, not sent to Still. The owner states this preference in the turn: the reader wants it short: a line or two, the conclusion first, no evidence unless it decides something."
    }
   ],
   "rubric": [
@@ -1545,8 +1545,8 @@
   "split": "heldout",
   "turns": [
    {
-    "say": "보유 종목 A 주가 점검, 5% 이상 움직이면 알림 중이야. 지난번에 알려준 내용: \"전일 대비 +0.8%\". 이번에 확인한 결과: 장이 열려 있는데 시세 값이 한 시간째 같은 숫자로 갱신되지 않음. 이번에 나한테 보낼 알림을 써줘.",
-    "note": "Judge only, not sent to Still. The reader wants the evidence: the conclusion first, then the observed values and where and when they were read, still without repeating what was already sent."
+    "say": "보유 종목 A 주가 점검, 5% 이상 움직이면 알림 중이야. 지난번에 알려준 내용: \"전일 대비 +0.8%\". 이번에 확인한 결과: 장이 열려 있는데 시세 값이 한 시간째 같은 숫자로 갱신되지 않음. 나는 알림에 근거도 같이 보고 싶어: 결론 먼저, 그다음 확인한 값과 어디서 언제 읽었는지. 이미 보낸 내용은 반복하지 말고. 이번에 나한테 보낼 알림을 써줘.",
+    "note": "Judge only, not sent to Still. The owner states this preference in the turn: the reader wants the evidence: the conclusion first, then the observed values and where and when they were read, still without repeating what was already sent."
    }
   ],
   "rubric": [
