@@ -1051,7 +1051,6 @@ class CodeRunner:
         except ApiError as exc:
             return False, str(exc)
         if effect == 'payment':
-            shown = redact_known_secrets(self.store, ' '.join(part for part in (f'?{query}' if query else '', body) if part))
             # #1470: the AI's description comes first for the owner to read; the exact request below is
             # what is approved, so the description can never widen it.  Live 2026-10-14 (owner): plain
             # words first, money said plainly, no internal set or effect names.
@@ -1063,8 +1062,7 @@ class CodeRunner:
                 shown_lines, check = approval_field_lines(self._fields, body, query,
                                                           lambda value: redact_known_secrets(self.store, value))
                 lines.append('\n'.join([APPROVAL_FIELDS_LABEL, *shown_lines, check]))
-            exact = f"{APPROVAL_EXACT_LABEL} {method} {host}{redact_known_secrets(self.store, path)}"
-            lines.append(exact + (f"\n{APPROVAL_CONTENT_LABEL} {shown}" if shown else ''))
+            lines.append(self._exact_request_label(method, host, path, query, body))
             label = '\n\n'.join(lines)
             mode = getattr(self.approvals, 'payment_autonomy', None)
             ticket = mode(binding, label) if callable(mode) else None
@@ -1074,8 +1072,10 @@ class CodeRunner:
                 return self._claim_state_change(api, slot, identity, replay_keys, method, effect, host, path,
                                                 approved_next=bool(exact))
             unattended = getattr(self.approvals, 'unattended', None)
-            if not note and not (callable(unattended) and unattended()):
-                # #953: a run that cannot ask the owner keeps its own refusal (#619) from request().
+            if callable(unattended) and unattended():
+                from .quickstart_service import UNATTENDED_APPROVAL_TEXT
+                return False, UNATTENDED_APPROVAL_TEXT  # #619: a run with no owner present asks nothing.
+            if not note:
                 return False, APPROVAL_NOTE_REQUIRED
             try:
                 self.approvals.request(binding, label)
@@ -1102,6 +1102,13 @@ class CodeRunner:
         if result[0] and ticket:self.__dict__.setdefault('_write_tickets',[]).append(ticket)
         elif ticket:self.approvals.self_set_write_release(ticket)
         return result
+
+    def _exact_request_label(self, method, host, path, query, body):
+        from .current_context import redact_known_secrets
+        shown = ' '.join(part for part in (f'?{query}' if query else '', body) if part)
+        shown = redact_known_secrets(self.store, shown)
+        exact = f"{APPROVAL_EXACT_LABEL} {method} {host}{redact_known_secrets(self.store, path)}"
+        return exact + (f"\n{APPROVAL_CONTENT_LABEL} {shown}" if shown else '')
 
     def _claim_state_change(self, api, slot, identity, replay_keys, method, effect, host, path, *,
                             approved_next=False, write_ticket=None):
@@ -1159,6 +1166,7 @@ class CodeRunner:
             lines.put(None)
         threading.Thread(target=pump, daemon=True).start()
         deadline = self.clock() + timeout + RUNNER_GRACE
+        on_dispatch = getattr(self.approvals, 'api_effect_dispatched', None)
         try:
             process.stdin.write(json.dumps(config) + '\n')
             # #233: the runner process exists and has its configuration, so the code may run and send from
@@ -1191,7 +1199,12 @@ class CodeRunner:
                         entry['headers'] = '\n'.join(f'{pair[0]}: {pair[1]}' for pair in pairs[:64]
                                                      if isinstance(pair, list) and len(pair) == 2)[:APPROVAL_BODY_CHARS]
                         recorded.append(entry)
+                    claims = len(self._claims)
                     allow, reason = self._decide(message, policy, check=recorded is not None)
+                    dispatched = callable(on_dispatch) and len(self._claims) > claims
+                    if dispatched:
+                        receipt, method, host, path = self._claims[-1]
+                        exact = self._exact_request_label(method, host, path, message.get('query'), message['bodyText'])
                     if allow and phase == 'run':
                         allowed_host = _host(message.get('host'))[:253]
                         self.allowed_hosts.add(allowed_host)
@@ -1210,6 +1223,8 @@ class CodeRunner:
                                      'allowed': allow})
                     process.stdin.write(json.dumps({'id': message.get('id'), 'allow': allow, 'reason': reason}) + '\n')
                     process.stdin.flush()
+                    if dispatched:
+                        on_dispatch(receipt, exact)
                 elif message.get('type') == 'result':
                     output = {stream: str(message.get(stream) or '') for stream in ('stdout', 'stderr')}
                     if self.withhold_truncated_output:

@@ -812,8 +812,12 @@ class PreparationsService:
         with service.store.db() as db:
             row = db.execute('SELECT * FROM preparations WHERE id=?',
                              (notification['fingerprint'],)).fetchone()
-            if (not row or row['state'] == prep.STATE_CANCELLED
-                    or service.preparations.notice_channel(row, db) != notification['surface']):
+            if not row or service.preparations.notice_channel(row, db) != notification['surface']:
+                return None
+            if kind == prep.CHECK_DISPATCH_NOTICE_KIND:
+                record = db.execute('SELECT content FROM messages WHERE job_id=?', (notification['job_id'],)).fetchone()
+                return record['content'] if record else None
+            if row['state'] == prep.STATE_CANCELLED:
                 return None
             if kind.startswith(checks.PAUSED_NOTICE):
                 if row['state']!=prep.STATE_PAUSED or not json.loads(row['check_status'] or '{}').get('paused'):

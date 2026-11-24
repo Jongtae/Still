@@ -119,6 +119,12 @@
   "ja": "条件チェックに出力があると、この準備が実行されます。",
   "zh": "条件检查产生输出时运行此准备任务。"
  },
+ "checks.dispatched": {
+  "ko": "조건 검사가 아래 요청을 보냈어요.",
+  "en": "The condition check sent this request.",
+  "ja": "条件チェックが以下のリクエストを送信しました。",
+  "zh": "条件检查已发送以下请求。"
+ },
  "checks.failed": {
   "ko": "코드 실행을 마치지 못했어요.",
   "en": "The code run could not finish.",

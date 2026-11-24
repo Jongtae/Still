@@ -1075,12 +1075,17 @@ class ApiRequests:
         """Use the request root for new claims; recognize older roots along a piece handoff."""
         from .browser_session import keyed_step_binding, step_binding
         from .agent_runtime import WorkLedger, effect_work_chain
-        with self.store.db() as db:
-            try:
-                root = WorkLedger.request_chain(db, self.work_id)[-1]['id']
-                ancestors = {work['id'] for work in effect_work_chain(db, self.work_id)}
-            except ValueError:
-                raise ApiError('현재 작업을 확인할 수 없어 실행하지 않았습니다.', 'api_work_inactive') from None
+        if callable(getattr(self.approvals, 'api_effect_evidence', None)):
+            # A host-managed execution keeps its own receipt history across runs.
+            root, ancestors = self.work_id, (self.work_id,)
+        else:
+            with self.store.db() as db:
+                try:
+                    root = WorkLedger.request_chain(db, self.work_id)[-1]['id']
+                    ancestors = {work['id'] for work in effect_work_chain(db, self.work_id)}
+                except ValueError:
+                    raise ApiError('현재 작업을 확인할 수 없어 실행하지 않았습니다.', 'api_work_inactive') from None
+
         def digest(work_id, slot_name):
             binding = step_binding(work_id, 'api_dispatch', '', json.dumps([slot_name, method, url]), argument=body or '')
             return keyed_step_binding(self.store, binding)['digest']
@@ -1137,7 +1142,13 @@ class ApiRequests:
         from .api_credentials import fingerprint
         with self.store.db() as db:
             db.execute('BEGIN IMMEDIATE')
-            chain = self._current_effect_run(db)
+            effect_evidence = getattr(self.approvals, 'api_effect_evidence', None)
+            if callable(effect_evidence):
+                evidence = effect_evidence(db, effect)
+                receipt_id = self.work_id
+            else:
+                evidence = {}
+                receipt_id = self._current_effect_run(db)[-1]['id']
             current = self.slots().get(slot['name'])
             if current is None or fingerprint(slot['name'], current) != fingerprint(slot['name'], slot):
                 raise ApiError('API 연결이 바뀌어 요청을 보내지 않았습니다.', 'needs_setup',
@@ -1169,13 +1180,13 @@ class ApiRequests:
                     self.approvals.payment_autonomy(binding, label, ticket=ticket, dispatch=True, db=db)
                 except ValueError as exc:
                     raise ApiError(str(exc), 'payment_autonomy_changed', ran=False) from None
-            detail = {'scope': 'api', 'evidence': {'engine': 'agentos', 'kind': 'api-slot',
+            detail = {'scope': 'api', 'evidence': {**evidence, 'engine': 'agentos', 'kind': 'api-slot',
                       'identity': slot['name'], 'operation': method, 'effect': effect, 'host': destination,
                       'input_digest': identity, 'revision': slot['revision'], 'registration_id': slot.get('registration_id'),
                       'work_id': self.work_id,
                       'call_ref': current_effect_call_ref(), 'request_ref': request_ref}}
             return db.execute('INSERT INTO tool_events(job_id,tool,status,detail,created) VALUES (?,?,?,?,?)',
-                              (chain[-1]['id'], 'api_dispatch', 'dispatching', json.dumps(detail), self.clock())).lastrowid
+                              (receipt_id, 'api_dispatch', 'dispatching', json.dumps(detail), self.clock())).lastrowid
 
     def _release_effect(self, claim):
         """Remove a reservation whose request was never handed to the transport (#208 review).

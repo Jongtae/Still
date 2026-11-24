@@ -63,7 +63,8 @@ def prove(c, args=ARGS, process=None, **kwargs):
     return result
 
 
-def schedule(c, args=ARGS, *, every=15, until=3600, goal='Report the observation', max_runs=None, line=None, replaces=None):
+def schedule(c, args=ARGS, *, every=15, until=3600, goal='Report the observation', max_runs=None, line=None,
+             replaces=None, delivery=None):
     value = dict(args)
     if every is not None:
         value['every_seconds'] = every
@@ -73,6 +74,7 @@ def schedule(c, args=ARGS, *, every=15, until=3600, goal='Report the observation
         **({'max_runs': max_runs} if max_runs is not None else {}),
         **({'line': line} if line is not None else {}),
         **({'replaces': replaces} if replaces is not None else {}),
+        **({'delivery': delivery} if delivery is not None else {}),
     })
     record(c, 'schedule_preparation', result)
     return c.preps.get(result['preparation_id'])

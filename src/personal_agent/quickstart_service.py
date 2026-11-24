@@ -7720,7 +7720,8 @@ class AgentService:
         self._set_payment_autonomy(body['enabled'],body['revision'])
         return self.payment_autonomy_settings()
 
-    def _authorize_payment_autonomy(self, job, binding, description, *, ticket=None, dispatch=False, db=None):
+    def _authorize_payment_autonomy(self, job, binding, description, *, ticket=None, dispatch=False, db=None,
+                                    status_notice=True):
         """One payment-mode gate: bind standing authority, recheck at dispatch, receipt and notice.
 
         A ticket is host-local, never a model-supplied approval. Claims, replay/unknown holds,
@@ -7730,8 +7731,9 @@ class AgentService:
         if dispatch and db is None:
             with self.store.db() as db:
                 db.execute('BEGIN IMMEDIATE')
-                result=self._authorize_payment_autonomy(job,binding,description,ticket=ticket,dispatch=True,db=db)
-            if result:self._deliver_payment_autonomy_notice(job,result)
+                result=self._authorize_payment_autonomy(job,binding,description,ticket=ticket,dispatch=True,db=db,
+                                                        status_notice=status_notice)
+            if result and status_notice:self._deliver_payment_autonomy_notice(job,result)
             return result
         mode=self.payment_autonomy_settings(db=db)
         if self.unattended_work(job) and self.self_set_run(job):
@@ -7769,7 +7771,7 @@ class AgentService:
         receipt=db.execute('INSERT INTO tool_events(job_id,tool,status,detail,created) VALUES (?,?,?,?,?)',
                    (job['id'],'payment_autonomy','authorized',json.dumps({'scope':'payment','effect':'none',
                     'evidence':authorization},ensure_ascii=False),time.time())).lastrowid
-        self._record_payment_autonomy_status(job,authorization,db)
+        if status_notice:self._record_payment_autonomy_status(job,authorization,db)
         return {**authorization,'receipt':receipt}
 
     #: #782: config key of a Work's one payment-mode status notice: its transcript row and the

@@ -1,7 +1,7 @@
 """Run proven preparation checks in the existing code sandbox, independently of Work lanes (#972)."""
 from __future__ import annotations
 
-from contextlib import contextmanager
+from contextlib import contextmanager, nullcontext
 from datetime import datetime, timedelta
 import fcntl
 import hashlib
@@ -12,6 +12,7 @@ import time
 
 from . import preparations as prep
 from .api_credentials import MAX_STATE_BYTES, ApiCredentials, CredentialError
+from .api_requests import ApiError
 from .code_run import MAX_HOSTS, CodeRunError, CodeRunner, _arguments, _hostname, check_arguments_digest, read_run_file
 from .current_context import redact_known_secrets
 from .direct_message_surface import redact_provenance_values
@@ -76,9 +77,14 @@ def prove(store, work_id, args, interval):
         proof = (detail.get('evidence') or {}).get('check_proof') or {}
         if proof.get('arguments') == expected:
             spec = {'arguments': args, 'every_seconds': interval, 'libraries': proof['libraries']}
-            spec['digest'] = hashlib.sha256(json.dumps(spec, sort_keys=True).encode()).hexdigest()
+            spec['digest'] = _spec_digest(spec)
             return spec
     raise prep.PreparationRefusal('check_not_proven')
+
+
+def _spec_digest(spec):
+    return hashlib.sha256(json.dumps({key: value for key, value in spec.items() if key != 'digest'},
+                                     sort_keys=True).encode()).hexdigest()
 
 
 def totals(status):
@@ -140,9 +146,87 @@ def handoff_text(store, handoff, timezone):
     kind = handoff['kind']
     hosts = ', '.join(handoff.get('allowed_hosts') or ()) or '-'
     sets = ', '.join(handoff.get('allowed_secret_sets', handoff.get('secrets')) or ()) or '-'
+    output = '\n\n'.join(part for part in (*handoff.get('dispatched', ()), handoff['output']) if part)
     return msg('checks.handoff', kind=kind, at=prep.local_text(handoff['at'], timezone),
                digest=handoff['check'], hosts=redact_known_secrets(store, hosts),
-               secrets=redact_known_secrets(store, sets), output=redact_known_secrets(store, handoff['output']))
+               secrets=redact_known_secrets(store, sets), output=redact_known_secrets(store, output))
+
+
+class CheckApprovals:
+    """Only standing authority for a proven check, with no owner interaction."""
+
+    def __init__(self, service, row, record_id, digest):
+        self.service = service
+        self.row = row
+        self.digest = digest
+        self.dispatched = {}
+        # Use the preparation's unattended standing without opening a Work or consuming a slot.
+        self.job = {'id': record_id, 'request_key': prep.request_key(row['id'], row['check_next_at'])}
+
+    def api_effect_evidence(self, db, effect=None):
+        # The effect guard calls this again in the transaction reserving dispatch.
+        row = self.row
+        current = db.execute('SELECT * FROM preparations WHERE id=?', (row['id'],)).fetchone()
+        if (not current or current['state'] != prep.STATE_SCHEDULED
+                or current['accepted_by'] not in prep.OWNER_ACCEPTED
+                or current['check_spec'] != row['check_spec'] or current['updated_at'] != row['updated_at']
+                or current['until_at'] <= self.service.preparations.clock()
+                or current['run_count'] >= current['max_runs']
+                or prep.line_refusal(db, current['line_id']) or self.service.stop.is_set()):
+            raise ApiError('The preparation check is no longer current.', 'api_work_inactive', ran=False)
+        if effect == 'mutate' and not self.service.payment_autonomy_settings(db=db)['enabled']:
+            raise ApiError(msg('payment_autonomy.changed'), 'payment_autonomy_changed', ran=False)
+        return {'check_id': row['id'], 'check_digest': self.digest}
+
+    def unattended(self):
+        return True
+
+    def consume(self, binding):
+        return False
+
+    def payment_autonomy(self, binding, description, *, ticket=None, dispatch=False, db=None):
+        with (self.service.store.db() if db is None else nullcontext(db)) as connection:
+            if ticket is not None and not dispatch:
+                self.api_effect_evidence(connection)
+            return self.service._authorize_payment_autonomy(self.job, binding, description, ticket=ticket,
+                                                            dispatch=dispatch, db=connection, status_notice=False)
+
+    def payment_autonomy_notice(self, ticket):
+        # Authorizing a request precedes dispatch. Checks use the preparation's status channel.
+        pass
+
+    def api_effect_dispatched(self, receipt, exact):
+        row = self.row
+        preparations = self.service.preparations
+        notice = f"check:{row['id']}:effect:{receipt}"
+        message = msg('checks.dispatched') + '\n\n' + exact
+        now = preparations.clock()
+        destination = self.service.preparations_service.notice_destination(preparations.notice_channel(row))
+        with self.service.store.db() as db:
+            db.execute('INSERT INTO messages(role,content,channel,created,job_id) SELECT ?,?,?,?,? '
+                       'WHERE NOT EXISTS (SELECT 1 FROM messages WHERE job_id=?)',
+                       ('assistant', message, 'web', now, notice, notice))
+            preparations._queue_status_notice(db, row, notice, prep.CHECK_DISPATCH_NOTICE_KIND, now,
+                                              destination=destination)
+        self.dispatched[receipt] = message
+
+    def self_set_write(self, *args, **kwargs):
+        try:
+            return self.service.self_set_write(self.job, *args, request=False, **kwargs)
+        except ValueError as exc:
+            if getattr(exc, 'code', None) != 'approval_required':
+                raise
+            from .quickstart_service import UNATTENDED_APPROVAL_TEXT
+            raise ApiError(UNATTENDED_APPROVAL_TEXT, 'unattended_run', ran=False) from None
+
+    def self_set_write_check(self, ticket):
+        return self.service.self_set_write_check(self.job, ticket)
+
+    def self_set_write_release(self, ticket):
+        return self.service.self_set_write_release(self.job, ticket)
+
+    def self_set_write_finished(self, ticket, **kwargs):
+        return self.service.self_set_write_finished(self.job, ticket, **kwargs)
 
 
 class CheckRunner(CodeRunner):
@@ -154,7 +238,7 @@ class CheckRunner(CodeRunner):
     count_allowed_requests = True
 
     def __init__(self, store, record_id, *, pinned, check_state=None, **kwargs):
-        super().__init__(store, record_id, approvals=None, **kwargs)
+        super().__init__(store, record_id, **kwargs)
         self.pinned = pinned
         # (check id, check digest): the state is bound to the exact check code (D4).
         self.check_state = check_state
@@ -266,6 +350,12 @@ class ConditionChecks:
         day = datetime.fromtimestamp(now, zone).date() + timedelta(days=1)
         return datetime.combine(day, datetime.min.time(), tzinfo=zone).timestamp()
 
+    def _can_run_at_wake_cap(self, db, row):
+        # Only a check with request authority has work it can do independently of the AI.
+        return (row['accepted_by'] in prep.OWNER_ACCEPTED
+                and bool(json.loads(row['check_spec'])['arguments']['secrets'])
+                and self.service.payment_autonomy_settings(db=db)['enabled'])
+
     def run_due(self):
         now = self.preparations.clock()
         with self.store.db() as db:
@@ -287,7 +377,8 @@ class ConditionChecks:
             ended = now >= row['until_at'] or row['run_count'] >= row['max_runs']
             claimed_at = row['check_next_at']
             if not (refusal or ended):
-                if status.get('day') == day and status['wakes'] >= DAILY_WAKES:
+                if (status.get('day') == day and status['wakes'] >= DAILY_WAKES
+                        and not self._can_run_at_wake_cap(db, row)):
                     self._advance(db, row, self._next_day(now, db), status)
                     return True
                 # Keep a durable floor even if the process stops or result settling fails.
@@ -371,8 +462,14 @@ class ConditionChecks:
                     pinned[name] = ProcedureLibrary._row(found)
         if pending:
             return _redact(self.store, pending['result'])
-        runner = self.runner(self.store, 'check:' + row['id'], pinned=pinned, interrupted=self.service.stop.is_set,
-                             check_state=(row['id'], spec['digest']))
+        record_id = 'check:' + row['id']
+        approvals = None
+        if row.get('accepted_by') in prep.OWNER_ACCEPTED and _spec_digest(spec) == spec['digest']:
+            current = self.preparations.get(row['id'])
+            if current and current.get('accepted_by') in prep.OWNER_ACCEPTED:
+                approvals = CheckApprovals(self.service, row, record_id, spec['digest'])
+        runner = self.runner(self.store, record_id, pinned=pinned, interrupted=self.service.stop.is_set,
+                             check_state=(row['id'], spec['digest']), approvals=approvals)
         failure_reason = None
         try:
             result = runner.run(args, seconds=spec['every_seconds'])
@@ -406,12 +503,17 @@ class ConditionChecks:
             outside = outside_result_source('code_run', 'code_run', args, dispatched_error=True) if runner.started else None
             kind, output = 'failure', msg('checks.failed')
 
+        dispatched = list(approvals.dispatched.values()) if approvals else []
+        if dispatched and kind == 'quiet':
+            kind = 'hit'
         # The sandbox proxy records allow decisions before transport. Do not infer contact.
         handoff = _redact(self.store, {
             'kind': kind, 'check': spec['digest'], 'at': self.preparations.clock(),
             'output': output, 'allowed_hosts': sorted(runner.allowed_hosts),
             'allowed_secret_sets': args['secrets'], 'outside': outside,
         })
+        if dispatched:
+            handoff['dispatched'] = dispatched
         handoff['host_requests'] = _host_counts(self.store, getattr(runner, 'allowed_requests', {}))
         if kind == 'failure':
             tail = handoff['output'][-600:]
@@ -490,7 +592,7 @@ class ConditionChecks:
             failed = status['failures'] >= FAILURE_LIMIT
             # Whether this result is kept: counted, handed off, or held for a retry (``_commit_state``).
             accepted = True
-            if not pause and (kind == 'hit' or failed):
+            if not pause and (kind == 'hit' or failed or result.get('dispatched')):
                 slot = pending['slot'] if pending else row['check_next_at']
                 wake = {'handoff': {key: value for key, value in result.items() if key != 'outside'},
                         'outside': result['outside'], 'slot': slot, 'title': title,
@@ -508,11 +610,12 @@ class ConditionChecks:
                     status['pending'] = {'slot': slot, 'result': result}
                     next_at = now + 1
                 elif wake.get('budget_refused') or status['wakes'] >= DAILY_WAKES:
-                    if pending:
-                        status['pending'] = {'slot': slot, 'result': result}
-                    else:
-                        accepted = False
-                    next_at = self._next_day(now, db)
+                    if not self._can_run_at_wake_cap(db, row):
+                        if pending:
+                            status['pending'] = {'slot': slot, 'result': result}
+                        else:
+                            accepted = False
+                        next_at = self._next_day(now, db)
                 else:
                     accepted = False
             if pause:
