@@ -45,7 +45,7 @@ def test_marked_press_judged_read_needs_no_confirmation(browser, judgment):
     target=next(e['n'] for e in page['elements'] if e['name']=='Expand')
     with mock.patch.object(service.decision_judge,'connector_effect',return_value=judgment) as decide:
         caps.execute('browser_click',{'target':str(target),'effect':'navigate'})
-    decide.assert_called_once_with('browser_click @ https://notes.test', ['Expand','button'], '',job['id'],target=('button','Expand'))
+    decide.assert_called_once_with('browser_click @ https://notes.test', ['Expand','button'], '',job['id'],target=('button','Expand'),form_method='')
     assert any(row[0]=='click' for row in driver.log)
     assert service._browser_request(job['id']) is None
 
@@ -55,7 +55,7 @@ def test_marked_search_enter_needs_no_confirmation(browser):
     target=next(e['n'] for e in page['elements'] if e['name']=='Search')
     with mock.patch.object(service.decision_judge,'connector_effect',return_value='navigate') as decide:
         caps.execute('browser_type',{'target':str(target),'text':'a private query','key':'Enter','effect':'navigate'})
-    decide.assert_called_once_with('browser_type @ https://notes.test',['Search','textbox'],'',job['id'],target=('textbox','Search'))
+    decide.assert_called_once_with('browser_type @ https://notes.test',['Search','textbox'],'',job['id'],target=('textbox','Search'),form_method='get')
     assert any(row[0]=='type' and row[2]=='a private query' for row in driver.log)
     assert service._browser_request(job['id']) is None
 
