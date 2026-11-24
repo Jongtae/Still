@@ -199,6 +199,7 @@ REDACTED_ARGUMENTS={name:tool.recorded_by_length for name,tool in HOST_TOOLS.ite
 #: preparation goal is owner text the owner reads back, not a secret.
 #: Without a redactor it falls back to the length placeholder.
 SCRUBBED_ARGUMENTS={'schedule_preparation':('goal','title','offer'),
+                    'update_check_state':('preparation_id','check_digest'),
                     # #798: a line's brief is the owner's own words, kept like a preparation goal.
                     'entrusted_line':('task','report_promise','rules','rule','open_matters'),
                     # Memory queries are model-authored owner text and may
@@ -674,6 +675,13 @@ DEFINITIONS=[
  schema('weather',WEATHER_DESCRIPTION,{'city':STRING,'country':STRING,'location_ref':STRING}),
  schema('propose_current_state',PROPOSE_CURRENT_STATE_DESCRIPTION,described({'predicate':{'type':'string','enum':['current_place','work_mode','availability_hint']},'value':STRING,'place_ref':STRING,'source':STRING,'until':STRING,'supersedes':STRING},PROPOSE_CURRENT_STATE_ARGUMENTS),['predicate']),
  schema('schedule_preparation',SCHEDULE_PREPARATION_DESCRIPTION,described({'kind':{'type':'string','enum':['reminder','prepare']},'goal':STRING,'due':STRING,'timezone':STRING,'recurrence':{'type':'string','enum':['daily','weekdays','weekly']},'rrule':STRING,'every_minutes':STRING,'until':STRING,'max_runs':STRING,'report_every_minutes':STRING,'delivery':{'type':'string','enum':['send','keep','when_needed']},'title':STRING,'offer':STRING,'replaces':STRING,'line':STRING,'resume_line':{'type':'boolean'},'check':STRING},SCHEDULE_PREPARATION_ARGUMENTS),['kind','goal','due']),
+ schema('update_check_state',
+        'Merge data for the next condition check in this Work’s preparation or its piece tree. Use the preparation_id '
+        'and check_digest listed for this Work. Each top-level key in patch replaces that key, and null removes it. '
+        'Other keys stay. This updates CHECKSTATEFILE and grants no authority.',
+        described({'preparation_id':STRING,'check_digest':STRING,'patch':STRING},
+                  {'patch':'A JSON-encoded object of up to 16 KiB. Nested objects replace the entire value of their top-level key.'}),
+        ['preparation_id','check_digest','patch']),
  schema('entrusted_line',ENTRUSTED_LINE_DESCRIPTION,described({'action':{'type':'string','enum':['list','read','open','revise','undo','stop','restart']},'line':STRING,'scope':{'type':'string','enum':['work','line']},'task':STRING,'report_promise':STRING,'rules':STRING,'rule':STRING,'drop_rule':STRING,'open_matters':STRING,'expected_version':STRING,'version':STRING,'account_every_days':STRING},ENTRUSTED_LINE_ARGUMENTS),['action']),
  schema('tell_owner',TELL_OWNER_DESCRIPTION,{'text':STRING},['text']),
  schema('ask_location',ASK_LOCATION_DESCRIPTION,described({'reason':STRING,'button_label':STRING,'mode':{'type':'string','enum':['ask','with_answer']}},ASK_LOCATION_ARGUMENTS),['reason']),
@@ -992,7 +1000,7 @@ OWNER_ONLY_RESULT_ACTIONS = frozenset({
  # Local write receipts echo this Work's arguments and host identities only.
  'save_note', 'save_result', 'save_memory',
  # Host delivery, context-proposal and scheduling receipts; no remote response.
- 'tell_owner', 'ask_location', 'propose_current_state', 'schedule_preparation',
+ 'tell_owner', 'ask_location', 'propose_current_state', 'schedule_preparation', 'update_check_state',
  # The loop's completion receipt, handled before Capabilities dispatch.
  'finish',
 })
@@ -3931,7 +3939,7 @@ def owner_wait_steps(rows, tools=None):
  return waits
 
 class Capabilities:
- def __init__(self,store,adapter,config,key,job_id,record,readonly=False,network=None,document_access=True,packages=None,allowed_tools=None,document_context=False,memory_approval=None,inherited_provenance=(),calendar=None,calendar_owner=None,memory_request=None,current_packages=None,lookup_sources=None,delegated=False,inherited_audit_values=(),budget=None,browser=None,browser_approvals=None,browser_unavailable=None,judgments=None,secret_redactor=None,current_context=None,preparations=None,location_request=None,owner_update=None,settings=None,information_use=None,skills=None,drive=None,mail=None,connections=None,a2a=None,lines=None,line_note=None,plan_reading='',history_reader=None):
+ def __init__(self,store,adapter,config,key,job_id,record,readonly=False,network=None,document_access=True,packages=None,allowed_tools=None,document_context=False,memory_approval=None,inherited_provenance=(),calendar=None,calendar_owner=None,memory_request=None,current_packages=None,lookup_sources=None,delegated=False,inherited_audit_values=(),budget=None,browser=None,browser_approvals=None,browser_unavailable=None,judgments=None,secret_redactor=None,current_context=None,preparations=None,location_request=None,owner_update=None,settings=None,information_use=None,skills=None,drive=None,mail=None,connections=None,a2a=None,lines=None,line_note=None,plan_reading='',history_reader=None,check_state_update=None):
   # #798: the service's ``entrusted_line`` handler bound to this Work, or None (delegated
   # specialist, CLI bridge without the relay): then the tool is not offered.  ``line_note()``
   # is what a run of a line reads before its next step when the line's brief changed, or None.
@@ -4013,6 +4021,7 @@ class Capabilities:
   # #659: the service's ``schedule_preparation`` handler bound to this Work,
   # or None (delegated specialist, CLI bridge): then the tool is not offered.
   self.preparations=preparations
+  self.check_state_update=check_state_update
   # #774: the service's owner location request bound to this Work (takes the
   # reason), or None (delegated specialist, web-only host): then not offered.
   self.location_request=location_request
@@ -4098,6 +4107,7 @@ class Capabilities:
   hidden=set()
   if self.browser is None:hidden|=BROWSER_ACTIONS
   if self.preparations is None:hidden|=PREPARATION_ACTIONS
+  if self.check_state_update is None or self.delegated:hidden.add('update_check_state')
   if self.lines is None:hidden|=LINE_ACTIONS
   if self.location_request is None:hidden|=LOCATION_ACTIONS
   if self.owner_update is None:hidden|=OWNER_UPDATE_ACTIONS
@@ -5153,6 +5163,10 @@ class Capabilities:
     if isinstance(args.get(field),str) and args[field]:
      args={**args,field:self.secret_masked(args[field])}
    return self.preparations(args)
+  if name=='update_check_state':
+   if self.check_state_update is None or self.delegated or self.readonly:
+    raise not_run(ToolError(msg('agent_runtime.preparations_unavailable'),'needs_setup',requires='owner-preparations'))
+   return self.check_state_update(args)
   if name=='entrusted_line':
    # #798: the owner's entrusted lines; the service refuses a write outside a Work the owner started.
    if self.lines is None or self.delegated:
@@ -6021,6 +6035,7 @@ def _evidence_detail(name,result):
   return {key:result.get(key) for key in ('preparation_id','kind','state','scheduled','requires_owner_acceptance',
                                           'due','recurrence','delivery','accepted_by','every_minutes','until','max_runs')} | (
    {'check':result['check']} if 'check' in result else {})
+ if name=='update_check_state':return {key:result[key] for key in ('keys','bytes') if key in result}
  if name=='entrusted_line':
   # #798: which line, its version and state; never the brief's text.
   return {key:result.get(key) for key in ('line_id','version','state','restated','changed','money_rules') if key in result}|(

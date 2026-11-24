@@ -86,6 +86,7 @@ class OneActionSource(_Store):
             # #774: with the service's preparation scheduler wired, schedule_preparation is listed too,
             # and with its location request wired, ask_location; #814: with its settings, the settings tools.
             listed = facade(self.caps(browser=lambda: None, preparations=lambda *a: None, lines=lambda *a: None,
+                                      check_state_update=lambda *a: None,
                                       location_request=lambda *a: None, owner_update=lambda *a: None, settings=lambda *a: None,
                                       information_use=lambda *a: None, history_reader=lambda *_: None, skills=WIRED_SKILLS)).definitions()
             with self.subTest(profile=profile):
@@ -328,7 +329,7 @@ class EffectiveAvailability(_Store):
         self.assertEqual([t['name'] for t in AgentOSMcpTools(self.caps()).definitions()],
                          sorted(set(profile_actions(BOUNDED_PROFILE)) - CONTEXT_GATED_ACTIONS - BROWSER_ACTIONS
                                 # #1335: capability_search is a settings tool, offered only with the settings wiring.
-                                - {'schedule_preparation', 'entrusted_line', 'ask_location', 'settings_read', 'settings_change', 'capability_search', 'information_use',
+                                - {'schedule_preparation', 'update_check_state', 'entrusted_line', 'ask_location', 'settings_read', 'settings_change', 'capability_search', 'information_use',
                                    # #407: tell_owner is offered only with the service's interim-message wiring.
                                    'tell_owner', 'browser_history_search'}
                                 # #1216: no registered API slot hides api_request.
@@ -339,6 +340,7 @@ class EffectiveAvailability(_Store):
         save_slot(self.store, 'fixture-api', ['api.example.test'], 'fixture-value-0000')
         self.assertEqual([t['name'] for t in AgentOSMcpTools(self.caps(browser=lambda: None,
                                                                        preparations=lambda *a: None,
+                                                                       check_state_update=lambda *a: None,
                                                                        lines=lambda *a: None,
                                                                        location_request=lambda *a: None,
                                                                        owner_update=lambda *a: None,
@@ -436,7 +438,7 @@ class SettingsProjection(_Store):
                                              'browser_sign_in',
                                              # #774: relayed to the service on this route.
                                              'public_download',
-                                             'calendar_query', 'list_memory', 'search_memory', 'search_conversation', 'save_memory', 'schedule_preparation',
+                                             'calendar_query', 'list_memory', 'search_memory', 'search_conversation', 'save_memory', 'schedule_preparation', 'update_check_state',
                                              # #798: the owner's entrusted lines, relayed the same way.
                                              'entrusted_line',
                                              'ask_location',

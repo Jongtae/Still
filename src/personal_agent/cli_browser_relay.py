@@ -373,8 +373,7 @@ SECRET_REDACTION = 'redact_known_secrets'
 
 
 def RELAYED_PREPARATIONS(*_args, **_kwargs):
-    """The bridge's ``Capabilities.preparations`` placeholder (#774): ``schedule_preparation`` is
-    listed, and its calls go to the service, where acceptance is decided.  Never run in the bridge."""
+    """List preparation tools in the bridge. The service handles their calls."""
     raise ToolError(RELAY_UNAVAILABLE_TEXT, 'browser_relay_unavailable')
 
 

@@ -90,6 +90,7 @@ TOOL_LABELS = {
     'propose_current_state': msg('projection.record_current_situation'),
     # SEC-ATTN-01 (#659): an owner-accepted reminder or preparation.
     'schedule_preparation': '준비 예약',
+    'update_check_state': '조건 검사 상태 변경',
     'entrusted_line': '맡은 일',
     # OWNER-SETTINGS-01 (#814): owner settings, changed only after the owner confirms.
     'settings_read': '설정 확인', 'settings_change': msg('projection.settings_change_draft'),

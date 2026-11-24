@@ -11,7 +11,7 @@ from pathlib import Path
 import time
 
 from . import preparations as prep
-from .api_credentials import MAX_STATE_BYTES, ApiCredentials, CredentialError
+from .api_credentials import MAX_STATE_BYTES, ApiCredentials, CredentialError, secret_state_values
 from .api_requests import ApiError
 from .code_run import APPROVAL_EXACT_LABEL, MAX_HOSTS, CodeRunError, CodeRunner, _arguments, _hostname, check_arguments_digest, read_run_file
 from .current_context import redact_known_secrets
@@ -39,6 +39,23 @@ def _state_acceptable(text):
         return len(text.encode()) <= MAX_STATE_BYTES and isinstance(json.loads(text), dict)
     except ValueError:
         return False
+
+
+def _rebase_state(original, latest, written):
+    """Apply the check's top-level changes where the state still matches its snapshot."""
+    if original == latest or (not latest and original == '{}'):
+        return written
+    before, current, after = (json.loads(text) if text.strip() else {} for text in (original, latest, written))
+    for key in before.keys() | after.keys():
+        # JSON equality distinguishes booleans from numbers and missing keys from null.
+        if (key in current) != (key in before) or json.dumps(current.get(key), sort_keys=True) != json.dumps(
+                before.get(key), sort_keys=True):
+            continue
+        if key in after:
+            current[key] = after[key]
+        else:
+            del current[key]
+    return json.dumps(current, ensure_ascii=False, separators=(',', ':'))
 
 
 def _redact(store, value):
@@ -271,8 +288,8 @@ class CheckRunner(CodeRunner):
         # (check id, check digest): the state is bound to the exact check code (D4).
         self.check_state = check_state
         self.check_state_saved = None
-        #: The state this run left, saved only once its result is accepted (``ConditionChecks._commit_state``).
-        self.check_state_text = None
+        #: The snapshot and the state this run left, saved only once its result is accepted.
+        self.check_state_change = None
         self._check_file = None
 
     def _load_states(self, names, workdir, env):
@@ -297,7 +314,8 @@ class CheckRunner(CodeRunner):
                 # #1126 review: a report-once state must not outlive a hit that was never handed off, so the
                 # state is only checked here and saved after the result settles.
                 self.check_state_saved = text is not None and _state_acceptable(text)
-                self.check_state_text = text if self.check_state_saved else None
+                if self.check_state_saved:
+                    self.check_state_change = original, text
         return saved, scratch_secrets
 
     def _scratch_values(self, states):
@@ -350,6 +368,92 @@ class ConditionChecks:
             else:
                 yield True
 
+    @contextmanager
+    def _state_lock(self):
+        # Serialize host updates, settlement writes and sweeping across processes.
+        # The check executes outside this lock using a snapshot from an atomic secret-file read.
+        with (self.store.private / 'condition-check-state.lock').open('a') as lock:
+            fcntl.flock(lock, fcntl.LOCK_EX)
+            yield
+
+    @staticmethod
+    def _state_target(db, check_id, digest):
+        from .agent_runtime import ToolError, not_run
+
+        row = db.execute('SELECT state, check_spec FROM preparations WHERE id=?', (check_id,)).fetchone()
+        if not row or row['state'] not in (prep.STATE_SCHEDULED, prep.STATE_RUNNING) or not row['check_spec']:
+            raise not_run(ToolError(msg('checks.update_inactive'), 'check_inactive'))
+        if json.loads(row['check_spec'])['digest'] != digest:
+            raise not_run(ToolError(msg('checks.update_stale'), 'check_digest_mismatch'))
+
+    def state_targets(self, preparation):
+        """Current check IDs and digests the Work can address, with no state payload."""
+        from .agent_runtime import EffectAncestryError, _effect_preparation_tree
+
+        with self.store.db() as db:
+            try:
+                tree = _effect_preparation_tree(db, preparation)
+            except EffectAncestryError:
+                return []
+            rows = db.execute("SELECT id, check_spec FROM preparations "
+                              "WHERE check_spec IS NOT NULL AND state IN ('scheduled','running') ORDER BY id")
+            return [{'preparation_id': row['id'], 'check_digest': json.loads(row['check_spec'])['digest']}
+                    for row in rows if row['id'] in tree]
+
+    def update_state(self, work_id, args):
+        """Merge a Work's data into an active check in its own preparation tree."""
+        from .agent_runtime import EffectAncestryError, ToolError, _effect_preparation_tree, not_run
+
+        check_id, digest, patch = (args.get(key) for key in ('preparation_id', 'check_digest', 'patch'))
+        try:
+            if not isinstance(patch, str) or not patch.strip() or not _state_acceptable(patch):
+                raise ValueError
+            patch = json.loads(patch)
+        except (ValueError, RecursionError):
+            raise not_run(ToolError(msg('checks.update_invalid'), 'invalid_check_state')) from None
+
+        with self._state_lock():
+            with self.store.db() as db:
+                job = db.execute('SELECT request_key FROM jobs WHERE id=?', (work_id,)).fetchone()
+                preparation = prep.preparation_of(job['request_key']) if job else None
+                try:
+                    allowed = preparation and isinstance(check_id, str) and (
+                        check_id == preparation or check_id in _effect_preparation_tree(db, preparation))
+                except EffectAncestryError:
+                    allowed = False
+                if not allowed:
+                    raise not_run(ToolError(msg('checks.update_scope'), 'check_outside_preparation_tree'))
+                self._state_target(db, check_id, digest)
+
+            credentials = ApiCredentials(self.store)
+            try:
+                current = credentials.read_check_state(check_id, digest)
+                merged = json.loads(current) if current.strip() else {}
+                for key, value in patch.items():
+                    if value is None:
+                        merged.pop(key, None)
+                    else:
+                        merged[key] = value
+                text = json.dumps(merged, ensure_ascii=False, separators=(',', ':'), allow_nan=False)
+                if not _state_acceptable(text):
+                    raise ValueError
+                state_secrets = secret_state_values(text)
+                keys = [redact_known_secrets(self.store, key, extra_values=state_secrets) for key in sorted(patch)]
+                sealed = credentials.seal_check_state(check_id, digest, text)
+            except CredentialError:
+                raise not_run(ToolError(msg('checks.update_unsaved'), 'check_state_unsaved')) from None
+            except (ValueError, RecursionError):
+                raise not_run(ToolError(msg('checks.update_invalid'), 'invalid_check_state')) from None
+
+            # Fence cancellation and in-place replacement while publishing the already-sealed value.
+            with self.store.db() as db:
+                db.execute('BEGIN IMMEDIATE')
+                self.store.require_read_checkpoint_writer(db)
+                self._state_target(db, check_id, digest)
+                if not credentials.store_sealed(sealed):
+                    raise not_run(ToolError(msg('checks.update_unsaved'), 'check_state_unsaved'))
+        return {'keys': keys, 'bytes': len(text.encode())}
+
     def sweep_states(self):
         """Discard state for ended rows and replaced digests (D4, D10).
 
@@ -357,7 +461,10 @@ class ConditionChecks:
         A state that cannot be read now is kept and tried again on the next sweep, never dropped unretired.
         """
         with self._scheduler_lock() as acquired:
-            return self._sweep_states() if acquired else 0
+            if not acquired:
+                return 0
+            with self._state_lock():
+                return self._sweep_states()
 
     def _sweep_states(self):
         credentials = ApiCredentials(self.store)
@@ -429,30 +536,45 @@ class ConditionChecks:
                 # An unavailable key can prevent even the redactor from running.
                 result = {'pause': 'setup_missing'}
         state = result.pop('state', None) if result else None
-        sealed = None
-        if state is not None:
-            # #1126 review: a state the check relies on is never lost silently.  Everything the save needs
-            # from the key happens before the result settles, so an unavailable key pauses the check with
-            # an owner notice instead of letting it run on from an empty state.
+        if state is None:
+            self._settle(row, result, claimed_at=claimed_at)
+            return True
+        original, written = state
+        digest = json.loads(row['check_spec'])['digest']
+        credentials = ApiCredentials(self.store)
+        with self._state_lock():
+            # Seal before settling: a check must never rely on a state the host cannot save.
+            sealed = None
             try:
-                sealed = ApiCredentials(self.store).seal_check_state(row['id'], json.loads(row['check_spec'])['digest'], state)
+                latest = credentials.read_check_state(row['id'], digest)
+                state = _rebase_state(original, latest, written)
+                if not _state_acceptable(state):
+                    raise ValueError
+                sealed = credentials.seal_check_state(row['id'], digest, state)
             except CredentialError:
                 result = {'pause': 'setup_missing', 'host_requests': result.get('host_requests', {})}
-            except ValueError:
-                result = {**result, 'kind': 'failure'}  # The runner already checked it; never counted as saved.
-        if self._settle(row, result, claimed_at=claimed_at) and sealed is not None:
-            self._commit_state(row, sealed)
+            except (ValueError, RecursionError):
+                # Valid writes can exceed the state limit when combined. Keep the saved state and
+                # pause visibly so the check cannot continue relying on bookkeeping it lost.
+                result = {'pause': 'state_unsaved', 'host_requests': result.get('host_requests', {})}
+            if self._settle(row, result, claimed_at=claimed_at) and sealed is not None:
+                self._commit_state(row, sealed)
         return True
 
     def _commit_state(self, row, sealed):
-        """Store the sealed state after its run's result was accepted, outside any SQLite transaction.
+        """Publish the sealed state only after the result was accepted.
 
-        A stop between the two leaves the earlier state, so the next run sees the condition again: a
-        repeated report, never a lost one (D5).  A store that refuses it pauses the check with an owner
-        notice, the same way an unavailable key does, so the check never counts on a state it lost.
+        A stop between the two leaves the earlier state. A store refusal pauses the check with
+        an owner notice, so the check never counts on a state it lost.
         """
-        if ApiCredentials(self.store).store_sealed(sealed):
-            return
+        with self.store.db() as db:
+            db.execute('BEGIN IMMEDIATE')
+            current = db.execute('SELECT state, check_spec FROM preparations WHERE id=?', (row['id'],)).fetchone()
+            if (not current or current['state'] not in (prep.STATE_SCHEDULED, prep.STATE_RUNNING, prep.STATE_PAUSED)
+                    or current['check_spec'] != row['check_spec']):
+                return
+            if ApiCredentials(self.store).store_sealed(sealed):
+                return
         LOG.warning('condition check state not saved')
         try:
             title = redact_known_secrets(self.store, prep.owner_title(row))
@@ -556,9 +678,9 @@ class ConditionChecks:
         if kind == 'failure':
             tail = handoff['output'][-600:]
             handoff['output'] = '\n'.join(part for part in (failure_reason, tail) if part)
-        if getattr(runner, 'check_state_text', None) is not None:
+        if getattr(runner, 'check_state_change', None) is not None:
             # Never stored with the result (a pending hit is kept in SQLite); taken off before settling.
-            handoff['state'] = runner.check_state_text
+            handoff['state'] = runner.check_state_change
         return handoff
 
     @staticmethod

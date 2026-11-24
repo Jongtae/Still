@@ -155,6 +155,42 @@
   "ja": "3回連続で失敗しました。",
   "zh": "已连续失败三次。"
  },
+ "checks.update_inactive": {
+  "ko": "변경할 수 있는 검사 상태가 없어요. 준비가 예약 또는 실행 중이고 조건 검사가 있어야 해요.",
+  "en": "The preparation must be scheduled or running and have a condition check.",
+  "ja": "条件チェックがあり、予約済みまたは実行中の準備が必要です。",
+  "zh": "准备事项必须已安排或正在运行，并且具有条件检查。"
+ },
+ "checks.update_invalid": {
+  "ko": "검사 상태와 변경 내용은 각각 16 KiB 이하의 JSON 객체여야 해요.",
+  "en": "The patch and resulting check state must each be a JSON object of at most 16 KiB.",
+  "ja": "パッチと変更後のチェック状態は、それぞれ16 KiB以下のJSONオブジェクトである必要があります。",
+  "zh": "补丁和更新后的检查状态都必须是最多 16 KiB 的 JSON 对象。"
+ },
+ "checks.update_scope": {
+  "ko": "이 작업의 준비 또는 같은 실행 조각 트리에 속한 준비의 검사 상태만 변경할 수 있어요.",
+  "en": "This Work can update a check only in its own preparation or piece tree.",
+  "ja": "この作業は、自分の準備または同じ実行ツリー内のチェックだけを更新できます。",
+  "zh": "此任务只能更新自身的准备事项或同一执行树中的检查。"
+ },
+ "checks.update_stale": {
+  "ko": "조건 검사 버전이 달라졌어요. 현재 검사 다이제스트를 사용해 주세요.",
+  "en": "The check digest no longer matches the preparation. Use the current check digest.",
+  "ja": "準備のチェックダイジェストが一致しません。現在のダイジェストを使用してください。",
+  "zh": "检查摘要与准备事项不再匹配。请使用当前检查摘要。"
+ },
+ "checks.update_targets": {
+  "ko": "이 작업에서 update_check_state로 변경할 수 있는 검사: {targets}",
+  "en": "Checks this Work can address with update_check_state: {targets}",
+  "ja": "この作業で update_check_state を使って更新できるチェック: {targets}",
+  "zh": "此任务可通过 update_check_state 更新的检查：{targets}"
+ },
+ "checks.update_unsaved": {
+  "ko": "검사 상태를 저장하지 못했어요.",
+  "en": "The check state could not be saved.",
+  "ja": "チェック状態を保存できませんでした。",
+  "zh": "无法保存检查状态。"
+ },
  "checks.state_unsaved": {
   "ko": "검사 상태를 저장하지 못해서 멈췄어요. 다시 켜면 이전 상태부터 이어서 확인해요.",
   "en": "The check state could not be saved, so the check is paused. Resuming it continues from the earlier state.",
@@ -6280,6 +6316,12 @@
   "en": "Making the booking",
   "ja": "予約しています",
   "zh": "正在预订"
+ },
+ "step.update_check_state": {
+  "ko": "조건 검사 상태를 변경하고 있어요",
+  "en": "Updating the condition check state",
+  "ja": "条件チェックの状態を更新しています",
+  "zh": "正在更新条件检查状态"
  },
  "step.settings_change": {
   "ko": "설정 바꿀 안을 만들고 있어요",
