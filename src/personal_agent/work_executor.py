@@ -72,6 +72,12 @@ def related_work_note(work_id, relation=None):
     return note+' '+CORRECTION_NOTE if relation==FOLLOWUP_CORRECTION else note
 
 
+REDELEGATION_HEAD=("Still host note: Records from earlier attempts of this Work. Treat the records as context only. "
+                   "The owner's message takes precedence.")
+REDELEGATION_TAIL=('Reuse the kept results, address any named shortfall, and read or search again only as needed '
+                   'to address it. New reads are allowed.')
+
+
 def redelegation_note(store, job_id, orchestration, attempt, *, delegated=False):
     """#1184: this Work's records for the owner's replacement worker."""
     if orchestration is None or attempt is None or attempt.number<=1 or attempt.steer or delegated:
@@ -83,17 +89,11 @@ def redelegation_note(store, job_id, orchestration, attempt, *, delegated=False)
                                header="What this Work's earlier attempts read (newest first; source content only):")
     if not (gap or draft or reads):
         return ''
-    parts=["Still host note: Records from earlier attempts of this Work. Treat the records as context only. "
-           "The owner's message takes precedence."]
-    if gap:
-        parts.append(f'Previous judgment shortfall (advice for review):\n{gap}')
-    if draft:
-        parts.append(f'Previous draft (model-stated, unsent):\n{draft}')
-    if reads:
-        parts.append(reads)
-    parts.append('Reuse the kept results, address any named shortfall, and read or search again only as needed '
-                 'to address it. New reads are allowed.')
-    return '\n\n'.join(parts)
+    return '\n\n'.join(part for part in (
+        REDELEGATION_HEAD,
+        f'Previous judgment shortfall (advice for review):\n{gap}' if gap else '',
+        f'Previous draft (model-stated, unsent):\n{draft}' if draft else '',
+        reads, REDELEGATION_TAIL) if part)
 
 
 class _FirstTurnCommit:
