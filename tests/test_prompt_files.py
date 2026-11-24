@@ -264,7 +264,9 @@ class ConsolidatedPromptTests(unittest.TestCase):
         self.assertEqual(CORE_INSTRUCTIONS.count(guidance), 1)
         for boundary in (VOICE_PREFERENCE_KEY, 'save_memory', 'undo', 'redo', 'A/B',
                          'do not save partial', 're-offer unprompted', 'Ask no tastes',
-                         'Voice', "Memory's preference rules"):
+                         'Voice', "Memory's preference rules",
+                         # #348 live sample: pairs shown all at once could not follow the owner's answers.
+                         'one pair per message', 'pick the next from the answer'):
             with self.subTest(boundary=boundary):
                 self.assertIn(boundary, guidance)
 
