@@ -164,7 +164,7 @@
  "checks.update_invalid": {
   "ko": "검사 상태와 변경 내용은 각각 16 KiB 이하의 JSON 객체여야 해요.",
   "en": "The patch and resulting check state must each be a JSON object of at most 16 KiB.",
-  "ja": "パッチと変更後のチェック状態は、それぞれ16 KiB以下のJSONオブジェクトである必要があります。",
+  "ja": "パッチと変更後のチェック状態は、それぞれ16 KiB以下のJSONオブジェクトにしてください。",
   "zh": "补丁和更新后的检查状态都必须是最多 16 KiB 的 JSON 对象。"
  },
  "checks.update_scope": {
