@@ -2157,10 +2157,11 @@ def record_outside_result(execute):
    return recorded(self,name,args)
  return run
 
-def read_results_block(store,rows):
+# #1184: retries can render more of this Work's own reads within a separate bound.
+def read_results_block(store,rows,*,limit=READ_RESULTS_BLOCK_CHARS,header=READ_RESULTS_HEADER):
  """Bound the recalled sources, starting with the newest result."""
  from .current_context import redact_known_secrets
- block=READ_RESULTS_HEADER
+ block=header
  count=0
  for row in rows:
   stamp=datetime.fromtimestamp(row['created'],timezone.utc).isoformat(timespec='seconds')
@@ -2168,7 +2169,7 @@ def read_results_block(store,rows):
   fields.extend(' '.join(redact_known_secrets(store,value).split())
                 for value in (row['page_url'],row['page_title']) if value)
   label='\n\n- '+' · '.join(fields)+'\n'
-  room=READ_RESULTS_BLOCK_CHARS-len(block)-len(label)
+  room=limit-len(block)-len(label)
   if room<=0:break
   block+=label+redact_known_secrets(store,row['excerpt'])[:room]
   count+=1
@@ -3998,10 +3999,10 @@ class Capabilities:
   # never holds a token.
   self.browser=browser;self.browser_approvals=browser_approvals;self._browser_session=None
   # #1282: mediated page views and fallback reads for this attempt's judgment.
+  # #1184: each cached view carries its own durable row id, if any.
   self._browser_pages={}
   self._read_results_lock=threading.RLock()
   self._read_result_watermark=0
-  self._locally_cached_page_rows=set()
   # #680: why this computer cannot run the embedded engine (owner-readable
   # text), or None.  A browser call then ends in the typed refusal
   # `browser_unavailable_platform` instead of a setup hint.
@@ -4189,7 +4190,8 @@ class Capabilities:
   host=_url_host({'url':url})
   with self.store.db() as db:
    return effect_mutation_refusal(db,self.store,self.job_id,effect_target(TARGET_PAGE,host,(host,)))
- def _keep_browser_page(self,result):
+ # #1184: evicting a view drops its claim on its durable excerpts, so they reach the judgment instead.
+ def _keep_browser_page(self,result,*,row_id=None):
   """Remember a browser result's mediated page text for this attempt's goal judgment (#1282); memory only.
 
   The attempt keeps at most ``ATTEMPT_RESULT_CHARS`` across every kept result (#767), oldest dropped first.
@@ -4197,20 +4199,19 @@ class Capabilities:
   if not isinstance(result,dict) or not isinstance(result.get('text'),str) or not result['text'].strip():return False
   url=str(result.get('url') or '')
   with self._read_results_lock:
-   self._browser_pages.pop(url,None)
-   self._browser_pages[url]=(time.time(),str(result.get('title') or ''),result['text'][:ATTEMPT_RESULT_CHARS])
+   # A newer view of the same address also stands for the older excerpts it replaced.
+   older=self._browser_pages.pop(url,None)
+   rows=(older[3] if older else frozenset())|({row_id} if row_id is not None else frozenset())
+   self._browser_pages[url]=(time.time(),str(result.get('title') or ''),result['text'][:ATTEMPT_RESULT_CHARS],rows)
    # #767: bounded by characters; the newest result is always kept.
-   while len(self._browser_pages)>1 and sum(len(text) for _created,_title,text in self._browser_pages.values())>ATTEMPT_RESULT_CHARS:
+   while len(self._browser_pages)>1 and sum(len(text) for _created,_title,text,_row in self._browser_pages.values())>ATTEMPT_RESULT_CHARS:
     self._browser_pages.pop(next(iter(self._browser_pages)))
   return True
  def _record_browser_result(self,action,result,*,keep):
-  # The full mediated view wins in this process. Row ids keep the durable
-  # fallback from replaying an older view displaced by the existing cache.
+  # The full mediated view wins in this process; #1184: it suppresses its excerpts only while cached.
   with self._read_results_lock:
-   cached=self._keep_browser_page(result)
-   if keep and action in EFFECT_FREE_READS:
-    row_id=self._record_read_result(action,result)
-    if cached and row_id is not None:self._locally_cached_page_rows.add(row_id)
+   row_id=self._record_read_result(action,result) if keep and action in EFFECT_FREE_READS else None
+   self._keep_browser_page(result,row_id=row_id)
  def _record_read_result(self,action,result):
   """The service and bridge each keep the reads they actually execute."""
   if action in READ_RESULT_EXCLUDED_ACTIONS:
@@ -4259,8 +4260,9 @@ class Capabilities:
    with self._read_results_lock:
     row_text=page.pop('row_text',text)
     row_id=self.store.record_read_result(self.job_id,tool=action,text=row_text,source_kind=kind,epoch=epoch,**page)
-    if row_id is not None and self._keep_browser_page({'url':f'{action}:{row_id}','title':f'{action} result','text':text}):
-     self._locally_cached_page_rows.add(row_id)
+    # #1184: use the same cache bookkeeping for all result types.
+    if row_id is not None:
+     self._keep_browser_page({'url':f'{action}:{row_id}','title':f'{action} result','text':text},row_id=row_id)
     return row_id
   except Exception as exc:
    LOG.warning('read result could not be kept (%s)',type(exc).__name__)
@@ -4269,14 +4271,15 @@ class Capabilities:
  def take_browser_pages(self):
   """Take new results for this execution epoch alongside its in-memory page views."""
   with self._read_results_lock:
-   pages=[(created,url,title,text) for url,(created,title,text) in reversed(self._browser_pages.items())]
+   pages=[(created,url,title,text) for url,(created,title,text,_row) in reversed(self._browser_pages.items())]
+   # #1184: only suppress excerpts whose full views are still in memory.
+   cached_rows=set().union(*(rows for _created,_title,_text,rows in self._browser_pages.values()))
    self._browser_pages={}
    try:
     rows=[] if self.delegated else self.store.read_results(
      self.job_id,epoch=getattr(getattr(self.budget,'ledger',None),'epoch',None),after_id=self._read_result_watermark)
     if rows:self._read_result_watermark=rows[0]['id']
-    rows=[row for row in rows if row['id'] not in self._locally_cached_page_rows]
-    self._locally_cached_page_rows.clear()
+    rows=[row for row in rows if row['id'] not in cached_rows]
    except Exception as exc:
     LOG.warning('read results unavailable for judgment (%s)',type(exc).__name__)
     rows=[]

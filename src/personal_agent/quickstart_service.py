@@ -6185,8 +6185,9 @@ class AgentService:
                 and (result is None or getattr(result,'judgment',None) is None)):
             judged=orchestration.evaluate_answer(answer,observations,failed_steps,final=True,effects=effects,
                 reply_source=reply_source,reply_delivery=reply_delivery)
+        # #1184: give the next owner worker a bounded draft without enlarging plan history.
         following = orchestration.next(attempt,evaluation,answer=str(answer or '')[:600],
-                                       failed=summary,effect=effect,judged=judged)
+                                       failed=summary,effect=effect,judged=judged,draft=str(answer or ''))
         if following is not None and effect_ledger is not None:
             from .agent_runtime import EFFECT_CONTINUATION, effect_continuation_scope
             if not effect_continuation_scope(self.store, job_id):
