@@ -128,6 +128,7 @@ ROUTE_LINE_PREFIXES = (BROWSER_SIGNINS_PREFIX, *API_SLOTS_LINES)
 CONNECTIONS_FACT_CHARS = 4000
 ATTEMPTS_CHARS = 1800
 ANSWER_EXCERPT_CHARS = 600
+ATTEMPT_DRAFT_CHARS = 6000  # #1184: worker-only draft for re-delegation.
 #: #1451: the judgment reads what the reply rests on.  At 3800 a Work's step lines left about
 #: 2200 characters for every code_run output and page together, so a correct answer drawn from a
 #: long API response was judged unsupported and the Work ended short.
@@ -1086,6 +1087,7 @@ class Orchestration:
         #: each short attempt's gap by attempt number, read by the next plan call.
         self.gap = ''
         self.gaps = {}
+        self.drafts = {}  # #1184: redacted drafts by finished attempt, for the next worker.
         #: #1451: the gap of the last attempt when no further attempt followed ('' otherwise).
         self.terminal_gap = ''
         #: #1459: the outcome judgment's owner-facing line about what stays open ('' when the reply
@@ -1831,7 +1833,7 @@ class Orchestration:
         except Exception:
             return 'budget_unavailable'
 
-    def next(self, attempt, evaluation, *, answer='', failed='', effect=False, judged=None):
+    def next(self, attempt, evaluation, *, answer='', failed='', effect=False, judged=None, draft=''):
         """The next attempt after ``attempt`` was evaluated, or None (recorded either way).
 
         Only an orchestrated Work re-delegates: a fallback run is the owner's
@@ -1844,6 +1846,9 @@ class Orchestration:
             return None
         self._span(attempt.number, end=True)
         self.history.append((attempt, evaluation, answer, failed))
+        # #1184: keep the draft separate from the existing plan history excerpt.
+        if draft:
+            self.drafts[attempt.number] = self._redact(draft)[:ATTEMPT_DRAFT_CHARS]
         short = NOT_REACHED in (evaluation, judged)
         gap, self.gap = (self.gap if short else ''), ''
         # #631: owner-needed stops carry their attempt's judgment too.

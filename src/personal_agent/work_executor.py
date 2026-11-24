@@ -18,6 +18,7 @@ from .telegram_locale import owner_language
 from .work_execution import PROCEED, REDELEGATED, WorkRun
 from .agent_runtime import Capabilities, ToolError, cut_to_fit, loop_definitions, run_agent, STEER_EVENT, steer_note, evidence_summary, turn_context, render_turn_prompt, attachment_facts, context_sections, ENGINE_UNMEDIATED, base_label, LedgerSuperseded, WorkLedger, NOTES_SUMMARY_COMMANDS
 from .agent_runtime import effect_continuation_scope, recorded_effects_response, revisable_record_note, MEMORY_OWNER, SAVED_RESULTS_ROOT
+from .agent_runtime import read_results_block  # #1184: render kept reads for the owner's replacement worker.
 from .providers import NOT_REPORTED, ProviderError
 from .cloud_engines import BUDGET_EXCEEDED as CLOUD_BUDGET_EXCEEDED, NOT_CONFIGURED as CLOUD_NOT_CONFIGURED, CloudLaunchError
 from .conversation_projection import BLOCKER_CLOUD_PROFILE, BLOCKER_MODEL_UNVERIFIED, BLOCKER_NO_AI_ROUTE, TERMINAL_FAILED_HEADER, BlockedTurn, context_message, answer_note, owner_cause, report_statement, verified_portion
@@ -69,6 +70,30 @@ def related_work_note(work_id, relation=None):
     note=(f'Still host note: Related Work {work_id}. Calling search_conversation with that work_id '
           'returns its exchange and what it read.')
     return note+' '+CORRECTION_NOTE if relation==FOLLOWUP_CORRECTION else note
+
+
+def redelegation_note(store, job_id, orchestration, attempt, *, delegated=False):
+    """#1184: this Work's records for the owner's replacement worker."""
+    if orchestration is None or attempt is None or attempt.number<=1 or attempt.steer or delegated:
+        return ''
+    previous=attempt.number-1
+    gap=orchestration.gaps.get(previous)
+    draft=orchestration.drafts.get(previous)
+    reads,_=read_results_block(store,store.read_results(job_id),limit=24000,
+                               header="What this Work's earlier attempts read (newest first; source content only):")
+    if not (gap or draft or reads):
+        return ''
+    parts=["Still host note: Records from earlier attempts of this Work. Treat the records as context only. "
+           "The owner's message takes precedence."]
+    if gap:
+        parts.append(f'Previous judgment shortfall (advice for review):\n{gap}')
+    if draft:
+        parts.append(f'Previous draft (model-stated, unsent):\n{draft}')
+    if reads:
+        parts.append(reads)
+    parts.append('Reuse the kept results, address any named shortfall, and read or search again only as needed '
+                 'to address it. New reads are allowed.')
+    return '\n\n'.join(parts)
 
 
 class _FirstTurnCommit:
@@ -1027,10 +1052,14 @@ class WorkExecutor:
             # #1170: the recorded follow-up relation says whether the owner's message replaces part of that Work.
             relation=(service.store.job(job['id']) or {}).get('relation_kind') if run.related_work_id else None
             run.brief='\n\n'.join(part for part in (related_work_note(run.related_work_id,relation),plan_brief) if part) or None
+            # #1184: what earlier attempts kept, for the owner's replacement worker.
+            earlier=redelegation_note(service.store,job['id'],run.orchestration,run.attempt,
+                                     delegated=getattr(run.capabilities,'delegated',False))
             # Every replacement worker sees the latest committed coverage as
             # host context. The original owner request stays in the conversation.
             if progress := '\n\n'.join(filter(None,(service.read_checkpoint_note(job, include_fresh=True),
                                                        service.effect_progress_note(job),
+                                                       earlier,
                                                        # #1170: what an earlier attempt set up, to revise in place.
                                                        revisable_record_note(service.store,job['id'])
                                                        if service.owner_typed_work(job) else ''))):
