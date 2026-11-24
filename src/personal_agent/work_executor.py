@@ -17,7 +17,7 @@ from .messages import msg
 from .telegram_locale import owner_language
 from .work_execution import PROCEED, REDELEGATED, WorkRun
 from .agent_runtime import Capabilities, ToolError, cut_to_fit, loop_definitions, run_agent, STEER_EVENT, steer_note, evidence_summary, turn_context, render_turn_prompt, attachment_facts, context_sections, ENGINE_UNMEDIATED, base_label, LedgerSuperseded, WorkLedger, NOTES_SUMMARY_COMMANDS
-from .agent_runtime import effect_continuation_scope, earlier_reads_text, recorded_effects_response, redelegation_note, revisable_record_note, MEMORY_OWNER, SAVED_RESULTS_ROOT
+from .agent_runtime import effect_continuation_scope, recorded_effects_response, redelegation_carry, revisable_record_note, MEMORY_OWNER, SAVED_RESULTS_ROOT
 from .providers import NOT_REPORTED, ProviderError
 from .cloud_engines import BUDGET_EXCEEDED as CLOUD_BUDGET_EXCEEDED, NOT_CONFIGURED as CLOUD_NOT_CONFIGURED, CloudLaunchError
 from .conversation_projection import BLOCKER_CLOUD_PROFILE, BLOCKER_MODEL_UNVERIFIED, BLOCKER_NO_AI_ROUTE, TERMINAL_FAILED_HEADER, BlockedTurn, context_message, answer_note, owner_cause, report_statement, verified_portion
@@ -1035,14 +1035,13 @@ class WorkExecutor:
                                                        revisable_record_note(service.store,job['id'])
                                                        if service.owner_typed_work(job) else ''))):
                 run.brief='\n\n'.join(part for part in (progress,run.brief) if part)
-            # #1184: a re-delegated attempt starts from the earlier draft and what this Work already read,
-            # last in the brief so a prompt cut takes the oldest reads first (``cut_to_fit``).
+            # #1184: a re-delegated attempt starts from the earlier draft and what this Work already read.
+            # Last in the brief, so a CLI prompt cut (``cut_to_fit``) takes the oldest reads first.
             run.earlier_reads=''
             if run.attempt is not None and run.attempt.number>1 and not run.attempt.steer and run.orchestration is not None:
-                run.earlier_reads=earlier_reads_text(service.store,job['id'])
                 draft,gap=run.orchestration.carried_draft()
-                if carry:=redelegation_note(service.store,draft,gap,run.earlier_reads):
-                    run.brief='\n\n'.join(part for part in (run.brief,carry) if part)
+                run.earlier_reads,carry=redelegation_carry(service.store,job['id'],draft,gap)
+                if carry:run.brief='\n\n'.join(part for part in (run.brief,carry) if part)
             run.attempt_start=service.last_event_id(job['id'])
             # #308 S1: a steer claimed from now on reaches the attempt whose reply is delivered.  A
             # continuation keeps its predecessor's start: it carries the steers that attempt had too.

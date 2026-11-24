@@ -48,7 +48,11 @@ class RealLoop(Harness):
             return max(1, len(self.events(job['id'], 'planned'))) if job else 1
 
         reads = [(f'r{index}', 'public_page_read', {'url': url}) for index, url in enumerate(PAGES, 1)]
+        holder = []
+        if callable(second):
+            second = second(lambda: holder[0])
         worker = ScriptedWorker(attempt, {1: [*reads, DRAFT], 2: second})
+        holder.append(worker)
         self.network = PageNetwork()
         self.service.local_tools = self.network
         self.service.adapter = ModelAdapter(worker)
@@ -77,7 +81,15 @@ class RealLoop(Harness):
                          'the first attempt has no earlier draft')
 
     def test_a2_a_worker_that_repairs_only_the_gap_finishes_without_reading_again(self):
-        work, _worker = self.run_case(['고친 답이에요.'])
+        def worker_steps(worker):
+            # A worker that reads again whatever its brief does not show, then answers.
+            def step():
+                brief = worker().bodies[2][-1]
+                gathered = [plan.get('url') for plan in self.network.plans[len(PAGES):]]
+                missing = [url for url in PAGES if url not in brief and url not in gathered]
+                return (f'g{len(gathered)}', 'public_page_read', {'url': missing[0]}) if missing else '고친 답이에요.'
+            return [step]
+        work, _worker = self.run_case(worker_steps)
         self.assertEqual(self.evaluated(work), [('not_reached', 'redelegate'), ('reached', 'stop')])
         self.assertEqual(self.store.job(work)['status'], 'succeeded')
         self.assertEqual(len(self.network.plans), len(PAGES), 'no source was read twice')
@@ -128,6 +140,22 @@ class CarryUnits(unittest.TestCase):
         text = ar.earlier_reads_text(self.store, self.work)
         self.assertIn('NEW TEXT', text)
         self.assertNotIn('OLD TEXT', text)
+
+    def test_a_long_draft_is_cut_with_a_marker_and_the_carry_stays_bounded(self):
+        for index in range(40):
+            self.keep(f'https://s{index}.example/', '가' * 3000)
+        reads, note = ar.redelegation_carry(self.store, self.work, '나' * 5000, 'gap')
+        self.assertIn(ar.EARLIER_DRAFT_CUT, note)
+        self.assertIn('https://s39.example/', note)
+        self.assertLessEqual(len(note.encode()), ar.EARLIER_CARRY_BYTES + len(ar.prompt('redelegation_carry').encode()) + 200)
+        self.assertGreaterEqual(len(reads.encode()), ar.EARLIER_READS_MIN_BYTES // 2)
+
+    def test_a_fresh_attempts_pages_include_earlier_reads_for_its_judgment(self):
+        # Each attempt (CLI or direct) builds its own Capabilities; what it hands the outcome judgment
+        # (``take_browser_pages``) starts from the Work's first kept read, so earlier reads are judged too.
+        self.keep('https://first.example/', 'FIRST ATTEMPT TEXT')
+        pages = ar.Capabilities(self.store, None, {}, '', self.work, lambda *args: None).take_browser_pages()
+        self.assertIn('FIRST ATTEMPT TEXT', json.dumps(pages, ensure_ascii=False))
 
     def test_nothing_to_carry_is_no_note(self):
         self.assertEqual(ar.earlier_reads_text(self.store, self.work), '')
