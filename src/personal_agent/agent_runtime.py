@@ -2946,7 +2946,11 @@ def effect_mutation_refusal(db,store,work_id,target=None,*,replay_keys=(),dispat
      or unknown_effect_holds(targets,target)
      or route!=TARGET_PAGE and any(status=='running' for _,status in browser_changes)):
   return 'effect_unknown'
+ # #1203 (owner decision 2026-11-25): a request the service's own status read reconciled as not applied may be
+ # sent again unchanged (RFC 9110 §9.2.2: retry what is known not applied).  The retry is a dispatch of
+ # its own, with its own receipt and approval; an unknown or applied receipt still holds the request.
  if any(receipt.get('input_digest') in replay_keys and (old_target:=_claim_target(receipt)) and old_target[0]==route
+        and not (receipt.get('resolution')=='not-applied' and receipt.get('read_digest'))
         for _,receipt in (*observed,*pending)):
   return 'effect_replayed'
  if not approved_next and any((old_target:=_claim_target(receipt)) is None or old_target[0]!=route for receipt in changes):
