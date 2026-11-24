@@ -770,6 +770,9 @@ def mediate_snapshot(raw, requested_url=None):
                                      for form in {e.get('form') for e in elements} if form is not None}
     snapshot['_form_actions'] = {form['id']: form.get('action') for form in raw.get('forms') or []
                                  if isinstance(form, dict) and 'id' in form}
+    # #1192: each form's method, as the press-effect judgment's evidence (HTTP GET is safe, RFC 9110 §9.2.1).
+    snapshot['_form_methods'] = {form['id']: str(form.get('method') or '').lower() for form in raw.get('forms') or []
+                                 if isinstance(form, dict) and 'id' in form}
     # Internal only (never returned): the unmediated page reference the
     # approval binds to, and the page state a guarded step is bound to.
     snapshot['_page'] = page_reference(raw.get('url'))
@@ -1126,7 +1129,7 @@ class BrowserSession:
             try:
                 ticket=gate(binding,None,'browser_submit',page_reference(record.get('page')),record.get('fieldNames',()),
                             description=description+cancelled_note(record),
-                            values=record,
+                            values=record,form_method=str(record.get('method') or ''),
                             **({'effect':'irreversible','request':False} if resuming else {}))
             except ToolError as exc:
                 if exc.code == 'approval_required' and not resuming:
@@ -1879,6 +1882,7 @@ class BrowserSession:
             write_ticket=gate(binding,None,'browser_click',page_reference(snapshot['_page']),
                  self._write_metadata(snapshot, element),description=description,
                  values={'url': snapshot['_page'], 'target': key, 'state': state},
+                 form_method=self._form_method(snapshot, element),
                  **({'link': True} if link else {}))
             if write_ticket == FOLLOW_LINK:
                 return self._follow_link(element, snapshot)
@@ -1979,6 +1983,11 @@ class BrowserSession:
         return (str(element.get('role') or ''), str(element.get('name') or ''),
                 *snapshot.get('_form_field_names', {}).get(element.get('form'), ()))
 
+    @staticmethod
+    def _form_method(snapshot, element):
+        """#1192: the method of the form ``element`` is in, from Still's own snapshot; '' outside a form."""
+        return snapshot.get('_form_methods', {}).get(element.get('form'), '') if element.get('form') is not None else ''
+
     def type(self, args):
         resumed = self._resume_self_set_submit()
         if resumed is not None:return resumed
@@ -2007,7 +2016,8 @@ class BrowserSession:
             write_ticket = gate(binding, None, 'browser_type', page_reference(snapshot['_page']),
                                 self._write_metadata(snapshot, element), description=description,
                                 values={'url': snapshot['_page'], 'target': target_key(element), 'text': text,
-                                        'state': self._state_of(snapshot, element)})
+                                        'state': self._state_of(snapshot, element)},
+                                form_method=self._form_method(snapshot, element))
         try:
             if write_ticket:
                 current = self._snapshot()
