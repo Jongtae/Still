@@ -128,6 +128,8 @@ ROUTE_LINE_PREFIXES = (BROWSER_SIGNINS_PREFIX, *API_SLOTS_LINES)
 CONNECTIONS_FACT_CHARS = 4000
 ATTEMPTS_CHARS = 1800
 ANSWER_EXCERPT_CHARS = 600
+#: #1184: the most of an attempt's answer kept for the next attempt's brief (the delivered answer's cap).
+DRAFT_CHARS = 24000
 #: #1451: the judgment reads what the reply rests on.  At 3800 a Work's step lines left about
 #: 2200 characters for every code_run output and page together, so a correct answer drawn from a
 #: long API response was judged unsupported and the Work ended short.
@@ -1086,6 +1088,8 @@ class Orchestration:
         #: each short attempt's gap by attempt number, read by the next plan call.
         self.gap = ''
         self.gaps = {}
+        #: #1184: each attempt's whole answer by attempt number (``history`` keeps an excerpt).
+        self.drafts = {}
         #: #1451: the gap of the last attempt when no further attempt followed ('' otherwise).
         self.terminal_gap = ''
         #: #1459: the outcome judgment's owner-facing line about what stays open ('' when the reply
@@ -1236,6 +1240,17 @@ class Orchestration:
     def _entrusted_fact(self):
         """#937: the continuing responsibilities the owner entrusted to the assistant, or 'none'."""
         return split_entrusted(self._redact(self.sections.get('current_context') or ''))[1] or 'none'
+
+    def carried_draft(self):
+        """#1184: ``(draft, gap)`` of the latest earlier attempt that wrote an answer, redacted, or ``('', '')``.
+
+        The whole answer it wrote (``next`` keeps it in ``history``), not the plan's excerpt, and the gap its
+        outcome judgment named, so a re-delegated worker repairs that draft instead of starting over.
+        """
+        for attempt, _evaluation, _answer, _summary in reversed(self.history):
+            if attempt.number in self.drafts:
+                return self._redact(self.drafts[attempt.number]), self.gaps.get(attempt.number, '')
+        return '', ''
 
     def _attempts_text(self):
         if not self.history:
@@ -1843,7 +1858,10 @@ class Orchestration:
         if not self.orchestrated:
             return None
         self._span(attempt.number, end=True)
-        self.history.append((attempt, evaluation, answer, failed))
+        self.history.append((attempt, evaluation, str(answer or '')[:ANSWER_EXCERPT_CHARS], failed))
+        # #1184: the whole answer the attempt wrote, which a re-delegated worker repairs (``carried_draft``).
+        if str(answer or '').strip():
+            self.drafts[attempt.number] = str(answer)[:DRAFT_CHARS]
         short = NOT_REACHED in (evaluation, judged)
         gap, self.gap = (self.gap if short else ''), ''
         # #631: owner-needed stops carry their attempt's judgment too.

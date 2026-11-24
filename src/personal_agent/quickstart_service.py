@@ -6185,7 +6185,7 @@ class AgentService:
                 and (result is None or getattr(result,'judgment',None) is None)):
             judged=orchestration.evaluate_answer(answer,observations,failed_steps,final=True,effects=effects,
                 reply_source=reply_source,reply_delivery=reply_delivery)
-        following = orchestration.next(attempt,evaluation,answer=str(answer or '')[:600],
+        following = orchestration.next(attempt,evaluation,answer=str(answer or ''),
                                        failed=summary,effect=effect,judged=judged)
         if following is not None and effect_ledger is not None:
             from .agent_runtime import EFFECT_CONTINUATION, effect_continuation_scope
