@@ -1077,11 +1077,16 @@ class CodeRunner:
             lines = [note] if note else []
             if effect == 'payment':
                 lines.append(APPROVAL_MONEY_LINE)
-            if self._fields:
-                shown_lines, check = approval_field_lines(self._fields, body, query,
-                                                          lambda value: redact_known_secrets(self.store, value))
-                lines.append('\n'.join([APPROVAL_FIELDS_LABEL, *shown_lines, check]))
-            lines.append(self._exact_request_label(method, host, path, query, body))
+            if getattr(self.approvals, 'request_content_after_run', False):
+                # #1195 review: values this run fetches are known only after it; the record kept now names
+                # where the request goes, and the notice made after the run shows it redacted.
+                lines.append(f"{APPROVAL_EXACT_LABEL} {method} {host}")
+            else:
+                if self._fields:
+                    shown_lines, check = approval_field_lines(self._fields, body, query,
+                                                              lambda value: redact_known_secrets(self.store, value))
+                    lines.append('\n'.join([APPROVAL_FIELDS_LABEL, *shown_lines, check]))
+                lines.append(self._exact_request_label(method, host, path, query, body))
             label = '\n\n'.join(lines)
             mode = getattr(self.approvals, 'payment_autonomy', None)
             ticket = mode(binding, label) if callable(mode) else None

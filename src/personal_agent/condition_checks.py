@@ -155,6 +155,9 @@ def handoff_text(store, handoff, timezone):
 class CheckApprovals:
     """Only standing authority for a proven check, with no owner interaction."""
 
+    #: The authorization record omits the request content (``CodeRunner._state_change``).
+    request_content_after_run = True
+
     def __init__(self, service, row, record_id, digest):
         self.service = service
         self.row = row

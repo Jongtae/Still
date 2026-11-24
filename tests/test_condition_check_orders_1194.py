@@ -493,6 +493,10 @@ def test_a_token_the_run_left_in_its_state_never_reaches_the_notice_or_the_ai(ca
     with case.store.db() as db:
         message = db.execute('SELECT content FROM messages WHERE job_id=?', (notice['job_id'],)).fetchone()
     assert token not in message['content'] and 'fixture-1' in message['content']
+    with case.store.db() as db:
+        records = [dict(event) for event in db.execute('SELECT * FROM tool_events')]
+    assert any(event['tool'] == 'payment_autonomy' for event in records)
+    assert token not in json.dumps(records)
     job = wake_job(case, row)
     assert token not in json.dumps(checks.handoff_event(case.store, job)['trace'])
     assert token not in json.dumps(case.service.preparation_history(job))
