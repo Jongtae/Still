@@ -12,7 +12,7 @@ from personal_agent.messages import msg
 from personal_agent.quickstart_service import UNATTENDED_APPROVAL_TEXT
 from test_code_run import FakeProcess
 from test_condition_checks_972 import (  # noqa: F401 - fixture
-    ARGS, HOST, SECRET, WIRE, case, current, finish, prove, schedule, status, wake_job,
+    ARGS, HOST, SECRET, WIRE, case, current, finish, prove, schedule, status, tick, wake_job,
 )
 from test_preparations import engine
 
@@ -82,6 +82,22 @@ def run_work(c, job, sent, **kwargs):
         runner.run(ARGS_WITH_SET)
     decision, = process.decisions
     return decision
+
+
+def start_piece(c, row):
+    parent = wake_job(c, row)
+    with c.store.db() as db:
+        db.execute("UPDATE jobs SET status='running' WHERE id=?", (parent['id'],))
+    result = c.service.preparation_scheduler(c.store.job(parent['id']), '')({
+        'offer': 'Check the result', 'kind': 'prepare', 'goal': 'Verify the recorded change',
+        'due': datetime.fromtimestamp(c.clock[0] + 600, timezone.utc).isoformat(),
+    })
+    finish(c, row)
+    piece = c.preps.get(result['preparation_id'])
+    assert piece['origin'] == prep.ORIGIN_LINE_PIECE
+    c.clock[0] = piece['due_at']
+    assert c.preps.start(piece, channel='web', chat_id=None, now=c.clock[0])
+    return piece
 
 
 def receipts(c, row, tool='api_dispatch'):
@@ -206,14 +222,16 @@ def test_woken_work_cannot_repeat_the_check_dispatch(case, failure):
 
 @pytest.mark.parametrize('failure', [None, 'exit'])
 def test_unrelated_preparation_can_send_the_same_request(case, failure):
-    row = setup_check(case)
+    line = case.service.lines.open(case.owner, task='Watch a condition', report_promise='Report findings')['line_id']
+    row = setup_check(case, line=line)
     switch(case, True)
     sent = []
     assert run_due(case, sent, failure=failure)['allow']
-    other = schedule(case, ARGS_WITH_SET, goal='Make the independent change')
+    other = schedule(case, ARGS_WITH_SET, goal='Make the independent change', line=line)
     assert row['id'] != other['id']
-    job_id = case.preps.run_now(other['id'], channel='web', chat_id=None)
-    assert run_work(case, case.store.job(job_id), sent)['allow']
+    assert case.preps.run_now(other['id'], channel='web', chat_id=None)
+    piece = start_piece(case, other)
+    assert run_work(case, wake_job(case, piece), sent)['allow']
     assert sent == ([POST] if failure else [POST, POST])
 
 
@@ -223,21 +241,35 @@ def test_line_piece_inherits_its_parent_preparations_check_receipt(case):
     switch(case, True)
     sent = []
     assert run_due(case, sent)['allow']
-    parent = wake_job(case, row)
-    with case.store.db() as db:
-        db.execute("UPDATE jobs SET status='running' WHERE id=?", (parent['id'],))
-    result = case.service.preparation_scheduler(case.store.job(parent['id']), '')({
-        'offer': 'Check the result', 'kind': 'prepare', 'goal': 'Verify the recorded change',
-        'due': datetime.fromtimestamp(case.clock[0] + 600, timezone.utc).isoformat(),
-    })
-    finish(case, row)
-    piece = case.preps.get(result['preparation_id'])
-    assert piece['origin'] == prep.ORIGIN_LINE_PIECE
-    case.clock[0] = piece['due_at']
-    job_id = case.preps.start(piece, channel='web', chat_id=None, now=case.clock[0])
-    decision = run_work(case, case.store.job(job_id), sent)
+    piece = start_piece(case, start_piece(case, row))
+    decision = run_work(case, wake_job(case, piece), sent)
     assert not decision['allow'] and '이미 보낸 API 동작' in decision['reason']
     assert sent == [POST]
+
+
+@pytest.mark.parametrize('failure', [None, 'proxy'])
+@pytest.mark.parametrize('deleted', [False, True])
+def test_check_cannot_repeat_a_line_piece_dispatch(case, failure, deleted):
+    line = case.service.lines.open(case.owner, task='Watch a condition', report_promise='Report findings')['line_id']
+    row = setup_check(case, line=line)
+    switch(case, True)
+    tick(case, result={'stdout': 'Condition met', 'exit': 0})
+    piece = start_piece(case, row)
+    sent = []
+    assert run_work(case, wake_job(case, piece), sent, failure=failure)['allow']
+    if deleted:
+        finish(case, piece)
+        case.preps.delete(piece['id'])
+
+    decision = run_due(case, sent)
+    assert not decision['allow']
+    if failure:
+        assert decision['reason'] == UNKNOWN_EFFECT_TEXT
+        assert not sent
+    else:
+        assert '이미 보낸 API 동작' in decision['reason']
+        assert sent == [POST]
+    assert not receipts(case, row)
 
 
 @pytest.mark.parametrize('failure', [None, 'proxy'])
