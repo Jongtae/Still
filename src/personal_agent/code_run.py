@@ -506,6 +506,7 @@ class CodeRunner:
     persist_states = True
     withhold_truncated_output = False
     count_allowed_requests = False
+    require_success_for_observed_effects = False
 
     def __init__(self, store, work_id, *, popen=subprocess.Popen, node=None, interrupted=None,
                  install=ensure_runtime, clock=time.monotonic, approvals=None, provide_node=node_runtime.ensure,
@@ -609,6 +610,9 @@ class CodeRunner:
         self.allowed_requests = {}
         self.started = False
         self.changed_state = False
+        #: #1195 review: the values this run put in its state files, for redacting what it sent; None when
+        #: they are not known (the run did not finish reading them, or a changed state was unreadable).
+        self.scratch_secrets = None
         rerun = False
         # Live 2026-10-14: a resumed Work rewrote the code that asked for approval, so the request no
         # longer matched the approval.  ``rerun: approved`` runs exactly the run that asked.
@@ -673,9 +677,14 @@ class CodeRunner:
                 path.write_bytes(download)
                 path.chmod(0o400)
                 download_options['download_file'] = str(path)
-            outcome = self._session(node, runtime, workdir, command, policy, roots, timeout, requests, 'run',
-                                    masked=masked, plain=plain, **download_options)
+            try:
+                outcome = self._session(node, runtime, workdir, command, policy, roots, timeout, requests, 'run',
+                                        masked=masked, plain=plain, **download_options)
+            except Exception:
+                self.scratch_secrets = self._scratch_values(states)
+                raise
             saved, scratch_secrets = self._save_states(states)
+            self.scratch_secrets = None if self._state_unknown else scratch_secrets
             kept = self._keep_libraries(libraries, workdir, outcome, (node, runtime, prefix, policy, roots, masked, plain))
         result = self._result(code, packages, hosts, outcome, requests, names, scratch_secrets=scratch_secrets)
         if getattr(self, '_state_unknown', False):
@@ -898,16 +907,18 @@ class CodeRunner:
                          for row in recorded)
 
     def _settle(self, outcome, result):
-        """#1456: a sent state-changing request is settled ``observed`` once the run ended on its own.
+        """#1456: settle state-changing claims from the sandbox run outcome.
 
-        The sandbox shows Still each request, not its response; the run's code sees the response and
-        its output says what happened.  A run cut off (timeout) leaves the dispatch unknown, so no later
-        attempt sends another state change until it is resolved.
+        The sandbox shows Still each request, not its response. A cut-off run leaves the dispatch
+        unknown. Checks also leave it unknown on a failed exit, which can be a transport failure.
         """
         from .api_requests import ApiError, ApiRequests
+        exit_status = outcome.get('exit_status')
+        observed = (not outcome.get('timed_out') and exit_status is not None
+                    and (not self.require_success_for_observed_effects or exit_status == 0))
         if self._claims:
             result['effects'] = [{'method': method, 'host': host, 'path': path} for _claim, method, host, path in self._claims]
-            if outcome.get('timed_out') or outcome.get('exit_status') is None:
+            if not observed:
                 result['effect'] = 'unknown'
             else:
                 for claim, *_rest in self._claims:
@@ -916,7 +927,7 @@ class CodeRunner:
                     except ApiError:
                         result['effect'] = 'unknown'
         for ticket in self.__dict__.pop('_write_tickets',[]):
-            self.approvals.self_set_write_finished(ticket,observed=not outcome.get('timed_out') and outcome.get('exit_status') is not None)
+            self.approvals.self_set_write_finished(ticket, observed=observed)
         if self._asked:
             result['approval_requested'] = list(self._asked)
         self._asked, self._claims = [], []
@@ -956,6 +967,14 @@ class CodeRunner:
             if saved[name] and hashlib.sha256(text.encode()).digest() != self._state_before[name]:
                 self.changed_state = True
         return saved, scratch_secrets
+
+    def _scratch_values(self, states):
+        """The state values of a run that stopped early, without saving them; None when not all are known."""
+        from .api_credentials import MAX_STATE_BYTES
+        scratch = set()
+        for name, (_slot, path) in states.items():
+            self._state_secrets(read_run_file(path, MAX_STATE_BYTES), self._state_before[name], scratch)
+        return None if self._state_unknown else scratch
 
     def _state_secrets(self, text, before, scratch_secrets):
         """#1126 review: the values a run put in a state file are redacted from its output, saved or not.
@@ -1051,7 +1070,6 @@ class CodeRunner:
         except ApiError as exc:
             return False, str(exc)
         if effect == 'payment':
-            shown = redact_known_secrets(self.store, ' '.join(part for part in (f'?{query}' if query else '', body) if part))
             # #1470: the AI's description comes first for the owner to read; the exact request below is
             # what is approved, so the description can never widen it.  Live 2026-10-14 (owner): plain
             # words first, money said plainly, no internal set or effect names.
@@ -1059,12 +1077,16 @@ class CodeRunner:
             lines = [note] if note else []
             if effect == 'payment':
                 lines.append(APPROVAL_MONEY_LINE)
-            if self._fields:
-                shown_lines, check = approval_field_lines(self._fields, body, query,
-                                                          lambda value: redact_known_secrets(self.store, value))
-                lines.append('\n'.join([APPROVAL_FIELDS_LABEL, *shown_lines, check]))
-            exact = f"{APPROVAL_EXACT_LABEL} {method} {host}{redact_known_secrets(self.store, path)}"
-            lines.append(exact + (f"\n{APPROVAL_CONTENT_LABEL} {shown}" if shown else ''))
+            if getattr(self.approvals, 'request_content_after_run', False):
+                # #1195 review: values this run fetches are known only after it; the record kept now names
+                # where the request goes, and the notice made after the run shows it redacted.
+                lines.append(f"{APPROVAL_EXACT_LABEL} {method} {host}")
+            else:
+                if self._fields:
+                    shown_lines, check = approval_field_lines(self._fields, body, query,
+                                                              lambda value: redact_known_secrets(self.store, value))
+                    lines.append('\n'.join([APPROVAL_FIELDS_LABEL, *shown_lines, check]))
+                lines.append(self._exact_request_label(method, host, path, query, body))
             label = '\n\n'.join(lines)
             mode = getattr(self.approvals, 'payment_autonomy', None)
             ticket = mode(binding, label) if callable(mode) else None
@@ -1074,8 +1096,10 @@ class CodeRunner:
                 return self._claim_state_change(api, slot, identity, replay_keys, method, effect, host, path,
                                                 approved_next=bool(exact))
             unattended = getattr(self.approvals, 'unattended', None)
-            if not note and not (callable(unattended) and unattended()):
-                # #953: a run that cannot ask the owner keeps its own refusal (#619) from request().
+            if callable(unattended) and unattended():
+                from .quickstart_service import UNATTENDED_APPROVAL_TEXT
+                return False, UNATTENDED_APPROVAL_TEXT  # #619: a run with no owner present asks nothing.
+            if not note:
                 return False, APPROVAL_NOTE_REQUIRED
             try:
                 self.approvals.request(binding, label)
@@ -1102,6 +1126,14 @@ class CodeRunner:
         if result[0] and ticket:self.__dict__.setdefault('_write_tickets',[]).append(ticket)
         elif ticket:self.approvals.self_set_write_release(ticket)
         return result
+
+    def _exact_request_label(self, method, host, path, query, body, extra_values=()):
+        from .current_context import redact_known_secrets
+        scratch = {'extra_values': extra_values} if extra_values else {}
+        shown = ' '.join(part for part in (f'?{query}' if query else '', body) if part)
+        shown = redact_known_secrets(self.store, shown, **scratch)
+        exact = f"{APPROVAL_EXACT_LABEL} {method} {host}{redact_known_secrets(self.store, path, **scratch)}"
+        return exact + (f"\n{APPROVAL_CONTENT_LABEL} {shown}" if shown else '')
 
     def _claim_state_change(self, api, slot, identity, replay_keys, method, effect, host, path, *,
                             approved_next=False, write_ticket=None):
@@ -1159,6 +1191,7 @@ class CodeRunner:
             lines.put(None)
         threading.Thread(target=pump, daemon=True).start()
         deadline = self.clock() + timeout + RUNNER_GRACE
+        on_claim = getattr(self.approvals, 'api_effect_claimed', None)
         try:
             process.stdin.write(json.dumps(config) + '\n')
             # #233: the runner process exists and has its configuration, so the code may run and send from
@@ -1191,7 +1224,12 @@ class CodeRunner:
                         entry['headers'] = '\n'.join(f'{pair[0]}: {pair[1]}' for pair in pairs[:64]
                                                      if isinstance(pair, list) and len(pair) == 2)[:APPROVAL_BODY_CHARS]
                         recorded.append(entry)
+                    claims = len(self._claims)
                     allow, reason = self._decide(message, policy, check=recorded is not None)
+                    if callable(on_claim) and len(self._claims) > claims:
+                        receipt, method, host, path = self._claims[-1]
+                        # Rendered after the run, once its state values are known (#1195 review).
+                        on_claim(receipt, (method, host, path, message.get('query'), message['bodyText']))
                     if allow and phase == 'run':
                         allowed_host = _host(message.get('host'))[:253]
                         self.allowed_hosts.add(allowed_host)

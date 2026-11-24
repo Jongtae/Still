@@ -422,10 +422,10 @@ class TelegramSurface(ConversationSurface):
                                     f'telegram_surface.{heading}_part', lang, index=index, total=len(parts), part=part)))
                                 sent_part=True
                             text=ai_text(msg(f'telegram_surface.{heading}_final', lang, total=len(parts), part=parts[-1]))
-                        elif (notification['kind']==om.RESTORED_NOTICE_KIND
+                        elif (notification['kind'] in (om.RESTORED_NOTICE_KIND, prep.CHECK_DISPATCH_NOTICE_KIND)
                               or notification['kind'].startswith(prep.SELF_CHANGE_NOTICE_PREFIX)):
-                            # Full lessons and check receipts can exceed a Telegram message.
-                            # Only the last part carries the receipt's undo button.
+                            # Full lessons and receipts can exceed a Telegram message.
+                            # Put any undo button on the last part.
                             while len(text)>3800:
                                 cut=text.rfind('\n',1,3800)+1 or 3800
                                 service.telegram.send_message(notification['chat_id'],text[:cut])

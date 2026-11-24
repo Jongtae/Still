@@ -2651,6 +2651,65 @@ def effect_work_chain(db, work_id):
  return chain
 
 
+def _effect_preparation_tree(db, preparation):
+ """Follow piece slots within the line, including retained links after deletion."""
+ from .preparations import preparation_lineage
+ lineage = preparation_lineage(db, preparation)
+ if not lineage or not lineage['line_id']:
+  return {preparation}
+ line = lineage['line_id']
+ links = db.execute("SELECT id,piece_of FROM preparations WHERE line_id=? AND piece_of IS NOT NULL "
+                    "UNION ALL SELECT job_id,json_extract(detail,'$.piece_of') FROM tool_events "
+                    "WHERE tool='preparation_lineage' AND status='deleted' AND json_extract(detail,'$.line_id')=?",
+                    (line, line))
+ parents, children = {}, {}
+ for row in links:
+  if parent := preparation_of(row['piece_of']):
+   parents[row['id']] = parent
+   children.setdefault(parent, set()).add(row['id'])
+
+ max_depth = 1024
+ ancestors = set()
+ while preparation in parents:
+  if preparation in ancestors or len(ancestors) == max_depth:
+   raise EffectAncestryError('cyclic or excessive preparation ancestry')
+  ancestors.add(preparation)
+  preparation = parents[preparation]
+
+ tree = level = {preparation}
+ for _ in range(max_depth + 1):
+  level = {child for parent in level for child in children.get(parent, ())}
+  if not level:
+   return tree
+  tree.update(level)
+ raise EffectAncestryError('excessive preparation tree depth')
+
+
+def effect_record_ids(db, work_id):
+ """Effect records of a Work's request chain and its preparation's entire piece tree."""
+ from .preparations import CHECK_RECORD_PREFIX, REQUEST_KEY_PREFIX
+ records = {work_id}
+ if isinstance(work_id, str) and work_id.startswith(CHECK_RECORD_PREFIX):
+  preparation = work_id.removeprefix(CHECK_RECORD_PREFIX)
+ else:
+  job = db.execute('SELECT request_key FROM jobs WHERE id=?', (work_id,)).fetchone()
+  if job is None:
+   return records
+  chain = effect_work_chain(db, work_id)
+  records.update(work['id'] for work in chain)
+  preparation = preparation_of(job['request_key'])
+  if not preparation:
+   # A non-preparation Work can still be linked to a preparation by its existing request chain.
+   return records | {CHECK_RECORD_PREFIX + item for work in chain if (item := preparation_of(work['request_key']))}
+
+ for item in _effect_preparation_tree(db, preparation):
+  records.add(CHECK_RECORD_PREFIX + item)
+  works = db.execute('SELECT id FROM jobs WHERE request_key GLOB ?',
+                     (f'{REQUEST_KEY_PREFIX}{item}:*',))
+  records.update(work['id'] for work in works)
+ return records
+
+
 def effect_continuation_scope(store, work_id, *, db=None, dispatches=None):
  """Whether writes must use a replay-fenced route for this Work's carried effects."""
  from .preparations import ORIGIN_LINE_PIECE
@@ -2696,17 +2755,14 @@ def external_effect_events(store, work_id, *, attributed_to=None, db=None):
 
  Reuse the existing Work relation validation and tool events. API claims live
  on the original Work, with the dispatching Work attributed in their evidence.
- By default results span the request chain and its line-piece ancestors.
- ``attributed_to`` selects only one
- Work's effects: API evidence names the Work, falling back to the event's Work
+ Results span the request chain and the Works and checks of the preparation's piece tree.
+ ``attributed_to`` selects one Work's effects. API evidence names the Work, falling back to the event's Work
  for older records; connector events belong to the Work on their own row.
- No raw arguments or new durable store. Missing historical Work IDs have no
- claims; mutation admission separately requires a current Work.
+ No raw arguments or new durable store. Mutation admission separately requires
+ a current Work or check.
  """
  with (store.db() if db is None else nullcontext(db)) as db:
-  exists=db.execute('SELECT 1 FROM jobs WHERE id=?',(work_id,)).fetchone()
-  chain=effect_work_chain(db,work_id) if exists else [{'id':work_id}]
-  ids=[work['id'] for work in chain]
+  ids=list(effect_record_ids(db,work_id))
   rows=db.execute("SELECT id,job_id,tool,status,detail FROM tool_events WHERE job_id IN ("+
     ','.join('?' for _ in ids)+") AND tool IN ('connector_permission','connector_read','api_dispatch') ORDER BY id",ids).fetchall()
  claims={};observed=[]
@@ -2803,7 +2859,7 @@ def dispatch_event_field(exc):
 
 
 def unknown_effect_targets(store, work_id, *, include_claims=True):
- """The targets of this request chain's calls whose effect is unknown (#618 E1).
+ """The targets in this effect scope whose effect is unknown (#618 E1).
 
  Unknown is scoped to the call that has no definite answer (Temporal/Restate/DBOS: uncertainty
  is per activity or step): an unresolved dispatch claim's slot or connection, and each call
@@ -2826,9 +2882,7 @@ def _unknown_effect_targets(observed,claims,calls,unscoped,*,include_claims=True
 
 def _effect_call_history(db,work_id):
  """Classify recorded calls once per Work, preserving running-event target fields."""
- exists=db.execute('SELECT 1 FROM jobs WHERE id=?',(work_id,)).fetchone()
- chain=effect_work_chain(db,work_id) if exists else [{'id':work_id}]
- ids=[work['id'] for work in chain]
+ ids=list(effect_record_ids(db,work_id))
  rows=db.execute("SELECT job_id,tool,status,detail FROM tool_events WHERE job_id IN ("+','.join('?' for _ in ids)+") ORDER BY id",ids)
  calls,arguments,unscoped={},{},[]
  for row in rows:

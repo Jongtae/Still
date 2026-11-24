@@ -88,6 +88,8 @@ NOTIFY_KIND = 'preparation_notify'
 BLOCKED_NOTICE_PREFIX = 'preparation_blocked:'
 # The existing preparation-status notice transport also carries self-change receipts.
 SELF_CHANGE_NOTICE_PREFIX = BLOCKED_NOTICE_PREFIX + 'self-change:'
+CHECK_RECORD_PREFIX = 'check:'
+CHECK_DISPATCH_NOTICE_KIND = BLOCKED_NOTICE_PREFIX + 'check-dispatch'
 #: #717, #968: what a run may change of its own preparation, each undone by the owner's restore.
 SELF_CHANGE_OPERATIONS = ('edit', 'pause', 'cancel', 'goal', 'check')
 EXPIRED_NOTICE_KIND = 'preparation_window_elapsed'
