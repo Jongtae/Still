@@ -300,6 +300,15 @@ class CheckRunner(CodeRunner):
                 self.check_state_text = text if self.check_state_saved else None
         return saved, scratch_secrets
 
+    def _scratch_values(self, states):
+        # #1195 review: a run that stopped early may have put values in its check state too.
+        scratch = super()._scratch_values(states)
+        if scratch is None or not self._check_file:
+            return scratch
+        path, original = self._check_file
+        self._state_secrets(read_run_file(path, MAX_STATE_BYTES), hashlib.sha256(original.encode()).digest(), scratch)
+        return None if self._state_unknown else scratch
+
     def _libraries(self, names, proposed):
         from .procedures import module_name
         return {name: {'source': row['source'], 'row': row, 'module': module_name(name),

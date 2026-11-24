@@ -465,28 +465,31 @@ def test_an_unwoken_hit_past_the_wake_cap_keeps_the_earlier_state(case):
 class TokenProcess(Transport):
     """Writes a fresh access token to its set's state file and sends it in the order, as check code would."""
 
-    def __init__(self, sent, token, *, state=None, **kwargs):
+    def __init__(self, sent, token, *, state=None, check_state=False, **kwargs):
         super().__init__(sent, request=dict(POST, bodyText=json.dumps({'order_id': 'fixture-1', 'access': token})),
                          **kwargs)
         self.state = json.dumps({'access_token': token}) if state is None else state
+        self.check_state = check_state
 
     def _lines(self):
         from personal_agent.api_requests import env_name
         from pathlib import Path
-        name = self.config['env'].get(env_name('fixture', 'STATE_FILE'))
+        variable = checks.STATE_ENV if self.check_state else env_name('fixture', 'STATE_FILE')
+        name = self.config['env'].get(variable)
         if name:
             Path(name).write_text(self.state)
         yield from super()._lines()
 
 
+@pytest.mark.parametrize('check_state', [False, True], ids=['secret-set-state', 'check-state'])
 @pytest.mark.parametrize('failure', [None, 'proxy'])
-def test_a_token_the_run_left_in_its_state_never_reaches_the_notice_or_the_ai(case, failure):
+def test_a_token_the_run_left_in_its_state_never_reaches_the_notice_or_the_ai(case, failure, check_state):
     # #1195 review: a run-local token is unknown to the store-wide redactor.
     token = 'fresh-run-token-0123456789abcdef'
     row = setup_check(case, telegram=True)
     switch(case, True)
     sent = []
-    process = TokenProcess(sent, token, failure=failure)
+    process = TokenProcess(sent, token, failure=failure, check_state=check_state)
     case.processes.append(process)
     assert case.checks.run_due()
     notice, = notices(case, row)
