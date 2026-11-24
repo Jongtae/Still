@@ -31,7 +31,7 @@ from .direct_message_surface import (DirectMessageSurface, heartbeat_outbound_pr
                                      steer_if_owner_typed)
 from .messages import catalog, msg
 from .providers import ProviderError
-from .telegram_presence import draft_frame
+from .telegram_presence import DOTS_FRAMES, draft_frame
 
 LOG = logging.getLogger('personal_agent.imessage')
 INFORMATION_ROUTE = "iMessage via this Mac's Messages app (Apple)"
@@ -314,13 +314,15 @@ class IMessageSurface(DirectMessageSurface):
         return False, True
 
     def show_wait_status(self, job, state, text, now):
-        if (text is None or state.wait_status_at is not None
+        if (text is None or not str(text).strip() or state.wait_status_at is not None
                 or now - job['created'] < self.service.presence_timing.draft_after):
             return False
         cfg = self.config()
         if not self.owns(job) or not self._allowed(cfg, job['created']):
             return False
         frame = draft_frame(text, 0)
+        if frame == DOTS_FRAMES[0]:
+            return False
         # A refused hand-off must not trigger another attempt on each presence tick under the lock.
         state.wait_status_at = now
         try:

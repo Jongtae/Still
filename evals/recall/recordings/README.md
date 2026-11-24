@@ -6,7 +6,7 @@ inputs since #919. Claude recorded them under the sweep lock after the owner's
 decision and setup ([#921 comment](https://github.com/Jongtae/Still/issues/921#issuecomment-6977447172)).
 
 **What is recorded.**
-- The planner prompt with #919's `recall_query` line and #1172's line on briefing a target-type request to reach it.
+- The planner prompt with #919's `recall_query` line, #1172's line on briefing a target-type request to reach it, and #1183's `acknowledgement` field.
 - The store is the composed synthetic fixture:
   - v4's 1,078 rows;
   - 28 dev-addition rows;
@@ -17,9 +17,9 @@ decision and setup ([#921 comment](https://github.com/Jongtae/Still/issues/921#i
 **Route and calls.**
 - Route: the Codex subscription CLI (`live-route:subscription_cli`), with `gpt-5.6-terra` requested. The observed model is **not reported**.
 - Tokens are **not observable**. There was no judge or embedding call.
-- #1172 re-recorded the plans at code head `8923cd31` after its planner prompt change, in 5 resumed sessions of at most 25 calls: 3 for the held-out split, then 2 with `--splits all` for the dev split. The rebase onto main left the plan prompt/schema binding unchanged.
+- #1183 re-recorded the plans at code head `884c2f9b` after its planner prompt/schema change, in one session with `--splits all` and a cap of 118 (`--max-calls 118`).
 - Calls: 112 plan calls in all.
-  - 112 plans were decided and accepted; none timed out.
+  - 112 plans were decided and accepted; none timed out. 57 carry a non-empty acknowledgement.
   - 0 qualification calls (cached) and 0 terms calls in these sessions.
 - Terms: the committed `terms.json.gz` was reused unchanged (`--terms`). It was made for #919: the earlier composition's recording (`3af70b56…`, PR-8's) supplies the terms of the 1,106 rows both compositions share, and the product's terms pass keyed only the 24 new rows, in 2 ok batches (`--terms-base`).
 - Result rows: 1,105 keyed, 4 cleared, 21 never eligible (superseded or expired traps).
@@ -48,11 +48,11 @@ Do not copy seed databases, credentials, owner state, raw plan-input text or mod
 | Reused terms object SHA-256 (`terms.terms_base`) | `3af70b562107789501ef3280d6d909c7989a290ab14ce0c224c692d565150e9d` |
 | Terms filter source SHA-256 | `56bed506c794562a81328d5441459f2a7117fb25ed12978959e2aac9f7275a04` |
 | Terms prompt/schema SHA-256 | `a01ca10a442aecab73c007bdc9b45aedf4957ed3a506296fe79c7282c1372ed1` |
-| Plan prompt/schema binding | `2bdad1366ea76714` |
+| Plan prompt/schema binding | `f8622073b284be5d` |
 | Held-out layer file SHA-256 | `8566ba9b8c7dde4c41ef576d81faf522d5f362078ab74fed10efbdbbda97fe63` |
 | V4 fixture file SHA-256 | `06c7df08c4c9e97714c9d33c024e0464657f0173aed7ceda3a3e28f0881ea9fa` |
 | `terms.json.gz` file SHA-256 | `0dfb6bf5181b66838133fd2839e69d93738eaff8e1ab19abd0d56ffbbc7acf15` |
-| `plans.json.gz` file SHA-256 | `f82011d3f37abcafa126ec7b7581921f3f90ca63c316b01b52a8a8a7e4b8bcc6` |
+| `plans.json.gz` file SHA-256 | `ea5d922705631bd814dec1c27300d6d72c7116c24561fbe7744a68d4fde407a8` |
 
 Object digests use the harness's canonical JSON digest, not a hash of the pretty-printed JSON bytes. The plan prompt/schema binding uses the existing short digest from `recall_arms`.
 
@@ -85,4 +85,4 @@ It then replays only the first three recorded cases through `replay_case` with t
 - the v4 composition, with v4's own held-out cases;
 - results in [this #921 comment](https://github.com/Jongtae/Still/issues/921#issuecomment-6960844558).
 
-#919's prompt change makes those plans fail the plan prompt/schema binding. They stay in git history as evidence for that head. #919's own recording (114 plan calls at `305c8bff`, binding `abfebe76cba19942`) likewise stays in git history; #1172's prompt change replaced it.
+#919's prompt change makes those plans fail the plan prompt/schema binding. They stay in git history as evidence for that head. #919's own recording (114 plan calls at `305c8bff`, binding `abfebe76cba19942`) and #1172's (112 plan calls at `8923cd31`, binding `2bdad1366ea76714`) likewise stay in git history; #1172's and then #1183's prompt changes replaced them.

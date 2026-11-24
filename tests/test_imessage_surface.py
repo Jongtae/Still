@@ -25,6 +25,7 @@ from personal_agent.decision import FixtureDecisionEngine
 from personal_agent.imessage_surface import (CONFIG_KEY, DELIVERY_WINDOW_SECONDS, MAX_PAIRING_ATTEMPTS,
                                              PAIRING_SECONDS, REPLAY_OVERLAP_MS, IMessageSurface)
 from personal_agent.messages import msg
+from personal_agent.telegram_presence import draft_frame
 from personal_agent.owner_acts import KIND_SETTINGS, KIND_STEP
 from personal_agent.providers import ModelAdapter
 from personal_agent.quickstart_service import AgentService
@@ -935,10 +936,22 @@ class PlainTextAndWait(IMessageCase):
         self.present(self.timing.draft_after + 30)
         self.assertEqual(self.waits(), [], 'nothing after the answer')
 
+    def acknowledged(self, line='모델이 쓴 한 줄'):
+        """#1183: the decision model's line for this Work, as the plan leaves it for presence."""
+        self.service.live_acknowledgements[self.work['id']] = line
+        return draft_frame(line, 0)
+
+    def test_a_long_work_without_a_line_sends_no_wait_message(self):
+        # #1183: a lone dots frame cannot be edited or deleted on iMessage; with no words, nothing is sent.
+        for after in (self.timing.draft_after + 1, self.timing.draft_after + 20, self.timing.draft_after + 300):
+            self.present(after)
+        self.assertEqual(self.waits(), [])
+        self.assertTrue(self.service.run_one())
+        self.service.deliver_one()
+        self.assertEqual(len(self.answer_sends()), 1)
+
     def test_a_long_work_sends_exactly_one_wait_message_before_the_answer(self):
-        from personal_agent.telegram_presence import draft_frame
-        from personal_agent.telegram_presence import NO_STEP_LINE
-        expected = draft_frame(NO_STEP_LINE, 0)   # no words of Still's own outside developer mode (#477)
+        expected = self.acknowledged()
         for after in (self.timing.draft_after + 1, self.timing.draft_after + 20, self.timing.draft_after + 300):
             self.present(after)
         self.assertEqual([op['text'] for op in self.waits()], [expected])
@@ -956,6 +969,7 @@ class PlainTextAndWait(IMessageCase):
         self.assertEqual([op['text'] for op in self.waits()], ['Codex · · ·'])
 
     def test_an_approval_wait_sends_no_wait_message(self):
+        self.acknowledged()
         cfg = self.surface.config()
         self.store.queue_notification(self.work['id'], cfg['owner_user_id'], cfg['generation'],
                                       'context_approval_needed', 'approval-1', surface='imessage')
@@ -964,6 +978,7 @@ class PlainTextAndWait(IMessageCase):
         self.assertEqual(self.waits(), [], 'the approval prompt is the only surface')
 
     def test_a_wait_message_that_could_not_be_handed_over_is_not_retried_every_tick(self):
+        self.acknowledged()
         attempts = []
         real = self.surface._post
         self.surface._post = lambda cfg, text, **kw: attempts.append(text) or real(cfg, text, **kw)
@@ -974,6 +989,7 @@ class PlainTextAndWait(IMessageCase):
         self.assertEqual(self.waits(), [])
 
     def test_the_wait_message_echo_never_marks_the_reply_delivered(self):
+        self.acknowledged()
         self.present(self.timing.draft_after + 1)
         [wait] = self.waits()
         self.sidecar.from_me(OWNER, wait['text'], sent=True, delivered=True)

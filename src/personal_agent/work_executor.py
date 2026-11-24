@@ -246,6 +246,7 @@ class WorkExecutor:
                     finally:
                         service.steer_closed.discard(job['id'])
                         service.live_workers.pop(job['id'],None)
+                        service.live_acknowledgements.pop(job['id'],None)
                 service._after_work(run)
             except Exception as exc:
                 # The failure handler, judgment cleanup or tail can itself fail.
@@ -972,6 +973,8 @@ class WorkExecutor:
                 plan_context_messages=run.orchestration.sent_turns)
         if run.attempt is not None and run.attempt.ask_location and service.plan_asked_location(job,run.attempt,run.claimed_at,run.decision):
             return True
+        if run.attempt is not None and run.attempt.planned and run.attempt.acknowledgement:
+            service.live_acknowledgements[job['id']]=run.attempt.acknowledgement
         if run.attempt is not None:service.show_plan_preview(job,run.orchestration,run.attempt)
         return PROCEED
 
@@ -1152,6 +1155,8 @@ class WorkExecutor:
                          if run.orchestration is not None else {},
                          claimed_at)
         run.steer_note=steer_note(texts,run.response)
+        # #1183: the first plan's wait line described the request before the steer; it no longer does.
+        service.live_acknowledgements.pop(job['id'],None)
         if run.orchestration is not None and run.attempt is not None:
             run.attempt=run.orchestration.continue_for_steers(run.attempt,'\n'.join(texts),len(texts))
         return True
