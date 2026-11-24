@@ -76,6 +76,42 @@ class SandboxError(RuntimeError):
     pass
 
 
+def baseline_readable_roots(src=SRC):
+    """The product's ``bounded_execution.BASELINE_READABLE_ROOTS`` of the checkout a sandbox runs (#1199).
+
+    Read from that checkout's source without importing Still, so a paired baseline run keeps its own
+    checkout (``judgments.load_still`` refuses a mixed-checkout process). An older checkout without the
+    check, or a test's stand-in src, has none: nothing is refused for it.
+    """
+    import ast
+    try:
+        tree = ast.parse((Path(src) / 'personal_agent' / 'bounded_execution.py').read_text(encoding='utf-8'))
+    except OSError:
+        return ()
+    for node in tree.body:
+        if isinstance(node, ast.Assign) and any(getattr(target, 'id', None) == 'BASELINE_READABLE_ROOTS'
+                                                for target in node.targets):
+            return tuple(ast.literal_eval(node.value))
+    return ()
+
+
+def refuse_baseline_readable(root, src=SRC):
+    """Refuse a sandbox root whose engine runs Still's strict-isolation check would reject (#1199).
+
+    Still's Codex strict profile refuses a runtime root under a baseline-readable folder
+    (``runtime-root-not-baseline-readable``), so a sandbox there never gets a qualified Judgment AI
+    and every case measures the fail-closed fallback. Refuse before a server starts or a model is called.
+    """
+    resolved = Path(root).expanduser().resolve()
+    for base in baseline_readable_roots(src):
+        base = Path(base).resolve()
+        if resolved == base or base in resolved.parents:
+            raise SandboxError(f'sandbox root {resolved} is under {base}, which Still\'s strict isolation treats '
+                               'as readable by every process, so its Judgment AI cannot qualify there; '
+                               'set AGENTOS_EVAL_HOME outside the system temp folders')
+    return resolved
+
+
 def _keep_secret(name):
     return name in KEEP_SECRETS or any(name.startswith(prefix) for prefix in KEEP_SECRET_PREFIXES)
 
@@ -457,6 +493,7 @@ class Sandbox:
         return f'http://127.0.0.1:{self.port}'
 
     def prepare(self):
+        refuse_baseline_readable(self.root, self.src)
         self.root.mkdir(parents=True, exist_ok=True, mode=0o700)
         if self.slot is None:
             self.data = Path(tempfile.mkdtemp(prefix='sandbox-', dir=self.root))
