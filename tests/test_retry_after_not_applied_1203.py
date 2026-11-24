@@ -41,8 +41,13 @@ def test_the_same_request_goes_again_after_the_service_reported_it_not_applied(s
     store, job, wire, api = reconciled(setup, 'not-applied')
     [(_, receipt)], [] = external_effect_events(store, job['id'])
     assert receipt['resolution'] == 'not-applied' and receipt.get('read_digest')
+    first_key = wire.first_ref
     api.call(OPEN)
     assert wire.sent == ['open', 'state', 'open'] and wire.state == 'opened'
+    # A service that keeps each key's result would return the old failure for the old key (#1203 review).
+    assert wire.first_ref and wire.first_ref != first_key
+    observed, _ = external_effect_events(store, job['id'])
+    assert [row.get('request_ref') for _, row in observed] == [first_key, wire.first_ref]
     # The retry is a dispatch of its own: once it is observed, the identical request is held again.
     with pytest.raises(ApiError) as again:
         api.call(OPEN)

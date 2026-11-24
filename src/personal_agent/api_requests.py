@@ -1071,6 +1071,23 @@ class ApiRequests:
             approvals.request(binding, label)
         raise ApiError(APPROVAL_TEXT, 'approval_required', requires='api-step-approval')
 
+    def _attempt_key(self, key, replay_keys):
+        """#1203 review: a retry after an authoritative not-applied gets its own Idempotency-Key.
+
+        A service that keeps each key's result would answer the original key with the original
+        failure instead of trying again.  The request digest still fences replay; only the attempt
+        key changes, once per earlier attempt the service reported not applied.
+        """
+        from .agent_runtime import external_effect_events
+        with self.store.db() as db:
+            observed, pending = external_effect_events(self.store, self.work_id, db=db)
+            keys = replay_keys(db, [*observed, *pending])
+        attempts = sum(1 for _, receipt in observed if receipt.get('input_digest') in keys
+                       and receipt.get('resolution') == 'not-applied' and receipt.get('read_digest'))
+        if not attempts:
+            return key
+        return hashlib.sha256(f'{key}|attempt-{attempts + 1}'.encode()).hexdigest()[:32]
+
     def _effect_identities(self, slot, method, url, body):
         """Use the request root for new claims and recognize all roots in the effect scope."""
         from .browser_session import keyed_step_binding, step_binding
@@ -1424,6 +1441,8 @@ class ApiRequests:
             idempotency, exact_payment = self._approve(slot, method, url, body, effect, named, path, binding, note)
         else:
             idempotency = identity[:32] if identity else None
+        if identity and idempotency:
+            idempotency = self._attempt_key(idempotency, replay_keys)
         write_ticket=None
         claim = None
         finish = None
