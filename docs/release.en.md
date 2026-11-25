@@ -118,6 +118,22 @@ fallback when it cannot.
 3. **Run the full suite and the verifier gates** on the exact commit:
    `pytest tests`, `python3 -m unittest discover -s tests -t tests`,
    `scripts/verify_master_plan_docs.py`, and `scripts/verify_src_layout.py`.
+   **Then re-run the affected owner flows on real models** (#1212, owner
+   decision 2026-11-25). The preparing session does this on the owner's Mac;
+   the owner does not. List the scenarios the changes since the last tag
+   select (`cd evals && PYTHONPATH=.:../src python -m agentos_eval.selection
+   --diff vPREVIOUS..HEAD`) and run only those, once each, on both routes, for
+   example the browser shop world:
+   `python3 -m agentos_eval sweep --world shop --worker both --claude-auth subscription --epochs 1 --instances 1 --seed <fresh snapshot> --scenarios <selected ids>`
+   (see [the eval README](../evals/README.md), *Browser world*). Take a fresh
+   seed first (`agentos_eval snapshot`), so the run uses the owner's current
+   settings. When nothing is selected, record that and skip it. A failing
+   scenario is a blocker in the Release Decision Brief until it is fixed or
+   recorded as a known limitation; an `infra:` error is reported as such, not
+   as a product failure. The evidence class is `sandbox-world` (a real AI
+   against a local simulated site), never a live-store claim. The model-free
+   half of the same flows already runs in every `validate`
+   (`tests/test_eval_world_shop.py`).
 4. **Merge to `main`** through the normal issue/PR/CI path from a
    `release/<issue>-vX.Y.Z` branch, with the Release Decision Brief in the PR.
    That merge starts the release workflow, which checks the branch name, the
