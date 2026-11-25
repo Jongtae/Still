@@ -2606,8 +2606,8 @@ class PreparationsService:
         with service.store.db() as db:
             db.execute('BEGIN IMMEDIATE')
             service.store.require_read_checkpoint_writer(db)
-            mandate=continuous.mandate(db,line_id)
-            if due_before is not None and (not mandate or mandate['closed'] or mandate['ends_at']>due_before):
+            mandate=continuous.record(db,line_id)
+            if due_before is not None and not continuous.lapsed(db,line_id,due_before):
                 return service.lines.current(line_id,db),False
             continuous.fence(db,line_id,service.preparations.clock(),close=True)
             if end_line:
@@ -2863,7 +2863,8 @@ class PreparationsService:
                         with service.store.db() as db:
                             db.execute('BEGIN IMMEDIATE')
                             service.store.require_read_checkpoint_writer(db)
-                            if continuous.mandate(db,result['line_id']):
+                            # Revision zero only links this Work to historical effect receipts.
+                            if continuous.record(db,result['line_id']):
                                 continuous.record_membership(db,job['id'],result['line_id'],0)
                     return result
                 if action not in ('open','revise','undo','stop','restart','entrust'):raise refused('line_invalid_action')
@@ -2911,8 +2912,7 @@ class PreparationsService:
             latest=service.lines.current(line_id,db)
             if not latest or latest['version']!=current['version']:
                 raise el.LineRefusal('line_plan_stale')
-            previous=continuous.mandate(db,line_id)
-            if previous and not previous['closed']:
+            if continuous.active(db,line_id,now) or continuous.lapsed(db,line_id,now):
                 raise el.LineRefusal('line_already_entrusted')
             executors=[row for row in self.line_rows(line_id,db)
                        if row.get('check_spec') and row['state'] in (prep.STATE_SCHEDULED,prep.STATE_RUNNING,prep.STATE_PAUSED)]

@@ -28,15 +28,25 @@ CREATE INDEX IF NOT EXISTS line_memberships_line ON line_work_memberships(line_i
 STOP_REASON = 'line-day-ended'
 
 
-def mandate(db, line_id):
+def record(db, line_id):
+    """Read mandate history for bookkeeping such as revisions, stop_line and effect scope.
+
+    Never use this record to decide authority, handoff, approval, plan mode or scheduling.
+    """
     return db.execute('SELECT * FROM line_mandates WHERE line_id=?', (line_id,)).fetchone() if line_id else None
 
 
 def active(db, line_id, now):
-    row = mandate(db, line_id)
+    row = record(db, line_id)
     if row and not row['closed'] and now < row['ends_at'] and not prep.line_refusal(db, line_id):
         return row
     return None
+
+
+def lapsed(db, line_id, now):
+    """The deadline passed, but the preparations sweep has yet to close the mandate."""
+    row = record(db, line_id)
+    return bool(row and not row['closed'] and now >= row['ends_at'])
 
 
 def record_membership(db, work_id, line_id, revision, *, refresh=False):
@@ -56,7 +66,8 @@ def effect_lines(db, work_id, preparation_id=None):
         'SELECT line_id FROM line_work_memberships WHERE work_id=?', (work_id,))}
     if preparation_id:
         row = db.execute('SELECT line_id FROM preparations WHERE id=?', (preparation_id,)).fetchone()
-        if row and mandate(db, row['line_id']):
+        # Effect deduplication spans mandate history, including closed mandates.
+        if row and record(db, row['line_id']):
             lines.add(row['line_id'])
     return lines
 
@@ -72,8 +83,8 @@ def parse_end(value):
 
 def trigger(db, line_id, event):
     """Persist one pending run, with the latest report of each kind."""
-    row = mandate(db, line_id)
-    if not row or row['closed']:
+    row = active(db, line_id, event['at'])
+    if not row:
         return
     pending = json.loads(row['pending']) if row['pending'] else {'id': uuid.uuid4().hex, 'events': {}}
     pending['events'][event['kind']] = event
@@ -81,7 +92,7 @@ def trigger(db, line_id, event):
 
 
 def fence(db, line_id, now, *, close=False, work_id=None, source_work_id=None):
-    row = mandate(db, line_id)
+    row = record(db, line_id) if close else active(db, line_id, now)
     if not row or row['closed']:
         return
     db.execute('UPDATE line_mandates SET revision=revision+1,active_plan=NULL,closed=?,pending=? WHERE line_id=?',
@@ -96,7 +107,7 @@ def fence(db, line_id, now, *, close=False, work_id=None, source_work_id=None):
 
 
 def entrust(db, line_id, work_id, planner_id, now, ends_at):
-    previous = mandate(db, line_id)
+    previous = record(db, line_id)
     revision = previous['revision'] + 1 if previous else 1
     db.execute('INSERT INTO line_mandates(line_id,owner_work,ends_at,revision,planner_id) VALUES (?,?,?,?,?) '
                'ON CONFLICT(line_id) DO UPDATE SET owner_work=excluded.owner_work,ends_at=excluded.ends_at,'
@@ -115,6 +126,30 @@ def has_other_executor(db, line_id, excluded=None):
 def plan_target(db, line_id):
     return db.execute('SELECT r.* FROM line_mandates m JOIN line_plan_revisions r ON r.id=m.active_plan '
                       'WHERE m.line_id=?', (line_id,)).fetchone()
+
+
+def plan_matches(plan, row, digest):
+    return (plan['check_id'] == row['id'] and plan['digest'] == digest
+            and plan.get('check_revision') == row['updated_at'])
+
+
+def clear_plan(db, line_id, plan_id):
+    return db.execute('UPDATE line_mandates SET active_plan=NULL WHERE line_id=? AND active_plan=?',
+                      (line_id, plan_id)).rowcount == 1
+
+
+def executor_paused_or_resumed(db, row, now, *, resumed=False):
+    """Drop the affected plan in the caller's transaction and wake on resume."""
+    line_id = row['line_id']
+    if not row['check_spec'] or not active(db, line_id, now):
+        return
+    target = plan_target(db, line_id)
+    if target and target['check_id'] == row['id']:
+        clear_plan(db, line_id, target['id'])
+    if resumed:
+        trigger(db, line_id, {'kind': 'executor_resumed', 'at': now,
+                             'check': json.loads(row['check_spec'])['digest'], 'output': '',
+                             'executor_id': row['id']})
 
 
 def publish(db, *, line_id, revision, work_id, check_id, digest, expires, sealed, now):

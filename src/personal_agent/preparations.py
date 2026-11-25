@@ -2168,6 +2168,9 @@ class Preparations:
             self._check_admission(db, row.get('check_spec'), row['id'])
         db.execute(f"UPDATE preparations SET {','.join(k + '=?' for k in updates)} WHERE id=?",
                    (*updates.values(), row['id']))
+        if row['state'] in (STATE_PAUSED, STATE_CANCELLED) and updates['state'] in (STATE_SCHEDULED, STATE_RUNNING):
+            from . import continuous_lines as continuous
+            continuous.executor_paused_or_resumed(db, {**row, **updates}, now, resumed=True)
         return dict(db.execute('SELECT * FROM preparations WHERE id=?', (row['id'],)).fetchone())
 
     def pause(self, preparation_id, *, work_id=None):
@@ -2181,14 +2184,17 @@ class Preparations:
             self.store.require_read_checkpoint_writer(db)
             row = db.execute('SELECT * FROM preparations WHERE id=?', (preparation_id,)).fetchone()
             job = db.execute('SELECT id,request_key FROM jobs WHERE id=?', (work_id,)).fetchone() if work_id else None
+            now = self.clock()
             if self.owns_running(row, job):
                 db.execute('UPDATE preparations SET run_return_state=?,updated_at=? WHERE id=? AND state=?',
-                           (STATE_PAUSED, self.clock(), row['id'], STATE_RUNNING))
+                           (STATE_PAUSED, now, row['id'], STATE_RUNNING))
             else:
                 row = self._editable(db, preparation_id, (STATE_SCHEDULED, STATE_PAUSED))
-                revision = max(self.clock(), math.nextafter(row['updated_at'], math.inf)) if row.get('check_spec') else self.clock()
+                revision = max(now, math.nextafter(row['updated_at'], math.inf)) if row.get('check_spec') else now
                 db.execute('UPDATE preparations SET state=?,updated_at=? WHERE id=?',
                            (STATE_PAUSED, revision, row['id']))
+            from . import continuous_lines as continuous
+            continuous.executor_paused_or_resumed(db, row, now)
         return self.get(preparation_id)
 
     @staticmethod
@@ -2230,10 +2236,10 @@ class Preparations:
         return self._resume(preparation_id, STATE_CANCELLED, cancelled_at=cancelled_at)
 
     def _resume(self, preparation_id, state, *, cancelled_at=None):
-        now = self.clock()
         with self.store.db() as db:
             db.execute('BEGIN IMMEDIATE')
             self.store.require_read_checkpoint_writer(db)
+            now = self.clock()
             row = self._editable(db, preparation_id, (state,))
             if row['origin'] == ORIGIN_LINE_RESUME and row['accepted_by'] is None:
                 raise PreparationRefusal('invalid_state')
@@ -2280,6 +2286,8 @@ class Preparations:
                     raise PreparationRefusal('resume_expired')
                 db.execute('UPDATE preparations SET state=?,due_at=?,updated_at=? WHERE id=?',
                            (STATE_SCHEDULED, following, revision, row['id']))
+            from . import continuous_lines as continuous
+            continuous.executor_paused_or_resumed(db, row, now, resumed=True)
         return self.get(preparation_id)
 
     def edit(self, preparation_id, *, states=(STATE_PROPOSED, STATE_SCHEDULED, STATE_PAUSED), expected_max_runs=None, **changes):
@@ -2736,9 +2744,8 @@ class Preparations:
             return None
         row = db.execute('SELECT * FROM preparations WHERE id=?', (preparation_id,)).fetchone()
         from . import continuous_lines as continuous
-        mandate = continuous.mandate(db, row['line_id']) if row else None
-        if mandate and (not mandate['closed'] and now >= mandate['ends_at']
-                        or row['state'] == STATE_CANCELLED):
+        if row and (continuous.lapsed(db, row['line_id'], now)
+                    or (row['state'] == STATE_CANCELLED and continuous.member_revision(db, work_id, row['line_id']))):
             return continuous.STOP_REASON
         if row and row['recurrence'] == RECURRENCE_WINDOW and now >= row['window_end']:
             return 'preparation-window-expired'
@@ -2856,10 +2863,10 @@ class Preparations:
                     raise PreparationRefusal('invalid_state')
                 return None
             from . import continuous_lines as continuous
-            mandate = continuous.mandate(db, current['line_id'])
-            if mandate and immediate and current.get('check_spec'):
+            standing = continuous.active(db, current['line_id'], now)
+            if standing and immediate and current.get('check_spec'):
                 raise PreparationRefusal('invalid_state', 'Use the separate line planner for Work.')
-            if mandate and not mandate['closed'] and now >= mandate['ends_at']:
+            if continuous.lapsed(db, current['line_id'], now):
                 return None
             existing = db.execute('SELECT id FROM jobs WHERE request_key=?', (key,)).fetchone()
             if immediate and existing:
@@ -2966,8 +2973,8 @@ class Preparations:
             revision = max(now, math.nextafter(current['updated_at'], math.inf)) if current.get('check_spec') else now
             db.execute('UPDATE preparations SET state=?,last_run_job_id=?,run_count=?,updated_at=?,own_run_revision=?,run_return_state=? WHERE id=?',
                        (STATE_RUNNING, job_id, run, revision, revision, return_state, current['id']))
-            if mandate and not existing:
-                continuous.record_membership(db, job_id, current['line_id'], mandate['revision'])
+            if standing and not existing:
+                continuous.record_membership(db, job_id, current['line_id'], standing['revision'])
             if wake:
                 db.execute('INSERT INTO tool_events(job_id,tool,status,detail,created) VALUES (?,?,?,?,?)',
                            (job_id, CHECK_EVENT_TOOL, 'woken', json.dumps(wake['handoff']), now))

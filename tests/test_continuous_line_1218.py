@@ -1,12 +1,13 @@
 """Continuous line authority at the real scheduler, SQLite and sandbox proxy boundaries."""
 from datetime import datetime, timezone
 import json
+from unittest.mock import patch
 
 import pytest
 
-from personal_agent import agent_runtime as runtime, code_run, condition_checks as checks, preparations as prep
+from personal_agent import agent_runtime as runtime, code_run, condition_checks as checks, continuous_lines, preparations as prep
 from personal_agent import entrusted_lines as el
-from personal_agent.api_requests import ApiRequests
+from personal_agent.api_requests import ApiError, ApiRequests
 from personal_agent.browser_jar import MemoryKey
 from personal_agent.decision import BinaryDecision, FixtureDecisionEngine, OUTCOME_DECIDED, fixture_confidence
 from personal_agent.messages import msg
@@ -441,7 +442,8 @@ def test_owner_steer_fences_before_the_planner_receives_it(case):
     publish(c, work, executor)
     switch(c, True)
     correction = c.store.enqueue('Use the narrower target now', 'steer', owner_typed=True, owner_words=True)
-    assert c.store.add_steer(work['id'], correction, 'Use the narrower target now')
+    with patch('personal_agent.quickstart_store.time.time', return_value=c.clock[0]):
+        assert c.store.add_steer(work['id'], correction, 'Use the narrower target now')
     sent = []
     assert not run_due(c, sent)['allow']
     assert sent == [] and not receipts(c, executor)
@@ -490,6 +492,150 @@ def test_a_check_scheduled_after_mandate_close_wakes_ordinary_work(case, close):
     assert work and work['status'] == 'queued'
     assert 'new condition met' in c.service.preparation_history(work)[-1]['content']
     assert not wake_job(c, planner)
+
+
+def capture_check_runs(c, monkeypatch):
+    runs = []
+    runner = c.checks.runner
+
+    def capture(*args, **kwargs):
+        runs.append(kwargs)
+        return runner(*args, **kwargs)
+
+    monkeypatch.setattr(c.checks, 'runner', capture)
+    return runs
+
+
+def test_owner_accepted_check_after_mandate_close_has_ordinary_authority(case, monkeypatch):
+    c = case
+    line_id = line(c)
+    entrust(c, line_id)
+    c.service.preparations_service.stop_line(line_id, end_line=False)
+    executor = setup_check(c, owner_accepted=True, money=False, line=line_id)
+    switch(c, True)
+    runs = capture_check_runs(c, monkeypatch)
+    sent = []
+
+    assert run_due(c, sent)['allow']
+    assert sent == [POST]
+    run, = runs
+    assert isinstance(run['approvals'], checks.CheckApprovals)
+    assert 'plan_text' not in run
+    work = wake_job(c, executor)
+    assert update(c, work['id'], executor, {'limit': 2})['keys'] == ['limit']
+    with c.store.db() as db:
+        assert continuous_lines.member_revision(db, work['id'], line_id) is None
+    finish(c, executor)
+    assert c.preps.start(current(c, executor), channel='web', chat_id=None, now=c.clock[0], immediate=True)
+
+
+@pytest.mark.parametrize('transition', ['entrusted', 'lapsed', 'closed'])
+def test_check_effect_authority_is_bound_to_the_mode_it_started_in(case, monkeypatch, transition):
+    c = case
+    if transition == 'closed':
+        line_id, executor, planner = setup(c, owner_accepted=True)
+        published = publish(c, planner_run(c, planner), executor)
+    else:
+        line_id = line(c)
+        executor = setup_check(c, owner_accepted=True, line=line_id)
+    switch(c, True)
+    runs = capture_check_runs(c, monkeypatch)
+    tick(c)
+    run, = runs
+    approvals = run['approvals']
+    with c.store.db() as db:
+        evidence = approvals.api_effect_evidence(db, 'mutate')
+    if transition == 'closed':
+        assert evidence['plan_id'] == published['plan_id']
+        # Close only the mandate to isolate the authority check from row cancellation.
+        with c.store.db() as db:
+            db.execute('BEGIN IMMEDIATE')
+            continuous_lines.fence(db, line_id, c.clock[0], close=True)
+    else:
+        assert 'plan_id' not in evidence
+        entrust(c, line_id, seconds=90)
+        if transition == 'lapsed':
+            c.clock[0] += 90
+            with c.store.db() as db:
+                assert continuous_lines.lapsed(db, line_id, c.clock[0])
+
+    with c.store.db() as db, pytest.raises(ApiError) as exc:
+        db.execute('BEGIN IMMEDIATE')
+        approvals.api_effect_evidence(db, 'mutate')
+    assert exc.value.ran is False
+    assert exc.value.code == ('line_plan_stale' if transition == 'closed' else 'api_work_inactive')
+
+
+@pytest.mark.parametrize('operation', ['resume', 'restore', 'resume_self_pause', 'restore_self_cancel'])
+def test_executor_resumption_wakes_planner_without_waiting_for_the_next_check(case, operation):
+    c = case
+    line_id = line(c)
+    executor = setup_check(c, line=line_id)
+    if '_self_' in operation:
+        operation, change = operation.split('_self_')
+        tick(c, {'stdout': 'Condition met'})
+        work = wake_job(c, executor)
+        c.preps.change_own(executor['id'], work['id'], change)
+        finish(c, executor)
+        planner = c.preps.get(entrust(c, line_id)['planner_id'])
+        planner_run(c, planner)
+        finish(c, planner)
+    else:
+        planner = c.preps.get(entrust(c, line_id)['planner_id'])
+        publish(c, planner_run(c, planner), executor)
+        finish(c, planner)
+        if operation == 'resume':
+            c.preps.pause(executor['id'])
+            with c.store.db() as db:
+                standing = continuous_lines.active(db, line_id, c.clock[0])
+                assert standing['active_plan'] is None and standing['pending'] is None
+        else:
+            c.preps.cancel(executor['id'])
+    c.clock[0] += 1
+    getattr(c.preps, operation)(executor['id'])
+
+    with c.store.db() as db:
+        standing = continuous_lines.active(db, line_id, c.clock[0])
+        assert standing['active_plan'] is None
+        event = json.loads(standing['pending'])['events']['executor_resumed']
+        assert event['executor_id'] == executor['id']
+    work = planner_run(c, planner)
+    assert 'executor_resumed' in c.service.preparation_history(work)[-1]['content']
+    assert publish(c, work, current(c, executor))['plan_id']
+
+
+@pytest.mark.parametrize('change', ['revision', 'digest'])
+def test_executor_run_clears_an_outdated_plan_and_wakes_the_planner_once(case, change):
+    c = case
+    line_id, executor, planner = setup(c)
+    publish(c, planner_run(c, planner), executor)
+    finish(c, planner)
+    switch(c, True)
+    c.clock[0] += 1
+    spec = json.loads(executor['check_spec'])
+    with c.store.db() as db:
+        if change == 'revision':
+            db.execute('UPDATE preparations SET updated_at=? WHERE id=?', (c.clock[0], executor['id']))
+        else:
+            spec['arguments']['code'] += '\n'
+            spec['digest'] = checks._spec_digest(spec)
+            db.execute('UPDATE preparations SET check_spec=? WHERE id=?', (json.dumps(spec), executor['id']))
+    sent = []
+    assert not run_due(c, sent)['allow']
+    assert sent == []
+    with c.store.db() as db:
+        standing = continuous_lines.active(db, line_id, c.clock[0])
+        assert standing['active_plan'] is None
+        event = json.loads(standing['pending'])['events']['plan_stale']
+        assert event == {'kind': 'plan_stale', 'at': c.clock[0], 'check': spec['digest'], 'output': '',
+                         'executor_id': executor['id']}
+    work = planner_run(c, planner)
+    assert 'plan_stale' in c.service.preparation_history(work)[-1]['content']
+    finish(c, planner)
+    c.clock[0] = current(c, executor)['check_next_at']
+    tick(c)
+    with c.store.db() as db:
+        assert continuous_lines.active(db, line_id, c.clock[0])['pending'] is None
 
 
 def renew_executor(c, work, line_id, *, seconds=120, proven=True, args=ARGS, **overrides):
