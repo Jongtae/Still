@@ -170,28 +170,46 @@ def test_required_ci_runs_focused_guards_with_a_separate_full_suite_backstop() -
 
 
 def test_required_validate_runs_the_whole_linux_suite() -> None:
-    """#234: the required `validate` check runs every test on Linux, with full-validate's
-    Linux invocation; only the macOS real-WebKit classes are left to full-validate."""
+    """#234: the required `validate` check runs every test on Linux, with full-validate's Linux
+    invocation; only the macOS real-WebKit classes are left to full-validate.  #1150: the suite
+    runs as three file shards at once, and `validate` passes only when every shard and the
+    integrity checks passed."""
+    import importlib.util
     workflow = _read(".github/workflows/validate.yml")
     linux = _read(".github/workflows/full-validate.yml").split("full-validate-macos:", 1)[0]
     # The ruleset requires the context `validate`: the job id, with no other `name:`.
     jobs = workflow.split("\njobs:\n", 1)[1]
-    assert re.findall(r"^  (\S+):$", jobs, re.M) == ["validate"]
+    assert re.findall(r"^  (\S+):$", jobs, re.M) == ["checks", "suite", "validate"]
     assert not re.search(r"^    name:", jobs, re.M)
-    assert "runs-on: ubuntu-latest" in jobs
-    # Same locked environment and the same parallel invocation of the whole `tests` directory.
+    assert jobs.count("runs-on: ubuntu-latest") == 3
+    required = jobs.split("\n  validate:\n", 1)[1]
+    assert "needs: [checks, suite]" in required and "if: always()" in required
+    assert 'test "$CHECKS" = success && test "$SUITE" = success' in required, "a skipped or cancelled shard fails"
+    # Same locked environment and the same parallel invocation, one whole-file share per shard.
     sync = "uv sync --locked --extra mcp-host --extra schema-validation --extra a2a --group dev --no-python-downloads"
     assert sync in workflow and sync in linux
-    suite = 'PATH="$PWD/.venv/bin:$PATH" python3 -m pytest -q -n auto --dist loadfile --durations=25 tests\n'
-    assert suite in workflow and suite in linux
+    suite = 'PATH="$PWD/.venv/bin:$PATH" python3 -m pytest -q -n auto --dist loadfile --durations=25 '
+    assert suite + "tests\n" in linux
+    assert suite + "$(python3 scripts/ci/test_shard.py --index ${{ matrix.shard }} --total 3)\n" in workflow
+    assert "shard: [1, 2, 3]" in workflow and "fail-fast: false" in workflow
     assert "--ignore" not in workflow and "--deselect" not in workflow
     assert "AGENTOS_REAL_BROWSER_TESTS" not in workflow
+    # Every test file runs in exactly one shard.
+    spec = importlib.util.spec_from_file_location("test_shard", ROOT / "scripts/ci/test_shard.py")
+    shard = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(shard)
+    shares = shard.shares(ROOT, 3)
+    every = sorted(path.relative_to(ROOT).as_posix() for path in (ROOT / "tests").glob("test_*.py"))
+    assert sorted(name for share in shares for name in share) == every
+    assert all(shares)
     # #260: only a text-only pull request may skip it; a missing or unknown scope runs it.
-    full_step = workflow.split("- name: Run the full test suite (parallel)", 1)[1].split("- name:", 1)[0]
+    suite_job = jobs.split("\n  suite:\n", 1)[1].split("\n  validate:\n", 1)[0]
+    full_step = suite_job.split("- name: Run the full test suite (parallel)", 1)[1]
     assert "if: steps.scope.outputs.suite != 'text' && steps.scope.outputs.suite != 'release'" in full_step
-    scope_step = workflow.split("- name: Decide test scope", 1)[1].split("- name:", 1)[0]
-    assert 'git show "$BASE_SHA:scripts/ci/test_scope.py"' in scope_step, "the scope script comes from the base"
-    assert 'echo "suite=full"' in scope_step, "a push to main runs everything"
+    for job in (suite_job, jobs.split("\n  suite:\n", 1)[0]):
+        scope_step = job.split("- name: Decide test scope", 1)[1].split("- name:", 1)[0]
+        assert 'git show "$BASE_SHA:scripts/ci/test_scope.py"' in scope_step, "the scope script comes from the base"
+        assert 'echo "suite=full"' in scope_step, "a push to main runs everything"
 
 
 def test_the_test_scope_is_full_unless_every_changed_path_is_text(tmp_path) -> None:
