@@ -10,7 +10,7 @@ from personal_agent.browser_jar import MemoryKey
 from personal_agent.decision import BinaryDecision, FixtureDecisionEngine, OUTCOME_DECIDED, fixture_confidence
 from personal_agent.quickstart_store import QuickStore
 from test_check_plan_1201 import update
-from test_condition_check_orders_1194 import POST, Transport, receipts, run_due, run_work, setup_check, switch
+from test_condition_check_orders_1194 import ARGS_WITH_SET, POST, Transport, receipts, run_due, run_work, setup_check, switch
 from test_code_run import FakeProcess
 from test_condition_checks_972 import ARGS, HOST, WIRE, case, current, finish, prepared, record, tick, wake_job  # noqa: F401
 from test_preparations import engine
@@ -415,16 +415,16 @@ def test_a_check_scheduled_after_mandate_close_wakes_ordinary_work(case, close):
     assert not wake_job(c, planner)
 
 
-def renew_executor(c, work, line_id, *, seconds=120, proven=True, **overrides):
+def renew_executor(c, work, line_id, *, seconds=120, proven=True, args=ARGS, **overrides):
     if proven:
         runner = code_run.CodeRunner(c.store, work['id'], popen=lambda *a, **k: FakeProcess(), **WIRE)
-        result = runner.run(ARGS)
+        result = runner.run(args)
         assert result['check_proof']
         record(c, 'code_run', result, work=work['id'])
     return c.service.preparation_scheduler(work, '')({
         'kind': 'prepare', 'goal': 'Continue observing the condition', 'offer': 'Continue observing',
         'line': line_id, 'due': at(c.clock[0]), 'until': at(c.clock[0] + seconds),
-        'check': json.dumps(dict(ARGS, every_seconds=15)), **overrides,
+        'check': json.dumps(dict(args, every_seconds=15)), **overrides,
     })
 
 
@@ -465,6 +465,100 @@ def test_current_line_planner_can_renew_an_expired_executor(case, expiry):
     with pytest.raises(runtime.ToolError) as exc:
         renew_executor(c, work, line_id, seconds=60, proven=False)
     assert exc.value.code == 'line_executor_exists'
+
+
+def fail_executor(c, executor):
+    for _ in range(checks.FAILURE_LIMIT):
+        c.clock[0] = current(c, executor)['check_next_at']
+        tick(c, {'exit': 1})
+    row = current(c, executor)
+    assert row['state'] == prep.STATE_PAUSED
+    assert json.loads(row['check_status'])['paused'] == 'failures'
+
+
+@pytest.mark.parametrize('legacy_pause', [False, True], ids=['current-pause', 'legacy-pause'])
+def test_planner_replaces_failure_paused_executor_and_resumes_execution(case, legacy_pause):
+    c = case
+    line_id, executor, planner = setup(c, seconds=180)
+    publish(c, planner_run(c, planner), executor)
+    finish(c, planner)
+    fail_executor(c, executor)
+    if legacy_pause:
+        with c.store.db() as db:
+            db.execute("UPDATE preparations SET check_status=json_remove(check_status,'$.paused_at') WHERE id=?",
+                       (executor['id'],))
+    work = planner_run(c, planner)
+    brief = c.service.preparation_history(work)[-1]['content']
+    assert 'failure' in brief
+    standing = c.service.preparations_service.line_read(line_id)['standing']
+    ends_at = datetime.fromisoformat(standing['ends_at']).timestamp()
+
+    result = renew_executor(c, work, line_id, seconds=ends_at - c.clock[0], args=ARGS_WITH_SET,
+                            replaces=executor['id'])
+
+    assert f"preparation_id={executor['id']}" in brief
+    assert result['replaced'] == {'preparation_id': executor['id'], 'state': prep.STATE_CANCELLED}
+    assert current(c, executor)['state'] == prep.STATE_CANCELLED
+    row = c.preps.get(result['preparation_id'])
+    assert row['line_id'] == line_id and row['state'] == prep.STATE_SCHEDULED
+    assert row['accepted_by'] == prep.ACCEPTED_OWNER_WORK and row['until_at'] == ends_at
+    assert result['check']['digest'] == json.loads(executor['check_spec'])['digest']
+    switch(c, True)
+    sent = []
+    assert not run_due(c, sent)['allow']
+    publish(c, work, row, revision=standing['owner_revision'], expiry=30)
+    c.clock[0] = current(c, row)['check_next_at']
+    assert run_due(c, sent)['allow']
+    assert sent == [POST] and len(receipts(c, row)) == 1
+
+
+@pytest.mark.parametrize(('boundary', 'code'), [
+    ('owner_paused', 'unattended_run'),
+    ('owner_paused_after_failures', 'unattended_run'),
+    ('other_line', 'unattended_run'),
+    ('closed', 'unattended_run'),
+    ('non_planner', 'line_piece_invalid'),
+    ('no_proof', 'check_not_proven'),
+    ('past_end', 'line_invalid_end'),
+])
+def test_planner_failure_replacement_keeps_renewal_boundaries(case, boundary, code):
+    c = case
+    line_id, executor, planner = setup(c, seconds=120)
+    planner_run(c, planner)
+    finish(c, planner)
+    if boundary == 'other_line':
+        other_line = line(c)
+        standing = entrust(c, other_line, job=owner(c, 'Entrust the other line', 'another-entrust'))
+        work = planner_run(c, c.preps.get(standing['planner_id']))
+    elif boundary == 'non_planner':
+        result = c.service.preparation_scheduler(c.store.job(c.owner), '')({
+            'kind': 'prepare', 'goal': 'Prepare a summary', 'offer': 'Summary',
+            'line': line_id, 'due': at(c.clock[0]),
+        })
+        other_row = c.preps.get(result['preparation_id'])
+        assert c.preps.start(other_row, channel='web', chat_id=None, now=c.clock[0])
+        work = wake_job(c, other_row)
+        with c.store.db() as db:
+            db.execute("UPDATE jobs SET status='running' WHERE id=?", (work['id'],))
+        work = c.store.job(work['id'])
+
+    if boundary != 'owner_paused':
+        fail_executor(c, executor)
+    if boundary in ('owner_paused', 'owner_paused_after_failures'):
+        c.preps.pause(executor['id'])
+        correct(c, line_id)
+    if boundary not in ('other_line', 'non_planner'):
+        work = planner_run(c, planner)
+    if boundary == 'closed':
+        c.service.preparations_service.stop_line(line_id, end_line=False)
+
+    before = {row['id']: row['state'] for row in c.preps.rows()}
+    with pytest.raises(runtime.ToolError) as exc:
+        renew_executor(c, work, other_line if boundary == 'other_line' else line_id,
+                       seconds=120 if boundary == 'past_end' else 60, args=ARGS_WITH_SET,
+                       proven=boundary not in ('closed', 'no_proof'), replaces=executor['id'])
+    assert exc.value.code == code
+    assert {row['id']: row['state'] for row in c.preps.rows()} == before
 
 
 def test_planner_slot_cannot_create_a_second_executor_after_its_first_ends(case):

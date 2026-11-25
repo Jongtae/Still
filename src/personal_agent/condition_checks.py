@@ -168,8 +168,11 @@ def handoff_text(store, handoff, timezone):
     hosts = ', '.join(handoff.get('allowed_hosts') or ()) or '-'
     sets = ', '.join(handoff.get('allowed_secret_sets', handoff.get('secrets')) or ()) or '-'
     output = '\n\n'.join(part for part in (*handoff.get('dispatched', ()), handoff['output']) if part)
+    digest = handoff['check']
+    if handoff.get('executor_id'):
+        digest += f", preparation_id={handoff['executor_id']}"
     return msg('checks.handoff', kind=kind, at=prep.local_text(handoff['at'], timezone),
-               digest=handoff['check'], hosts=redact_known_secrets(store, hosts),
+               digest=digest, hosts=redact_known_secrets(store, hosts),
                secrets=redact_known_secrets(store, sets), output=redact_known_secrets(store, output))
 
 
@@ -939,6 +942,7 @@ class ConditionChecks:
             status = json.loads(current['check_status'] or '{}')
             pending = status.pop('pending', None)
             if status.pop('paused', None):
+                status.pop('paused_at', None)
                 status['failures'] = 0
             counts = totals(status)
             day = preparations.budget_day(now, db)
@@ -999,7 +1003,7 @@ class ConditionChecks:
                 else:
                     accepted = False
             if pause:
-                status['paused'] = pause
+                status.update(paused=pause, paused_at=now)
                 scrubbed = result.get('scrubbed_spec')
                 spec = json.dumps(scrubbed, sort_keys=True) if scrubbed else row['check_spec']
                 db.execute('UPDATE preparations SET state=?,updated_at=?,check_spec=? WHERE id=?',

@@ -487,10 +487,13 @@ SCHEDULE_PREPARATION_ARGUMENTS={
   'between its runs and absent while you prove the code, so keep a hold duration or report-once state there. '
   'An entrusted line uses CHECKPLANFILE for the immutable executor plan. An empty object means hold effects. '
   'If there is no active executor, the current line planner can prove the code in its own Work and schedule '
-  'one prepare with check, its own line ID and until no later than the mandate end. Omit replaces.'),
+  'one prepare with check, its own line ID and until no later than the mandate end. Omit replaces for that renewal.'),
  'replaces':('The id (from settings_read preparations) of an active preparation this one takes the place of, when the owner changes what an existing watch or schedule does (another target, a new plan, a different time) (#766). '
   'In a Work the owner started, Still stops it once this one is scheduled, so the two never run side by side and the new one need not wait for the old to end; say in your answer what was stopped. '
-  'A scheduled run the owner steered may replace its own preparation this way. Omit it for an additional preparation.'),
+  'A scheduled run the owner steered may replace its own preparation this way. '
+  'The current line planner may use the preparation_id from its check report to replace a check Still paused after '
+  'consecutive failures. Name the same line, prove the replacement check in this Work, and keep until within the mandate. '
+  'Omit replaces for an additional preparation.'),
  'line':('The id of the entrusted line (entrusted_line) this preparation does the work of (#798): the line you opened for a '
   'continuing responsibility, or an existing one when the owner starts the same work again; continue it instead of opening '
   'another. A replacement keeps its line by itself. After you read a line in this Work, say here whether the preparation continues it (its id) or is separate work (none).'),

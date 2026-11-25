@@ -270,7 +270,7 @@ class PreparationsService:
             steered=bool(unattended and not planning and steers)
             planner=None
             if (unattended and not planning and not steered and args.get('kind')==prep.KIND_PREPARE
-                    and args.get('check') not in (None,'') and args.get('replaces') in (None,'')):
+                    and args.get('check') not in (None,'')):
                 running=self.own_running_row(job)
                 if (running and running.get('origin')==prep.ORIGIN_LINE_PLANNER
                         and running.get('line_id') and args.get('line')==running['line_id']):
@@ -338,11 +338,11 @@ class PreparationsService:
                          prep.ACCEPTED_OWNER_WORK if owner_work else None)
             accepted=accepted_by is not None
             # #766: the preparation this one takes the place of (a changed target or plan); it stops
-            # once this one is scheduled.  Only in the owner's own Work, which schedules at once, so a
-            # proposal never stops what is running.
+            # once this one is scheduled. A proposal never stops what is running. The line planner's
+            # replacement instead checks the automatic pause and mandate in the scheduling transaction.
             replaces=args.get('replaces')
             current=None
-            if replaces not in (None,''):
+            if planner is None and replaces not in (None,''):
                 current=service.preparations.get(replaces) if isinstance(replaces,str) else None
                 if not current or current['state'] not in prep.ACTIVE_STATES:
                     raise not_run(ToolError(str(prep.PreparationRefusal('replace_not_found')),'replace_not_found'))
@@ -381,11 +381,11 @@ class PreparationsService:
                             now=service.preparations.clock()
                         mandate=continuous.active(db,line_id,now)
                         if planner is not None:
-                            self.require_planner_executor(db,job['id'],planner,mandate,window[1],now)
+                            self.require_planner_executor(db,job['id'],planner,mandate,window[1],now,replaces=replaces)
                         elif mandate and (planning or (not explicitly_linked
                                 and continuous.member_revision(db,job['id'],line_id)!=mandate['revision'])):
                             raise not_run(prep.PreparationRefusal('line_standing_link'))
-                        if replaces:
+                        if replaces and planner is None:
                             target=db.execute('SELECT state FROM preparations WHERE id=?',(replaces,)).fetchone()
                             if not target or target['state'] not in prep.ACTIVE_STATES:
                                 raise not_run(prep.PreparationRefusal('replace_not_found'))
@@ -465,7 +465,7 @@ class PreparationsService:
             return result
         return schedule
 
-    def require_planner_executor(self, db, work_id, planner, mandate, until_at, now):
+    def require_planner_executor(self, db, work_id, planner, mandate, until_at, now, *, replaces):
         """Check planner authority in the same transaction that creates the executor (#1218)."""
         service=self.service
         job=db.execute('SELECT request_key,status FROM jobs WHERE id=?',(work_id,)).fetchone()
@@ -478,6 +478,15 @@ class PreparationsService:
             raise not_run(ToolError(UNATTENDED_APPROVAL_TEXT,'unattended_run'))
         if not now<until_at<=mandate['ends_at']:
             raise not_run(ToolError('The executor window must end by the mandate end time.','line_invalid_end'))
+        if replaces not in (None,''):
+            target=db.execute('SELECT updated_at,check_status FROM preparations WHERE id=? AND line_id=? '
+                              'AND state=? AND check_spec IS NOT NULL',
+                              (replaces,line_id,prep.STATE_PAUSED)).fetchone() if isinstance(replaces,str) else None
+            status=json.loads(target['check_status'] or '{}') if target else {}
+            # Older automatic pauses used the check time. An explicit pause advances updated_at.
+            if (not target or status.get('paused')!='failures'
+                    or target['updated_at']!=status.get('paused_at',status.get('last_run_at'))):
+                raise not_run(ToolError(UNATTENDED_APPROVAL_TEXT,'unattended_run'))
         slot=prep.slot_key(job['request_key'])
         if db.execute('SELECT 1 FROM preparations p JOIN jobs j ON j.id=p.created_from '
                       'WHERE p.line_id=? AND p.check_spec IS NOT NULL '
