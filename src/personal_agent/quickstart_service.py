@@ -2213,6 +2213,23 @@ class AgentService:
                        'query_digest':hashlib.sha256((query or '').encode()).hexdigest()[:16],
                        'query_chars':len(query or ''),'recall_enabled':bool(recall)}
 
+    def profile_recall_enabled(self, job):
+        """#1217: use ordinary recall for the day plan and runs with owner standing."""
+        if not self.unattended_work(job) or self.day_plan_run(job):
+            return True
+        row=self.preparations_service.own_running_row(job)
+        if not row or row.get('origin')==prep.ORIGIN_DREAM:
+            return False
+        accepted_by=row.get('accepted_by')
+        if accepted_by in prep.OWNER_ACCEPTED:
+            return True
+        line_id=row.get('line_id')
+        # This classification includes LINE_RUN_ACCEPTED and pieces that inherit their root's standing.
+        if not line_id or accepted_by not in prep.LINE_PIECE_PARENTS:
+            return False
+        provenance=self.lines.provenance(line_id)
+        return bool(provenance and provenance.get('by')!='look-back')
+
     def worker_profile_snapshot(self, job, attempt=None, *, refresh=None, with_items=False):
         """Adopt the existing refresh and ``recall_selector``; accept the gate's exact refresh.
 
@@ -2221,7 +2238,7 @@ class AgentService:
         """
         if refresh is not None:
             return refresh if with_items else refresh[:2]
-        recall=not prep.preparation_of(job.get('request_key')) or self.day_plan_run(job)
+        recall=self.profile_recall_enabled(job)
         selector=attempt.recall_query if attempt is not None and attempt.planned and not attempt.steer else None
         query,identity=self.recall_selector(job.get('message'),recall=recall,recall_query=selector)
         text,items=self.profile_section(query,recall=recall,consume=False)
@@ -2286,7 +2303,7 @@ class AgentService:
             if block:text += ('\n' if text else '') + block
             # #205: source-linked earlier exchanges matching the request, in the same
             # section, so the worker, the plan and the outcome judgment read one selection.
-            # Codex review on #227: a preparation's Work sees only its origin (``preparation_history``), so no recall.
+            # #227: when preparation recall is disabled, conversation comes from preparation_history.
             said=self.owner_words_block(query) if recall else ''
             if said:text += ('\n' if text else '') + said
             # #442: the dream's daily records of the last days and older ones the request finds.
@@ -5911,7 +5928,7 @@ class AgentService:
         stored=self.history_for_models(self.preparation_history(job) if prep.preparation_of(job.get('request_key'))
                                        else self.store.history(through=job['id'])[-16:])
         document_jobs=set(self.store.config('file_workspace_document_jobs',[]))
-        recall=not prep.preparation_of(job.get('request_key')) or self.day_plan_run(job)
+        recall=self.profile_recall_enabled(job)
         query,_=self.recall_selector(job.get('message'),recall=recall)
         profile,items=self.profile_section(query,recall=recall,consume=False)
         sections={'profile':profile,'profile_items':items,'current_context':self.current_context_text(job),
