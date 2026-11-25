@@ -105,7 +105,8 @@ class SteerJudgedShort(_SteerCase):
         remark = self.steered('partial', ws.GOAL_NOT_REACHED)
         self.assertFalse(self.service.fold_delivered_steer(remark))
         self.assertEqual(self.store.job(remark['id'])['status'], 'queued', 'not settled as applied')
-        self.assertEqual(self.service.steer_disposition_notice(remark), msg('steer.not_applied.short'))
+        # #1216: running it on its own is routing only, so no host line is added to its reply.
+        self.assertEqual(self.service.steer_disposition_notice(remark), '')
 
     def test_a_steer_whose_reply_served_the_request_is_still_folded(self):
         for status, goal in (('succeeded', ws.GOAL_REACHED), ('partial', ws.GOAL_OWNER_NEEDED)):

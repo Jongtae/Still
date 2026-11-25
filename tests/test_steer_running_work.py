@@ -350,7 +350,8 @@ class SteerJudgedWhileTheWorkFinishes(_SteerCase):
         late = self.jobs()[REMARK]
         self.assertEqual([(e['status'], json.loads(e['detail'])) for e in self.events(late['id'], STEER_EVENT)],
                          [(STEER_NOT_APPLIED, {'reason': 'finished'})])
-        self.assertTrue(late['response'].startswith(msg('steer.not_applied.finished') + '\n\n'))
+        # #1216: arriving after the reply was settled is routing only; the owner sees just the answer.
+        self.assertFalse(late['response'].startswith(msg('steer.not_applied.finished')), late['response'])
         self.assertFalse(self.service.run_one())
 
 
@@ -399,8 +400,10 @@ class DispositionFromRecordedState(_SteerCase):
                  (('succeeded',), 'new_request')]
         for (status, *events), reason in cases:
             with self.subTest(status=status, events=events):
-                self.assertEqual(self.service.steer_disposition_notice(self.steered(status, *events)),
-                                 msg('steer.not_applied.' + reason))
+                # #1216: a reason that only says how Still routed the message adds no line to the reply.
+                expected = ('' if reason in quickstart_service.STEER_ROUTING_ONLY_REASONS
+                            else msg('steer.not_applied.' + reason))
+                self.assertEqual(self.service.steer_disposition_notice(self.steered(status, *events)), expected)
 
     def test_a_message_with_no_steer_record_gets_no_line(self):
         plain = self.store.job(self.store.enqueue('다른 요청', 'plain'))
