@@ -488,19 +488,30 @@ class MainAiRoutes:
             if judgment['active'].get('source') == 'fallback':
                 lines.append(judgment['effective']['text'])
             return '\n'.join(lines)
-        if len(words) > 2:
-            raise MainAiError('/ai 다음에 AI 이름과, 필요하면 모델 하나만 적어 주세요. 기본 AI는 그대로입니다.')
-        wanted = self._compact(words[0])
         keys = {row['id']: (self._compact(row['id']), self._compact(row['name'])) for row in routes}
-        found = [row for row in routes if wanted in keys[row['id']]] or \
-                [row for row in routes if wanted and any(key.startswith(wanted) for key in keys[row['id']])]
+        # #1215: a listed name can be several words ("Claude Code"); the longest leading words that name
+        # exactly one AI are its name, and only a word after them is a model.
+        found, used = [], 0
+        for count in range(len(words), 0, -1):
+            wanted = self._compact(''.join(words[:count]))
+            exact = [row for row in routes if wanted in keys[row['id']]]
+            if len(exact) == 1:
+                found, used = exact, count
+                break
+        if not found:
+            wanted = self._compact(words[0])
+            found = [row for row in routes if wanted and any(key.startswith(wanted) for key in keys[row['id']])]
+            used = 1
         if len(found) != 1:
             raise MainAiError(f"'{words[0]}'에 맞는 AI를 하나로 찾지 못했어요. 다음 중 하나를 적어 주세요: "
                               f"{', '.join(row['id'] for row in routes)}. 기본 AI는 그대로입니다.")
+        rest = words[used:]
+        if len(rest) > 1:
+            raise MainAiError('/ai 다음에 AI 이름과, 필요하면 모델 하나만 적어 주세요. 기본 AI는 그대로입니다.')
         row = found[0]
-        if row['id'] == current and len(words) == 1:
+        if row['id'] == current and not rest:
             return f"기본 AI는 이미 {row['name']}입니다. 바꿀 것이 없습니다."
-        result = self.activate({'route': row['id'], **({'model': words[1]} if len(words) == 2 else {})})
+        result = self.activate({'route': row['id'], **({'model': rest[0]} if rest else {})})
         model = next((item.get('model') for item in result['main_ai']['routes'] if item['id'] == row['id']), '')
         lines = [f"기본 AI를 {row['name']}{f' · {model}' if model else ''}(으)로 바꿨어요. 확인을 통과했고, 다음 요청부터 적용됩니다.",
                  f"작업 내용 전송처: {row['destination']}"]

@@ -578,6 +578,19 @@ class MainAiCommandTests(unittest.TestCase):
         self.assertEqual(self.service.main_ai.current(), 'claude-code')
         self.assertIn('이미 Claude Code', self.service.main_ai.command('claude-code'))
 
+    def test_a_multi_word_name_is_the_route_not_a_model(self):
+        """#1215: '/ai claude code' saved 'code' as the model and the next Works failed."""
+        self.service.connect_subscription_engine({'engine': 'codex', 'officially_authenticated': True})
+        self.assertIn('Claude Code', self.service.main_ai.command('claude code'))
+        self.assertEqual(self.service.main_ai.current(), 'claude-code')
+        self.assertFalse(self.service.main_ai.subscription_model('claude-code'))
+        self.assertIn('이미 Claude Code', self.service.main_ai.command('Claude Code'))
+        # A word after the whole name is still the model.
+        self.service.main_ai.command('claude code sonnet')
+        self.assertEqual(self.service.main_ai.subscription_model('claude-code'), 'sonnet')
+        with self.assertRaisesRegex(MainAiError, '모델 하나만'):
+            self.service.main_ai.command('claude code sonnet extra')
+
     def test_failed_probe_leaves_main_unchanged_and_says_why(self):
         self.service.connect_subscription_engine({'engine': 'codex', 'officially_authenticated': True})
         self._save('anthropic', ANTHROPIC_KEY)
