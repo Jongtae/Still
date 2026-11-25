@@ -82,6 +82,47 @@ def test_preparation_ignores_selector_and_day_plan_keeps_existing_recall(service
     else: words.assert_not_called()
 
 
+@pytest.mark.parametrize(('accepted_by', 'line_kind', 'origin', 'recall'), [
+    pytest.param(preparations.ACCEPTED_OWNER_WORK, 'owner', None, True, id='owner-line'),
+    # #921: an owner-accepted row that is not on a line keeps the #227 scope.
+    pytest.param(preparations.ACCEPTED_OWNER_SETTINGS, None, None, False, id='owner-accepted-no-line'),
+    pytest.param(preparations.ACCEPTED_OWNER_WORK, None, None, False, id='self-set'),
+    pytest.param(preparations.ACCEPTED_OWNER_WORK, 'look-back', None, False, id='look-back-line'),
+    pytest.param(preparations.ACCEPTED_DAY_PLAN, None, preparations.ORIGIN_DAY_PLAN, True, id='day-plan'),
+])
+def test_scheduled_worker_recalls_saved_method(service, accepted_by, line_kind, origin, recall):
+    goal = 'Check telescope calibration'
+    method = 'Use the collimator before recording measurements'
+    service.store.save_memory('profile.method', method)
+    # The method is older than the fill rows and only the plan resolves its search term.
+    for index in range(65):
+        service.store.save_memory(f'profile.filler-{index}', 'unrelated gardening notes ' * 8)
+    line = None
+    if line_kind == 'owner':
+        line = service.lines.open('owner-work', task=goal, report_promise='Report measurements')
+    elif line_kind == 'look-back':
+        line = service.lines.stand('look-back-work', {'task': goal, 'report_promise': 'Report measurements'},
+                                   {'by': 'look-back', 'stand_key': 'telescope'})
+    due = service.preparations.clock() + 60
+    row = service.preparations.create(kind=preparations.KIND_PREPARE, goal=goal, due_at=due, recurrence=None,
+                                      timezone='UTC', channel='web', created_from=None,
+                                      state=preparations.STATE_SCHEDULED, accepted_by=accepted_by,
+                                      line_id=line and line['line_id'], origin=origin)
+    work = service.preparations.start(row, channel='web', chat_id=None, now=due)
+    job = service.store.job(work)
+
+    with mock.patch.object(service, 'owner_words_block', wraps=service.owner_words_block) as words:
+        initial, initial_identity = service.worker_profile_snapshot(job)
+        refreshed, identity = service.worker_profile_snapshot(
+            job, Attempt(1, 'fixture', planned=True, recall_query='collimator'))
+
+    assert method not in initial
+    assert 'omitted by the context limit' in initial
+    assert (method in refreshed) == recall
+    assert initial_identity['recall_enabled'] == identity['recall_enabled'] == recall
+    assert words.call_args_list == ([mock.call(goal), mock.call(f'collimator {goal}')] if recall else [])
+
+
 @pytest.mark.parametrize('preparation',[False,True])
 @pytest.mark.parametrize('day_plan',[False,True])
 def test_early_and_final_planner_profiles_use_request_only_and_same_day_plan_policy(service,preparation,day_plan):

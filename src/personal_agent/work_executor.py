@@ -984,7 +984,7 @@ class WorkExecutor:
         # the tool subset; deterministic code only validates the plan.  Without a
         # usable plan the default Main AI runs the raw request exactly as before,
         # and why is recorded once.  One budget spans every attempt of the Work.
-        recall=not prep.preparation_of(job.get('request_key')) or service.day_plan_run(job)
+        recall=service.profile_recall_enabled(job)
         query,_=service.recall_selector(job.get('message'),recall=recall)
         profile,items=service.profile_section(query,recall=recall,consume=False)
         run.section_values={'profile':profile,'profile_items':items,'current_context':service.current_context_text(job),
