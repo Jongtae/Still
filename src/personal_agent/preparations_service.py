@@ -268,7 +268,14 @@ class PreparationsService:
                 raise not_run(ToolError(msg('preparations.resume_line_day_plan_only'),'resume_line_day_plan_only'))
             steers=service.owner_steer_words(job)
             steered=bool(unattended and not planning and steers)
-            if unattended and not planning:
+            planner=None
+            if (unattended and not planning and not steered and args.get('kind')==prep.KIND_PREPARE
+                    and args.get('check') not in (None,'') and args.get('replaces') in (None,'')):
+                running=self.own_running_row(job)
+                if (running and running.get('origin')==prep.ORIGIN_LINE_PLANNER
+                        and running.get('line_id') and args.get('line')==running['line_id']):
+                    planner=running
+            if unattended and not planning and planner is None:
                 # #938: the run of a qualifying line row schedules its line's next piece, and only that.
                 # #968/#984: a steered run's own replacement, or work that is not piece-shaped, takes the
                 # owner-present path below instead.
@@ -323,7 +330,9 @@ class PreparationsService:
                 # over the whole replacement (every changed place of its instruction), not a display preview.
                 raise not_run(ToolError(msg('preparations.steer_not_asked'),'unattended_run'))
             accepted_from=steers[-1][0] if steered and not args.get('replaces') else None
-            accepted_by=(prep.ACCEPTED_OWNER_STEER if accepted_from else
+            # A planner-created executor gets its standing from the active mandate at run time.
+            accepted_by=(prep.ACCEPTED_OWNER_WORK if planner else
+                         prep.ACCEPTED_OWNER_STEER if accepted_from else
                          prep.ACCEPTED_DAY_PLAN if planning else
                          prep.ACCEPTED_OWNER_REQUEST if asked else
                          prep.ACCEPTED_OWNER_WORK if owner_work else None)
@@ -368,8 +377,12 @@ class PreparationsService:
                     if db is not None:
                         db.execute('BEGIN IMMEDIATE')
                         service.store.require_read_checkpoint_writer(db)
+                        if planner is not None:
+                            now=service.preparations.clock()
                         mandate=continuous.active(db,line_id,now)
-                        if mandate and (planning or (not explicitly_linked
+                        if planner is not None:
+                            self.require_planner_executor(db,job['id'],planner,mandate,window[1],now)
+                        elif mandate and (planning or (not explicitly_linked
                                 and continuous.member_revision(db,job['id'],line_id)!=mandate['revision'])):
                             raise not_run(prep.PreparationRefusal('line_standing_link'))
                         if replaces:
@@ -390,7 +403,8 @@ class PreparationsService:
                                                  accepted_by=accepted_by,accepted_from=accepted_from,
                                                  window=window,delivery_mode=delivery_mode,title=title,offer=offer,
                                                  report_every_minutes=fields['report_every_minutes'],line_id=line_id,
-                                                 requested_until=fields['requested_until'],check=spec,db=db,replaces=replaces)
+                                                 requested_until=fields['requested_until'],check=spec,db=db,replaces=replaces,
+                                                 deduplicate=planner is None)
                     # #574: another Work's identical proposal is this one; the owner's own Work accepts it.
                     already=bool(row.get('already_proposed'))
                     if already and accepted:
@@ -450,6 +464,26 @@ class PreparationsService:
                 if terms.get('report_seconds'):result['report_every_minutes']=terms['report_seconds']//60
             return result
         return schedule
+
+    def require_planner_executor(self, db, work_id, planner, mandate, until_at, now):
+        """Check planner authority in the same transaction that creates the executor (#1218)."""
+        service=self.service
+        job=db.execute('SELECT request_key,status FROM jobs WHERE id=?',(work_id,)).fetchone()
+        line_id=planner['line_id']
+        if (not mandate or mandate['planner_id']!=planner['id'] or not job or job['status']!='running'
+                or prep.preparation_of(job['request_key'])!=planner['id']
+                or prep.Preparations.run_refusal(db,work_id,now)
+                or continuous.member_revision(db,work_id,line_id)!=mandate['revision']
+                or service.stop.is_set() or service._stopped_in(db,work_id)):
+            raise not_run(ToolError(UNATTENDED_APPROVAL_TEXT,'unattended_run'))
+        if not now<until_at<=mandate['ends_at']:
+            raise not_run(ToolError('The executor window must end by the mandate end time.','line_invalid_end'))
+        slot=prep.slot_key(job['request_key'])
+        if db.execute('SELECT 1 FROM preparations p JOIN jobs j ON j.id=p.created_from '
+                      'WHERE p.line_id=? AND p.check_spec IS NOT NULL '
+                      'AND (j.request_key=? OR instr(j.request_key,?)=1) LIMIT 1',
+                      (line_id,slot,slot+prep.CONTINUATION_SEPARATOR)).fetchone():
+            raise not_run(prep.PreparationRefusal('line_executor_exists'))
 
     def offer_line_resume(self, job, line_id, fields, channel):
         """#1027: make an offer through #659 without scheduling or changing the line."""
@@ -1109,12 +1143,17 @@ class PreparationsService:
             local=lambda slot:prep.local_text(slot,row['timezone'])
             schedule=(msg('preparations.run_next',due=local(following)) if following is not None
                       else msg('preparations.run_last'))
+            until_at=row.get('until_at')
             if row.get('check_spec'):
                 schedule=msg('checks.scheduled')
-            elif row['origin']==prep.ORIGIN_LINE_PLANNER:
+            elif row.get('origin')==prep.ORIGIN_LINE_PLANNER:
                 schedule=msg('checks.planner_triggered')
-            if row.get('until_at') is not None:
-                schedule+=msg('preparations.run_end',end=local(row['until_at']))
+                with service.store.db() as db:
+                    mandate=continuous.active(db,row['line_id'],service.preparations.clock())
+                if mandate and mandate['planner_id']==preparation_id:
+                    until_at=mandate['ends_at']
+            if until_at is not None:
+                schedule+=msg('preparations.run_end',end=local(until_at))
             terms=prep.stored_window_terms(row)
             if recurrence==prep.RECURRENCE_WINDOW and following is None and terms.get('requested_until') is not None:
                 requested=terms['requested_until']

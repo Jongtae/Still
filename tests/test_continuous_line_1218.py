@@ -4,13 +4,15 @@ import json
 
 import pytest
 
-from personal_agent import agent_runtime as runtime, condition_checks as checks, preparations as prep
+from personal_agent import agent_runtime as runtime, code_run, condition_checks as checks, preparations as prep
 from personal_agent.api_requests import ApiRequests
+from personal_agent.browser_jar import MemoryKey
 from personal_agent.decision import BinaryDecision, FixtureDecisionEngine, OUTCOME_DECIDED, fixture_confidence
 from personal_agent.quickstart_store import QuickStore
 from test_check_plan_1201 import update
 from test_condition_check_orders_1194 import POST, Transport, receipts, run_due, run_work, setup_check, switch
-from test_condition_checks_972 import HOST, case, current, finish, tick, wake_job  # noqa: F401
+from test_code_run import FakeProcess
+from test_condition_checks_972 import ARGS, HOST, WIRE, case, current, finish, prepared, record, tick, wake_job  # noqa: F401
 from test_preparations import engine
 
 
@@ -389,3 +391,148 @@ def test_coalesced_wake_consumes_one_executor_window_run(case):
     c.clock[0] += 15
     assert c.checks.run_due()
     assert current(c, executor)['state'] == prep.STATE_EXPIRED
+
+
+
+@pytest.mark.parametrize('close', ['stop', 'deadline'])
+def test_a_check_scheduled_after_mandate_close_wakes_ordinary_work(case, close):
+    c = case
+    line_id, old_executor, planner = setup(c, seconds=90)
+    if close == 'stop':
+        c.service.preparations_service.stop_line(line_id, end_line=False)
+    else:
+        c.clock[0] += 90
+        c.service.run_due_preparation(c.clock[0])
+    assert current(c, old_executor)['state'] == current(c, planner)['state'] == prep.STATE_CANCELLED
+    with c.store.db() as db:
+        assert db.execute('SELECT closed FROM line_mandates WHERE line_id=?', (line_id,)).fetchone()[0]
+
+    new_check = prepared(c, line=line_id, goal='Report a new observation')
+    tick(c, {'stdout': 'new condition met'})
+    work = wake_job(c, new_check)
+    assert work and work['status'] == 'queued'
+    assert 'new condition met' in c.service.preparation_history(work)[-1]['content']
+    assert not wake_job(c, planner)
+
+
+def renew_executor(c, work, line_id, *, seconds=120, proven=True, **overrides):
+    if proven:
+        runner = code_run.CodeRunner(c.store, work['id'], popen=lambda *a, **k: FakeProcess(), **WIRE)
+        result = runner.run(ARGS)
+        assert result['check_proof']
+        record(c, 'code_run', result, work=work['id'])
+    return c.service.preparation_scheduler(work, '')({
+        'kind': 'prepare', 'goal': 'Continue observing the condition', 'offer': 'Continue observing',
+        'line': line_id, 'due': at(c.clock[0]), 'until': at(c.clock[0] + seconds),
+        'check': json.dumps(dict(ARGS, every_seconds=15)), **overrides,
+    })
+
+
+@pytest.mark.parametrize('expiry', ['max_runs', 'until'])
+def test_current_line_planner_can_renew_an_expired_executor(case, expiry):
+    c = case
+    line_id = line(c)
+    executor = prepared(c, line=line_id, until=30, max_runs=1)
+    standing = entrust(c, line_id, seconds=120)
+    planner = c.preps.get(standing['planner_id'])
+    planner_run(c, planner)
+    finish(c, planner)
+    if expiry == 'max_runs':
+        tick(c, {'stdout': 'one hit'})
+        planner_run(c, planner)
+        finish(c, planner)
+        assert current(c, executor)['run_count'] == 1
+    c.clock[0] += 15 if expiry == 'max_runs' else 30
+    assert c.checks.run_due()
+    assert current(c, executor)['state'] == prep.STATE_EXPIRED
+    work = planner_run(c, planner)
+    ends_at = datetime.fromisoformat(standing['ends_at']).timestamp()
+    brief = c.service.preparation_history(work)[-1]['content']
+    assert 'executor_expired' in brief
+    assert prep.local_text(ends_at, planner['timezone']) in brief
+
+    result = renew_executor(c, work, line_id, seconds=ends_at - c.clock[0])
+    row = c.preps.get(result['preparation_id'])
+    assert row['id'] != executor['id']
+    assert row['line_id'] == line_id and row['state'] == prep.STATE_SCHEDULED
+    assert row['created_from'] == work['id'] and row['accepted_by'] == prep.ACCEPTED_OWNER_WORK
+    assert row['until_at'] == ends_at
+    assert result['check']['digest'] == json.loads(executor['check_spec'])['digest']
+    c.store.api_slot_key = MemoryKey()
+    plan = {'owner_revision': standing['owner_revision'], 'expires': at(c.clock[0] + 30),
+            'safe_mode': 'hold', 'calls': []}
+    assert update(c, work['id'], row, {}, plan=json.dumps(plan))['owner_revision'] == standing['owner_revision']
+    with pytest.raises(runtime.ToolError) as exc:
+        renew_executor(c, work, line_id, seconds=60, proven=False)
+    assert exc.value.code == 'line_executor_exists'
+
+
+def test_planner_slot_cannot_create_a_second_executor_after_its_first_ends(case):
+    c = case
+    line_id = line(c)
+    standing = entrust(c, line_id)
+    work = planner_run(c, c.preps.get(standing['planner_id']))
+    result = renew_executor(c, work, line_id, seconds=30)
+    c.clock[0] += 30
+    assert c.checks.run_due()
+    assert c.preps.get(result['preparation_id'])['state'] == prep.STATE_EXPIRED
+
+    with pytest.raises(runtime.ToolError) as exc:
+        renew_executor(c, work, line_id, proven=False)
+    assert exc.value.code == 'line_executor_exists'
+
+
+@pytest.mark.parametrize(('boundary', 'code'), [
+    ('closed', 'unattended_run'),
+    ('expired', 'unattended_run'),
+    ('stale', 'unattended_run'),
+    ('occupied', 'line_executor_exists'),
+    ('past_end', 'line_invalid_end'),
+    ('no_proof', 'check_not_proven'),
+    ('other_line', 'unattended_run'),
+    ('replace', 'unattended_run'),
+    ('plain_prepare', 'unattended_run'),
+    ('non_planner', 'line_piece_invalid'),
+])
+def test_executor_renewal_respects_planner_authority(case, boundary, code):
+    c = case
+    line_id = line(c)
+    executor = prepared(c, line=line_id) if boundary == 'occupied' else None
+    other_work = None
+    if boundary == 'non_planner':
+        result = c.service.preparation_scheduler(c.store.job(c.owner), '')({
+            'kind': 'prepare', 'goal': 'Prepare a summary', 'offer': 'Summary',
+            'line': line_id, 'due': at(c.clock[0]),
+        })
+        other_work = c.preps.get(result['preparation_id'])
+    standing = entrust(c, line_id, seconds=90)
+    planner = c.preps.get(standing['planner_id'])
+    if other_work:
+        assert c.preps.start(other_work, channel='web', chat_id=None, now=c.clock[0])
+        work = wake_job(c, other_work)
+        with c.store.db() as db:
+            db.execute("UPDATE jobs SET status='running' WHERE id=?", (work['id'],))
+    else:
+        work = planner_run(c, planner)
+    if boundary == 'closed':
+        c.service.preparations_service.stop_line(line_id, end_line=False)
+    elif boundary == 'expired':
+        c.clock[0] += 90
+    elif boundary == 'stale':
+        correct(c, line_id)
+
+    kwargs = {}
+    if boundary == 'other_line':
+        kwargs['line'] = line(c)
+    elif boundary == 'replace':
+        kwargs['replaces'] = planner['id']
+    elif boundary == 'plain_prepare':
+        kwargs['check'] = None
+    before = {row['id'] for row in c.preps.rows()}
+    with pytest.raises(runtime.ToolError) as exc:
+        renew_executor(c, work, line_id, seconds=120 if boundary == 'past_end' else 60,
+                       proven=boundary not in ('no_proof', 'closed'), **kwargs)
+    assert exc.value.code == code
+    assert {row['id'] for row in c.preps.rows()} == before
+    if executor:
+        assert current(c, executor)['state'] == prep.STATE_SCHEDULED

@@ -707,8 +707,7 @@ class ConditionChecks:
                 continuous.trigger(db, row['line_id'], {'kind': 'plan_expired', 'check': plan['digest'],
                                                        'at': now, 'output': ''})
             if not (refusal or ended):
-                if (not continuous.mandate(db, row['line_id'])
-                        and status.get('day') == day and status['wakes'] >= DAILY_WAKES
+                if (not mandate and status.get('day') == day and status['wakes'] >= DAILY_WAKES
                         and not self._can_run_at_wake_cap(db, row)):
                     self._advance(db, row, self._next_day(now, db), status)
                     return True
@@ -923,8 +922,7 @@ class ConditionChecks:
                 db.execute('UPDATE preparations SET state=?,last_outcome=?,updated_at=? WHERE id=?',
                            (state, state, now, row['id']))
                 return
-            mandate = continuous.mandate(db, row['line_id'])
-            standing = continuous.active(db, row['line_id'], now) if mandate else None
+            standing = continuous.active(db, row['line_id'], now)
             if now >= row['until_at'] or row['run_count'] >= row['max_runs']:
                 if standing:
                     continuous.trigger(db, row['line_id'], {'kind': 'executor_expired', 'at': now,
@@ -961,10 +959,10 @@ class ConditionChecks:
             failed = status['failures'] >= FAILURE_LIMIT
             # Whether this result is kept: counted, handed off, or held for a retry (``_commit_state``).
             accepted = True
-            if mandate:
+            if standing:
                 if unconfirmed_receipt:
                     status['reported_dispatch'] = max(unconfirmed_receipt, status.get('reported_dispatch', 0))
-                if standing and (kind == 'hit' or failed or result.get('dispatched')):
+                if kind == 'hit' or failed or result.get('dispatched'):
                     event_kind = ('unknown_effect' if unconfirmed_receipt else
                                   'dispatch' if result.get('dispatched') else kind)
                     continuous.trigger(db, row['line_id'], {**result, 'kind': event_kind, 'executor_id': row['id']})

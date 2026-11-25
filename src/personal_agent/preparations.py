@@ -1582,12 +1582,13 @@ class Preparations:
     def create(self, *, kind, goal, due_at, timezone, recurrence, channel, created_from, state,
                accepted_by=None, owner=OWNER, window=None, delivery_mode=None, title=None, offer=None, origin=None,
                report_every_minutes=None, line_id=None, max_runs=None, requested_until=None, bundle_channel=None, accepted_from=None,
-               piece_of=None, db=None, check=None, replaces=None):
+               piece_of=None, db=None, check=None, replaces=None, deduplicate=True):
         """One new row (idempotent for the same Work, kind, goal and slot).
 
         #574: when another Work already proposed the same kind, goal, due and
         recurrence (and window) and the owner has not answered it yet, that row
-        is returned with ``already_proposed`` instead of a duplicate.
+        is returned with ``already_proposed`` instead of a duplicate. A line planner creates its own
+        executor (``deduplicate=False``) after checking admission for the planner slot in the same transaction.
 
         ``max_runs`` bounds an ordinary daily, weekdays or weekly recurrence using RFC 5545 COUNT.
         The owner extends it through the ordinary recurrence-rule editor.
@@ -1668,7 +1669,8 @@ class Preparations:
                             'piece_replaced': True}
             # A line account is kept once per line by ensure_line_account, even when a
             # single owner answer resumes several lines with the same account cadence.
-            line_specific = piece_of is not None or resume_offer or origin in (ORIGIN_LINE_ACCOUNT, ORIGIN_LINE_PLANNER)
+            line_specific = (not deduplicate or piece_of is not None or resume_offer
+                             or origin in (ORIGIN_LINE_ACCOUNT, ORIGIN_LINE_PLANNER))
             same = None if line_specific else db.execute(
                               'SELECT * FROM preparations WHERE created_from=? AND kind=? AND goal_text=? AND due_at=? '
                               'AND state IN (?,?,?,?) AND check_spec IS ? AND origin IS NOT ? AND origin IS NOT ?',
