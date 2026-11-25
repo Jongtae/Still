@@ -214,6 +214,9 @@ class PreparationsService:
         if when_needed and kind!=prep.KIND_PREPARE:raise prep.PreparationRefusal('invalid_delivery')
         delivery_mode=prep.DELIVERY_WHEN_NEEDED if when_needed else None
         report_every_minutes=args.get('report_every_minutes')
+        # Send already delivers each check, so an equal report interval adds nothing.
+        if args.get('delivery')=='send' and window and prep._whole_number(report_every_minutes)==window[0]//60:
+            report_every_minutes=None
         terms=prep.window_terms(window,recurrence,due_at,timezone,report_every_minutes,delivery_mode,requested_until)
         return {'kind':kind,'goal':goal,'title':title,'offer':offer,'due_at':due_at,'timezone':timezone,
                 'recurrence':recurrence,'window':window,'delivery_mode':delivery_mode,'window_terms':terms,
@@ -257,11 +260,14 @@ class PreparationsService:
             # #961: every prepare is a card with the AI's one-line summary; refused before anything is scheduled.
             if args.get('kind')==prep.KIND_PREPARE and not ' '.join(str(args.get('offer') or '').split()):
                 raise not_run(ToolError(str(prep.PreparationRefusal('offer_required')),'offer_required'))
+            unattended=service.unattended_work(job)
             if resume_offer and not planning:
-                raise not_run(ToolError(UNATTENDED_APPROVAL_TEXT,'unattended_run'))
+                if unattended:
+                    raise not_run(ToolError(UNATTENDED_APPROVAL_TEXT,'unattended_run'))
+                raise not_run(ToolError(msg('preparations.resume_line_day_plan_only'),'resume_line_day_plan_only'))
             steers=service.owner_steer_words(job)
-            steered=bool(service.unattended_work(job) and not planning and steers)
-            if service.unattended_work(job) and not planning:
+            steered=bool(unattended and not planning and steers)
+            if unattended and not planning:
                 # #938: the run of a qualifying line row schedules its line's next piece, and only that.
                 # #968/#984: a steered run's own replacement, or work that is not piece-shaped, takes the
                 # owner-present path below instead.

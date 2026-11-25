@@ -11800,6 +11800,12 @@
   "ja": "毎朝、今日の予定と最近の会話を見て、必要になりそうなことを先に準備しておきます。\n調べて準備するだけで、支払いや変更は行いません。",
   "zh": "每天早上我会查看今天的日程和最近的对话，提前准备你可能需要的内容。\n我只做调查和准备，不会付款或更改任何内容。"
  },
+ "preparations.resume_line_day_plan_only": {
+  "ko": "resume_line은 하루 계획에서만 쓸 수 있어요. 이 항목을 빼고 다시 예약해 주세요.",
+  "en": "resume_line is only for the day plan. Schedule again without it.",
+  "ja": "resume_line は一日の計画でのみ使えます。この項目を外して、もう一度予約してください。",
+  "zh": "resume_line 仅用于每日计划。请去掉此项后重新预约。"
+ },
  "preparations.invalid_line_resume_offer": {
   "ko": "오늘 한 번 실행할 일과 그 한도를 한두 줄로 적어 이어 하기를 제안해 주세요.",
   "en": "Offer a single run for today and describe the work and its limits in one or two lines.",
