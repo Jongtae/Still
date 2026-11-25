@@ -107,6 +107,61 @@ class _LineCase(_Case):
 
 
 class OpeningTests(_LineCase):
+    def test_title_is_versioned_and_used_in_owner_notices(self):
+        title = '아침 관심 목록'
+        opened = self.line_call('아침 관심 목록을 맡아 줘', action='open', title=title,
+                                task=TASK, report_promise=PROMISE)
+        line_id = opened['line_id']
+        self.assertEqual(opened['title'], title)
+        self.assertEqual(self.service.lines.version(line_id, 1)['title'], title)
+        self.deliver_all()
+        self.assertIn(msg('lines.announced', task=title, promise=PROMISE), self.texts())
+
+        revised_title = '아침 요약'
+        revised = self.line_call('아침 요약으로 이름을 바꾸고 한 시간마다 알려 줘', action='revise', line=line_id,
+                                 expected_version='1', title=revised_title, rule=RULE)
+        self.assertEqual((revised['version'], revised['title']), (2, revised_title))
+        self.assertEqual(self.service.lines.version(line_id, 1)['title'], title)
+        self.assertEqual(self.service.lines.version(line_id, 2)['title'], revised_title)
+        self.deliver_all()
+        self.assertIn(msg('lines.restated', title=revised_title, rule=RULE), self.texts())
+        read = self.line_call('아침 요약에 대해 알려 줘', action='read', line=line_id)
+        listing = self.line_call('맡은 일이 뭐야?', action='list')
+        self.assertEqual(read['title'], revised_title)
+        self.assertEqual(listing['lines'][0]['title'], revised_title)
+        self.assertIn(revised_title, listing['text'])
+        self.assertNotIn(TASK, listing['text'])
+
+        self.line_call('아침 요약 맡은 일은 이제 끝내 줘', action='stop', line=line_id, scope='line')
+        self.deliver_all()
+        self.assertIn(msg('lines.stopped', task=revised_title), self.texts())
+
+    def test_entrust_sends_one_notice_with_name_and_owner_local_deadline(self):
+        title = '아침 관심 목록'
+        opened = self.line_call('아침 관심 목록을 맡아 줘', action='open', title=title,
+                                task=TASK, report_promise=PROMISE)
+        self.deliver_all()
+        self.telegram.clear()
+        end = self.now + 900
+        args = {'action': 'entrust', 'line': opened['line_id'],
+                'ends_at': prep.iso(end, 'UTC'), 'planner_goal': '다음 계획을 정리하기'}
+        standing = self.line_call('아침 관심 목록을 15분 동안 맡아 줘', **args)
+        self.assertEqual(standing['owner_revision'], 1)
+        # A correction increments the plan's revision before the notice is sent.
+        self.service.use_decision_engine(FixtureDecisionEngine(
+            judge=lambda context, proposition: BinaryDecision(OUTCOME_DECIDED, True, fixture_confidence())
+            if context.purpose in ('explicit-line-change', 'explicit-preparation-request') else None))
+        revised = self.line_call('아침 관심 목록에 적용할 규칙을 바꿔 줘', action='revise', line=opened['line_id'],
+                                 expected_version='1', rule=RULE)
+        self.assertEqual(revised['version'], 2)
+        self.deliver_all()
+        repeated = self.line_call('아침 관심 목록을 15분 동안 맡아 줘', **args)
+        self.assertEqual(repeated['code'], 'line_already_entrusted')
+        self.deliver_all()
+        notice = msg('lines.entrusted', title=title,
+                     end=prep.local_text(end, 'Asia/Seoul'))
+        self.assertEqual(self.texts().count(notice), 1)
+
     def test_announcement_is_sent_once_per_line_with_its_three_parts_and_a_stop_control(self):
         brief, _work = self.open_line()
         self.assertTrue(all(rule.get('basis') is None for rule in brief['rules']))
@@ -320,7 +375,7 @@ class ContinuityTests(_LineCase):
         restated = [body for body in self.sends() if RULE in str(body.get('text'))]
         self.assertEqual(len(restated), 1)
         [body] = restated
-        self.assertEqual(body['text'], msg('lines.restated', rule=RULE))
+        self.assertEqual(body['text'], msg('lines.restated', title=TASK, rule=RULE))
         data = body['reply_markup']['inline_keyboard'][0][0]['callback_data']
         self.assertTrue(data.endswith(':undo'))
         message_id = 9000 + next(index for index, (method, item) in enumerate(self.telegram, 1) if item is body)
@@ -677,7 +732,8 @@ class AnswerTests(_LineCase):
         self.assertIn(brief['line_id'], unrelated)
         self.assertNotIn(RULE, unrelated)
         self.assertNotIn(msg('lines.outcomes_heading'), unrelated)
-        self.assertNotIn(msg('lines.brief', task='', promise='', rules='', open='', version='', days='').split(':')[0], unrelated)
+        self.assertNotIn(msg('lines.brief', title='', task='', promise='', rules='', open='', version='', days='').split(':')[0],
+                         unrelated)
 
         result = self.line_call('관심 목록 요즘 어때?', action='read', line=brief['line_id'])
         self.assertEqual(result['rules'], [RULE])
@@ -689,7 +745,7 @@ class AnswerTests(_LineCase):
 
 class FormatTests(_LineCase):
     def test_the_brief_has_no_authority_rung_amount_or_subject_field_and_an_unknown_field_is_refused(self):
-        self.assertEqual(el.FIELDS, ('task', 'rules', 'report_promise', 'open_matters', 'state', 'account_every_days'))
+        self.assertEqual(el.FIELDS, ('title', 'task', 'rules', 'report_promise', 'open_matters', 'state', 'account_every_days'))
         self.assertEqual(el.RULE_FIELDS, ('text', 'from', 'at', 'basis'))
         legacy = el.validate({'task': TASK, 'report_promise': PROMISE,
                               'rules': [{'text': RULE, 'from': 'owner-work', 'at': self.now}]})
@@ -857,7 +913,7 @@ class MoneyTests(_LineCase):
         self.assertEqual((result['version'], result['money_rules']), (2, True))
         self.deliver_all()
         [notice] = [body for body in self.sends() if '20시 전까지만 하기' in str(body.get('text'))]
-        self.assertIn(msg('lines.restated', rule='20시 전까지만 하기'), notice['text'])
+        self.assertIn(msg('lines.restated', title=TASK, rule='20시 전까지만 하기'), notice['text'])
         self.assertIn(msg('lines.money_rules'), notice['text'])
         self.assertIn('하루 10만원까지만', notice['text'])
         self.assertIn('앞으로 매일 아침 관심 목록 확인해서 정리해 줘', notice['text'])

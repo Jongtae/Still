@@ -114,7 +114,7 @@ class MarkedPlan(_RunCase):
         self.assertTrue(self.service.deliver_notification())
         sent = [body for method, body in self.telegram if method == 'sendMessage']
         self.assertEqual(len(sent), 2)
-        line_body = next(b for b in sent if self.brief['line_id'] in b['text'])
+        line_body = next(b for b in sent if el.line_name(self.brief) in b['text'])
         self.assertIn(self.brief['open_matters'], line_body['text'])
         self.assertIn('second check pending', line_body['text'])
         data = line_body['reply_markup']['inline_keyboard'][0][0]['callback_data']

@@ -11849,10 +11849,10 @@
   "zh": "{task}。我会{promise}汇报。要结束时请说“停止”。"
  },
  "lines.restated": {
-  "ko": "앞으로: {rule}. 오늘만이 아니라 매번 적용해요.",
-  "en": "From now on: {rule}. This applies every time, not only today.",
-  "ja": "今後: {rule}。今日だけでなく毎回適用します。",
-  "zh": "从现在起：{rule}。这每次都适用，不只是今天。"
+  "ko": "「{title}」에 앞으로 매번 적용할 규칙이에요. {rule}",
+  "en": "The new rule for “{title}” applies every time from now on: {rule}.",
+  "ja": "「{title}」には今後、毎回このルールを適用します。{rule}",
+  "zh": "“{title}”以后每次都遵循这条新规则：{rule}。"
  },
  "lines.money_rules": {
   "ko": "지금 적용되는 규칙 전체와 각각을 정한 원래 말이에요:",
@@ -11891,10 +11891,10 @@
   "zh": "此后规则又有变化，因此没有撤销。"
  },
  "lines.brief": {
-  "ko": "맡은 일 (버전 {version}): {task}\n보고 약속: {promise}\n지금 적용되는 규칙:\n{rules}\n열린 사항: {open}\n정기 보고: {days}일마다",
-  "en": "Entrusted line (version {version}): {task}\nReport promise: {promise}\nRules in force:\n{rules}\nOpen matters: {open}\nPeriodic account: every {days} days",
-  "ja": "任された仕事（バージョン {version}）: {task}\n報告の約束: {promise}\n有効なルール:\n{rules}\n未解決の事項: {open}\n定期報告: {days}日ごと",
-  "zh": "受托事项（版本 {version}）：{task}\n汇报承诺：{promise}\n现行规则：\n{rules}\n未决事项：{open}\n定期汇报：每 {days} 天"
+  "ko": "맡은 일 (버전 {version}): {title}\n할 일: {task}\n보고 약속: {promise}\n지금 적용되는 규칙:\n{rules}\n열린 사항: {open}\n정기 보고: {days}일마다",
+  "en": "Entrusted line (version {version}): {title}\nTask: {task}\nReport promise: {promise}\nRules in force:\n{rules}\nOpen matters: {open}\nPeriodic account: every {days} days",
+  "ja": "任された仕事（バージョン {version}）: {title}\n作業内容: {task}\n報告の約束: {promise}\n有効なルール:\n{rules}\n未解決の事項: {open}\n定期報告: {days}日ごと",
+  "zh": "受托事项（版本 {version}）：{title}\n任务：{task}\n汇报承诺：{promise}\n现行规则：\n{rules}\n未决事项：{open}\n定期汇报：每 {days} 天"
  },
  "lines.no_rules": {
   "ko": "(없음)",
@@ -12183,6 +12183,12 @@
   "en": "task is one sentence of at most 300 characters.",
   "ja": "task は300文字以内の一文です。",
   "zh": "task 为不超过 300 字的一句话。"
+ },
+ "lines.refused_line_invalid_title": {
+  "ko": "맡은 일의 이름은 40자 이내로 적어 주세요.",
+  "en": "Use a line name of up to 40 characters.",
+  "ja": "仕事の名前は40文字以内で入力してください。",
+  "zh": "请使用不超过 40 个字符的名称。"
  },
  "lines.refused_line_invalid_promise": {
   "ko": "report_promise에는 무엇을 언제 보고할지 300자 이내로 적어요.",
@@ -12783,6 +12789,12 @@
   "en": "Give an end time for today with a timezone offset.",
   "ja": "今日の終了時刻をタイムゾーンのオフセット付きで指定してください。",
   "zh": "请提供今天的结束时间，并注明时区偏移。"
+ },
+ "lines.entrusted": {
+  "ko": "「{title}」을 {end}까지 맡을게요. 주문은 현재 자율 결제 모드 설정을 따라요. 오늘 작업을 멈추려면 “{title} 멈춰”라고 해 주세요.",
+  "en": "I’ll handle “{title}” until {end}. Orders follow your current payment autonomy setting. To stop today’s work, say “stop {title}”.",
+  "ja": "「{title}」を {end} までお預かりします。注文は自律決済モードの現在の設定に従います。今日の作業を止めるには「{title}を止めて」と言ってください。",
+  "zh": "我会负责“{title}”直到 {end}。下单遵循自主付款模式的当前设置。要停止今天的工作，请说“停止{title}”。"
  },
  "lines.refused_line_invalid_planner": {
   "ko": "계획 작업의 지시가 비어 있거나 너무 길어요.",

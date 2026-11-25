@@ -1008,7 +1008,7 @@ class TelegramSurface(ConversationSurface):
                         LOG.info('line stop by owner button id=%s changed=%s',line_id,stopped)
                         service.store.update_notification(notification['id'],'line_stopped')
                         try:service.telegram.edit_message_text(sender,notification['message_id'],
-                                                               service._redact_known_secrets(msg('lines.stopped',task=brief['task'])),
+                                                               service._redact_known_secrets(msg('lines.stopped',task=entrusted_lines.line_name(brief))),
                                                                {'inline_keyboard':[]})
                         except ProviderError:pass
                         changed=True

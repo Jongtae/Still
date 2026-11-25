@@ -5,9 +5,11 @@ import json
 import pytest
 
 from personal_agent import agent_runtime as runtime, code_run, condition_checks as checks, preparations as prep
+from personal_agent import entrusted_lines as el
 from personal_agent.api_requests import ApiRequests
 from personal_agent.browser_jar import MemoryKey
 from personal_agent.decision import BinaryDecision, FixtureDecisionEngine, OUTCOME_DECIDED, fixture_confidence
+from personal_agent.messages import msg
 from personal_agent.quickstart_store import QuickStore
 from test_check_plan_1201 import update
 from test_condition_check_orders_1194 import ARGS_WITH_SET, POST, Transport, receipts, run_due, run_work, setup_check, switch
@@ -89,6 +91,81 @@ def before_reservation(monkeypatch, act):
         return original(self, *args, **kwargs)
 
     monkeypatch.setattr(ApiRequests, '_effect_guard', interleave)
+
+
+@pytest.mark.parametrize(('task', 'expected'), [
+    ('Review incoming reports. Summarize open questions.', 'Review incoming reports'),
+    ('毎朝新着を確認する。未処理の項目をまとめる。', '毎朝新着を確認する'),
+    ('Check the latest reports and record any changes before noon.', 'Check the latest reports and record any…'),
+])
+def test_legacy_brief_uses_bounded_first_sentence_as_title(case, task, expected):
+    line_id = 'legacy-brief'
+    case.service.lines.library.commit(el.slot(line_id), json.dumps({'task': task, 'report_promise': 'Report changes'}))
+    handler = case.service.preparations_service.line_handler(case.store.job(case.owner))
+    read = handler({'action': 'read', 'line': line_id})
+    listing = handler({'action': 'list'})
+    assert read['title'] == listing['lines'][0]['title'] == expected
+    assert read['task'] == task
+    assert expected in listing['text']
+
+
+@pytest.mark.parametrize('action', ['open', 'revise'])
+def test_overlong_line_title_is_refused(case, action):
+    line_id = line(case)
+    job = owner(case, 'Give this line a name', 'name-line')
+    with pytest.raises(runtime.ToolError) as exc:
+        line_call(case, job, line_id, action, task='Review incoming reports', report_promise='Report changes',
+                  expected_version='1', title='x' * 41)
+    assert exc.value.code == 'line_invalid_title'
+    assert len(case.service.lines.lines()) == 1
+    assert case.service.lines.current(line_id)['version'] == 1
+
+
+def test_entrust_judgment_compares_owner_words_with_title_and_task(case):
+    title, task = 'Incoming reports', 'Review new submissions and summarize changes'
+    line_id = case.service.lines.open(case.owner, title=title, task=task, report_promise='Report changes')['line_id']
+    summaries = []
+
+    def judge(context, proposition):
+        if context.purpose == 'explicit-preparation-request':
+            summaries.append(context.facts['proposed_preparation'])
+            return BinaryDecision(OUTCOME_DECIDED, True, fixture_confidence())
+        return None
+
+    case.service.use_decision_engine(FixtureDecisionEngine(judge=judge))
+    job = owner(case, f'Entrust {title} for the next fifteen minutes', 'entrust-by-name')
+    line_call(case, job, line_id, 'entrust', ends_at=at(case.clock[0] + 900))
+    [summary] = summaries
+    assert title in summary and task in summary
+
+
+def test_web_entrust_notice_is_recorded_once_per_mandate_revision(case):
+    title = '들어온 보고서'
+    zone = 'Asia/Seoul'
+    case.service.context_observations.set_controls({'timezone': zone})
+    line_id = case.service.lines.open(case.owner, title=title, task='새 보고서 확인 후 변경 요약',
+                                      report_promise='바뀐 내용 보고')['line_id']
+    job = owner(case, f'{title} 오늘 맡아 줘', 'entrust-on-web')
+    end = case.clock[0] + 900
+    first = entrust(case, line_id, job=job)
+    with pytest.raises(runtime.ToolError) as exc:
+        entrust(case, line_id, job=job)
+    assert exc.value.code == 'line_already_entrusted'
+
+    def notices():
+        with case.store.db() as db:
+            return [row['content'] for row in db.execute(
+                "SELECT content FROM messages WHERE role='assistant' AND channel='web' ORDER BY id")]
+
+    expected = msg('lines.entrusted', title=title, end=prep.local_text(end, zone))
+    assert notices() == [expected]
+    assert '\n' not in expected and msg('payment_autonomy.label') in expected and f'{title} 멈춰' in expected
+
+    case.service.preparations_service.stop_line(line_id, end_line=False)
+    second = entrust(case, line_id, job=job, seconds=1200)
+    assert second['owner_revision'] > first['owner_revision']
+    assert notices() == [expected, msg('lines.entrusted', title=title,
+                                      end=prep.local_text(case.clock[0] + 1200, zone))]
 
 
 def test_executor_ticks_and_wakes_coalesce_while_planner_runs(case):

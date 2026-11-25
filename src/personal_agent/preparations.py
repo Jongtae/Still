@@ -1814,7 +1814,7 @@ class Preparations:
     def ensure_line_account(self, brief, *, created_from, db, accepted_by=ACCEPTED_OWNER_WORK,
                             channel=None, bundle_channel=None, replace_inactive=True):
         """Schedule the periodic account if absent, inside the caller's transaction."""
-        from .entrusted_lines import account_rule, excerpt
+        from .entrusted_lines import account_rule, excerpt, line_name
         line_id = brief['line_id']
         rows = db.execute('SELECT state,channel,check_status FROM preparations WHERE line_id=? AND origin=? ORDER BY created_at DESC',
                           (line_id, ORIGIN_LINE_ACCOUNT)).fetchall()
@@ -1826,7 +1826,7 @@ class Preparations:
                            channel=channel or (rows[0]['channel'] if rows else CHANNEL_TELEGRAM),
                            bundle_channel=bundle_channel, created_from=created_from,
                            state=STATE_SCHEDULED, accepted_by=accepted_by, origin=ORIGIN_LINE_ACCOUNT,
-                           title=excerpt(msg('lines.account_title', task=brief['task']), TITLE_MAX_CHARS),
+                           title=excerpt(msg('lines.account_title', task=line_name(brief)), TITLE_MAX_CHARS),
                            line_id=line_id, db=db)
         snapshots = [row['check_status'] for row in rows if row['check_status']]
         deleted = db.execute("SELECT json_extract(detail,'$.check_account') FROM tool_events "

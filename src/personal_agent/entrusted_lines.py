@@ -4,7 +4,7 @@ A **line** outlives any one preparation.  ``preparations.line_id`` links the row
 its work; a replacement (``replaces``) keeps the id, the owner's AI continues it when the
 owner starts the same work again, and the line exists while nothing is scheduled.
 
-Its **brief** is free text the owner's AI writes in the owner's words: the task sentence,
+Its **brief** is free text the owner's AI writes in the owner's words: an optional title, the task,
 the standing rules (each with the owner turn it came from), the report promise, open
 matters, the state and how often the line gives an account of itself.  It is stored as
 versions in the existing ``procedure_versions`` store under the reserved slot prefix
@@ -20,6 +20,7 @@ run writes only its own line: as the owner's steer into it asks, or, in a run of
 on the receipt when applicable, #984).  Every other unattended write is refused.
 """
 import json
+import re
 import sqlite3
 import time
 import uuid
@@ -43,9 +44,10 @@ def line_id_of(ref):
 STATE_ACTIVE, STATE_STOPPED = 'active', 'stopped'
 STATES = (STATE_ACTIVE, STATE_STOPPED)
 #: The whole brief format.  Nothing here names a subject, an authority or an amount.
-FIELDS = ('task', 'rules', 'report_promise', 'open_matters', 'state', 'account_every_days')
+FIELDS = ('title', 'task', 'rules', 'report_promise', 'open_matters', 'state', 'account_every_days')
 RULE_FIELDS = ('text', 'from', 'at', 'basis')
 TASK_CHARS = RULE_CHARS = PROMISE_CHARS = 300
+TITLE_CHARS = 40
 OPEN_CHARS = 1000
 MAX_RULES = 20
 #: The periodic account (part of the default report promise); the owner changes the interval:
@@ -97,6 +99,18 @@ def _text(value, limit, code, required=False):
     return value
 
 
+def normalize_title(value):
+    return _text(value, TITLE_CHARS, 'line_invalid_title')
+
+
+def line_name(brief, clean=lambda text: text):
+    """The owner's short title, or a bounded first sentence for an untitled brief."""
+    if brief.get('title'):
+        return clean(brief['title'])
+    first = re.split(r'(?<=[.!?])\s+|(?<=[。！？])', clean(brief['task']), maxsplit=1)[0]
+    return excerpt(first.rstrip('.!?。！？') or first, TITLE_CHARS)
+
+
 def validate(brief):
     """The normalised brief, or a ``LineRefusal``: every field typed and bounded, nothing unknown."""
     if not isinstance(brief, dict):
@@ -126,7 +140,8 @@ def validate(brief):
     state = brief.get('state', STATE_ACTIVE)
     if state not in STATES:
         raise LineRefusal('line_invalid')
-    return {'task': _text(brief.get('task'), TASK_CHARS, 'line_invalid_task', True),
+    return {'title': normalize_title(brief.get('title')),
+            'task': _text(brief.get('task'), TASK_CHARS, 'line_invalid_task', True),
             'rules': clean,
             'report_promise': _text(brief.get('report_promise'), PROMISE_CHARS, 'line_invalid_promise', True),
             'open_matters': _text(brief.get('open_matters'), OPEN_CHARS, 'line_invalid_open'),
@@ -221,10 +236,10 @@ class EntrustedLines:
             row = db.execute('SELECT MIN(created) AS at FROM procedure_versions WHERE slot=?', (slot(line_id),)).fetchone()
         return row['at'] if row else None
 
-    def open(self, work_id, *, task, report_promise, rules=(), open_matters='', account_every_days=ACCOUNT_DAYS):
+    def open(self, work_id, *, task, report_promise, title='', rules=(), open_matters='', account_every_days=ACCOUNT_DAYS):
         """A new line with its first brief version; returns the brief."""
         now = self.clock()
-        brief = {'task': task, 'report_promise': report_promise, 'open_matters': open_matters,
+        brief = {'title': title, 'task': task, 'report_promise': report_promise, 'open_matters': open_matters,
                  'rules': [{'text': text, 'from': work_id, 'at': now} for text in rules or ()],
                  'state': STATE_ACTIVE, 'account_every_days': account_every_days}
         source = encode(brief)
@@ -325,11 +340,11 @@ class EntrustedLines:
         heading=msg('lines.bundle_heading',count=len(groups))
         footer=msg('lines.bundle_footer')
         shown=groups[:BUNDLE_LINE_LIMIT]
-        more=(msg('lines.bundle_more',tasks=', '.join(excerpt(redact(g[0]['brief']['task']),40)
+        more=(msg('lines.bundle_more',tasks=', '.join(line_name(g[0]['brief'],redact)
                                                      for g in groups[BUNDLE_LINE_LIMIT:])) if len(groups)>len(shown) else '')
         # Reserve space for labels/footer first; split the remaining report space fairly.
         more=excerpt(more,400) if more else ''
-        labels=[excerpt(redact(g[0]['brief']['task']),100) for g in shown]
+        labels=[line_name(g[0]['brief'],redact) for g in shown]
         share=max(200,(BUNDLE_CHARS-len(heading)-len(footer)-len(more)-sum(map(len,labels))-60)//len(shown))
         blocks=[]
         for label,group in zip(labels,shown):
@@ -404,7 +419,8 @@ from .messages import msg  # noqa: E402 - the catalogue is only needed by the te
 NOTICE_OPENED, NOTICE_RULE, NOTICE_STOPPED = 'line_opened:', 'line_rule:', 'line_stopped:'
 NOTICE_PLAN = 'line_plan:'
 NOTICE_WORK_STOPPED = 'line_work_stopped:'
-NOTICE_KINDS = (NOTICE_OPENED, NOTICE_RULE, NOTICE_STOPPED, NOTICE_PLAN, NOTICE_WORK_STOPPED)
+NOTICE_ENTRUSTED = 'line_entrusted:'
+NOTICE_KINDS = (NOTICE_OPENED, NOTICE_RULE, NOTICE_STOPPED, NOTICE_PLAN, NOTICE_WORK_STOPPED, NOTICE_ENTRUSTED)
 #: The Evidence row recording which brief version a Work read.
 READ_EVENT = 'entrusted_line_read'
 OUTCOME_DELIVERED, OUTCOME_KEPT, OUTCOME_FAILED, OUTCOME_OPEN = 'delivered', 'kept', 'failed', 'open'
@@ -484,14 +500,14 @@ def outcome_label(status, delivered):
 
 def public_brief(brief):
     """A brief as a tool result shows it: its id, version and fields (rule sources as Work ids)."""
-    return {'line_id': brief['line_id'], 'version': brief['version'], 'state': brief['state'],
+    return {'line_id': brief['line_id'], 'version': brief['version'], 'state': brief['state'], 'title': line_name(brief),
             'task': brief['task'], 'report_promise': brief['report_promise'], 'open_matters': brief['open_matters'],
             'rules': [rule['text'] for rule in brief['rules']], 'account_every_days': brief['account_every_days']}
 
 
 def brief_text(brief, lang='ko'):
     rules = '\n'.join(f'{number}. {rule["text"]}' for number, rule in enumerate(brief['rules'], 1)) or msg('lines.no_rules', lang)
-    return msg('lines.brief', lang, task=brief['task'], promise=brief['report_promise'], rules=rules,
+    return msg('lines.brief', lang, title=line_name(brief), task=brief['task'], promise=brief['report_promise'], rules=rules,
                open=brief['open_matters'] or msg('label.none', lang), version=brief['version'],
                days=brief['account_every_days'])
 
@@ -506,15 +522,15 @@ def outcomes_text(outcomes, timezone_name=None, lang='ko'):
 
 
 def entry_text(entry, lang='ko'):
-    """One line of the list answer: task, report promise, last delivered report, next run or blocker."""
+    """One line of the list answer: name, report promise, last delivered report, next run or blocker."""
     checks = ''.join('\n' + msg('lines.list_check', lang, title=item['title'], seconds=item['every_seconds'],
                                result=msg('checks.result_' + (item['last_result'] or 'none'), lang),
                                runs=item['runs'], wakes=item['wakes'], cap=item['daily_wakes'])
                      for item in entry.get('checks', ()))
     if entry['state'] == 'waiting':
-        return msg('lines.list_waiting', lang, task=entry['task']) + checks
+        return msg('lines.list_waiting', lang, task=entry['title']) + checks
     if entry['state'] != STATE_ACTIVE:
-        return msg('lines.list_stopped', lang, task=entry['task']) + checks
+        return msg('lines.list_stopped', lang, task=entry['title']) + checks
     last = entry.get('last_report') or msg('lines.no_report_yet', lang)
     if entry.get('blocked') == msg('lines.blocked_unscheduled'):
         following = msg('lines.blocked_unscheduled', lang)
@@ -526,7 +542,7 @@ def entry_text(entry, lang='ko'):
         following = msg('lines.list_next', lang, at=entry['next'])
     if entry.get('nothing_scheduled') and entry.get('blocked') != msg('lines.blocked_unscheduled'):
         following = f"{msg('lines.blocked_unscheduled', lang)} / {following}"
-    return msg('lines.list_entry', lang, task=entry['task'], promise=entry['report_promise'], last=last,
+    return msg('lines.list_entry', lang, task=entry['title'], promise=entry['report_promise'], last=last,
                following=following) + checks
 
 

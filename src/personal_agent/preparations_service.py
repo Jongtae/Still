@@ -795,7 +795,9 @@ class PreparationsService:
         """One readable receipt, shared by messenger notices and the existing Settings result."""
         lang = owner_language(self.service.store) or 'ko'
         if event['target'] == 'lines.open_matters':
-            text = msg('lines.self_change_notice', lang, line=event['line_id'], version=event['version'],
+            brief = self.service.lines.readable(event['line_id'])
+            name = el.line_name(brief, self.service._redact_known_secrets) if brief else msg('label.not_recorded', lang)
+            text = msg('lines.self_change_notice', lang, line=name, version=event['version'],
                        before=el.excerpt(event['before']['open_matters'], 1000),
                        after=el.excerpt(event['after']['open_matters'], 1000))
             if event.get('outside_content'):
@@ -1580,7 +1582,7 @@ class PreparationsService:
         home_zone=service.home_zone()
         day=service.preparations.budget_day(service.preparations.clock())
         rows=[]
-        lines={brief['line_id']:brief['task'] for brief in service.lines.lines()}
+        lines={brief['line_id']:el.line_name(brief) for brief in service.lines.lines()}
         # #1005: a line's finished pieces come back once per line in ``piece_groups``.
         for row in service.preparations.rows(finished_pieces=False):
             # Preserve Lane S's decision Evidence; Settings claims a held failure was told
@@ -1613,7 +1615,7 @@ class PreparationsService:
                          'window_recurrence':terms.get('recurrence'),
                          'report_every_minutes':terms['report_seconds']//60 if terms.get('report_seconds') else None,
                          'last_decision':row.get('last_decision'),'last_decision_reason':row.get('last_decision_reason'),
-                         # #798: the entrusted line this row works for, by its task sentence.
+                         # #798: the short name of the line this row works for.
                          'line_id':row.get('line_id'),'line_task':lines.get(row.get('line_id')),
                          'line_account':row.get('origin')==prep.ORIGIN_LINE_ACCOUNT})
             if row['state']==prep.STATE_PROPOSED and row.get('origin')==prep.ORIGIN_LINE_RESUME:
@@ -2420,14 +2422,15 @@ class PreparationsService:
         return out
 
     def line_entry(self, brief):
-        """One line as the list answer shows it: task, promise, last delivered report, next run or blocker."""
+        """One line as the list answer shows it: name, promise, last delivered report, next run or blocker."""
         service=self.service
         rows=self.line_rows(brief['line_id'])
         home_zone=service.home_zone()
         zone=home_zone or (rows[0]['timezone'] if rows else None)
         delivered=[item for item in self.line_outcomes(brief['line_id'],limit=el.OUTCOMES_SHOWN)
                    if item['outcome']==el.OUTCOME_DELIVERED]
-        entry={'line_id':brief['line_id'],'version':brief['version'],'state':brief['state'],'task':brief['task'],
+        entry={'line_id':brief['line_id'],'version':brief['version'],'state':brief['state'],
+               'title':el.line_name(brief),'task':brief['task'],
                'report_promise':brief['report_promise'],
                'last_report':prep.local_text(delivered[0]['at'],zone) if delivered else None}
         day=service.preparations.budget_day(service.preparations.clock())
@@ -2561,17 +2564,32 @@ class PreparationsService:
             if stood:self.record_line_row_started(job['id'],brief['line_id'],'account',restart,db)
             return result
 
-    def line_notice(self, job, kind, line_id, version):
+    def line_notice(self, job, kind, line_id, version, *, db=None, fingerprint=None):
         """Queue one owner notice of a line on ``job``'s conversation (``lines.NOTICE_*``).
 
         Returns '' when a surface took it, else the notice's text: this conversation has no
         surface that sends notices (the local web chat), so the reply says it instead.
+        With a transaction, queue or record the notice alongside the state change itself.
         """
         service=self.service
-        notice=f'{kind}{line_id}:{version}'
-        service.queue_notification(job,notice,fingerprint=f'{line_id}:{version}')
-        if service.store.notification_of(job['id'],notice):return ''
-        return self.line_notice_text({'kind':notice,'fingerprint':f'{line_id}:{version}'}) or ''
+        key=f'{line_id}:{version}'
+        notice=f'{kind}{key}'
+        fingerprint=fingerprint or key
+        if db is None:
+            service.queue_notification(job,notice,fingerprint=fingerprint)
+            if service.store.notification_of(job['id'],notice):return ''
+        else:
+            surface=service.surface_of(job)
+            if surface is not None:
+                generation=job['channel'][len(surface.channel_prefix):]
+                service.store.telegram.queue_notification(job['id'],job['chat_id'],generation,
+                                                          notice,fingerprint,surface=surface.name,db=db)
+                return ''
+        text=self.line_notice_text({'kind':notice,'fingerprint':fingerprint,'job_id':job['id']}) or ''
+        if db is not None and text:
+            service.record_conversation_notice(text,channel=job['channel'],db=db)
+            return ''
+        return text
 
     @staticmethod
     def told(next_step, untold):
@@ -2876,7 +2894,8 @@ class PreparationsService:
         if not goal or len(goal)>prep.BRIEF_MAX_CHARS:
             raise el.LineRefusal('line_invalid_planner')
         end=args['ends_at']
-        summary=(f"Entrust the line {current['task']!r} until {end}. Its runs follow the owner's current payment "
+        summary=(f"Entrust the line {el.line_name(current)!r} until {end}. Task: {current['task']!r}. "
+                 "Its runs follow the owner's current payment "
                  f"autonomy. Planner instruction: {goal}")
         from .quickstart_store import owner_words_work
         if not owner_words_work(job) or service.decision_judge.explicit_preparation_request(
@@ -2907,6 +2926,9 @@ class PreparationsService:
             except prep.PreparationRefusal as exc:
                 raise not_run(ToolError(str(exc),exc.code)) from None
             revision=continuous.entrust(db,line_id,job['id'],row['id'],now,ends_at)
+            # Keep the brief and deadline of this entrustment even if a correction fences its plan.
+            self.line_notice(job,el.NOTICE_ENTRUSTED,line_id,revision,db=db,
+                             fingerprint=f"{line_id}:{revision}:{current['version']}:{end}")
         return {**el.public_brief(current),'ends_at':end,
                 'owner_revision':revision,'planner_id':row['id']}
 
@@ -2915,6 +2937,7 @@ class PreparationsService:
         rules=el.split_rules(args.get('rules'))
         days=el.whole_days(args.get('account_every_days'))
         brief=service.lines.open(job['id'],task=service._redact_known_secrets(args.get('task') or ''),
+                                 title=service._redact_known_secrets(el.normalize_title(args.get('title'))),
                                  report_promise=service._redact_known_secrets(args.get('report_promise') or ''),
                                  rules=[service._redact_known_secrets(rule) for rule in rules],
                                  open_matters=service._redact_known_secrets(args.get('open_matters') or ''),
@@ -2939,6 +2962,8 @@ class PreparationsService:
         drop=el.whole_days(args.get('drop_rule'))
         changes={key:service._redact_known_secrets(args[key]) for key in ('task','report_promise','open_matters')
                  if isinstance(args.get(key),str) and args[key].strip()}
+        if 'title' in args:
+            changes['title']=service._redact_known_secrets(el.normalize_title(args['title']))
         days=el.whole_days(args.get('account_every_days'))
         current=service.lines.current(line_id) if isinstance(line_id,str) and line_id else None
         if current is None:raise el.LineRefusal('line_not_found')
@@ -2957,7 +2982,8 @@ class PreparationsService:
         marked=authority=='steer' and bool(service.store.outside_content_sources(job['id']))
         if entrusted and authority!='self' and not ruled:
             stop_request=service.decision_judge.explicit_line_change_request(
-                service.owner_request_words(job),f"Close today's work on {current['task']!r} now and cancel its runs.",
+                service.owner_request_words(job),
+                f"Close today's work on {el.line_name(current)!r} now and cancel its runs. Task: {current['task']}",
                 self.line_owner_rules(current),service.preparation_conversation(job),work_id=job['id'])
             if stop_request.outcome==JUDGMENT_YES:
                 return self._line_stop(job,{**args,'scope':'work'},confirmed=True)
@@ -3031,7 +3057,8 @@ class PreparationsService:
         if not confirmed and ((steered and service.store.outside_content_sources(job['id'])) or entrusted):
             change=('end this entrusted mission and stop everything under it' if scope=='line' else
                     'stop the current work and pending runs while keeping this entrusted mission active')
-            if not self.steer_asked(job,f"{change}: {current['task']}",self.line_owner_rules(current)):
+            if not self.steer_asked(job,f"{change} on {el.line_name(current)!r}. Task: {current['task']}",
+                                    self.line_owner_rules(current)):
                 raise el.LineRefusal('line_change_needs_owner')
         after,changed=self.stop_line(line_id,job['id'],end_line=scope=='line')
         kind,next_key=(el.NOTICE_STOPPED,'lines.stopped_next') if scope=='line' else (
@@ -3185,16 +3212,30 @@ class PreparationsService:
         """The text of one queued line notice, or None when it no longer applies."""
         service=self.service
         kind=notification['kind']
-        line_id,_sep,version=str(notification.get('fingerprint') or '').partition(':')
+        fingerprint=str(notification.get('fingerprint') or '')
+        if kind.startswith(el.NOTICE_ENTRUSTED):
+            parts=fingerprint.split(':',3)
+            if len(parts)!=4 or not parts[2].isdigit():return None
+            line_id,_revision,brief_version,end=parts
+            brief=service.lines.version(line_id,brief_version)
+            if brief is None:return None
+            try:deadline=datetime.fromisoformat(end)
+            except ValueError:return None
+            zone=service.home_zone() or prep.offset_name(deadline)
+            lang=owner_language(service.store,notification.get('job_id')) or 'ko'
+            name=el.line_name(brief,service._redact_known_secrets)
+            return msg('lines.entrusted',lang,title=name,end=prep.local_text(deadline.timestamp(),zone))
+        line_id,_sep,version=fingerprint.partition(':')
         brief=service.lines.readable(line_id)
         if brief is None or not version.isdigit():return None
+        name=el.line_name(brief,service._redact_known_secrets)
         if kind.startswith(el.NOTICE_OPENED):
             if brief['state']!=el.STATE_ACTIVE:return None
             provenance=service.lines.provenance(line_id)
             if provenance.get('by')=='look-back':
-                return service._redact_known_secrets(msg('lines.stood_announced',task=brief['task'],promise=brief['report_promise'],
+                return service._redact_known_secrets(msg('lines.stood_announced',task=name,promise=brief['report_promise'],
                                                         days=provenance['evidence']['days']))
-            return service._redact_known_secrets(msg('lines.announced',task=brief['task'],promise=brief['report_promise']))
+            return service._redact_known_secrets(msg('lines.announced',task=name,promise=brief['report_promise']))
         if kind.startswith(el.NOTICE_PLAN):
             with service.store.db() as db:
                 receipt=db.execute("SELECT detail FROM tool_events WHERE tool='line_self_change' "
@@ -3206,12 +3247,12 @@ class PreparationsService:
             stored=service.lines.version(line_id,int(version))
             rule=stored['rules'][-1]['text'] if stored and stored['rules'] else None
             if rule is None or rule not in [item['text'] for item in brief['rules']]:return None
-            text=msg('lines.restated',rule=rule)
+            text=msg('lines.restated',title=name,rule=rule)
             if self.line_touches_money(line_id):
                 text+='\n\n'+msg('lines.money_rules')+'\n'+self.line_owner_rules(stored)
             return service._redact_known_secrets(str(text or ''))
         if kind.startswith(el.NOTICE_STOPPED):
-            return service._redact_known_secrets(msg('lines.stopped',task=brief['task']))
+            return service._redact_known_secrets(msg('lines.stopped',task=name))
         if kind.startswith(el.NOTICE_WORK_STOPPED):
-            return service._redact_known_secrets(msg('lines.work_stopped',task=brief['task']))
+            return service._redact_known_secrets(msg('lines.work_stopped',task=name))
         return None
