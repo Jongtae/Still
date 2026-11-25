@@ -572,7 +572,8 @@ class ConditionChecks:
         with self.store.db() as db:
             candidates = db.execute(
                 'SELECT p.* FROM line_mandates m JOIN preparations p ON p.id=m.planner_id '
-                "WHERE m.pending IS NOT NULL AND m.closed=0 AND m.ends_at>? AND p.state='scheduled' ORDER BY p.due_at",
+                "WHERE m.pending IS NOT NULL AND m.closed=0 AND m.ends_at>? AND p.state='scheduled' "
+                "ORDER BY p.created_at,p.id",
                 (now,)).fetchall()
         for item in candidates:
             row = dict(item)
@@ -583,8 +584,8 @@ class ConditionChecks:
             with self.store.db() as db:
                 db.execute('BEGIN IMMEDIATE')
                 line_id = row['line_id']
-                mandate = continuous.active(db, line_id, self.preparations.clock())
-                if not mandate or not mandate['pending'] or mandate['planner_id'] != row['id']:
+                mandate = continuous.current_planner(db, row, self.preparations.clock())
+                if not mandate or not mandate['pending']:
                     continue
                 day = self.preparations.budget_day(now, db)
                 wakes = mandate['wakes'] if mandate['wake_day'] == day else 0

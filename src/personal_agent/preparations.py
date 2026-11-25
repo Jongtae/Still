@@ -2122,9 +2122,13 @@ class Preparations:
     def _undo_self_change(self, db, row):
         """Restore the first before-values, leaving consumed runs and live Work intact."""
         row = dict(row)
+        now = self.clock()
+        from . import continuous_lines as continuous
+        planner = row['origin'] == ORIGIN_LINE_PLANNER
+        if planner and not continuous.current_planner(db, row, now):
+            raise PreparationRefusal('resume_expired')
         event = json.loads(row['self_change'])
         updates = self._self_change_values(row, event['before'])
-        now = self.clock()
         if 'check_spec' in updates:
             # The spec is the receipt value. Derive the cadence and leave the counters alone.
             interval = json.loads(updates['check_spec'])['every_seconds']
@@ -2141,6 +2145,9 @@ class Preparations:
             ws.is_active_preparation(job['status']) or job['delivery'] in ('pending', 'sending')))
         if live:
             updates['state'] = STATE_RUNNING
+        elif planner:
+            return_state = updates.get('run_return_state', row['run_return_state']) or STATE_SCHEDULED
+            updates.update(state=return_state, run_return_state=None)
         else:
             restored = {**row, **updates}
             # Already scheduled means due_at is the unconsumed next slot, not the last run.
@@ -2169,7 +2176,6 @@ class Preparations:
         db.execute(f"UPDATE preparations SET {','.join(k + '=?' for k in updates)} WHERE id=?",
                    (*updates.values(), row['id']))
         if row['state'] in (STATE_PAUSED, STATE_CANCELLED) and updates['state'] in (STATE_SCHEDULED, STATE_RUNNING):
-            from . import continuous_lines as continuous
             continuous.executor_paused_or_resumed(db, {**row, **updates}, now, resumed=True)
         return dict(db.execute('SELECT * FROM preparations WHERE id=?', (row['id'],)).fetchone())
 
@@ -2209,7 +2215,7 @@ class Preparations:
         return dict(row)
 
     def resume(self, preparation_id):
-        """Resume at a future slot, never catch up missed slots (#575)."""
+        """Resume at a future slot or re-enable a current planner's triggers."""
         with self.store.db() as db:
             db.execute('BEGIN IMMEDIATE')
             self.store.require_read_checkpoint_writer(db)
@@ -2219,7 +2225,7 @@ class Preparations:
         return self._resume(preparation_id, STATE_PAUSED)
 
     def restore(self, preparation_id, *, cancelled_at=None, self_change_run_key=None):
-        """Undo cancellation at a future slot; an optional revision binds a notice's undo."""
+        """Undo cancellation, optionally binding the undo to a notice's revision."""
         # Owner-only restore also reapplies the audited bounds after a self-narrow.
         with self.store.db() as db:
             db.execute('BEGIN IMMEDIATE')
@@ -2245,6 +2251,10 @@ class Preparations:
                 raise PreparationRefusal('invalid_state')
             if cancelled_at is not None and row['updated_at'] != cancelled_at:
                 raise PreparationRefusal('invalid_state')
+            from . import continuous_lines as continuous
+            planner = row['origin'] == ORIGIN_LINE_PLANNER
+            if planner and not continuous.current_planner(db, row, now):
+                raise PreparationRefusal('resume_expired')
             if state == STATE_CANCELLED:
                 active = db.execute('SELECT count(*) FROM preparations WHERE state IN (?,?,?,?)', ACTIVE_STATES).fetchone()[0]
                 if active >= MAX_ACTIVE:
@@ -2260,8 +2270,9 @@ class Preparations:
             if row['self_change']:
                 db.execute('UPDATE preparations SET self_change_undone=1 WHERE id=?', (row['id'],))
             self._check_admission(db, row.get('check_spec'), row['id'])
-            if in_progress:
-                db.execute('UPDATE preparations SET state=?,updated_at=? WHERE id=?', (STATE_RUNNING, revision, row['id']))
+            if in_progress or planner:
+                db.execute('UPDATE preparations SET state=?,updated_at=? WHERE id=?',
+                           (STATE_RUNNING if in_progress else STATE_SCHEDULED, revision, row['id']))
             elif row.get('check_spec'):
                 if now >= row['until_at'] or row['run_count'] >= row['max_runs']:
                     raise PreparationRefusal('resume_expired')
@@ -2286,7 +2297,6 @@ class Preparations:
                     raise PreparationRefusal('resume_expired')
                 db.execute('UPDATE preparations SET state=?,due_at=?,updated_at=? WHERE id=?',
                            (STATE_SCHEDULED, following, revision, row['id']))
-            from . import continuous_lines as continuous
             continuous.executor_paused_or_resumed(db, row, now, resumed=True)
         return self.get(preparation_id)
 
@@ -2527,8 +2537,8 @@ class Preparations:
         with self.store.db() as db:
             db.execute('BEGIN IMMEDIATE')
             self.store.require_read_checkpoint_writer(db)
-            row = db.execute('SELECT * FROM preparations WHERE id=? AND state=? AND due_at<=?',
-                             (preparation_id, STATE_SCHEDULED, now)).fetchone()
+            row = db.execute('SELECT * FROM preparations WHERE id=? AND state=? AND origin IS NOT ? AND due_at<=?',
+                             (preparation_id, STATE_SCHEDULED, ORIGIN_LINE_PLANNER, now)).fetchone()
             following = row and next_due(row['due_at'], row['timezone'], row['recurrence'], now, row['rule_start'], row['run_count'])
             if not following:
                 return False
@@ -2716,7 +2726,8 @@ class Preparations:
     def due(self, now, limit=TICK_LIMIT, busy=()):
         """The tick's one indexed query: due slots and runs ready to settle.
 
-        A ``scheduled`` row is due at ``due_at``; a ``running`` row is ready
+        Scheduled planners are handled by the trigger mailbox. A timed
+        ``scheduled`` row is due at ``due_at``; a ``running`` row is ready
         once its Work is no longer queued, running or awaiting a connection
         and its delivery is no longer pending or in flight. Expired windows
         also surface so an unanswered prerequisite can terminate without AI.
@@ -2729,11 +2740,12 @@ class Preparations:
             return [dict(row) for row in db.execute(
                 'SELECT p.*, j.status AS job_status, j.delivery AS job_delivery FROM preparations p '
                 'LEFT JOIN jobs j ON j.id=p.last_run_job_id '
-                "WHERE ((p.state='scheduled' AND p.due_at<=? AND p.check_spec IS NULL AND p.origin IS NOT 'line-planner') OR p.state='running') "
+                "WHERE ((p.state='scheduled' AND p.due_at<=? AND p.check_spec IS NULL AND p.origin IS NOT ?) OR p.state='running') "
                 f"AND (p.state='scheduled' OR j.id IS NULL OR j.id NOT IN ({','.join('?'*len(busy))})) "
-                "AND (p.state='scheduled' OR j.id IS NULL OR (p.recurrence='window' AND p.window_end<=?) "
+                "AND (p.state='scheduled' OR j.id IS NULL OR (p.origin IS NOT ? AND p.recurrence='window' AND p.window_end<=?) "
                 f"OR (j.status NOT IN {ws.sql_in(ws.ACTIVE_PREPARATION)} "
-                "AND j.delivery NOT IN ('pending','sending'))) ORDER BY p.due_at LIMIT ?", (now, *busy, now, limit))]
+                "AND j.delivery NOT IN ('pending','sending'))) ORDER BY p.due_at LIMIT ?",
+                (now, ORIGIN_LINE_PLANNER, *busy, ORIGIN_LINE_PLANNER, now, limit))]
 
     @staticmethod
     def run_refusal(db, work_id, now):
@@ -2744,10 +2756,14 @@ class Preparations:
             return None
         row = db.execute('SELECT * FROM preparations WHERE id=?', (preparation_id,)).fetchone()
         from . import continuous_lines as continuous
-        if row and (continuous.lapsed(db, row['line_id'], now)
+        planner = row and row['origin'] == ORIGIN_LINE_PLANNER
+        if planner and not continuous.current_planner(db, row, now):
+            return continuous.STOP_REASON
+        if row and ((not planner and continuous.lapsed(db, row['line_id'], now))
                     or (row['state'] == STATE_CANCELLED and continuous.member_revision(db, work_id, row['line_id']))):
             return continuous.STOP_REASON
-        if row and row['recurrence'] == RECURRENCE_WINDOW and now >= row['window_end']:
+        window = row and not planner and row['recurrence'] == RECURRENCE_WINDOW
+        if window and now >= row['window_end']:
             return 'preparation-window-expired'
         # #798: stop wins (before the row's own state: stopping a line also cancels its rows); a line
         # whose brief cannot be read stops its run instead of running without its rules.
@@ -2757,7 +2773,7 @@ class Preparations:
         if not row or row['state'] != STATE_RUNNING or row['last_run_job_id'] != work_id:
             return 'preparation-inactive'
         # The current run already consumed its count; equality is allowed.
-        if row['recurrence'] == RECURRENCE_WINDOW and row['run_count'] > row['max_runs']:
+        if window and row['run_count'] > row['max_runs']:
             return 'preparation-run-limit'
         return None
 
@@ -2847,7 +2863,8 @@ class Preparations:
             current = db.execute('SELECT * FROM preparations WHERE id=?', (row['id'],)).fetchone()
             if immediate:
                 current = self._editable(db, row['id'], (STATE_SCHEDULED, STATE_PAUSED))
-            elif not current or current['state'] != STATE_SCHEDULED or current['due_at'] != row['due_at']:
+            elif (not current or current['state'] != STATE_SCHEDULED
+                  or (not planner and current['due_at'] != row['due_at'])):
                 return None
             current = dict(current)
             if current.get('check_spec'):
@@ -2856,22 +2873,25 @@ class Preparations:
                     self._check_admission(db, current['check_spec'], current['id'])
                 elif not wake or current['check_spec'] != row['check_spec']:
                     return None
-            elif wake and not (planner and current['origin'] == ORIGIN_LINE_PLANNER):
+            elif wake and not planner:
                 return None
             if current['origin'] == ORIGIN_LINE_PLANNER and not planner:
                 if immediate:
                     raise PreparationRefusal('invalid_state')
                 return None
             from . import continuous_lines as continuous
-            standing = continuous.active(db, current['line_id'], now)
+            standing = (continuous.current_planner(db, current, now) if planner
+                        else continuous.active(db, current['line_id'], now))
+            if planner and not standing:
+                return None
             if standing and immediate and current.get('check_spec'):
                 raise PreparationRefusal('invalid_state', 'Use the separate line planner for Work.')
-            if continuous.lapsed(db, current['line_id'], now):
+            if not planner and continuous.lapsed(db, current['line_id'], now):
                 return None
             existing = db.execute('SELECT id FROM jobs WHERE request_key=?', (key,)).fetchone()
             if immediate and existing:
                 return existing['id']
-            window = current['recurrence'] == RECURRENCE_WINDOW
+            window = not planner and current['recurrence'] == RECURRENCE_WINDOW
             missed_day = False
             if window and not immediate and stored_window_terms(current).get('recurrence'):
                 tz = zone(current['timezone'])
@@ -3087,34 +3107,41 @@ class Preparations:
                 self._clear_carried_budget_skips(db, current['id'], job['id'])
             if current['kind'] == KIND_PREPARE and job and ws.has_delivered_result(job['status']) and answer is not None:
                 updates.update(prepared_result_ref=job['id'], prepared_at=now, prepared_text=answer)
-            if current.get('check_spec'):
-                change = json.loads(current['self_change'] or '{}')
-                if (change.get('run_key') == slot_key(job['request_key'] if job else None)
-                        and change.get('after', {}).get('check_spec')):
-                    # A replacement waits a full interval after the current Work returns.
-                    updates['check_next_at'] = min(current['until_at'], max(
-                        current['check_next_at'], now + current['every_seconds']))
-                following = None if closed_early or now >= current['until_at'] or current['run_count'] >= current['max_runs'] \
-                    else updates.get('check_next_at', current['check_next_at'])
-            elif current['recurrence'] == RECURRENCE_WINDOW:
-                following = None if closed_early else next_window_slot(current, now)
+            if current['origin'] == ORIGIN_LINE_PLANNER:
+                from . import continuous_lines as continuous
+                mandate = continuous.current_planner(db, current, now)
+                return_state = current['run_return_state'] or STATE_SCHEDULED
+                updates.update(state=return_state if mandate else STATE_CANCELLED, run_return_state=None)
+                following = None
             else:
-                following = next_due(current['due_at'], current['timezone'], current['recurrence'], now,
-                                     current.get('rule_start'), current.get('run_count', 0))
-            if following is None:
-                advance = (next_day_window(current, now) if current['recurrence'] == RECURRENCE_WINDOW
-                           and not current.get('run_return_state') else {})
-                if advance:
-                    following = advance['due_at']
-                    updates.update(state=STATE_SCHEDULED, **advance)
+                if current.get('check_spec'):
+                    change = json.loads(current['self_change'] or '{}')
+                    if (change.get('run_key') == slot_key(job['request_key'] if job else None)
+                            and change.get('after', {}).get('check_spec')):
+                        # A replacement waits a full interval after the current Work returns.
+                        updates['check_next_at'] = min(current['until_at'], max(
+                            current['check_next_at'], now + current['every_seconds']))
+                    following = None if closed_early or now >= current['until_at'] or current['run_count'] >= current['max_runs'] \
+                        else updates.get('check_next_at', current['check_next_at'])
+                elif current['recurrence'] == RECURRENCE_WINDOW:
+                    following = None if closed_early else next_window_slot(current, now)
                 else:
-                    updates['state'] = outcome
-            else:
-                updates.update(state=STATE_SCHEDULED, due_at=current['due_at'] if current.get('check_spec') else following)
-            if current.get('run_return_state'):
-                # #575: the extra run does not consume or advance the regular schedule.
-                updates.update(state=current['run_return_state'], due_at=current['due_at'], run_return_state=None)
-                following = current['due_at']
+                    following = next_due(current['due_at'], current['timezone'], current['recurrence'], now,
+                                         current.get('rule_start'), current.get('run_count', 0))
+                if following is None:
+                    advance = (next_day_window(current, now) if current['recurrence'] == RECURRENCE_WINDOW
+                               and not current.get('run_return_state') else {})
+                    if advance:
+                        following = advance['due_at']
+                        updates.update(state=STATE_SCHEDULED, **advance)
+                    else:
+                        updates['state'] = outcome
+                else:
+                    updates.update(state=STATE_SCHEDULED, due_at=current['due_at'] if current.get('check_spec') else following)
+                if current.get('run_return_state'):
+                    # #575: the extra run does not consume or advance the regular schedule.
+                    updates.update(state=current['run_return_state'], due_at=current['due_at'], run_return_state=None)
+                    following = current['due_at']
             notified = False
             if decision is not None and job:
                 updates.update(last_decision=decision[0], last_decision_reason=decision[1])

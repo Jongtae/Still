@@ -1145,24 +1145,27 @@ class PreparationsService:
             row=service.preparations.get(preparation_id)
             # #969: the owner's goal and accepted risk lead; limits the AI set itself are its plan.
             if not row:return msg('preparations.run_fact')+'\n'+msg('preparations.own_limits')
-            count,maximum,recurrence=int(row['run_count']),row.get('max_runs'),row.get('recurrence')
-            # ``start`` counts the run and leaves ``due_at`` on its slot until the run is settled.
-            if recurrence==prep.RECURRENCE_WINDOW:
-                following=prep.next_window_slot(row,row['due_at'])
-            else:
-                following=prep.next_due(row['due_at'],row['timezone'],recurrence,row['due_at'],row.get('rule_start'),count)
+            count,maximum=int(row['run_count']),row.get('max_runs')
             local=lambda slot:prep.local_text(slot,row['timezone'])
-            schedule=(msg('preparations.run_next',due=local(following)) if following is not None
-                      else msg('preparations.run_last'))
+            planner=row.get('origin')==prep.ORIGIN_LINE_PLANNER
+            recurrence=None if planner else row.get('recurrence')
             until_at=row.get('until_at')
-            if row.get('check_spec'):
-                schedule=msg('checks.scheduled')
-            elif row.get('origin')==prep.ORIGIN_LINE_PLANNER:
+            if planner:
                 schedule=msg('checks.planner_triggered')
+                following=None
                 with service.store.db() as db:
-                    mandate=continuous.active(db,row['line_id'],service.preparations.clock())
-                if mandate and mandate['planner_id']==preparation_id:
-                    until_at=mandate['ends_at']
+                    mandate=continuous.current_planner(db,row,service.preparations.clock())
+                until_at=mandate['ends_at'] if mandate else None
+            else:
+                # ``start`` counts the run and leaves ``due_at`` on its slot until the run is settled.
+                if recurrence==prep.RECURRENCE_WINDOW:
+                    following=prep.next_window_slot(row,row['due_at'])
+                else:
+                    following=prep.next_due(row['due_at'],row['timezone'],recurrence,row['due_at'],row.get('rule_start'),count)
+                schedule=(msg('preparations.run_next',due=local(following)) if following is not None
+                          else msg('preparations.run_last'))
+                if row.get('check_spec'):
+                    schedule=msg('checks.scheduled')
             if until_at is not None:
                 schedule+=msg('preparations.run_end',end=local(until_at))
             terms=prep.stored_window_terms(row)
@@ -2372,6 +2375,11 @@ class PreparationsService:
             return ''
         if self.line_has_pending_work(brief['line_id'],exclude=row['id']):
             return ''
+        if row.get('origin')==prep.ORIGIN_LINE_PLANNER:
+            with self.service.store.db() as db:
+                mandate=continuous.current_planner(db,row,self.service.preparations.clock())
+            will_wait=row['state']==prep.STATE_SCHEDULED or row.get('run_return_state')==prep.STATE_SCHEDULED
+            return '' if mandate and will_wait else msg('lines.no_following_run')
         now=max(self.service.preparations.clock(),row['due_at'])
         count=row['run_count']+(row['state']==prep.STATE_SCHEDULED)
         if row.get('run_return_state'):

@@ -43,6 +43,15 @@ def active(db, line_id, now):
     return None
 
 
+def current_planner(db, row, now):
+    """Return the active mandate that owns this trigger-driven preparation."""
+    if row['origin'] == prep.ORIGIN_LINE_PLANNER:
+        mandate = active(db, row['line_id'], now)
+        if mandate and mandate['planner_id'] == row['id']:
+            return mandate
+    return None
+
+
 def lapsed(db, line_id, now):
     """The deadline passed, but the preparations sweep has yet to close the mandate."""
     row = record(db, line_id)

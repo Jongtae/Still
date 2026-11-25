@@ -190,6 +190,149 @@ def test_executor_ticks_and_wakes_coalesce_while_planner_runs(case):
     assert wake_job(c, planner)['id'] == second['id']
 
 
+@pytest.mark.parametrize(('stop', 'resume'), [('pause', 'resume'), ('cancel', 'restore')])
+def test_settings_reactivates_current_planner_with_buffered_trigger(case, stop, resume):
+    c = case
+    line_id, _, planner = setup(c)
+    planner_id = planner['id']
+    settings = c.service.preparations_service.preparation_request
+    settings({'operation': stop, 'id': planner_id})
+    c.clock[0] += 30
+    correct(c, line_id)
+    stopped = current(c, planner)
+    assert not c.checks.run_due_planner(c.clock[0])
+    assert not any(row['id'] == planner_id for row in c.preps.due(c.clock[0]))
+
+    settings({'operation': resume, 'id': planner_id})
+    resumed = current(c, planner)
+    assert resumed['state'] == prep.STATE_SCHEDULED
+    assert resumed['due_at'] == planner['due_at'] and resumed['recurrence'] is None
+    assert resumed['updated_at'] > stopped['updated_at']
+    assert c.checks.run_due_planner(c.clock[0])
+    assert wake_job(c, planner)['status'] == 'queued'
+    assert 'owner_correction' in c.service.preparation_history(wake_job(c, planner))[-1]['content']
+
+
+@pytest.mark.parametrize('boundary', ['closed', 'replaced'])
+@pytest.mark.parametrize(('state', 'operation'), [
+    (prep.STATE_PAUSED, 'resume'), (prep.STATE_CANCELLED, 'restore'),
+])
+def test_settings_refuses_old_planner_even_if_its_due_at_is_in_the_future(case, boundary, state, operation):
+    c = case
+    line_id, _, planner = setup(c)
+    service = c.service.preparations_service
+    service.stop_line(line_id, end_line=False)
+    if boundary == 'replaced':
+        assert entrust(c, line_id)['planner_id'] != planner['id']
+    if state == prep.STATE_PAUSED:
+        # A paused historical row can outlive a change to the mandate record.
+        with c.store.db() as db:
+            db.execute('UPDATE preparations SET state=? WHERE id=?', (state, planner['id']))
+    c.clock[0] -= 30  # An adjusted clock makes the original due_at look like a future slot.
+
+    with pytest.raises(prep.PreparationRefusal) as exc:
+        service.preparation_request({'operation': operation, 'id': planner['id']})
+    assert exc.value.code == 'resume_expired'
+    assert current(c, planner)['state'] == state
+
+
+@pytest.mark.parametrize(('stop', 'resume'), [('pause', 'resume'), ('cancel', 'restore')])
+def test_undo_planner_self_change_keeps_buffered_trigger(case, stop, resume):
+    c = case
+    line_id, _, planner = setup(c)
+    work = planner_run(c, planner)
+    c.preps.change_own(planner['id'], work['id'], stop)
+    c.clock[0] += 30
+    finish(c, planner)
+    correct(c, line_id)
+
+    resumed = getattr(c.preps, resume)(planner['id'])
+    assert resumed['state'] == prep.STATE_SCHEDULED and resumed['self_change_undone']
+    assert resumed['due_at'] == planner['due_at']
+    assert c.checks.run_due_planner(c.clock[0])
+    assert wake_job(c, planner)['id'] != work['id']
+
+
+@pytest.mark.parametrize('self_cancelled', [False, True])
+def test_expired_planner_cannot_be_restored_during_a_live_run(case, self_cancelled):
+    c = case
+    _, _, planner = setup(c, seconds=90)
+    work = planner_run(c, planner)
+    if self_cancelled:
+        c.preps.change_own(planner['id'], work['id'], 'cancel')
+    else:
+        c.preps.cancel(planner['id'])
+    c.clock[0] += 90
+
+    with pytest.raises(prep.PreparationRefusal) as exc:
+        c.preps.restore(planner['id'])
+    assert exc.value.code == 'resume_expired'
+    assert current(c, planner)['state'] == prep.STATE_CANCELLED
+
+
+@pytest.mark.parametrize('elapsed', [30, 90])
+def test_planner_settlement_uses_mandate_end_and_records_no_next_slot(case, elapsed):
+    c = case
+    _, _, planner = setup(c, seconds=90)
+    work = planner_run(c, planner)
+    c.clock[0] += elapsed
+    finish(c, planner)
+    expected = prep.STATE_SCHEDULED if elapsed < 90 else prep.STATE_CANCELLED
+    assert current(c, planner)['state'] == expected
+    with c.store.db() as db:
+        receipt = db.execute(
+            "SELECT detail FROM tool_events WHERE job_id=? AND tool='preparation' "
+            "AND json_type(detail,'$.next_due') IS NOT NULL", (work['id'],)).fetchone()
+    assert json.loads(receipt['detail'])['next_due'] is None
+
+
+def test_timed_deferral_skips_planner_rows(case):
+    c = case
+    _, _, planner = setup(c)
+    # Even stray recurrence data must not turn a planner into a timed preparation.
+    with c.store.db() as db:
+        db.execute("UPDATE preparations SET recurrence='daily' WHERE id=?", (planner['id'],))
+    c.clock[0] += 30
+    assert not c.preps.defer(planner['id'], c.clock[0])
+    assert current(c, planner)['due_at'] == planner['due_at']
+
+
+@pytest.mark.parametrize('during_run', [False, True])
+def test_planner_ignores_timed_window_expiry_on_admission_and_while_running(case, during_run):
+    c = case
+    _, _, planner = setup(c)
+    if during_run:
+        work = planner_run(c, planner)
+    with c.store.db() as db:
+        db.execute('UPDATE preparations SET recurrence=?,until_at=?,window_end=?,max_runs=1 WHERE id=?',
+                   (prep.RECURRENCE_WINDOW, c.clock[0], c.clock[0], planner['id']))
+    c.clock[0] += 30
+
+    if not during_run:
+        assert c.checks.run_due_planner(c.clock[0])
+        work = wake_job(c, planner)
+    assert not any(row['id'] == planner['id'] for row in c.preps.due(c.clock[0]))
+    with c.store.db() as db:
+        assert c.preps.run_refusal(db, work['id'], c.clock[0]) is None
+
+
+def test_planner_schedule_facts_use_triggers_and_the_mandate_end(case):
+    c = case
+    line_id = line(c)
+    planner = c.preps.get(entrust(c, line_id)['planner_id'])
+    service = c.service.preparations_service
+    brief = c.service.lines.current(line_id)
+    assert service.line_schedule_note(brief, planner) == ''
+
+    work = planner_run(c, planner)
+    with patch.object(prep, 'next_due', wraps=prep.next_due) as next_due:
+        fact = service.preparation_run_fact(work)
+    assert msg('checks.planner_triggered') in fact
+    end = prep.local_text(c.clock[0] + 900, planner['timezone'])
+    assert msg('preparations.run_end', end=end) in fact
+    next_due.assert_not_called()
+
+
 def test_planner_wake_cap_does_not_stop_executor(case):
     c = case
     line_id, executor, planner = setup(c)
