@@ -548,7 +548,7 @@ class MediationTests(unittest.TestCase):
         self.assertEqual(len(bs.find_in_snapshot(snapshot, '장바구니 담기')['elements']), 2)
         self.assertEqual(bs.resolve_target(snapshot, '92')['index'], 91)
         self.assertEqual(set(bs.public_view(snapshot)), {'url', 'title', 'text', 'elements', 'login_required', 'truncated',
-                                                          'redacted_values', 'more_elements'})
+                                                          'redacted_values', 'more_elements', 'signed_in'})
         many = [{'index': i, 'role': 'link', 'name': f'메뉴 {i}', 'tag': 'a', 'href': f'{ORIGIN}/m{i}'} for i in range(300)]
         capped = bs.mediate_snapshot({'url': ORIGIN + '/', 'title': 't', 'text': '', 'elements': many})
         self.assertTrue(capped['elements_capped'], 'the read cap is visible to the model')

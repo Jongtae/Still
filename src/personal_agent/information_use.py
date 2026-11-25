@@ -315,7 +315,8 @@ def _history_time(value):
 
 
 def _read_page_items(evidence):
-    return [f"a page an earlier Work read {_text(ref.get('work_id'), 40)}: {_text(ref.get('url'), 200)}"
+    return [f"a page an earlier Work read{' signed in' if ref.get('signed_in') is True else ''} "
+            f"{_text(ref.get('work_id'), 40)}: {_text(ref.get('url'), 200)}"
             for ref in evidence.get('read_page_refs') or () if isinstance(ref, dict)]
 
 

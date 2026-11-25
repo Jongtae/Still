@@ -101,6 +101,12 @@ for line in sys.stdin:
                                                                'type': '', 'autocomplete': '', 'form': None, 'label_form': 1,
                                                                'href': None, 'value': None, 'disabled': False}]}})
     elif op == 'click':
+        if command.get('index') == 3 and page['url'].endswith('/unrecorded-sign-in'):
+            if any(row['domain'].lstrip('.') == 'idp.test' for row in cookies):
+                page['url'] = 'https://shop.test/landed'
+                cookies.append({'domain': 'shop.test', 'name': 'session', 'value': 'signed-in', 'path': '/'})
+            emit({'id': ident, 'ok': True, 'navigated': True})
+            continue
         # #736, as the real worker's settle_click: a click that starts a navigation a
         # moment later (a script timer) or asks for a new window (loaded into this
         # view) answers only once that navigation has landed, with navigated=true.
@@ -175,8 +181,13 @@ for line in sys.stdin:
     elif op == 'settle':
         emit({'id': ident, 'ok': True, 'settled': True, 'waited': 0})
     elif op == 'cookies_import':
-        cookies.extend(command.get('cookies') or [])
-        emit({'id': ident, 'ok': True, 'imported': len(command.get('cookies') or [])})
+        incoming = command.get('cookies') or []
+        if FLAGS.get('--cookie-import') == 'timeout':
+            emit({'id': ident, 'ok': False, 'error': 'timeout'})
+            cookies.extend(incoming)   # completions can arrive after the worker sent its timeout
+        else:
+            cookies.extend(incoming)
+            emit({'id': ident, 'ok': True, 'imported': len(incoming)})
     elif op == 'cookies_export':
         grouped = {}
         for row in cookies:

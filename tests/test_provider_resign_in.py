@@ -453,6 +453,15 @@ class ResignInSessionTests(unittest.TestCase):
         self.assertNotIn('provider_sign_in', later)
         self.assertEqual([entry[0] for entry in driver.log if entry[0] == 'click'], ['click', 'click'])
 
+    def test_a_view_after_a_provider_return_carries_the_session_label(self):
+        sess, driver, _ = resign_session('silent')
+        snapshot = driver.snapshot
+        with mock.patch.object(driver, 'snapshot', side_effect=lambda: {**snapshot(), '_profile_signed_in': False}):
+            self.assertIs(open_login(sess)['signed_in'], False)
+            page = sess.run('browser_click', {'target': '다른 계정으로 로그인', 'effect': 'navigate'})
+            self.assertIs(page['signed_in'], True)
+            self.assertIs(sess.run('browser_read', {})['signed_in'], True)
+
     def test_an_ai_click_or_typing_on_a_provider_page_is_refused_and_nothing_is_sent(self):
         sess, driver, approvals = resign_session('chooser')
         open_login(sess)
