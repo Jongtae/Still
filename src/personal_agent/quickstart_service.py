@@ -165,6 +165,10 @@ STEER_NOT_APPLIED_REASONS={
     'effect':'steer.not_applied.effect', 'unknown':'steer.not_applied.unknown', 'owner':'steer.not_applied.owner', 'budget':'steer.not_applied.budget',
     'stopped':'steer.not_applied.stopped', 'route':'steer.not_applied.route', 'failed':'steer.not_applied.failed',
     'new_request':'steer.not_applied.new_request', 'short':'steer.not_applied.short'}
+#: #1216 (#940): reasons that only describe how Still routed the message (it was answered on its own, which
+#: its reply already shows). The owner is told nothing extra; the others name a state of the earlier Work the
+#: owner may need (something ran, its outcome is unknown, it waits for them, its budget ran out, it failed).
+STEER_ROUTING_ONLY_REASONS=frozenset({'finished','continued','new_request','route','stopped','short'})
 #: #308 S1: how long a finishing Work waits for steer judgments still running (the judgment is a few seconds).
 STEER_JUDGMENT_WAIT_SECONDS=8
 #: #970: the lane for commands Still answers itself (D2a), and the tool-capable Work lanes (D1).
@@ -10232,6 +10236,7 @@ class AgentService:
                 status=str(steered.get('status') or '')
                 reason=('unknown' if ws.is_effect_unknown(status) else 'owner' if status.startswith('awaiting_')
                         else 'failed' if ws.has_failed_steer(status) else 'new_request')
+        if reason in STEER_ROUTING_ONLY_REASONS:return ''
         return msg(STEER_NOT_APPLIED_REASONS[reason]) if reason in STEER_NOT_APPLIED_REASONS else ''
 
     @staticmethod
