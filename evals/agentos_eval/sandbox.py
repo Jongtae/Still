@@ -95,6 +95,11 @@ def baseline_readable_roots(src=SRC):
     return ()
 
 
+#: The one seam for the refusal below (#1199): a real run keeps it on. The test suite turns it off in conftest
+#: because fixture-transport tests never start a server or qualify a Judgment AI, and pytest's temp folder is /tmp.
+REFUSE_BASELINE_READABLE_ROOT = True
+
+
 def refuse_baseline_readable(root, src=SRC):
     """Refuse a sandbox root whose engine runs Still's strict-isolation check would reject (#1199).
 
@@ -493,7 +498,8 @@ class Sandbox:
         return f'http://127.0.0.1:{self.port}'
 
     def prepare(self):
-        refuse_baseline_readable(self.root, self.src)
+        if REFUSE_BASELINE_READABLE_ROOT:
+            refuse_baseline_readable(self.root, self.src)
         self.root.mkdir(parents=True, exist_ok=True, mode=0o700)
         if self.slot is None:
             self.data = Path(tempfile.mkdtemp(prefix='sandbox-', dir=self.root))

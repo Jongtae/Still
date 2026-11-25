@@ -24,6 +24,21 @@ def _no_automatic_phone_login(monkeypatch):
 
 
 @pytest.fixture(autouse=True)
+def _eval_sandbox_root_may_be_temp(monkeypatch):
+    """#1199: fixture-transport eval tests build sandboxes under pytest's /tmp; the refusal is for real runs.
+
+    A test of the refusal itself turns it back on with ``monkeypatch.setattr(sandbox, 'REFUSE_BASELINE_READABLE_ROOT', True)``.
+    """
+    import sys
+    from pathlib import Path
+    evals = str(Path(__file__).resolve().parents[1] / 'evals')
+    if evals not in sys.path:
+        sys.path.insert(0, evals)
+    from agentos_eval import sandbox
+    monkeypatch.setattr(sandbox, 'REFUSE_BASELINE_READABLE_ROOT', False)
+
+
+@pytest.fixture(autouse=True)
 def _no_cloudflared_download(monkeypatch):
     """#523: no test downloads cloudflared (a test that wants it injects ``fetch``) or waits for DNS."""
     from personal_agent import quick_tunnel

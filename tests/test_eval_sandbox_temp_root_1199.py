@@ -21,6 +21,22 @@ def test_harness_reads_the_products_own_baseline_roots():
     assert {'/tmp', '/private/tmp'} <= set(BASELINE_READABLE_ROOTS)
 
 
+@pytest.fixture(autouse=True)
+def _real_run_refusal_on(monkeypatch):
+    # The suite-wide conftest turns the refusal off for fixture-transport tests; here the real-run default is tested.
+    monkeypatch.setattr(sb, 'REFUSE_BASELINE_READABLE_ROOT', True)
+
+
+def test_the_refusal_is_on_by_default_in_a_real_run():
+    import importlib
+    import os
+    code = ("import sys; sys.path.insert(0, %r); from agentos_eval import sandbox; "
+            "print(sandbox.REFUSE_BASELINE_READABLE_ROOT)" % str(ROOT / 'evals'))
+    import subprocess
+    out = subprocess.run([sys.executable, '-c', code], capture_output=True, text=True, env={**os.environ, 'PYTHONPATH': str(ROOT / 'src')})
+    assert out.stdout.strip() == 'True', out.stderr
+
+
 @pytest.mark.parametrize('base', ['/tmp', '/private/tmp'])
 def test_sandbox_under_a_baseline_readable_root_is_refused_before_anything_is_made(base):
     root = Path(base) / f'agentos-eval-1199-{uuid.uuid4().hex}' / 'sandboxes'
