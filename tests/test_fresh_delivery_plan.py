@@ -470,6 +470,11 @@ FRONTIER_WAVE_2 = ["FRONTIER-FENCE-01", "FRONTIER-JUDGMENT-01", "FRONTIER-TELEGR
 FRONTIER_OPEN_WAVE_2 = [name for name in FRONTIER_WAVE_2 if name not in FRONTIER_COMPLETED]
 
 
+def frontier_selection(current):
+    """The last FRONTIER-01 selection text, kept on the program at closeout (#822, C12)."""
+    return current["programs"]["FRONTIER-01"]["selection_record"]
+
+
 def test_frontier_885_records_explicit_eval_judge_scope():
     current = plan()
     items = items_of(current)
@@ -482,8 +487,8 @@ def test_frontier_885_records_explicit_eval_judge_scope():
     assert 'tests/test_eval_judge_explicit.py' in unit['tests'][0]
     activation = items['FRONTIER-01']['completed_substeps'][name]
     assert activation['issue'] == 885 and activation['status'] == 'complete-on-merge'
-    assert activation['pull_request'] == '886'
-    assert '#885 (FRONTIER-EVAL-JUDGE-01) is selected inside #822' in current['next_goal']['action']
+    assert activation['pull_request'] == 886
+    assert '#885 (FRONTIER-EVAL-JUDGE-01) is selected inside #822' in frontier_selection(current)
 
 
 def assert_frontier_wave_2_dependencies_satisfied(current):
@@ -498,8 +503,15 @@ def test_frontier_declares_completed_units_and_owner_authorized_wave_2():
     current = plan()
     program = current["programs"]["FRONTIER-01"]
     items = items_of(current)
-    assert invariants.assert_declared_goal_shape(TestCase(), plan=current) == "goal-ready"
-    assert current["next_goal"]["id"] == "FRONTIER-01"
+    # #822 closed out on 2026-11-25 on the owner's acceptance of the scenario measurements.
+    assert invariants.assert_declared_goal_shape(TestCase(), plan=current) == "terminal"
+    assert current["next_goal"]["id"] is None
+    assert "heartbeat stays paused" in current["next_goal"]["action"]
+    assert program["status"] == "complete"
+    assert "FRONTIER-01" in invariants.closed_out_programs(current)
+    invariants.assert_completed_work_is_unselectable(TestCase(), current)
+    assert "scenario-evidence-accepted" in program["decisions"]
+    assert "no held-out live run" in program["closeout"]
     invariants.assert_activation_record(TestCase(), "FRONTIER-01 activation", program["activated_by"])
     assert program["activated_by"]["issue"] == program["issue"] == 822
     assert program["ordered_substeps"] == FRONTIER_FIRST_WAVE + FRONTIER_RECONCILED + FRONTIER_WAVE_2 + ["FRONTIER-CONTEXT-02", "FRONTIER-EVAL-JUDGE-01", "FRONTIER-C2-DUE-01", "FRONTIER-EVAL-TOKENS-01", "FRONTIER-RECEIPT-JUDGE-01", "FRONTIER-EVAL-FALLBACK-01", "FRONTIER-JUDGMENT-TEXT-01", "FRONTIER-COMPLETION-BAR-01", "FRONTIER-UNTRUSTED-ECHO-01", "FRONTIER-PLAN-READING-01", "FRONTIER-RECALL-V3-01", "FRONTIER-UNTRUSTED-01", "FRONTIER-UNTRUSTED-PREVIEW-01", "FRONTIER-PLAN-READING-02", "FRONTIER-RECALL-TERMS-01", "FRONTIER-RECALL-FILL-01", "FRONTIER-RECALL-THREADS-01", "FRONTIER-RECALL-SAVE-TERMS-01", "FRONTIER-RECALL-TERMS-PASS-01", "FRONTIER-RECALL-REPLY-01", "FRONTIER-RECALL-REGRESSION-01", "FRONTIER-RECALL-REPLY-02", "FRONTIER-RECALL-QUERY-FORMS-01"]
@@ -510,7 +522,7 @@ def test_frontier_declares_completed_units_and_owner_authorized_wave_2():
     assert all(items[name]["activation_status"] == "complete-on-merge" for name in FRONTIER_COMPLETED)
     completed = set(current["history"]["documented_completed_iterations"])
     assert set(FRONTIER_COMPLETED) <= completed
-    assert not {"FRONTIER-01", *FRONTIER_OPEN_WAVE_2} & completed
+    assert "FRONTIER-01" in completed and not set(FRONTIER_OPEN_WAVE_2) & completed
     done = items["FRONTIER-01"]["completed_substeps"]
     assert set(done) == set(FRONTIER_COMPLETED)
     assert {name: (done[name]["issue"], done[name]["status"]) for name in FRONTIER_FIRST_WAVE} == {
@@ -524,9 +536,8 @@ def test_frontier_declares_completed_units_and_owner_authorized_wave_2():
         assert "selection_rule" not in items[name]
     telegram = done["FRONTIER-TELEGRAM-01"]
     assert (telegram["issue"], telegram["status"]) == (842, "complete-on-merge")
-    d1, d2 = telegram["pull_request"]
-    assert d1 == 856
-    assert d2 == 864 or isinstance(d2, int) and d2 > 0
+    assert telegram["earlier_pull_requests"] == [856]
+    assert telegram["pull_request"] == 864
     assert telegram["decision"]
     assert "FRONTIER-RECOVERY-01" in telegram["dependency_disposition"]
     assert "#831" in telegram["dependency_disposition"]
@@ -559,7 +570,7 @@ def test_frontier_declares_completed_units_and_owner_authorized_wave_2():
     fence_done = done["FRONTIER-FENCE-01"]
     assert (fence_done["issue"], fence_done["status"], fence_done["pull_request"]) == (
         841, "complete-on-merge", 872)
-    assert "merge_commit" not in fence_done
+    assert fence_done["merge_commit"].startswith("82b8d7d8")
     assert "matrix X4, X9" in fence_done["decision"]
     assert "Depends on FRONTIER-RECOVERY-01, which is complete." in fence_done["decision"]
     workchat = items["FRONTIER-WORKCHAT-01"]
@@ -572,7 +583,7 @@ def test_frontier_declares_completed_units_and_owner_authorized_wave_2():
     workchat_done = done["FRONTIER-WORKCHAT-01"]
     assert (workchat_done["issue"], workchat_done["status"], workchat_done["pull_request"]) == (
         843, "complete-on-merge", 870)
-    assert "merge_commit" not in workchat_done
+    assert workchat_done["merge_commit"].startswith("2c4b5ff0")
     assert "depends on FRONTIER-RECOVERY-01, which is complete." in workchat_done["decision"]
 
 
@@ -637,7 +648,7 @@ def test_frontier_wave_2_rejects_non_completed_dependencies():
     assert_frontier_wave_2_dependencies_satisfied(current)
     for name in FRONTIER_WAVE_2:
         altered = copy.deepcopy(current)
-        items_of(altered)[name]["depends_on"] = ["FRONTIER-01"]
+        items_of(altered)[name]["depends_on"] = ["FRONTIER-NOT-DONE-01"]
         with TestCase().assertRaisesRegex(AssertionError, "non-completed dependencies"):
             assert_frontier_wave_2_dependencies_satisfied(altered)
 
@@ -650,17 +661,11 @@ def test_frontier_wave_2_cannot_declare_two_substeps_in_flight():
 
 
 def test_frontier_parent_selection_never_self_activates_children_or_successors(tmp_path):
+    """#822 closed out: neither the parent nor any unit can be selected again."""
     current = plan()
     path = tmp_path / "delivery-plan.yaml"
-    current["next_goal"]["status"] = "active"
-    path.write_text(json.dumps(current), encoding="utf-8")
-    delivery = DeliveryPlan(path)
-    assert delivery.select({})["id"] == "FRONTIER-01"
-    assert delivery.select({"completed": ["FRONTIER-01"]}) is None
-    # Even all nine units in runtime completion state select only the parent.
     all_substeps = FRONTIER_COMPLETED + FRONTIER_OPEN_WAVE_2
-    assert delivery.select({"completed": all_substeps})["id"] == "FRONTIER-01"
-    for name in all_substeps:
+    for name in ["FRONTIER-01", *all_substeps]:
         altered = copy.deepcopy(current)
         altered["next_goal"] = {"id": name, "status": "active"}
         path.write_text(json.dumps(altered), encoding="utf-8")
@@ -687,11 +692,11 @@ def test_frontier_883_has_unique_successor_and_preserves_827_history():
     assert 'FRONTIER-CONTEXT-02' in current['programs']['FRONTIER-01']['completed_substeps']
     record=items['FRONTIER-01']['completed_substeps']['FRONTIER-CONTEXT-02']
     assert record['issue']==883 and record['status']=='complete-on-merge'
-    assert record['pull_request']=='884'
-    assert 'No other successor is selected' in current['next_goal']['action']
+    assert record['pull_request']==884
+    assert 'No other successor is selected' in frontier_selection(current)
     assert 'FRONTIER-CONTEXT-02' in current['programs']['FRONTIER-01']['ordered_substeps']
     assert current['programs']['FRONTIER-01']['active_substeps']==[]
-    assert '#883' in current['next_goal']['action'] and '2026-11-15' in current['next_goal']['action']
+    assert '#883' in frontier_selection(current) and '2026-11-15' in frontier_selection(current)
 
 
 def test_frontier_887_records_eval_only_come_due_scope():
@@ -706,8 +711,8 @@ def test_frontier_887_records_eval_only_come_due_scope():
     assert 'tests/test_eval_come_due.py' in unit['tests'][0]
     activation = items['FRONTIER-01']['completed_substeps'][name]
     assert activation['issue'] == 887 and activation['status'] == 'complete-on-merge'
-    assert activation['pull_request'] == '889'
-    assert '#887 (FRONTIER-C2-DUE-01) is selected inside #822' in current['next_goal']['action']
+    assert activation['pull_request'] == 889
+    assert '#887 (FRONTIER-C2-DUE-01) is selected inside #822' in frontier_selection(current)
 
 
 def test_frontier_896_897_records_eval_tokens_and_infra_pairing_scope():
@@ -725,10 +730,10 @@ def test_frontier_896_897_records_eval_tokens_and_infra_pairing_scope():
         'tests/test_continuity_report.py tests/test_judged_continuity.py tests/test_fresh_delivery_plan.py']
     activation = items['FRONTIER-01']['completed_substeps'][name]
     assert activation['issue'] == 896 and activation['related_issues'] == [897]
-    assert activation['status'] == 'complete-on-merge' and activation['pull_request'] == '899'
+    assert activation['status'] == 'complete-on-merge' and activation['pull_request'] == 899
     assert unit['summary'].endswith('Complete on the merge of its own PR (#899).')
     assert ('#896 and #897 (FRONTIER-EVAL-TOKENS-01) are selected inside #822 by owner direction '
-            'on 2026-11-15 and are complete on the merge of its own PR.') in current['next_goal']['action']
+            'on 2026-11-15 and are complete on the merge of its own PR.') in frontier_selection(current)
 
 
 def test_frontier_898_records_receipt_judgment_scope():
@@ -743,9 +748,9 @@ def test_frontier_898_records_receipt_judgment_scope():
     assert 'tests/test_receipt_reply_provenance_898.py' in unit['tests'][0]
     activation = items['FRONTIER-01']['completed_substeps'][name]
     assert activation['issue'] == 898 and activation['status'] == 'complete-on-merge'
-    assert activation['pull_request'] == '900'
+    assert activation['pull_request'] == 900
     assert ('#898 (FRONTIER-RECEIPT-JUDGE-01) is selected inside #822 by owner direction on 2026-11-15 '
-            'and is complete on the merge of its own PR.') in current['next_goal']['action']
+            'and is complete on the merge of its own PR.') in frontier_selection(current)
 
 
 def test_frontier_902_records_eval_fallback_scope():
@@ -767,10 +772,10 @@ def test_frontier_902_records_eval_fallback_scope():
     assert name in current['history']['documented_completed_iterations']
     activation = items['FRONTIER-01']['completed_substeps'][name]
     assert activation['issue'] == 902 and activation['status'] == 'complete-on-merge'
-    assert activation['pull_request'] == '903'
+    assert activation['pull_request'] == 903
     assert unit['summary'].endswith('Complete on the merge of its own PR.')
     assert ('#902 (FRONTIER-EVAL-FALLBACK-01) is selected inside #822 by owner direction on 2026-11-15 '
-            'and is complete on the merge of its own PR.') in current['next_goal']['action']
+            'and is complete on the merge of its own PR.') in frontier_selection(current)
 
 
 def test_frontier_202_records_judgment_text_scope():
@@ -788,10 +793,10 @@ def test_frontier_202_records_judgment_text_scope():
     assert name in current['history']['documented_completed_iterations']
     activation = items['FRONTIER-01']['completed_substeps'][name]
     assert activation['issue'] == 202 and activation['status'] == 'complete-on-merge'
-    assert activation['pull_request'] == '912'
+    assert activation['pull_request'] == 912
     assert unit['summary'].endswith('Complete on the merge of its own PR.')
     assert ('#202 phase 2 (FRONTIER-JUDGMENT-TEXT-01) is selected inside #822 by owner direction on 2026-11-16 '
-            'and is complete on the merge of its own PR.') in current['next_goal']['action']
+            'and is complete on the merge of its own PR.') in frontier_selection(current)
 
 
 def test_frontier_202_records_completion_bar_scope():
@@ -809,10 +814,10 @@ def test_frontier_202_records_completion_bar_scope():
     assert name in current['history']['documented_completed_iterations']
     activation = items['FRONTIER-01']['completed_substeps'][name]
     assert activation['issue'] == 202 and activation['status'] == 'complete-on-merge'
-    assert activation['pull_request'] == '914'
+    assert activation['pull_request'] == 914
     assert unit['summary'].endswith('Complete on the merge of its own PR.')
     assert ('#202 phase 2 (FRONTIER-COMPLETION-BAR-01) is selected inside #822 by owner direction on 2026-11-16 '
-            'and is complete on the merge of its own PR.') in current['next_goal']['action']
+            'and is complete on the merge of its own PR.') in frontier_selection(current)
 
 
 def test_frontier_744_records_untrusted_echo_scope():
@@ -834,7 +839,7 @@ def test_frontier_744_records_untrusted_echo_scope():
     assert unit['summary'].startswith('Owner-selected #744 phase 2 (PR-2 (items 3, 4d)) within #822, owner disposition 2026-11-16:')
     assert unit['summary'].endswith('Complete on the merge of its own PR.')
     assert ('#744 phase 2 PR-2 (FRONTIER-UNTRUSTED-ECHO-01; items 3, 4d) is selected inside #822 '
-            'by owner disposition on 2026-11-16 and is complete on the merge of its own PR.') in current['next_goal']['action']
+            'by owner disposition on 2026-11-16 and is complete on the merge of its own PR.') in frontier_selection(current)
 
 
 def test_frontier_202_records_plan_reading_scope():
@@ -852,10 +857,10 @@ def test_frontier_202_records_plan_reading_scope():
     assert name in current['history']['documented_completed_iterations']
     activation = items['FRONTIER-01']['completed_substeps'][name]
     assert activation['issue'] == 202 and activation['status'] == 'complete-on-merge'
-    assert activation['pull_request'] == '915'
+    assert activation['pull_request'] == 915
     assert unit['summary'].endswith('Complete on the merge of its own PR.')
     assert ('#202 phase 2 (FRONTIER-PLAN-READING-01) is selected inside #822 by owner direction on 2026-11-16 '
-            'and is complete on the merge of its own PR.') in current['next_goal']['action']
+            'and is complete on the merge of its own PR.') in frontier_selection(current)
 
 
 def test_frontier_744_records_untrusted_scope():
@@ -878,7 +883,7 @@ def test_frontier_744_records_untrusted_scope():
     assert "matching-call-start barrier, not launch marking" in unit["summary"]
     assert "issuecomment-6931823807" in unit["summary"]
     assert unit["summary"].endswith("Complete on the merge of its own PR.")
-    assert '#744 (FRONTIER-UNTRUSTED-01, phase 2 PR-1 items 5, 1, 2) is selected inside #822 by owner disposition on 2026-11-16 and is complete on the merge of its own PR.' in current["next_goal"]["action"]
+    assert '#744 (FRONTIER-UNTRUSTED-01, phase 2 PR-1 items 5, 1, 2) is selected inside #822 by owner disposition on 2026-11-16 and is complete on the merge of its own PR.' in frontier_selection(current)
 
 
 def test_frontier_744_records_approval_preview_scope():
@@ -899,7 +904,7 @@ def test_frontier_744_records_approval_preview_scope():
     assert activation['issue'] == 744 and activation['status'] == 'complete-on-merge'
     assert unit['summary'].startswith('Owner-selected #744 phase 2 (PR-3 (items 4a, 4b)) within #822, owner disposition 2026-11-16:')
     assert unit['summary'].endswith('Complete on the merge of its own PR.')
-    assert '#744 phase 2 (PR-3 (items 4a, 4b), FRONTIER-UNTRUSTED-PREVIEW-01) is selected inside #822 by owner disposition on 2026-11-16 and is complete on the merge of its own PR.' in current['next_goal']['action']
+    assert '#744 phase 2 (PR-3 (items 4a, 4b), FRONTIER-UNTRUSTED-PREVIEW-01) is selected inside #822 by owner disposition on 2026-11-16 and is complete on the merge of its own PR.' in frontier_selection(current)
 
 
 def test_frontier_202_records_direct_plan_reading():
@@ -917,10 +922,10 @@ def test_frontier_202_records_direct_plan_reading():
     assert name in current['history']['documented_completed_iterations']
     activation = items['FRONTIER-01']['completed_substeps'][name]
     assert activation['issue'] == 202 and activation['status'] == 'complete-on-merge'
-    assert activation['pull_request'] == '923'
+    assert activation['pull_request'] == 923
     assert unit['summary'].endswith('Complete on the merge of its own PR.')
     assert ('#202 phase 2 (FRONTIER-PLAN-READING-02) is selected inside #822 by owner direction on 2026-11-16 '
-            'and is complete on the merge of its own PR.') in current['next_goal']['action']
+            'and is complete on the merge of its own PR.') in frontier_selection(current)
 
 
 def test_frontier_921_pr1_records_retrieval_terms_scope():
@@ -941,7 +946,7 @@ def test_frontier_921_pr1_records_retrieval_terms_scope():
     assert activation['decision'] == unit['summary']
     assert unit['summary'] == 'Owner-approved #921 PR-1 within #822 (owner decision 2026-11-17, #921 comment 6934192576; spec v5 #921 comment 6934099196): derived retrieval_terms/meta on Memory rows in a three-column FTS5 index (savepoint migration, bm25 weights), a guarded per-row write, forget and retract clearing terms with a non-repeating generation, and a shape/secret/number term filter that is not a relevance filter. No writer calls it yet (PR-3 and PR-6); no model call, dependency or new destination. Complete on the merge of its own PR.'
     assert unit['tests'] == ['PYTHONPATH=src .venv/bin/python -m pytest -q tests/test_921_terms_index.py tests/test_memory_search.py tests/test_memory_service.py tests/test_owner_forget.py tests/test_forget_transcript.py tests/test_744_memory.py tests/test_conversation_recall.py tests/test_fresh_delivery_plan.py']
-    assert '#921 PR-1 (FRONTIER-RECALL-TERMS-01) is selected inside #822 by owner decision on 2026-11-17 and is complete on the merge of its own PR.' in current['next_goal']['action']
+    assert '#921 PR-1 (FRONTIER-RECALL-TERMS-01) is selected inside #822 by owner decision on 2026-11-17 and is complete on the merge of its own PR.' in frontier_selection(current)
 
 
 def test_frontier_921_pr4_records_relevance_ordered_fill_scope():
@@ -959,11 +964,11 @@ def test_frontier_921_pr4_records_relevance_ordered_fill_scope():
     assert name in current['history']['documented_completed_iterations']
     activation = items['FRONTIER-01']['completed_substeps'][name]
     assert activation['issue'] == 921 and activation['status'] == 'complete-on-merge'
-    assert 'pull_request' not in activation
+    assert isinstance(activation['pull_request'], int)
     assert activation['decision'] == unit['summary']
     assert unit['summary'] == "Owner-approved #921 PR-4 within #822 (spec v5 #921 comment 6934099196, §3): the profile snapshot fills unmatched facts newest first from the newest 500 candidates after the voice row and BM25-ordered matches, instead of key order, so a bound cut drops the oldest unmatched facts; _profile_rows keeps key order for the owner's Memory list; bounds, attribution and filters unchanged. No model call, dependency or new destination. Complete on the merge of its own PR."
     assert unit['tests'] == ['PYTHONPATH=src .venv/bin/python -m pytest -q tests/test_921_fill_order.py tests/test_memory_service.py tests/test_memory_search.py tests/test_turn_context.py tests/test_past_words_brief_860.py tests/test_owner_profile_context_860.py tests/test_fresh_delivery_plan.py']
-    assert '#921 PR-4 (FRONTIER-RECALL-FILL-01) is selected inside #822 by owner direction on 2026-11-17 and is complete on the merge of its own PR.' in current['next_goal']['action']
+    assert '#921 PR-4 (FRONTIER-RECALL-FILL-01) is selected inside #822 by owner direction on 2026-11-17 and is complete on the merge of its own PR.' in frontier_selection(current)
 
 
 def test_frontier_921_pr7_records_conversation_by_work_scope():
@@ -981,11 +986,11 @@ def test_frontier_921_pr7_records_conversation_by_work_scope():
     assert name in current['history']['documented_completed_iterations']
     activation = items['FRONTIER-01']['completed_substeps'][name]
     assert activation['issue'] == 921 and activation['status'] == 'complete-on-merge'
-    assert 'pull_request' not in activation
+    assert isinstance(activation['pull_request'], int)
     assert activation['decision'] == unit['summary']
     assert unit['summary'] == "Owner-approved #921 PR-7 within #822 (spec v5 #921 comment 6934099196, §4): search_conversation takes an optional work_id from a search_memory source and returns that Work's owner turns and delivered reply as an addressed lookup, independent of FTS and the recent window, under the existing owner-words, forgotten and secret filters, bounds and three-exchange budget, with an explicit found/not_found/forgotten/document_work outcome; document Works stay excluded (an open C17 question for the owner). No model call, dependency or new destination. Complete on the merge of its own PR."
     assert unit['tests'] == ['PYTHONPATH=src .venv/bin/python -m pytest -q tests/test_921_conversation_by_work.py tests/test_conversation_recall.py tests/test_forget_transcript.py tests/test_744_recall.py tests/test_information_use.py tests/test_fresh_delivery_plan.py']
-    assert '#921 PR-7 (FRONTIER-RECALL-THREADS-01) is selected inside #822 by owner direction on 2026-11-17 and is complete on the merge of its own PR.' in current['next_goal']['action']
+    assert '#921 PR-7 (FRONTIER-RECALL-THREADS-01) is selected inside #822 by owner direction on 2026-11-17 and is complete on the merge of its own PR.' in frontier_selection(current)
 
 
 def test_frontier_921_pr6_records_save_memory_terms_scope():
@@ -1005,11 +1010,11 @@ def test_frontier_921_pr6_records_save_memory_terms_scope():
     assert name in current['history']['documented_completed_iterations']
     activation = items['FRONTIER-01']['completed_substeps'][name]
     assert activation['issue'] == 921 and activation['status'] == 'complete-on-merge'
-    assert 'pull_request' not in activation
+    assert isinstance(activation['pull_request'], int)
     assert activation['decision'] == unit['summary']
     assert unit['summary'] == "Owner-approved #921 PR-6 within #822 (spec v5 #921 comment 6934099196, §2 Writers; N11 = C, comment 6934192576): save_memory takes an optional terms string; on the direct-save path the terms pass memory_terms.filter_terms (secret check first) and are written in the same INSERT as the row with a keyed meta naming the worker's route and model when known; empty or filtered terms leave the meta NULL for the later terms pass; candidates carry no terms. No model call, dependency or new destination. Complete on the merge of its own PR."
     assert unit['tests'] == ['PYTHONPATH=src .venv/bin/python -m pytest -q tests/test_921_save_memory_terms.py tests/test_744_memory.py tests/test_owner_forget.py tests/test_memory_search.py tests/test_921_terms_index.py tests/test_fresh_delivery_plan.py']
-    assert '#921 PR-6 (FRONTIER-RECALL-SAVE-TERMS-01) is selected inside #822 by owner direction on 2026-11-17 and is complete on the merge of its own PR.' in current['next_goal']['action']
+    assert '#921 PR-6 (FRONTIER-RECALL-SAVE-TERMS-01) is selected inside #822 by owner direction on 2026-11-17 and is complete on the merge of its own PR.' in frontier_selection(current)
 
 
 def test_frontier_921_pr3_records_terms_pass_scope():
@@ -1029,11 +1034,11 @@ def test_frontier_921_pr3_records_terms_pass_scope():
     assert name in current['history']['documented_completed_iterations']
     activation = items['FRONTIER-01']['completed_substeps'][name]
     assert activation['issue'] == 921 and activation['status'] == 'complete-on-merge'
-    assert 'pull_request' not in activation
+    assert isinstance(activation['pull_request'], int)
     assert activation['decision'] == unit['summary']
     assert unit['summary'] == "Owner-approved #921 PR-3 within #822 (spec v5 #921 comment 6934099196, §2 Writers and the terms pass; N11 = C, comment 6934192576): upkeep and dream proposals carry a terms string filtered and written with the fact; a repeatable, Work-independent terms run kind keys the remaining eligible facts on the Judgment AI's active model, within a quarter of the owner's daily upkeep cap, after every other kind, never aging out and never blocking the dream; whole facts packed under size bounds with a singleton allowance and an adaptive row cap (start 8, halve the rows sent after a rejected answer, double the cap after a valid one, up to 25); host validation and guarded per-row commits; a content-free manifest and judgments_read fan-out instead of a Work event. No dependency or new destination. Complete on the merge of its own PR."
     assert unit['tests'] == ['PYTHONPATH=src .venv/bin/python -m pytest -q tests/test_921_terms_pass.py tests/test_owner_model_upkeep.py tests/test_owner_model_dream.py tests/test_self_review.py tests/test_921_terms_index.py tests/test_fresh_delivery_plan.py']
-    assert '#921 PR-3 (FRONTIER-RECALL-TERMS-PASS-01) is selected inside #822 by owner direction on 2026-11-17 and is complete on the merge of its own PR.' in current['next_goal']['action']
+    assert '#921 PR-3 (FRONTIER-RECALL-TERMS-PASS-01) is selected inside #822 by owner direction on 2026-11-17 and is complete on the merge of its own PR.' in frontier_selection(current)
 
 
 def test_frontier_921_records_direct_reply_gate():
@@ -1051,10 +1056,10 @@ def test_frontier_921_records_direct_reply_gate():
     assert name in current['history']['documented_completed_iterations']
     activation = items['FRONTIER-01']['completed_substeps'][name]
     assert activation['issue'] == 921 and activation['status'] == 'complete-on-merge'
-    assert activation['pull_request'] == '959'
+    assert activation['pull_request'] == 959
     assert unit['summary'].endswith('Complete on the merge of its own PR.')
     assert ('#921 PR-5 (FRONTIER-RECALL-REPLY-01) is selected inside #822 by owner direction on 2026-11-17 '
-            'and is complete on the merge of its own PR.') in current['next_goal']['action']
+            'and is complete on the merge of its own PR.') in frontier_selection(current)
 
 
 def test_frontier_921_records_eval_only_regression():
@@ -1074,7 +1079,7 @@ def test_frontier_921_records_eval_only_regression():
     assert recorded in unit['summary']
     assert recorded in items['FRONTIER-01']['completed_substeps'][name]['decision']
     assert unit['summary'].endswith('Complete on the merge of its own PR.')
-    assert '#921 PR-8 (FRONTIER-RECALL-REGRESSION-01) is selected' in current['next_goal']['action']
+    assert '#921 PR-8 (FRONTIER-RECALL-REGRESSION-01) is selected' in frontier_selection(current)
 
 
 def test_frontier_921_records_gate_best_match():
@@ -1092,10 +1097,10 @@ def test_frontier_921_records_gate_best_match():
     assert name in current['history']['documented_completed_iterations']
     activation = items['FRONTIER-01']['completed_substeps'][name]
     assert activation['issue'] == 921 and activation['status'] == 'complete-on-merge'
-    assert activation['pull_request'] == '965'
+    assert activation['pull_request'] == 965
     assert unit['summary'].endswith('Complete on the merge of its own PR.')
     assert ('#921 gate follow-up (FRONTIER-RECALL-REPLY-02) is selected inside #822 by owner direction on 2026-11-18 '
-            'and is complete on the merge of its own PR.') in current['next_goal']['action']
+            'and is complete on the merge of its own PR.') in frontier_selection(current)
 
 
 def test_frontier_919_records_request_side_recall():
@@ -1109,10 +1114,10 @@ def test_frontier_919_records_request_side_recall():
     assert unit['contract'] == 'frontier-delivery.en.md' and unit['depends_on'] == []
     program = current['programs']['FRONTIER-01']
     assert program['ordered_substeps'][-1] == name and program['completed_substeps'][-1] == name
-    assert current['history']['documented_completed_iterations'][-1] == name
+    assert current['history']['documented_completed_iterations'][-2:] == [name, 'FRONTIER-01']
     activation = items['FRONTIER-01']['completed_substeps'][name]
     assert activation['issue'] == 919 and activation['status'] == 'complete-on-merge'
     assert 'Korean particle list is dropped' in activation['decision']
     assert unit['summary'].endswith('Complete on the merge of its own PR.')
     assert ('#919 request-side recall (FRONTIER-RECALL-QUERY-FORMS-01) is selected inside #822 by owner decision on 2026-11-18 '
-            'and is complete on the merge of its own PR.') in current['next_goal']['action']
+            'and is complete on the merge of its own PR.') in frontier_selection(current)
