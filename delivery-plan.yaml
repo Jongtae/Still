@@ -77,7 +77,8 @@
       "FRONTIER-RECALL-REPLY-01",
       "FRONTIER-RECALL-REGRESSION-01",
       "FRONTIER-RECALL-REPLY-02",
-      "FRONTIER-RECALL-QUERY-FORMS-01"
+      "FRONTIER-RECALL-QUERY-FORMS-01",
+      "FRONTIER-01"
     ]
   },
   "iterations": [
@@ -939,7 +940,7 @@
       "issue": 822,
       "milestone": "frontier-delivery",
       "kind": "implementation",
-      "activation_status": "owner-activated-goal-ready",
+      "activation_status": "complete-on-merge",
       "contract": "frontier-delivery.en.md",
       "tests": [
         "PYTHONPATH=src python3 -m pytest -q tests/test_fresh_delivery_plan.py"
@@ -950,12 +951,16 @@
         "FRONTIER-SPEC-01": {
           "issue": 823,
           "status": "complete-on-merge",
-          "decision": "The specification, current-contract reconciliation, capacity guidance, file ownership and finite first-wave selection are delivered by the #823 PR. This entry is conditional on that PR merging; GitHub records its actual integration status."
+          "decision": "The specification, current-contract reconciliation, capacity guidance, file ownership and finite first-wave selection are delivered by the #823 PR. This entry is conditional on that PR merging; GitHub records its actual integration status.",
+          "pull_request": 828,
+          "merge_commit": "c68d77b4ac5768f12079d3a8d00dfabbe241c689"
         },
         "FRONTIER-EVAL-01": {
           "issue": 824,
           "status": "complete-on-merge",
-          "decision": "Judgment reports fingerprint validated case content, the worker catalogue and selected qualification definitions, record reasoning effort, and comparisons disclose changed or unverified conditions; historical reports stay readable. This entry is conditional on the #824 PR merging; GitHub records its actual integration status."
+          "decision": "Judgment reports fingerprint validated case content, the worker catalogue and selected qualification definitions, record reasoning effort, and comparisons disclose changed or unverified conditions; historical reports stay readable. This entry is conditional on the #824 PR merging; GitHub records its actual integration status.",
+          "pull_request": 829,
+          "merge_commit": "992968ae44ac2fc8255c8dcaf7c0b5e3b6473a33"
         },
         "FRONTIER-PROVENANCE-01": {
           "issue": 825,
@@ -988,42 +993,48 @@
         "FRONTIER-TELEGRAM-01": {
           "issue": 842,
           "status": "complete-on-merge",
-          "pull_request": [
-            856,
-            864
-          ],
+          "pull_request": 864,
           "decision": "D1 re-offers eligible cut-off prompts once and tells the owner of unknown deliveries without resending them; D2 commits sent replies with their anchors, retries definitely-unsent notices and recovers missing after-work prompts within existing windows with bounded retries and pending budget-hold release.",
-          "dependency_disposition": "FRONTIER-RECOVERY-01 (#826) is complete via merged PR #831; its matrix supplies the F-P4, F-D3 and Telegram F-W4 recovery contract."
+          "dependency_disposition": "FRONTIER-RECOVERY-01 (#826) is complete via merged PR #831; its matrix supplies the F-P4, F-D3 and Telegram F-W4 recovery contract.",
+          "earlier_pull_requests": [
+            856
+          ],
+          "merge_commit": "27fc769a8fca8fd0b59b5743c12710077c31d9a3"
         },
         "FRONTIER-FENCE-01": {
           "issue": 841,
           "status": "complete-on-merge",
           "pull_request": 872,
-          "decision": "After a restart the pre-restart run is superseded: recovery fences each interrupted Work's active ledger record and queues its reply in one transaction (matrix X4, X9), and a stale bridge takes no steer and cannot suppress the resumed run's Continue. Depends on FRONTIER-RECOVERY-01, which is complete."
+          "decision": "After a restart the pre-restart run is superseded: recovery fences each interrupted Work's active ledger record and queues its reply in one transaction (matrix X4, X9), and a stale bridge takes no steer and cannot suppress the resumed run's Continue. Depends on FRONTIER-RECOVERY-01, which is complete.",
+          "merge_commit": "82b8d7d88d1be04ea80f00cd77ad33b52862e72f"
         },
         "FRONTIER-WORKCHAT-01": {
           "issue": 843,
           "status": "complete-on-merge",
           "pull_request": 870,
-          "decision": "Mattermost and Slack keep an owner's reaction or press as a pending act written with its dedupe marker (the existing mattermost config row; slack_events.act), apply it off the poll thread, clear it after it settles and replay it after a restart, with already-settled acts refused by state; corrections already survive as queued Work. Adapt the transactional-inbox pattern onto existing sqlite receipts with no new store and unchanged approval semantics; depends on FRONTIER-RECOVERY-01, which is complete."
+          "decision": "Mattermost and Slack keep an owner's reaction or press as a pending act written with its dedupe marker (the existing mattermost config row; slack_events.act), apply it off the poll thread, clear it after it settles and replay it after a restart, with already-settled acts refused by state; corrections already survive as queued Work. Adapt the transactional-inbox pattern onto existing sqlite receipts with no new store and unchanged approval semantics; depends on FRONTIER-RECOVERY-01, which is complete.",
+          "merge_commit": "2c4b5ff05ff9d353d6f60ce49831c19d398615f8"
         },
         "FRONTIER-CONTEXT-02": {
           "issue": 883,
           "status": "complete-on-merge",
-          "pull_request": "884",
-          "decision": "The existing decision-model plan resolves recall terms, with request terms appended and request-only fallback. Local fixtures validate transport/schema compatibility, plan preservation, per-attempt worker refresh and truthful selector/source receipts without another model call. Depends on completed FRONTIER-CONTEXT-01. Complete on the merge of PR #884"
+          "pull_request": 884,
+          "decision": "The existing decision-model plan resolves recall terms, with request terms appended and request-only fallback. Local fixtures validate transport/schema compatibility, plan preservation, per-attempt worker refresh and truthful selector/source receipts without another model call. Depends on completed FRONTIER-CONTEXT-01. Complete on the merge of PR #884",
+          "merge_commit": "b5fd33509504ccdbc03f176709138cff56832cee"
         },
         "FRONTIER-EVAL-JUDGE-01": {
           "issue": 885,
           "status": "complete-on-merge",
-          "pull_request": "886",
-          "decision": "The eval LLM judge runs only when explicitly selected, discloses credential source and budget, reports settled usage and resolved model ids, and refuses comparisons across judge identities."
+          "pull_request": 886,
+          "decision": "The eval LLM judge runs only when explicitly selected, discloses credential source and budget, reports settled usage and resolved model ids, and refuses comparisons across judge identities.",
+          "merge_commit": "1a9e23225de8bcc0bcdd19ca0362aeb3037a048a"
         },
         "FRONTIER-C2-DUE-01": {
           "issue": 887,
           "status": "complete-on-merge",
-          "pull_request": "889",
-          "decision": "Eval-only C2 come-due barriers observe scheduled admission, settlement and linked Telegram delivery with bounded silence, frozen fixtures and versioned scoring/report coverage; no runtime change or live-model authority."
+          "pull_request": 889,
+          "decision": "Eval-only C2 come-due barriers observe scheduled admission, settlement and linked Telegram delivery with bounded silence, frozen fixtures and versioned scoring/report coverage; no runtime change or live-model authority.",
+          "merge_commit": "b2c0d3a236edb79623e2642b4b846589d3d07a7d"
         },
         "FRONTIER-EVAL-TOKENS-01": {
           "issue": 896,
@@ -1031,112 +1042,142 @@
             897
           ],
           "status": "complete-on-merge",
-          "pull_request": "899",
-          "decision": "Eval-only #896 and #897: adopt Inspect ModelUsage input/cache fields for full-input settlement, pricing and auditable totals; compare shared C2 checks when only harness differs, report infra rows and preserve unscored/failing semantics. No runtime changes or live-model authority."
+          "pull_request": 899,
+          "decision": "Eval-only #896 and #897: adopt Inspect ModelUsage input/cache fields for full-input settlement, pricing and auditable totals; compare shared C2 checks when only harness differs, report infra rows and preserve unscored/failing semantics. No runtime changes or live-model authority.",
+          "merge_commit": "4a856d15c8fbedfce65782a30cfaa275099c385b"
         },
         "FRONTIER-RECEIPT-JUDGE-01": {
           "issue": 898,
           "status": "complete-on-merge",
-          "pull_request": "900",
-          "decision": "Carry the reply composer's typed source and the Work's delivery context into the existing outcome judgment, including direct-API fallback receipts. Judge Still receipts as recorded effects and held replies before later preparation delivery; keep delivery and silence policy unchanged."
+          "pull_request": 900,
+          "decision": "Carry the reply composer's typed source and the Work's delivery context into the existing outcome judgment, including direct-API fallback receipts. Judge Still receipts as recorded effects and held replies before later preparation delivery; keep delivery and silence policy unchanged.",
+          "merge_commit": "9cfaaa9f64ad8b96c5ebecd53fbd0d2438d55053"
         },
         "FRONTIER-EVAL-FALLBACK-01": {
           "issue": 902,
           "status": "complete-on-merge",
-          "pull_request": "903",
-          "decision": "Eval-only typed Judgment AI fallback counts from Still's Work-family records, including owner turns and wait_due preparation Works; sweep/C2 sample and Work totals for every code; only judgment_unavailable and judgment_qualifying join not-ready qualification in the existing representative_judgment_ai comparison gate. Plan and budget fallbacks stay comparable. Fixture evidence only; no runtime changes or live-model authority."
+          "pull_request": 903,
+          "decision": "Eval-only typed Judgment AI fallback counts from Still's Work-family records, including owner turns and wait_due preparation Works; sweep/C2 sample and Work totals for every code; only judgment_unavailable and judgment_qualifying join not-ready qualification in the existing representative_judgment_ai comparison gate. Plan and budget fallbacks stay comparable. Fixture evidence only; no runtime changes or live-model authority.",
+          "merge_commit": "2341d9a4e0a9d4b17b64f11adb40d576a40de716"
         },
         "FRONTIER-JUDGMENT-TEXT-01": {
           "issue": 202,
           "status": "complete-on-merge",
-          "pull_request": "912",
-          "decision": "Move every remaining model-facing judgment text in conversation_handoff.py and decision.py into prompts/*.md byte-identically, and extend the affected-cases map to prompt paths, bundled skills and restated contracts. No wording, behaviour or authority change."
+          "pull_request": 912,
+          "decision": "Move every remaining model-facing judgment text in conversation_handoff.py and decision.py into prompts/*.md byte-identically, and extend the affected-cases map to prompt paths, bundled skills and restated contracts. No wording, behaviour or authority change.",
+          "merge_commit": "3928087eeb394207ca72df00eaebfb25c5f5becf"
         },
         "FRONTIER-COMPLETION-BAR-01": {
           "issue": 202,
           "status": "complete-on-merge",
-          "pull_request": "914",
-          "decision": "Owner decisions Q1-B, Q2-A and Q4-A on #202: a failed step the answer needs requires the next available method before a disclosed estimate serves; a time cost answers on the stated assumption and asks in the same reply; a wrong method in a skill or instruction text is a developer blocker. Prompt, skill and eval data only; no runtime, authority or approval change."
+          "pull_request": 914,
+          "decision": "Owner decisions Q1-B, Q2-A and Q4-A on #202: a failed step the answer needs requires the next available method before a disclosed estimate serves; a time cost answers on the stated assumption and asks in the same reply; a wrong method in a skill or instruction text is a developer blocker. Prompt, skill and eval data only; no runtime, authority or approval change.",
+          "merge_commit": "e0e1a01bb2d6341a20a0dd0271ee53f08706447f"
         },
         "FRONTIER-UNTRUSTED-ECHO-01": {
           "issue": 744,
           "status": "complete-on-merge",
-          "decision": "Owner-selected #744 phase 2 (PR-2 (items 3, 4d)) within #822, owner disposition 2026-11-16: record native outbound post identities at API dispatch through generic host hooks and paired surface adapters; exclude known own posts from owner-act ingress, reserving durably before send and retaining racing messages across restart. Every dispatch attempt settles and releases ingress; unidentified sends withhold owner-typed authority only inside their bounded native-timestamp windows, with finite crash recovery. Preserve Telegram forwarding origins in Work provenance and withhold owner_typed for forwarded text, keeping forwards readable and newly typed owner messages authoritative. Build one structural host-origin eligibility condition at shared ingress using platform IDs, Python JSON/SQLite and existing tool_events/turn_provenance; no text detectors, added dependency, model call or blanket confirmation. Escalated exact-head review and required CI remain owed; owner alone owes the real-configuration check. AI-side MCP and browser posts without host-visible IDs remain residual limits. Complete on the merge of its own PR."
+          "decision": "Owner-selected #744 phase 2 (PR-2 (items 3, 4d)) within #822, owner disposition 2026-11-16: record native outbound post identities at API dispatch through generic host hooks and paired surface adapters; exclude known own posts from owner-act ingress, reserving durably before send and retaining racing messages across restart. Every dispatch attempt settles and releases ingress; unidentified sends withhold owner-typed authority only inside their bounded native-timestamp windows, with finite crash recovery. Preserve Telegram forwarding origins in Work provenance and withhold owner_typed for forwarded text, keeping forwards readable and newly typed owner messages authoritative. Build one structural host-origin eligibility condition at shared ingress using platform IDs, Python JSON/SQLite and existing tool_events/turn_provenance; no text detectors, added dependency, model call or blanket confirmation. Escalated exact-head review and required CI remain owed; owner alone owes the real-configuration check. AI-side MCP and browser posts without host-visible IDs remain residual limits. Complete on the merge of its own PR.",
+          "pull_request": 913,
+          "merge_commit": "503835f254f179dcc6b33c85e3f487ca43d151ab"
         },
         "FRONTIER-PLAN-READING-01": {
           "issue": 202,
           "status": "complete-on-merge",
-          "pull_request": "915",
-          "decision": "Owner decision Q3-A on #202: the plan states what the request needs (brief.needs) and the CLI outcome judgment receives it as a redacted, bounded plan_reading it may reject; it never narrows, widens or replaces the owner's request. Direct-API route follows separately. No authority change."
+          "pull_request": 915,
+          "decision": "Owner decision Q3-A on #202: the plan states what the request needs (brief.needs) and the CLI outcome judgment receives it as a redacted, bounded plan_reading it may reject; it never narrows, widens or replaces the owner's request. Direct-API route follows separately. No authority change.",
+          "merge_commit": "db5dd75d9bdc771de233ab5ed702eb5adf9aa751"
         },
         "FRONTIER-RECALL-V3-01": {
           "issue": 403,
           "status": "complete-on-merge",
-          "pull_request": "920",
-          "decision": "In order: an embedding arm passing the lexical, lexical-context and request-only runtime gate with at least one common fixed held-out case not fixed by plan-query under the R1 3-sample majority/uncertainty rule (uncertain counts as not fixed) means \"reopen step 2 under #849 (cost limits still apply)\"; else plan-query preferred against lexical under R1 (zero traps, no lost lexical control, at least one non-uncertain held-out fix, no held-out regression), or a passing embedding arm whose every common fix is also fixed by plan-query, means \"#403 met by step 1\"; else \"#403 residual misses recorded; step 2 not reopened\"."
+          "pull_request": 920,
+          "decision": "In order: an embedding arm passing the lexical, lexical-context and request-only runtime gate with at least one common fixed held-out case not fixed by plan-query under the R1 3-sample majority/uncertainty rule (uncertain counts as not fixed) means \"reopen step 2 under #849 (cost limits still apply)\"; else plan-query preferred against lexical under R1 (zero traps, no lost lexical control, at least one non-uncertain held-out fix, no held-out regression), or a passing embedding arm whose every common fix is also fixed by plan-query, means \"#403 met by step 1\"; else \"#403 residual misses recorded; step 2 not reopened\".",
+          "merge_commit": "9013f621e9e55ebb94c39e631c7af7cd283283af"
         },
         "FRONTIER-UNTRUSTED-01": {
           "issue": 744,
           "status": "complete-on-merge",
-          "decision": "Owner-selected #744 phase 2 (PR-1 (items 5, 1, 2)) within #822, owner disposition 2026-11-16: persist host-observed outside-content marks across Work retries and CLI bridge calls; require exact one-use non-payment write approval unless a current connection allowance covers it, without a reversibility waiver; route unsupported worker/upkeep facts to sourced MemoryCandidates while preserving owner-stated direct saves, undo and payment boundaries; classify marked browser presses with the existing minimized judgment so read/navigation needs no confirmation; exclude marked answers from dream input, keeping owner-only dream learning and the quiet diary direct; on a literal owner-word miss, use one owner-only paraphrase judgment per marked worker/upkeep save, as directed on 2026-11-17. Adapt the phase-1 integrity-label and exact-approval review; Build one structural condition at existing authority gates, without new dependencies or detectors. Deterministic fixture evidence only; no live accounts or live-model validation. Complete on the merge of its own PR."
+          "decision": "Owner-selected #744 phase 2 (PR-1 (items 5, 1, 2)) within #822, owner disposition 2026-11-16: persist host-observed outside-content marks across Work retries and CLI bridge calls; require exact one-use non-payment write approval unless a current connection allowance covers it, without a reversibility waiver; route unsupported worker/upkeep facts to sourced MemoryCandidates while preserving owner-stated direct saves, undo and payment boundaries; classify marked browser presses with the existing minimized judgment so read/navigation needs no confirmation; exclude marked answers from dream input, keeping owner-only dream learning and the quiet diary direct; on a literal owner-word miss, use one owner-only paraphrase judgment per marked worker/upkeep save, as directed on 2026-11-17. Adapt the phase-1 integrity-label and exact-approval review; Build one structural condition at existing authority gates, without new dependencies or detectors. Deterministic fixture evidence only; no live accounts or live-model validation. Complete on the merge of its own PR.",
+          "pull_request": 916,
+          "merge_commit": "53959f61252f6e5765b8a0965b55d252ae83657f"
         },
         "FRONTIER-UNTRUSTED-PREVIEW-01": {
           "issue": 744,
           "status": "complete-on-merge",
-          "decision": "Owner-selected #744 phase 2 (PR-3 (items 4a, 4b)) within #822, owner disposition 2026-11-16: preserve complete nonsecret browser destination, target and bound parameters in the existing approval preview; attribute peer MemoryCandidate reviews to authenticated A2A admission and registered identity. Zero additional confirmations or model calls; exact one-use approval, Memory review and peer scope remain enforced. Fixture evidence only; payment-autonomy notice clipping and live-configuration checks are outside this PR. Complete on the merge of its own PR."
+          "decision": "Owner-selected #744 phase 2 (PR-3 (items 4a, 4b)) within #822, owner disposition 2026-11-16: preserve complete nonsecret browser destination, target and bound parameters in the existing approval preview; attribute peer MemoryCandidate reviews to authenticated A2A admission and registered identity. Zero additional confirmations or model calls; exact one-use approval, Memory review and peer scope remain enforced. Fixture evidence only; payment-autonomy notice clipping and live-configuration checks are outside this PR. Complete on the merge of its own PR.",
+          "pull_request": 922,
+          "merge_commit": "737fa26c8c68868665977d03005acf5c49774e37"
         },
         "FRONTIER-PLAN-READING-02": {
           "issue": 202,
           "status": "complete-on-merge",
-          "pull_request": "923",
-          "decision": "Within owner decision Q3-A on #202: the direct API route's own outcome judgment receives the plan's rejectable reading, as the CLI route has since #915. Plumbing only; no prompt, schema, model call or authority change."
+          "pull_request": 923,
+          "decision": "Within owner decision Q3-A on #202: the direct API route's own outcome judgment receives the plan's rejectable reading, as the CLI route has since #915. Plumbing only; no prompt, schema, model call or authority change.",
+          "merge_commit": "65def3ce07c93bf195efd38d85a635783ab0f611"
         },
         "FRONTIER-RECALL-TERMS-01": {
           "issue": 921,
           "status": "complete-on-merge",
-          "decision": "Owner-approved #921 PR-1 within #822 (owner decision 2026-11-17, #921 comment 6934192576; spec v5 #921 comment 6934099196): derived retrieval_terms/meta on Memory rows in a three-column FTS5 index (savepoint migration, bm25 weights), a guarded per-row write, forget and retract clearing terms with a non-repeating generation, and a shape/secret/number term filter that is not a relevance filter. No writer calls it yet (PR-3 and PR-6); no model call, dependency or new destination. Complete on the merge of its own PR."
+          "decision": "Owner-approved #921 PR-1 within #822 (owner decision 2026-11-17, #921 comment 6934192576; spec v5 #921 comment 6934099196): derived retrieval_terms/meta on Memory rows in a three-column FTS5 index (savepoint migration, bm25 weights), a guarded per-row write, forget and retract clearing terms with a non-repeating generation, and a shape/secret/number term filter that is not a relevance filter. No writer calls it yet (PR-3 and PR-6); no model call, dependency or new destination. Complete on the merge of its own PR.",
+          "pull_request": 924,
+          "merge_commit": "f850dd08ad03c224207c4bb84daa6c0d5aa8406f"
         },
         "FRONTIER-RECALL-FILL-01": {
           "issue": 921,
           "status": "complete-on-merge",
-          "decision": "Owner-approved #921 PR-4 within #822 (spec v5 #921 comment 6934099196, \u00a73): the profile snapshot fills unmatched facts newest first from the newest 500 candidates after the voice row and BM25-ordered matches, instead of key order, so a bound cut drops the oldest unmatched facts; _profile_rows keeps key order for the owner's Memory list; bounds, attribution and filters unchanged. No model call, dependency or new destination. Complete on the merge of its own PR."
+          "decision": "Owner-approved #921 PR-4 within #822 (spec v5 #921 comment 6934099196, \u00a73): the profile snapshot fills unmatched facts newest first from the newest 500 candidates after the voice row and BM25-ordered matches, instead of key order, so a bound cut drops the oldest unmatched facts; _profile_rows keeps key order for the owner's Memory list; bounds, attribution and filters unchanged. No model call, dependency or new destination. Complete on the merge of its own PR.",
+          "pull_request": 925,
+          "merge_commit": "3cb55ff07cf8968f44c00596c3f18833ab11697f"
         },
         "FRONTIER-RECALL-THREADS-01": {
           "issue": 921,
           "status": "complete-on-merge",
-          "decision": "Owner-approved #921 PR-7 within #822 (spec v5 #921 comment 6934099196, \u00a74): search_conversation takes an optional work_id from a search_memory source and returns that Work's owner turns and delivered reply as an addressed lookup, independent of FTS and the recent window, under the existing owner-words, forgotten and secret filters, bounds and three-exchange budget, with an explicit found/not_found/forgotten/document_work outcome; document Works stay excluded (an open C17 question for the owner). No model call, dependency or new destination. Complete on the merge of its own PR."
+          "decision": "Owner-approved #921 PR-7 within #822 (spec v5 #921 comment 6934099196, \u00a74): search_conversation takes an optional work_id from a search_memory source and returns that Work's owner turns and delivered reply as an addressed lookup, independent of FTS and the recent window, under the existing owner-words, forgotten and secret filters, bounds and three-exchange budget, with an explicit found/not_found/forgotten/document_work outcome; document Works stay excluded (an open C17 question for the owner). No model call, dependency or new destination. Complete on the merge of its own PR.",
+          "pull_request": 947,
+          "merge_commit": "c81afeb66289cb1913a147b6b7da560c9ed4b18e"
         },
         "FRONTIER-RECALL-SAVE-TERMS-01": {
           "issue": 921,
           "status": "complete-on-merge",
-          "decision": "Owner-approved #921 PR-6 within #822 (spec v5 #921 comment 6934099196, \u00a72 Writers; N11 = C, comment 6934192576): save_memory takes an optional terms string; on the direct-save path the terms pass memory_terms.filter_terms (secret check first) and are written in the same INSERT as the row with a keyed meta naming the worker's route and model when known; empty or filtered terms leave the meta NULL for the later terms pass; candidates carry no terms. No model call, dependency or new destination. Complete on the merge of its own PR."
+          "decision": "Owner-approved #921 PR-6 within #822 (spec v5 #921 comment 6934099196, \u00a72 Writers; N11 = C, comment 6934192576): save_memory takes an optional terms string; on the direct-save path the terms pass memory_terms.filter_terms (secret check first) and are written in the same INSERT as the row with a keyed meta naming the worker's route and model when known; empty or filtered terms leave the meta NULL for the later terms pass; candidates carry no terms. No model call, dependency or new destination. Complete on the merge of its own PR.",
+          "pull_request": 957,
+          "merge_commit": "78ac96d39da67f67e938adb9b7696fe30489bca5"
         },
         "FRONTIER-RECALL-TERMS-PASS-01": {
           "issue": 921,
           "status": "complete-on-merge",
-          "decision": "Owner-approved #921 PR-3 within #822 (spec v5 #921 comment 6934099196, \u00a72 Writers and the terms pass; N11 = C, comment 6934192576): upkeep and dream proposals carry a terms string filtered and written with the fact; a repeatable, Work-independent terms run kind keys the remaining eligible facts on the Judgment AI's active model, within a quarter of the owner's daily upkeep cap, after every other kind, never aging out and never blocking the dream; whole facts packed under size bounds with a singleton allowance and an adaptive row cap (start 8, halve the rows sent after a rejected answer, double the cap after a valid one, up to 25); host validation and guarded per-row commits; a content-free manifest and judgments_read fan-out instead of a Work event. No dependency or new destination. Complete on the merge of its own PR."
+          "decision": "Owner-approved #921 PR-3 within #822 (spec v5 #921 comment 6934099196, \u00a72 Writers and the terms pass; N11 = C, comment 6934192576): upkeep and dream proposals carry a terms string filtered and written with the fact; a repeatable, Work-independent terms run kind keys the remaining eligible facts on the Judgment AI's active model, within a quarter of the owner's daily upkeep cap, after every other kind, never aging out and never blocking the dream; whole facts packed under size bounds with a singleton allowance and an adaptive row cap (start 8, halve the rows sent after a rejected answer, double the cap after a valid one, up to 25); host validation and guarded per-row commits; a content-free manifest and judgments_read fan-out instead of a Work event. No dependency or new destination. Complete on the merge of its own PR.",
+          "pull_request": 958,
+          "merge_commit": "13882908c2e54e212c2c6b86c1253d53047ed5b8"
         },
         "FRONTIER-RECALL-REPLY-01": {
           "issue": 921,
           "status": "complete-on-merge",
-          "pull_request": "959",
-          "decision": "Owner-selected #921 PR-5 within #822: a plan's direct reply is withheld when its own recall_query finds a saved row (new id or revision, or a new annotation) the plan was not sent; the already-planned worker runs with the same checked refresh. No re-plan; annotations are consumed only at dispatch. Not escalated: it only withholds a reply, with no new recipient or authority."
+          "pull_request": 959,
+          "decision": "Owner-selected #921 PR-5 within #822: a plan's direct reply is withheld when its own recall_query finds a saved row (new id or revision, or a new annotation) the plan was not sent; the already-planned worker runs with the same checked refresh. No re-plan; annotations are consumed only at dispatch. Not escalated: it only withholds a reply, with no new recipient or authority.",
+          "merge_commit": "383a3a321c0584556edf99da1ed366341f1d0eb7"
         },
         "FRONTIER-RECALL-REGRESSION-01": {
           "issue": 921,
           "status": "complete-on-merge",
-          "decision": "Owner-selected #921 PR-8 within #822 (spec v5 Regression inputs): eval-only v4 recall regression with guarded terms replay, the real executor gate and fixture workers, author facets and dev-only additions. Adapt the existing recall arms, recorder route, sandbox, shared CallCap and product inventory APIs; no src change, new dependency or default live call. The one approved live run was recorded: 204 calls on the subscription route, no judge; results are on #921. Complete on the merge of its own PR."
+          "decision": "Owner-selected #921 PR-8 within #822 (spec v5 Regression inputs): eval-only v4 recall regression with guarded terms replay, the real executor gate and fixture workers, author facets and dev-only additions. Adapt the existing recall arms, recorder route, sandbox, shared CallCap and product inventory APIs; no src change, new dependency or default live call. The one approved live run was recorded: 204 calls on the subscription route, no judge; results are on #921. Complete on the merge of its own PR.",
+          "pull_request": 960,
+          "merge_commit": "193cce0ce43155b7234179abc8c528758bc222c5"
         },
         "FRONTIER-RECALL-REPLY-02": {
           "issue": 921,
           "status": "complete-on-merge",
-          "pull_request": "965",
-          "decision": "Coordinator-approved #921 follow-up to #959 within #822: the direct-reply gate withholds only when the best-ranked match of the plan's own selector (profile and older records ranked separately) is a row the plan was not sent or one newly annotated. Not escalated: it only changes which replies are withheld, with no new recipient or authority."
+          "pull_request": 965,
+          "decision": "Coordinator-approved #921 follow-up to #959 within #822: the direct-reply gate withholds only when the best-ranked match of the plan's own selector (profile and older records ranked separately) is a row the plan was not sent or one newly annotated. Not escalated: it only changes which replies are withheld, with no new recipient or authority.",
+          "merge_commit": "9a894cba7e2c30b065ffa2698940c58be7b884bc"
         },
         "FRONTIER-RECALL-QUERY-FORMS-01": {
           "issue": 919,
           "status": "complete-on-merge",
-          "decision": "Owner-decided #919 within #822 (2026-11-18): the Korean particle list is dropped; the plan's recall_query also gives each key word's base or dictionary form and its usual name, in the request's language and in the language the fact was probably saved in (one generic planner line; no code path or word list). Accepted after dev with its 2 noise-only withholds; the fresh held-out set (#827) met the posted conditions. Not escalated: prompt text and eval harness only, with no new recipient or authority."
+          "decision": "Owner-decided #919 within #822 (2026-11-18): the Korean particle list is dropped; the plan's recall_query also gives each key word's base or dictionary form and its usual name, in the request's language and in the language the fact was probably saved in (one generic planner line; no code path or word list). Accepted after dev with its 2 noise-only withholds; the fresh held-out set (#827) met the posted conditions. Not escalated: prompt text and eval harness only, with no new recipient or authority.",
+          "pull_request": 1011,
+          "merge_commit": "c9eb6ffba44860935711decbb435a1f80b740265"
         }
       }
     },
@@ -2088,7 +2129,7 @@
       "closeout": "Closed out 2026-10-28 (#332). All three ordered substeps merged on their own PRs, with issue acceptance mapped to model-free unit and fixture tests and required validate passing on each final head. REPLY-LATENCY-01 #309: L1 PR #331, L3 PR #329, L7 PR #333. The Codex review of the final head a5f353b found no major issues and the owner merged it. SIDE-ANSWER-01 #17: PR #342. No escalated review was triggered. CLI-UPDATE-01 #346: plan PR #356, implementation PR #358. The Codex review found three P2s, all fixed; its review of the final head 3be65aa had no findings. validate and full-validate (run 40528324620) passed on that head, and it merged on the owner's one-off instruction. full-validate passed on main at 1048297 after the last program merge (run 40598909917: Linux, macOS 15, macOS 26). The #309 L1 + L7 after-measurement was dropped by the owner because the #344 judgment outage fell inside its window, so the latency target is not verified. Evidence classes: unit and fixture tests throughout. For #346, local operation of the installed Codex 0.164.0 and Claude Code 2.1.287 against a loopback scripted model with a synthetic home. Owner-instance operating observation after the restart on 1048297 (2026-10-27 23:01 UTC), from read-only aggregates: the Judgment route requalified itself in the background in 75 s with no Settings step, and the next 6 judgments across 6 purposes were all decided. Left open as follow-ups: Codex mcp_servers required/startup wait for production strict Works; four opt-in ProcessLevelQualification assertions that have rotted (they fail the same way on main); and the Codex app-server steer drift on 0.164.0 (#308 S0, an unused route). No successor is selected by this closeout; the delivery heartbeat stayed paused throughout."
     },
     "FRONTIER-01": {
-      "status": "owner-activated-goal-ready",
+      "status": "complete",
       "issue": 822,
       "activated_by": {
         "issue": 822,
@@ -2164,8 +2205,7 @@
         "FRONTIER-RECALL-REPLY-02",
         "FRONTIER-RECALL-QUERY-FORMS-01"
       ],
-      "parallel_eligible_substeps": [
-      ],
+      "parallel_eligible_substeps": [],
       "delegation": {
         "coordination": "Wave 1: active_substeps named the serial integration selection, and #824 progressed in its disjoint worktree during #823 authoring. Wave 2 (M1): the four units are parallel_eligible_substeps with disjoint function-level ownership. Each lane integrates its own PR, so no serial integration step is selected and active_substeps stays empty. A unit lane edits only its own delivery-plan entry, and only after this selection merges; the later merger resolves conflicts. GitHub issues and PRs record actual execution and integration status.",
         "FRONTIER-SPEC-01": {
@@ -2282,13 +2322,17 @@
           "issue": 822,
           "date": "2026-11-14",
           "decision": "The owner instructed on 2026-11-14 to proceed with M1 (reliable work) in parallel lanes. The #826 matrix selected F-X4 (#841) and named F-W4 and F-P4 next; #842 takes F-P4 with the related F-D3 follow-up and the Telegram part of F-W4, and #843 takes F-W4 for Mattermost and Slack. #722 is M1's remaining judgment-ownership gap (F10). These four are wave 2. Lanes and ownership are in frontier-delivery.en.md and the #822 coordinator comment."
+        },
+        "scenario-evidence-accepted": {
+          "issue": 822,
+          "date": "2026-11-25",
+          "decision": "The owner accepted the scenario and fixture measurements recorded on the children as sufficient for the last acceptance item (held-out outcome evidence for later milestones) and asked to close #822 (\"\uc2dc\ub098\ub9ac\uc624 \uce21\uc815\uc73c\ub85c \ucda9\ubd84\ud558\ub2c8 #822 \ub2eb\uc544\uc918\"). No separate held-out live run was made; claims stay limited to the evidence classes each child names."
         }
       },
       "parallel_authorization": {
         "issue": 822,
         "date": "2026-11-14",
-        "substeps": [
-        ],
+        "substeps": [],
         "decision": "The owner's direct 2026-11-14 instruction runs M1 in parallel lanes. The four units have disjoint function-level ownership (delegation), and shared files are partitioned by row. Each lane integrates its own PR; this record does not start or duplicate a worker.",
         "history": [
           {
@@ -2300,13 +2344,15 @@
             "decision": "The owner-authorized evaluation worktree could progress alongside specification authoring with disjoint files. On merge of #823, evaluation was the single selected integration substep."
           }
         ]
-      }
+      },
+      "closeout": "Closed out 2026-11-25 (#822) on the owner's instruction. Every child linked from #822 is closed: M0 #823, #824, #825, #885, #896, #897, #902; M1 #826, #841, #842, #843, #722, #813, #814, #898 and #817-#821; M2 #827, #403, #883, #919, #921; the later units #202 phase 2 and #744 phase 2. Each completed substep records its own issue, pull request, merge commit and decision above. Evidence classes: unit, fixture and model-free integration tests with required CI; live local observation of the eval sandbox, judge-scored, only where a child says so. The last acceptance item (held-out outcome evidence for later milestones) was settled by the owner accepting the scenario measurements; no held-out live run was made, so no frontier or live-performance claim is established. full-validate passed on main at 199c43cd (run 45408291336). No successor is selected by this closeout; the delivery heartbeat stayed paused throughout.",
+      "selection_record": "Owner-authorized FRONTIER-01 (#822): the first wave (#823, #824) and #825\u2013#827 are complete-on-merge. M1 wave 2 selects #841 (F-X4 recovery fence), #722 (judgment scope for relayed calls), #842 (F-P4/F-D3 Telegram delivery) and #843 (F-W4 Mattermost/Slack) as parent-controlled parallel lanes under the owner's 2026-11-14 direct instruction; each unit's own PR records it complete on merge. This checked-in resting selection starts no heartbeat. #883 (FRONTIER-CONTEXT-02) is selected inside #822 by owner direction on 2026-11-15 and is complete on the merge of its own PR. #885 (FRONTIER-EVAL-JUDGE-01) is selected inside #822 by owner direction on 2026-11-15 and is complete on the merge of its own PR. #887 (FRONTIER-C2-DUE-01) is selected inside #822 by owner direction on 2026-11-15 and is complete on the merge of its own PR. #896 and #897 (FRONTIER-EVAL-TOKENS-01) are selected inside #822 by owner direction on 2026-11-15 and are complete on the merge of its own PR. #898 (FRONTIER-RECEIPT-JUDGE-01) is selected inside #822 by owner direction on 2026-11-15 and is complete on the merge of its own PR. #902 (FRONTIER-EVAL-FALLBACK-01) is selected inside #822 by owner direction on 2026-11-15 and is complete on the merge of its own PR. #202 phase 2 (FRONTIER-JUDGMENT-TEXT-01) is selected inside #822 by owner direction on 2026-11-16 and is complete on the merge of its own PR. #202 phase 2 (FRONTIER-COMPLETION-BAR-01) is selected inside #822 by owner direction on 2026-11-16 and is complete on the merge of its own PR. #744 phase 2 PR-2 (FRONTIER-UNTRUSTED-ECHO-01; items 3, 4d) is selected inside #822 by owner disposition on 2026-11-16 and is complete on the merge of its own PR. #202 phase 2 (FRONTIER-PLAN-READING-01) is selected inside #822 by owner direction on 2026-11-16 and is complete on the merge of its own PR. #403 (FRONTIER-RECALL-V3-01) is selected inside #822 by owner direction on 2026-11-16 and is complete on the merge of its own PR. #744 (FRONTIER-UNTRUSTED-01, phase 2 PR-1 items 5, 1, 2) is selected inside #822 by owner disposition on 2026-11-16 and is complete on the merge of its own PR. #744 phase 2 (PR-3 (items 4a, 4b), FRONTIER-UNTRUSTED-PREVIEW-01) is selected inside #822 by owner disposition on 2026-11-16 and is complete on the merge of its own PR. #202 phase 2 (FRONTIER-PLAN-READING-02) is selected inside #822 by owner direction on 2026-11-16 and is complete on the merge of its own PR. #921 PR-1 (FRONTIER-RECALL-TERMS-01) is selected inside #822 by owner decision on 2026-11-17 and is complete on the merge of its own PR. #921 PR-4 (FRONTIER-RECALL-FILL-01) is selected inside #822 by owner direction on 2026-11-17 and is complete on the merge of its own PR. #921 PR-7 (FRONTIER-RECALL-THREADS-01) is selected inside #822 by owner direction on 2026-11-17 and is complete on the merge of its own PR. #921 PR-6 (FRONTIER-RECALL-SAVE-TERMS-01) is selected inside #822 by owner direction on 2026-11-17 and is complete on the merge of its own PR. #921 PR-3 (FRONTIER-RECALL-TERMS-PASS-01) is selected inside #822 by owner direction on 2026-11-17 and is complete on the merge of its own PR. #921 PR-5 (FRONTIER-RECALL-REPLY-01) is selected inside #822 by owner direction on 2026-11-17 and is complete on the merge of its own PR. #921 PR-8 (FRONTIER-RECALL-REGRESSION-01) is selected inside #822 by owner direction on 2026-11-18 and is complete on the merge of its own PR. #921 gate follow-up (FRONTIER-RECALL-REPLY-02) is selected inside #822 by owner direction on 2026-11-18 and is complete on the merge of its own PR. #919 request-side recall (FRONTIER-RECALL-QUERY-FORMS-01) is selected inside #822 by owner decision on 2026-11-18 and is complete on the merge of its own PR. No other successor is selected; no live-model authority is added."
     }
   },
   "completion_claims": {},
   "next_goal": {
-    "id": "FRONTIER-01",
-    "status": "owner-activated-goal-ready",
-    "action": "Owner-authorized FRONTIER-01 (#822): the first wave (#823, #824) and #825\u2013#827 are complete-on-merge. M1 wave 2 selects #841 (F-X4 recovery fence), #722 (judgment scope for relayed calls), #842 (F-P4/F-D3 Telegram delivery) and #843 (F-W4 Mattermost/Slack) as parent-controlled parallel lanes under the owner's 2026-11-14 direct instruction; each unit's own PR records it complete on merge. This checked-in resting selection starts no heartbeat. #883 (FRONTIER-CONTEXT-02) is selected inside #822 by owner direction on 2026-11-15 and is complete on the merge of its own PR. #885 (FRONTIER-EVAL-JUDGE-01) is selected inside #822 by owner direction on 2026-11-15 and is complete on the merge of its own PR. #887 (FRONTIER-C2-DUE-01) is selected inside #822 by owner direction on 2026-11-15 and is complete on the merge of its own PR. #896 and #897 (FRONTIER-EVAL-TOKENS-01) are selected inside #822 by owner direction on 2026-11-15 and are complete on the merge of its own PR. #898 (FRONTIER-RECEIPT-JUDGE-01) is selected inside #822 by owner direction on 2026-11-15 and is complete on the merge of its own PR. #902 (FRONTIER-EVAL-FALLBACK-01) is selected inside #822 by owner direction on 2026-11-15 and is complete on the merge of its own PR. #202 phase 2 (FRONTIER-JUDGMENT-TEXT-01) is selected inside #822 by owner direction on 2026-11-16 and is complete on the merge of its own PR. #202 phase 2 (FRONTIER-COMPLETION-BAR-01) is selected inside #822 by owner direction on 2026-11-16 and is complete on the merge of its own PR. #744 phase 2 PR-2 (FRONTIER-UNTRUSTED-ECHO-01; items 3, 4d) is selected inside #822 by owner disposition on 2026-11-16 and is complete on the merge of its own PR. #202 phase 2 (FRONTIER-PLAN-READING-01) is selected inside #822 by owner direction on 2026-11-16 and is complete on the merge of its own PR. #403 (FRONTIER-RECALL-V3-01) is selected inside #822 by owner direction on 2026-11-16 and is complete on the merge of its own PR. #744 (FRONTIER-UNTRUSTED-01, phase 2 PR-1 items 5, 1, 2) is selected inside #822 by owner disposition on 2026-11-16 and is complete on the merge of its own PR. #744 phase 2 (PR-3 (items 4a, 4b), FRONTIER-UNTRUSTED-PREVIEW-01) is selected inside #822 by owner disposition on 2026-11-16 and is complete on the merge of its own PR. #202 phase 2 (FRONTIER-PLAN-READING-02) is selected inside #822 by owner direction on 2026-11-16 and is complete on the merge of its own PR. #921 PR-1 (FRONTIER-RECALL-TERMS-01) is selected inside #822 by owner decision on 2026-11-17 and is complete on the merge of its own PR. #921 PR-4 (FRONTIER-RECALL-FILL-01) is selected inside #822 by owner direction on 2026-11-17 and is complete on the merge of its own PR. #921 PR-7 (FRONTIER-RECALL-THREADS-01) is selected inside #822 by owner direction on 2026-11-17 and is complete on the merge of its own PR. #921 PR-6 (FRONTIER-RECALL-SAVE-TERMS-01) is selected inside #822 by owner direction on 2026-11-17 and is complete on the merge of its own PR. #921 PR-3 (FRONTIER-RECALL-TERMS-PASS-01) is selected inside #822 by owner direction on 2026-11-17 and is complete on the merge of its own PR. #921 PR-5 (FRONTIER-RECALL-REPLY-01) is selected inside #822 by owner direction on 2026-11-17 and is complete on the merge of its own PR. #921 PR-8 (FRONTIER-RECALL-REGRESSION-01) is selected inside #822 by owner direction on 2026-11-18 and is complete on the merge of its own PR. #921 gate follow-up (FRONTIER-RECALL-REPLY-02) is selected inside #822 by owner direction on 2026-11-18 and is complete on the merge of its own PR. #919 request-side recall (FRONTIER-RECALL-QUERY-FORMS-01) is selected inside #822 by owner decision on 2026-11-18 and is complete on the merge of its own PR. No other successor is selected; no live-model authority is added."
+    "id": null,
+    "status": "complete",
+    "action": "FRONTIER-01 closed out (#822). No goal is selected; the owner activates the next one explicitly, for example from the curated backlog (#44). The delivery heartbeat stays paused."
   }
 }
