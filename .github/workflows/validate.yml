@@ -19,10 +19,9 @@ concurrency:
   cancel-in-progress: ${{ github.event_name != 'push' }}
 
 jobs:
-  validate:
+  checks:
     runs-on: ubuntu-latest
-    # #1150: the whole suite alone takes about 27 minutes; 30 cancelled ordinary runs.
-    timeout-minutes: 45
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v7
         with:
@@ -111,15 +110,79 @@ jobs:
           fi
           python3 "$trusted_scope" --base "$BASE_SHA" --head "$HEAD_SHA" --root "$GITHUB_WORKSPACE" | tee -a "$GITHUB_OUTPUT"
 
-      # #234: the whole test suite, with full-validate's Linux invocation (#135). The real-WebKit
-      # classes skip on Linux; they run in the nightly/dispatched full-validate on macOS.
-      - name: Run the full test suite (parallel)
-        if: steps.scope.outputs.suite != 'text' && steps.scope.outputs.suite != 'release'
-        run: PATH="$PWD/.venv/bin:$PATH" python3 -m pytest -q -n auto --dist loadfile --durations=25 tests
-
       # #508: a release-data pull request (only versions, dates and digests swapped) runs the release tests.
       - name: Run the tests the scope selected (parallel)
         if: steps.scope.outputs.suite == 'text' || steps.scope.outputs.suite == 'release'
         env:
           TEXT_TESTS: ${{ steps.scope.outputs.tests }}
         run: PATH="$PWD/.venv/bin:$PATH" python3 -m pytest -q -n auto --dist loadfile --durations=25 $TEXT_TESTS
+
+  # #1150: the whole Linux suite, split by test file into three shards that run at once
+  # (``scripts/ci/test_shard.py``). Every file runs in exactly one shard, whole, with
+  # full-validate's invocation; `validate` below passes only when every shard passed.
+  suite:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3]
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.12'
+
+      - name: Install pinned uv resolver
+        uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
+        with:
+          version: '0.11.33'
+          enable-cache: true
+
+      - name: Sync locked validation dependencies
+        run: uv sync --locked --extra mcp-host --extra schema-validation --extra a2a --group dev --no-python-downloads
+
+      - name: Decide test scope
+        id: scope
+        env:
+          EVENT: ${{ github.event_name }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ "$EVENT" != "pull_request" ]; then echo "suite=full" >> "$GITHUB_OUTPUT"; exit 0; fi
+          trusted_scope="$RUNNER_TEMP/test_scope.py"
+          if git cat-file -e "$BASE_SHA:scripts/ci/test_scope.py" 2>/dev/null; then
+            git show "$BASE_SHA:scripts/ci/test_scope.py" > "$trusted_scope"
+          else
+            # Bootstrap on the PR that introduces the script; later PRs use the base revision.
+            cp scripts/ci/test_scope.py "$trusted_scope"
+          fi
+          python3 "$trusted_scope" --base "$BASE_SHA" --head "$HEAD_SHA" --root "$GITHUB_WORKSPACE" | tee -a "$GITHUB_OUTPUT"
+
+      # #508: a release-data pull request (only versions, dates and digests swapped) runs the release tests.
+      # #234: the whole test suite, with full-validate's Linux invocation (#135), one share per shard.
+      # The real-WebKit classes skip on Linux; they run in the nightly/dispatched full-validate on macOS.
+      - name: Run the full test suite (parallel)
+        if: steps.scope.outputs.suite != 'text' && steps.scope.outputs.suite != 'release'
+        run: PATH="$PWD/.venv/bin:$PATH" python3 -m pytest -q -n auto --dist loadfile --durations=25 $(python3 scripts/ci/test_shard.py --index ${{ matrix.shard }} --total 3)
+
+  # The required check: the ruleset requires the context `validate`. It passes only when
+  # the integrity checks and every suite shard passed (a skipped or cancelled one fails).
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    needs: [checks, suite]
+    if: always()
+    steps:
+      - name: Require every check and suite shard to pass
+        env:
+          CHECKS: ${{ needs.checks.result }}
+          SUITE: ${{ needs.suite.result }}
+        run: |
+          echo "checks=$CHECKS suite=$SUITE"
+          test "$CHECKS" = success && test "$SUITE" = success
