@@ -1064,9 +1064,16 @@ class CodeRunner:
                           ledger=getattr(self.download_budget,'ledger',None))
         binding = step_binding(self.work_id, 'code_run', url, f'{name}|{method}|{url}', argument=body,
                                state=f"code-effect-v1|{name}@{slot['revision']}|{effect}")
+        destination = _host(message.get('host'))
+        port = message.get('port')
+        if destination == _hostname(destination) and isinstance(port, int) and port != 443:
+            destination = f'{destination}:{port}'
+        headers = {key.lower(): value for key, value in message.get('headers', ())}
+        check_request = (name if len(owners) == 1 else None, method, destination, path, headers)
         try:
             identity, replay_keys = api._effect_identities(slot, method, url, body)
-            api._effect_guard(slot, identity, replay_keys, approved_next=api._exact_step_ready(binding, effect))
+            api._effect_guard(slot, identity, replay_keys, approved_next=api._exact_step_ready(binding, effect),
+                              check_request=check_request)
         except ApiError as exc:
             return False, str(exc)
         if effect == 'payment':
@@ -1094,7 +1101,7 @@ class CodeRunner:
             exact = not ticket and self.approvals.consume(binding)
             if ticket or exact:
                 return self._claim_state_change(api, slot, identity, replay_keys, method, effect, host, path,
-                                                approved_next=bool(exact))
+                                                approved_next=bool(exact), check_request=check_request)
             unattended = getattr(self.approvals, 'unattended', None)
             if callable(unattended) and unattended():
                 from .quickstart_service import UNATTENDED_APPROVAL_TEXT
@@ -1119,7 +1126,7 @@ class CodeRunner:
                 return False,str(exc)
         try:
             result=self._claim_state_change(api, slot, identity, replay_keys, method, effect, host, path,
-                                            write_ticket=ticket)
+                                            write_ticket=ticket, check_request=check_request)
         except Exception:
             if ticket:self.approvals.self_set_write_release(ticket)
             raise
@@ -1136,13 +1143,14 @@ class CodeRunner:
         return exact + (f"\n{APPROVAL_CONTENT_LABEL} {shown}" if shown else '')
 
     def _claim_state_change(self, api, slot, identity, replay_keys, method, effect, host, path, *,
-                            approved_next=False, write_ticket=None):
+                            approved_next=False, write_ticket=None, check_request=None):
         from .api_requests import ApiError
         from .current_context import redact_known_secrets
         try:
             claim = api._effect_guard(slot, identity, replay_keys, method=method, effect=effect, destination=host,
                                       approved_next=approved_next or bool(
-                                          write_ticket and write_ticket.get('authorized_by') == 'owner-step'))
+                                          write_ticket and write_ticket.get('authorized_by') == 'owner-step'),
+                                      check_request=check_request)
             if getattr(api, '_payment_ticket', None):
                 binding, label, ticket = api._payment_ticket
                 self.approvals.payment_autonomy_notice(ticket)

@@ -232,6 +232,10 @@ class ApiCredentials:
         token = self.store.secret(key)
         if not token:
             return ''
+        return self.read_sealed_state(token, binding)
+
+    def read_sealed_state(self, token, binding):
+        """Open an encrypted run-state value, checking its host-controlled binding."""
         try:
             payload = json.loads(self._cipher().decrypt(token.encode()))
         except Exception:

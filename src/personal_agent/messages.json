@@ -12777,5 +12777,47 @@
   "ko": "맡긴 일 {line}의 남은 사항이 바뀌었어요. 변경 전: {before}. 변경 후: {after}. 되돌리려면 이 일의 {version}번 변경을 되돌려 달라고 하거나 되돌리기를 누르세요. 긴 내용은 줄여 표시하며 전체 내용은 이 일의 기록에 남아 있어요.",
   "ja": "任せた仕事 {line} の未解決事項が変わりました。変更前：{before}。変更後：{after}。戻すには、この仕事のバージョン {version} を元に戻すよう頼むか、元に戻すを押してください。長い内容は省略されますが、全文は履歴に残っています。",
   "zh": "委托事项 {line} 的待办事项已更改。更改前：{before}。更改后：{after}。要撤销，请让 Still 撤销此事项的版本 {version}，或点击撤销。较长内容可能缩略，完整内容保留在历史记录中。"
+ },
+ "lines.refused_line_invalid_end": {
+  "ko": "오늘의 종료 시각을 시간대와 함께 정해 주세요.",
+  "en": "Give an end time for today with a timezone offset.",
+  "ja": "今日の終了時刻をタイムゾーンのオフセット付きで指定してください。",
+  "zh": "请提供今天的结束时间，并注明时区偏移。"
+ },
+ "lines.refused_line_invalid_planner": {
+  "ko": "계획 작업의 지시가 비어 있거나 너무 길어요.",
+  "en": "The planner needs an instruction within the preparation length limit.",
+  "ja": "計画作業の指示が空か長すぎます。",
+  "zh": "规划任务的指令为空或过长。"
+ },
+ "lines.refused_line_already_entrusted": {
+  "ko": "이 일은 오늘 이미 맡겨 두셨어요. 바뀐 지시는 수정으로 반영해 주세요.",
+  "en": "This line is already entrusted for today. Revise it to change the instructions.",
+  "ja": "この継続作業は本日すでに委任されています。指示は修正してください。",
+  "zh": "今天已委托这项工作。请通过修订更改指令。"
+ },
+ "lines.refused_line_executor_exists": {
+  "ko": "진행 중인 조건 검사 하나만 실행기로 둘 수 있어요.",
+  "en": "Keep one condition check as the line executor and let any current check Work finish first.",
+  "ja": "継続作業の実行には条件チェックを一つだけ残し、実行中の作業を先に完了してください。",
+  "zh": "一项工作只能有一个条件检查执行器，请先等待正在运行的检查任务结束。"
+ },
+ "lines.refused_line_plan_stale": {
+  "ko": "이 일의 지시가 바뀌었어요. 최신 지시를 확인해 주세요.",
+  "en": "The instructions for this line changed. Read the current instructions.",
+  "ja": "この継続作業の指示が変更されました。最新の指示を確認してください。",
+  "zh": "此项工作的指令已变更。请查看当前指令。"
+ },
+ "lines.standing_link": {
+  "ko": "소유자가 이 일에 연결하도록 맡긴 작업만 추가할 수 있어요.",
+  "en": "Add work to this entrusted line only when the owner asked for the link.",
+  "ja": "所有者がこの継続作業への追加を依頼した場合にのみ追加できます。",
+  "zh": "只有所有者要求关联时，才可将工作添加到这项委托。"
+ },
+ "checks.planner_triggered": {
+  "ko": "조건 검사 결과나 소유자의 지시에 따라 계획 작업이 실행돼요.",
+  "en": "The planner runs when the executor reports an event or the owner changes instructions.",
+  "ja": "実行側のイベントや所有者の指示変更に応じて計画作業が実行されます。",
+  "zh": "执行器报告事件或所有者更改指令时，规划任务会运行。"
  }
 }

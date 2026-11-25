@@ -11,7 +11,8 @@ from pathlib import Path
 import time
 
 from . import preparations as prep
-from .api_credentials import MAX_STATE_BYTES, ApiCredentials, CredentialError, secret_state_values
+from . import continuous_lines as continuous
+from .api_credentials import MAX_STATE_BYTES, ApiCredentials, CredentialError, fingerprint, secret_state_values
 from .api_requests import ApiError
 from .code_run import APPROVAL_EXACT_LABEL, MAX_HOSTS, CodeRunError, CodeRunner, _arguments, _hostname, check_arguments_digest, read_run_file
 from .current_context import redact_known_secrets
@@ -28,6 +29,7 @@ SWEEP_SECONDS = 60
 #: Without an underscore, so no secret set's ``<SET>_<FIELD>`` variable (``api_requests.env_name``) can be
 #: this name: a set named ``check`` keeps its ``CHECK_STATE_FILE`` (#972 review).
 STATE_ENV = 'CHECKSTATEFILE'
+PLAN_ENV = 'CHECKPLANFILE'
 PAUSED_NOTICE = prep.BLOCKED_NOTICE_PREFIX + 'check:'
 
 
@@ -160,6 +162,8 @@ def handoff_event(store, job):
 
 
 def handoff_text(store, handoff, timezone):
+    if 'events' in handoff:
+        return '\n\n'.join(handoff_text(store, event, timezone) for event in handoff['events'])
     kind = handoff['kind']
     hosts = ', '.join(handoff.get('allowed_hosts') or ()) or '-'
     sets = ', '.join(handoff.get('allowed_secret_sets', handoff.get('secrets')) or ()) or '-'
@@ -175,28 +179,48 @@ class CheckApprovals:
     #: The authorization record omits the request content (``CodeRunner._state_change``).
     request_content_after_run = True
 
-    def __init__(self, service, row, record_id, digest):
+    def __init__(self, service, row, record_id, digest, plan=None):
         self.service = service
         self.row = row
         self.digest = digest
         self.claimed = {}
+        self.unconfirmed_receipt = 0
+        self.plan = plan
         # Use the preparation's unattended standing without opening a Work or consuming a slot.
         self.job = {'id': record_id, 'request_key': prep.request_key(row['id'], row['check_next_at'])}
 
-    def api_effect_evidence(self, db, effect=None):
+    def api_effect_evidence(self, db, effect=None, request=None, slot=None):
         # The effect guard calls this again in the transaction reserving dispatch.
         row = self.row
         current = db.execute('SELECT * FROM preparations WHERE id=?', (row['id'],)).fetchone()
+        now = self.service.preparations.clock()
+        mandate = continuous.mandate(db, row['line_id'])
+        standing = continuous.active(db, row['line_id'], now) if mandate else None
         if (not current or current['state'] != prep.STATE_SCHEDULED
-                or current['accepted_by'] not in prep.OWNER_ACCEPTED
-                or current['check_spec'] != row['check_spec'] or current['updated_at'] != row['updated_at']
-                or current['until_at'] <= self.service.preparations.clock()
+                or not (standing if mandate else current['accepted_by'] in prep.OWNER_ACCEPTED)
+                or current['line_id'] != row['line_id'] or current['check_spec'] != row['check_spec']
+                or current['updated_at'] != row['updated_at']
+                or current['until_at'] <= now
                 or current['run_count'] >= current['max_runs']
                 or prep.line_refusal(db, current['line_id']) or self.service.stop.is_set()):
             raise ApiError('The preparation check is no longer current.', 'api_work_inactive', ran=False)
-        if effect == 'mutate' and not self.service.payment_autonomy_settings(db=db)['enabled']:
+        if (effect == 'mutate' or standing) and not self.service.payment_autonomy_settings(db=db)['enabled']:
             raise ApiError(msg('payment_autonomy.changed'), 'payment_autonomy_changed', ran=False)
-        return {'check_id': row['id'], 'check_digest': self.digest}
+        evidence = {'check_id': row['id'], 'check_digest': self.digest}
+        if standing:
+            plan = self.plan
+            if (not plan or standing['active_plan'] != plan['id'] or standing['revision'] != plan['revision']
+                    or now >= plan['expires']):
+                raise ApiError('The executor has no current plan. The action was held.', 'line_plan_stale', ran=False)
+            evidence.update(line_id=row['line_id'], plan_id=plan['id'], owner_revision=plan['revision'])
+            if request is not None:
+                action = continuous.matching_action(plan['calls'], request)
+                if not action or plan['connections'].get(slot['name']) != fingerprint(slot['name'], slot):
+                    raise ApiError('The executor plan does not permit this call.', 'line_plan_call', ran=False)
+                from .browser_session import keyed_step_binding, step_binding
+                binding = step_binding(row['line_id'], 'line_action', '', action)
+                evidence['logical_action_digest'] = keyed_step_binding(self.service.store, binding)['digest']
+        return evidence
 
     def unattended(self):
         return True
@@ -243,7 +267,10 @@ class CheckApprovals:
                                    (receipt, self.job['id'])).fetchone()
                 if not event:
                     continue
-                key = 'checks.dispatched' if event['status'] == 'observed' else 'checks.dispatch_unconfirmed'
+                observed = event['status'] == 'observed'
+                if not observed:
+                    self.unconfirmed_receipt = max(self.unconfirmed_receipt, receipt)
+                key = 'checks.dispatched' if observed else 'checks.dispatch_unconfirmed'
                 message = msg(key) + '\n\n' + exact
                 notice = f"{self.job['id']}:effect:{receipt}"
                 db.execute('INSERT INTO messages(role,content,channel,created,job_id) SELECT ?,?,?,?,? '
@@ -282,7 +309,7 @@ class CheckRunner(CodeRunner):
     count_allowed_requests = True
     require_success_for_observed_effects = True
 
-    def __init__(self, store, record_id, *, pinned, check_state=None, **kwargs):
+    def __init__(self, store, record_id, *, pinned, check_state=None, plan_text=None, **kwargs):
         super().__init__(store, record_id, **kwargs)
         self.pinned = pinned
         # (check id, check digest): the state is bound to the exact check code (D4).
@@ -291,6 +318,8 @@ class CheckRunner(CodeRunner):
         #: The snapshot and the state this run left, saved only once its result is accepted.
         self.check_state_change = None
         self._check_file = None
+        self.plan_text = plan_text
+        self.plan_secrets = secret_state_values(json.dumps(json.loads(plan_text).get('state', {}))) if plan_text else ()
 
     def _load_states(self, names, workdir, env):
         states = super()._load_states(names, workdir, env)
@@ -300,10 +329,15 @@ class CheckRunner(CodeRunner):
             path.write_text(original, encoding='utf-8')
             env[STATE_ENV] = str(path)
             self._check_file = (path, original)
+        if self.plan_text is not None:
+            path = Path(workdir, 'check-plan.json')
+            path.write_text(self.plan_text, encoding='utf-8')
+            env[PLAN_ENV] = str(path)
         return states
 
     def _save_states(self, states):
         saved, scratch_secrets = super()._save_states(states)
+        scratch_secrets.update(self.plan_secrets)
         if self._check_file:
             path, original = self._check_file
             self._check_file = None
@@ -321,6 +355,8 @@ class CheckRunner(CodeRunner):
     def _scratch_values(self, states):
         # #1195 review: a run that stopped early may have put values in its check state too.
         scratch = super()._scratch_values(states)
+        if scratch is not None:
+            scratch.update(self.plan_secrets)
         if scratch is None or not self._check_file:
             return scratch
         path, original = self._check_file
@@ -380,25 +416,36 @@ class ConditionChecks:
     def _state_target(db, check_id, digest):
         from .agent_runtime import ToolError, not_run
 
-        row = db.execute('SELECT state, check_spec FROM preparations WHERE id=?', (check_id,)).fetchone()
+        row = (db.execute('SELECT state,check_spec,line_id,until_at,updated_at FROM preparations WHERE id=?',
+                          (check_id,)).fetchone() if isinstance(check_id, str) else None)
         if not row or row['state'] not in (prep.STATE_SCHEDULED, prep.STATE_RUNNING) or not row['check_spec']:
             raise not_run(ToolError(msg('checks.update_inactive'), 'check_inactive'))
         if json.loads(row['check_spec'])['digest'] != digest:
             raise not_run(ToolError(msg('checks.update_stale'), 'check_digest_mismatch'))
+        return row
 
-    def state_targets(self, preparation):
+    def state_targets(self, preparation, *, work_id=None):
         """Current check IDs and digests the Work can address, with no state payload."""
         from .agent_runtime import EffectAncestryError, _effect_preparation_tree
 
         with self.store.db() as db:
             try:
-                tree = _effect_preparation_tree(db, preparation)
+                tree = _effect_preparation_tree(db, preparation) if preparation else set()
             except EffectAncestryError:
                 return []
-            rows = db.execute("SELECT id, check_spec FROM preparations "
+            rows = db.execute("SELECT id, line_id, check_spec FROM preparations "
                               "WHERE check_spec IS NOT NULL AND state IN ('scheduled','running') ORDER BY id")
-            return [{'preparation_id': row['id'], 'check_digest': json.loads(row['check_spec'])['digest']}
-                    for row in rows if row['id'] in tree]
+            targets = []
+            for row in rows:
+                line_id = row['line_id']
+                mandate = continuous.active(db, line_id, self.preparations.clock())
+                revision = continuous.member_revision(db, work_id, line_id) if mandate else None
+                if row['id'] in tree or revision is not None:
+                    target = {'preparation_id': row['id'], 'check_digest': json.loads(row['check_spec'])['digest']}
+                    if revision is not None:
+                        target.update(owner_revision=revision, plan_required=True)
+                    targets.append(target)
+            return targets
 
     def update_state(self, work_id, args):
         """Merge a Work's data into an active check in its own preparation tree."""
@@ -412,6 +459,8 @@ class ConditionChecks:
         except (ValueError, RecursionError):
             raise not_run(ToolError(msg('checks.update_invalid'), 'invalid_check_state')) from None
 
+        if 'plan' in args:
+            return self._publish_plan(work_id, check_id, digest, patch, args['plan'])
         with self._state_lock():
             with self.store.db() as db:
                 job = db.execute('SELECT request_key FROM jobs WHERE id=?', (work_id,)).fetchone()
@@ -449,10 +498,124 @@ class ConditionChecks:
             with self.store.db() as db:
                 db.execute('BEGIN IMMEDIATE')
                 self.store.require_read_checkpoint_writer(db)
-                self._state_target(db, check_id, digest)
+                target = self._state_target(db, check_id, digest)
+                if continuous.mandate(db, target['line_id']):
+                    raise not_run(ToolError('Publish an immutable plan revision for this executor.', 'line_plan_required'))
                 if not credentials.store_sealed(sealed):
                     raise not_run(ToolError(msg('checks.update_unsaved'), 'check_state_unsaved'))
         return {'keys': keys, 'bytes': len(text.encode())}
+
+    def _publish_plan(self, work_id, check_id, digest, patch, raw):
+        from .agent_runtime import ToolError, not_run
+
+        with self.store.db() as db:
+            check_revision = self._state_target(db, check_id, digest)['updated_at']
+        try:
+            if not isinstance(raw, str) or not raw.strip() or not _state_acceptable(raw):
+                raise ValueError
+            plan = json.loads(raw)
+            if set(plan) != {'owner_revision', 'expires', 'calls', 'safe_mode'} or plan['safe_mode'] != 'hold':
+                raise ValueError
+            revision = plan['owner_revision']
+            if type(revision) is not int or revision < 1:
+                raise ValueError
+            expires = continuous.parse_end(plan['expires'])
+            calls = continuous.plan_calls(plan['calls'])
+            if _redact(self.store, calls) != calls or _redact(self.store, patch) != patch:
+                raise ValueError
+            from .api_requests import slots
+            registered = slots(self.store)
+            if any(call['connection'] not in registered for call in calls):
+                raise ValueError
+            connections = {call['connection']: fingerprint(call['connection'], registered[call['connection']])
+                           for call in calls}
+            text = json.dumps({'calls': calls, 'state': patch, 'safe_mode': 'hold', 'connections': connections,
+                               'check_revision': check_revision}, ensure_ascii=False, separators=(',', ':'), allow_nan=False)
+            if not _state_acceptable(text):
+                raise ValueError
+            sealed = ApiCredentials(self.store).seal_check_state(check_id, digest, text)['value']
+        except CredentialError:
+            raise not_run(ToolError(msg('checks.update_unsaved'), 'check_state_unsaved')) from None
+        except (ValueError, TypeError, OverflowError, OSError, RecursionError):
+            raise not_run(ToolError('The line plan is invalid.', 'invalid_line_plan')) from None
+        with self.store.db() as db:
+            db.execute('BEGIN IMMEDIATE')
+            self.store.require_read_checkpoint_writer(db)
+            row = self._state_target(db, check_id, digest)
+            line_id = row['line_id']
+            now = self.preparations.clock()
+            mandate = continuous.active(db, line_id, now)
+            job = db.execute('SELECT request_key,status FROM jobs WHERE id=?', (work_id,)).fetchone()
+            source = prep.preparation_of(job['request_key']) if job else None
+            if (not mandate or not job or job['status'] != 'running'
+                    or (source and prep.Preparations.run_refusal(db, work_id, now))
+                    or self.service.stop.is_set() or self.service._stopped_in(db, work_id)):
+                raise not_run(ToolError('This Work cannot publish a plan to the executor.', 'line_plan_inactive'))
+            if (revision != mandate['revision'] or revision != continuous.member_revision(db, work_id, line_id)
+                    or row['updated_at'] != check_revision):
+                raise not_run(ToolError('The owner instructions have changed. The plan was held.', 'line_plan_stale'))
+            if row['state'] != prep.STATE_SCHEDULED or not now < expires <= min(row['until_at'], mandate['ends_at']):
+                raise not_run(ToolError('The plan must expire inside the active executor window.', 'invalid_line_plan'))
+            plan_id = continuous.publish(db, line_id=line_id, revision=revision, work_id=work_id,
+                                         check_id=check_id, digest=digest, expires=expires, sealed=sealed, now=now)
+        return {'plan_id': plan_id, 'owner_revision': revision, 'expires': plan['expires']}
+
+    def run_due_planner(self, now):
+        """Admit one buffered planner wake as ordinary scheduled Work."""
+        with self.store.db() as db:
+            candidates = db.execute(
+                'SELECT p.* FROM line_mandates m JOIN preparations p ON p.id=m.planner_id '
+                "WHERE m.pending IS NOT NULL AND m.closed=0 AND m.ends_at>? AND p.state='scheduled' ORDER BY p.due_at",
+                (now,)).fetchall()
+        for item in candidates:
+            row = dict(item)
+            surface = next((item for item in self.service.surfaces if item.name == row['channel']), None)
+            pairing = surface.pairing() if surface else None
+            destinations = self.service.preparations_service.budget_notice_destinations()
+            title = redact_known_secrets(self.store, prep.owner_title(row))
+            with self.store.db() as db:
+                db.execute('BEGIN IMMEDIATE')
+                line_id = row['line_id']
+                mandate = continuous.active(db, line_id, self.preparations.clock())
+                if not mandate or not mandate['pending'] or mandate['planner_id'] != row['id']:
+                    continue
+                day = self.preparations.budget_day(now, db)
+                wakes = mandate['wakes'] if mandate['wake_day'] == day else 0
+                if wakes >= DAILY_WAKES or db.execute(
+                        "SELECT 1 FROM preparations WHERE line_id=? AND state='running' LIMIT 1", (line_id,)).fetchone():
+                    continue
+                pending = json.loads(mandate['pending'])
+                events = pending['events'].values()
+                wake = {'planner': pending['id'], 'slot': now, 'return_state': prep.STATE_SCHEDULED,
+                        'title': title, 'budget_destinations': destinations,
+                        'outside': [event.get('outside') for event in events],
+                        'handoff': {'events': [{key: value for key, value in event.items() if key != 'outside'}
+                                               for event in events]}}
+                if self.preparations.start(row, channel=pairing.channel if pairing else 'web',
+                                           chat_id=pairing.owner if pairing else None, now=now, db=db, wake=wake):
+                    db.execute('UPDATE line_mandates SET pending=NULL,wake_day=?,wakes=? WHERE line_id=?',
+                               (day, wakes + 1, line_id))
+                    for check_id in {event['executor_id'] for event in events if event.get('executor_id')}:
+                        self._record_executor_wake(db, check_id, line_id, day)
+                    return True
+        return False
+
+    @staticmethod
+    def _record_executor_wake(db, check_id, line_id, day):
+        # A coalesced wake consumes just one of the executor window's existing max_runs.
+        row = db.execute("SELECT check_status FROM preparations WHERE id=? AND line_id=? "
+                         "AND state IN ('scheduled','paused') AND run_count<max_runs", (check_id, line_id)).fetchone()
+        if not row:
+            return
+        status = json.loads(row['check_status'] or '{}')
+        counts = totals(status)
+        if status.get('day') != day:
+            status.update(day=day, runs=0, wakes=0, host_requests={})
+        status['wakes'] += 1
+        status['total_wakes'] = counts['wakes'] + 1
+        status['total_runs'] = counts['runs']
+        db.execute('UPDATE preparations SET run_count=run_count+1,check_status=? WHERE id=?',
+                   (json.dumps(status),check_id))
 
     def sweep_states(self):
         """Discard state for ended rows and replaced digests (D4, D10).
@@ -520,8 +683,32 @@ class ConditionChecks:
             refusal = prep.line_refusal(db, row['line_id'])
             ended = now >= row['until_at'] or row['run_count'] >= row['max_runs']
             claimed_at = row['check_next_at']
+            recorded = continuous.mandate(db, row['line_id'])
+            if recorded and not recorded['closed'] and now >= recorded['ends_at']:
+                db.execute('UPDATE preparations SET state=?,updated_at=?,last_outcome=? WHERE id=?',
+                           (prep.STATE_CANCELLED, now, prep.STATE_CANCELLED, row['id']))
+                return True
+            mandate = continuous.active(db, row['line_id'], now)
+            plan = continuous.plan_target(db, row['line_id']) if mandate else None
+            if mandate:
+                receipt = db.execute(
+                    "SELECT MAX(id) FROM tool_events WHERE job_id=? AND tool='api_dispatch' AND status='dispatching'",
+                    (prep.CHECK_RECORD_PREFIX + row['id'],)).fetchone()[0]
+                if receipt and receipt > status.get('reported_dispatch', 0):
+                    continuous.trigger(db, row['line_id'], {'kind': 'unknown_effect', 'at': now,
+                        'check': json.loads(row['check_spec'])['digest'], 'output': msg('checks.dispatch_unconfirmed'),
+                        'executor_id': row['id']})
+                    status['reported_dispatch'] = receipt
+                    self._advance(db, row, claimed_at, status)
+                    # Settlement must carry the watermark along with the check counters.
+                    row['check_status'] = json.dumps(status)
+            if plan and plan['check_id'] == row['id'] and now >= plan['expires']:
+                db.execute('UPDATE line_mandates SET active_plan=NULL WHERE line_id=?', (row['line_id'],))
+                continuous.trigger(db, row['line_id'], {'kind': 'plan_expired', 'check': plan['digest'],
+                                                       'at': now, 'output': ''})
             if not (refusal or ended):
-                if (status.get('day') == day and status['wakes'] >= DAILY_WAKES
+                if (not continuous.mandate(db, row['line_id'])
+                        and status.get('day') == day and status['wakes'] >= DAILY_WAKES
                         and not self._can_run_at_wake_cap(db, row)):
                     self._advance(db, row, self._next_day(now, db), status)
                     return True
@@ -622,13 +809,28 @@ class ConditionChecks:
         if pending:
             return _redact(self.store, pending['result'])
         record_id = prep.CHECK_RECORD_PREFIX + row['id']
-        approvals = None
-        if row.get('accepted_by') in prep.OWNER_ACCEPTED and _spec_digest(spec) == spec['digest']:
-            current = self.preparations.get(row['id'])
-            if current and current.get('accepted_by') in prep.OWNER_ACCEPTED:
-                approvals = CheckApprovals(self.service, row, record_id, spec['digest'])
+        approvals = plan = plan_text = mandate = None
+        if _spec_digest(spec) == spec['digest']:
+            with self.store.db() as db:
+                current = db.execute('SELECT accepted_by FROM preparations WHERE id=?', (row['id'],)).fetchone()
+                mandate = continuous.mandate(db, row['line_id'])
+                standing = continuous.active(db, row['line_id'], self.preparations.clock()) if mandate else None
+                target = continuous.plan_target(db, row['line_id']) if standing else None
+            if (target and target['check_id'] == row['id'] and target['digest'] == spec['digest']
+                    and target['expires'] > self.preparations.clock()):
+                payload = ApiCredentials(self.store).read_sealed_state(
+                    target['sealed'], {'check': row['id'], 'digest': spec['digest']})
+                payload = json.loads(payload) if payload else {}
+                if payload.get('check_revision') == row['updated_at']:
+                    plan = {**payload, 'id': target['id'], 'revision': target['revision'],
+                            'expires': target['expires']}
+                    plan_text = json.dumps({key: value for key, value in plan.items()
+                                            if key not in ('connections', 'check_revision')}, ensure_ascii=False)
+            if current and (standing or (not mandate and current['accepted_by'] in prep.OWNER_ACCEPTED)):
+                approvals = CheckApprovals(self.service, row, record_id, spec['digest'], plan=plan)
         runner = self.runner(self.store, record_id, pinned=pinned, interrupted=self.service.stop.is_set,
-                             check_state=(row['id'], spec['digest']), approvals=approvals)
+                             check_state=(row['id'], spec['digest']), approvals=approvals,
+                             **({'plan_text': plan_text or '{}'} if mandate else {}))
         failure_reason = None
         try:
             result = runner.run(args, seconds=spec['every_seconds'])
@@ -674,6 +876,7 @@ class ConditionChecks:
         })
         if dispatched:
             handoff['dispatched'] = dispatched
+            handoff['unconfirmed_receipt'] = approvals.unconfirmed_receipt
         handoff['host_requests'] = _host_counts(self.store, getattr(runner, 'allowed_requests', {}))
         if kind == 'failure':
             tail = handoff['output'][-600:]
@@ -706,6 +909,7 @@ class ConditionChecks:
         if result:
             result = dict(result)
         host_requests = result.pop('host_requests', {}) if result else {}
+        unconfirmed_receipt = result.pop('unconfirmed_receipt', 0) if result else 0
         now = preparations.clock()
         with self.store.db() as db:
             db.execute('BEGIN IMMEDIATE')
@@ -719,8 +923,13 @@ class ConditionChecks:
                 db.execute('UPDATE preparations SET state=?,last_outcome=?,updated_at=? WHERE id=?',
                            (state, state, now, row['id']))
                 return
+            mandate = continuous.mandate(db, row['line_id'])
+            standing = continuous.active(db, row['line_id'], now) if mandate else None
             if now >= row['until_at'] or row['run_count'] >= row['max_runs']:
-                status = json.loads(row['check_status'] or '{}')
+                if standing:
+                    continuous.trigger(db, row['line_id'], {'kind': 'executor_expired', 'at': now,
+                                                           'check': json.loads(row['check_spec'])['digest'], 'output': ''})
+                status = json.loads(current['check_status'] or '{}')
                 if status.pop('pending', None):
                     self._advance(db, row, row['until_at'], status)
                 db.execute('UPDATE preparations SET state=?,updated_at=? WHERE id=?', (prep.STATE_EXPIRED, now, row['id']))
@@ -729,7 +938,7 @@ class ConditionChecks:
                 return
             if result is None:
                 return
-            status = json.loads(row['check_status'] or '{}')
+            status = json.loads(current['check_status'] or '{}')
             pending = status.pop('pending', None)
             if status.pop('paused', None):
                 status['failures'] = 0
@@ -752,7 +961,16 @@ class ConditionChecks:
             failed = status['failures'] >= FAILURE_LIMIT
             # Whether this result is kept: counted, handed off, or held for a retry (``_commit_state``).
             accepted = True
-            if not pause and (kind == 'hit' or failed or result.get('dispatched')):
+            if mandate:
+                if unconfirmed_receipt:
+                    status['reported_dispatch'] = max(unconfirmed_receipt, status.get('reported_dispatch', 0))
+                if standing and (kind == 'hit' or failed or result.get('dispatched')):
+                    event_kind = ('unknown_effect' if unconfirmed_receipt else
+                                  'dispatch' if result.get('dispatched') else kind)
+                    continuous.trigger(db, row['line_id'], {**result, 'kind': event_kind, 'executor_id': row['id']})
+                if failed:
+                    pause = 'failures'
+            elif not pause and (kind == 'hit' or failed or result.get('dispatched')):
                 slot = pending['slot'] if pending else row['check_next_at']
                 wake = {'handoff': {key: value for key, value in result.items() if key != 'outside'},
                         'outside': result['outside'], 'slot': slot, 'title': title,

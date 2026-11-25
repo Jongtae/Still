@@ -131,8 +131,9 @@ LINE_ACCOUNT_GOAL = prompt('line_account')
 ORIGIN_LINE_PIECE = 'line-piece'
 #: #1027: a daily-plan offer to resume an owner line. Its origin does not give it acceptance.
 ORIGIN_LINE_RESUME = 'line-resume'
+ORIGIN_LINE_PLANNER = 'line-planner'
 LINE_RESUME_EVENT = 'line_resume_proposed'
-ORIGINS = (ORIGIN_DREAM, ORIGIN_DAY_PLAN, ORIGIN_LINE_ACCOUNT, ORIGIN_LINE_PIECE, ORIGIN_LINE_RESUME)
+ORIGINS = (ORIGIN_DREAM, ORIGIN_DAY_PLAN, ORIGIN_LINE_ACCOUNT, ORIGIN_LINE_PIECE, ORIGIN_LINE_RESUME, ORIGIN_LINE_PLANNER)
 #: #780: when the first daily plan runs, owner-local; the owner changes or cancels it like any preparation.
 DAY_PLAN_HOUR, DAY_PLAN_MINUTE = 6, 30
 #: #780: how far back a plan run is shown what earlier plan runs set up.
@@ -409,6 +410,8 @@ REFUSALS = {
     'check_widened': msg('checks.widened'),
     'check_window': msg('checks.window'),
     'too_many_checks': 'Still allows up to 10 scheduled or running condition checks.',
+    'line_standing_link': msg('lines.standing_link'),
+    'line_executor_exists': msg('lines.refused_line_executor_exists'),
     'not_proposed': '이미 처리된 준비입니다.',
     'expired': '지켜보는 기간이 이미 끝나 시작하지 않았습니다.',
     'running': '지금 실행 중인 준비는 지울 수 없습니다. 먼저 취소하세요.',
@@ -1665,7 +1668,7 @@ class Preparations:
                             'piece_replaced': True}
             # A line account is kept once per line by ensure_line_account, even when a
             # single owner answer resumes several lines with the same account cadence.
-            line_specific = piece_of is not None or resume_offer or origin == ORIGIN_LINE_ACCOUNT
+            line_specific = piece_of is not None or resume_offer or origin in (ORIGIN_LINE_ACCOUNT, ORIGIN_LINE_PLANNER)
             same = None if line_specific else db.execute(
                               'SELECT * FROM preparations WHERE created_from=? AND kind=? AND goal_text=? AND due_at=? '
                               'AND state IN (?,?,?,?) AND check_spec IS ? AND origin IS NOT ? AND origin IS NOT ?',
@@ -1695,6 +1698,9 @@ class Preparations:
             if active >= MAX_ACTIVE:
                 raise not_run(PreparationRefusal('too_many'))
             if state == STATE_SCHEDULED:
+                from . import continuous_lines as continuous
+                if check_spec and continuous.active(db, line_id, now) and continuous.has_other_executor(db, line_id, replaces):
+                    raise not_run(PreparationRefusal('line_executor_exists'))
                 self._check_admission(db, check_spec, replaces)
             row = {'id': uuid.uuid4().hex[:16], 'owner': owner, 'kind': kind, 'goal_text': goal, 'due_at': due_at,
                    'timezone': timezone, 'recurrence': recurrence, 'channel': channel, 'state': state,
@@ -1872,6 +1878,9 @@ class Preparations:
                     after = EntrustedLines(self.store, clock=self.clock).restart(row['line_id'], accepted_from, db=db)
                     self.ensure_line_account(after, created_from=accepted_from, db=db)
             if row and row['state'] == STATE_PROPOSED and row['check_spec'] and row['until_at'] > now:
+                from . import continuous_lines as continuous
+                if continuous.active(db, row['line_id'], now) and continuous.has_other_executor(db, row['line_id'], replaces):
+                    raise not_run(PreparationRefusal('line_executor_exists'))
                 self._check_admission(db, row['check_spec'], replaces)
             changed = db.execute("UPDATE preparations SET state='scheduled',accepted_by=?,accepted_from=?,updated_at=? WHERE id=? AND state='proposed' "
                                  'AND (recurrence IS NOT ? OR until_at>=?) AND (check_spec IS NULL OR until_at>?)',
@@ -2287,13 +2296,18 @@ class Preparations:
                 raise PreparationRefusal('invalid_edit')
             updates['updated_at'] = max(now, math.nextafter(row['updated_at'], math.inf))
             updates['self_change_undone'] = int(bool(row['self_change']) or row['self_change_undone'])
+            if row['origin'] != ORIGIN_LINE_ACCOUNT:
+                from . import continuous_lines as continuous
+                if continuous.active(db, row['line_id'], now):
+                    continuous.fence(db, row['line_id'], now)
             db.execute(f"UPDATE preparations SET {','.join(k + '=?' for k in updates)} WHERE id=?",
                        (*updates.values(), preparation_id))
         return self.get(preparation_id)
 
     def preview_edit(self, row, changes, now, *, db=None):
         """Use the same recorded slots for a Settings preview and the atomic edit."""
-        if row.get('check_spec') or (row['state'] == STATE_PROPOSED and row.get('origin') == ORIGIN_LINE_RESUME):
+        if (row.get('check_spec') or row.get('origin') == ORIGIN_LINE_PLANNER
+                or row['state'] == STATE_PROPOSED and row.get('origin') == ORIGIN_LINE_RESUME):
             raise PreparationRefusal('invalid_edit')
         if db is None:
             with self.store.db() as db:
@@ -2705,7 +2719,7 @@ class Preparations:
             return [dict(row) for row in db.execute(
                 'SELECT p.*, j.status AS job_status, j.delivery AS job_delivery FROM preparations p '
                 'LEFT JOIN jobs j ON j.id=p.last_run_job_id '
-                "WHERE ((p.state='scheduled' AND p.due_at<=? AND p.check_spec IS NULL) OR p.state='running') "
+                "WHERE ((p.state='scheduled' AND p.due_at<=? AND p.check_spec IS NULL AND p.origin IS NOT 'line-planner') OR p.state='running') "
                 f"AND (p.state='scheduled' OR j.id IS NULL OR j.id NOT IN ({','.join('?'*len(busy))})) "
                 "AND (p.state='scheduled' OR j.id IS NULL OR (p.recurrence='window' AND p.window_end<=?) "
                 f"OR (j.status NOT IN {ws.sql_in(ws.ACTIVE_PREPARATION)} "
@@ -2719,6 +2733,11 @@ class Preparations:
         if not preparation_id:
             return None
         row = db.execute('SELECT * FROM preparations WHERE id=?', (preparation_id,)).fetchone()
+        from . import continuous_lines as continuous
+        mandate = continuous.mandate(db, row['line_id']) if row else None
+        if mandate and (not mandate['closed'] and now >= mandate['ends_at']
+                        or row['state'] == STATE_CANCELLED):
+            return continuous.STOP_REASON
         if row and row['recurrence'] == RECURRENCE_WINDOW and now >= row['window_end']:
             return 'preparation-window-expired'
         # #798: stop wins (before the row's own state: stopping a line also cancels its rows); a line
@@ -2800,7 +2819,10 @@ class Preparations:
         """
         slot = now if immediate or wake else row['due_at']
         key = request_key(row['id'], slot)
-        if wake:
+        planner = wake and wake.get('planner')
+        if planner:
+            key = f"{REQUEST_KEY_PREFIX}{row['id']}:{slot}~wake-{planner}"
+        elif wake:
             # The check slot survives a retry; the complete spec has its own namespace.
             spec_key = hashlib.sha256(row['check_spec'].encode()).hexdigest()
             key = f"{REQUEST_KEY_PREFIX}{row['id']}:{wake['slot']}~wake-{spec_key}"
@@ -2825,7 +2847,17 @@ class Preparations:
                     self._check_admission(db, current['check_spec'], current['id'])
                 elif not wake or current['check_spec'] != row['check_spec']:
                     return None
-            elif wake:
+            elif wake and not (planner and current['origin'] == ORIGIN_LINE_PLANNER):
+                return None
+            if current['origin'] == ORIGIN_LINE_PLANNER and not planner:
+                if immediate:
+                    raise PreparationRefusal('invalid_state')
+                return None
+            from . import continuous_lines as continuous
+            mandate = continuous.mandate(db, current['line_id'])
+            if mandate and immediate and current.get('check_spec'):
+                raise PreparationRefusal('invalid_state', 'Use the separate line planner for Work.')
+            if mandate and not mandate['closed'] and now >= mandate['ends_at']:
                 return None
             existing = db.execute('SELECT id FROM jobs WHERE request_key=?', (key,)).fetchone()
             if immediate and existing:
@@ -2932,11 +2964,15 @@ class Preparations:
             revision = max(now, math.nextafter(current['updated_at'], math.inf)) if current.get('check_spec') else now
             db.execute('UPDATE preparations SET state=?,last_run_job_id=?,run_count=?,updated_at=?,own_run_revision=?,run_return_state=? WHERE id=?',
                        (STATE_RUNNING, job_id, run, revision, revision, return_state, current['id']))
+            if mandate and not existing:
+                continuous.record_membership(db, job_id, current['line_id'], mandate['revision'])
             if wake:
                 db.execute('INSERT INTO tool_events(job_id,tool,status,detail,created) VALUES (?,?,?,?,?)',
                            (job_id, CHECK_EVENT_TOOL, 'woken', json.dumps(wake['handoff']), now))
-                if wake['outside']:
-                    self.store._insert_intake_source(db, job_id, json.dumps(wake['outside'], sort_keys=True), now)
+                sources = wake['outside'] if planner else [wake['outside']]
+                for source in sources:
+                    if source:
+                        self.store._insert_intake_source(db, job_id, json.dumps(source, sort_keys=True), now)
             # Evidence: preparation id -> Work id; the Work's delivery is the receipt.
             detail = {'preparation_id': current['id'], 'kind': current['kind'], 'slot': iso(slot),
                       'recurrence': current['recurrence'], 'accepted_by': current['accepted_by'],
@@ -2979,6 +3015,8 @@ class Preparations:
         changed = db.execute('UPDATE preparations SET last_run_job_id=?,updated_at=?,own_run_revision=CASE WHEN updated_at=own_run_revision THEN ? ELSE NULL END WHERE id=? AND state=? '
                              'AND last_run_job_id=?', (continuation_id, now, now, preparation_id, STATE_RUNNING, work_id)).rowcount
         if changed:
+            db.execute('INSERT OR IGNORE INTO line_work_memberships(work_id,line_id,revision) '
+                       'SELECT ?,line_id,revision FROM line_work_memberships WHERE work_id=?', (continuation_id,work_id))
             db.execute('INSERT INTO tool_events(job_id,tool,status,detail,created) VALUES (?,?,?,?,?)',
                        (continuation_id, 'preparation', 'succeeded',
                         json.dumps({'preparation_id': preparation_id, 'continues_work': work_id}), now))
