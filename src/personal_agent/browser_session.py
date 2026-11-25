@@ -758,7 +758,7 @@ def mediate_snapshot(raw, requested_url=None):
     listed = [{key: value for key, value in row.items() if not key.startswith('_')} for row in visible[:ELEMENT_LIMIT]]
     snapshot = {'url': url, 'title': title, 'text': text,
                 'elements': listed, 'login_required': login_required, 'truncated': truncated,
-                'redacted_values': redacted}
+                'redacted_values': redacted, 'signed_in': raw.get('_profile_signed_in') is not False}
     if len(visible) > ELEMENT_LIMIT:
         snapshot['more_elements'] = len(visible) - ELEMENT_LIMIT
     if len(elements) >= READ_ELEMENT_LIMIT or len(visible) >= READ_ELEMENT_LIMIT:
@@ -942,6 +942,7 @@ class BrowserSession:
         #: the site, the provider host, the login reference and window address, the driver's authorization
         #: count when it began, and whether a provider page or request was seen since.  None otherwise.
         self._resign = None
+        self._resigned_sites = set()
         self._pending_provider_sign_in = None   # finalized at observation, delivered by run exactly once
         #: #636 (Codex P1 on #637): the provider window, derived from observed main-frame navigation only:
         #: set while the page is on a host any recorded provider chain names, or was reached from one by
@@ -1052,6 +1053,8 @@ class BrowserSession:
             self.last = None
             raise ToolError(NO_PAGE_TEXT, 'no_page')
         self.last = mediate_snapshot(raw, requested_url=requested_url)
+        if registrable_domain(landed_host(self.last['_page'])) in self._resigned_sites:
+            self.last['signed_in'] = True
         if isinstance(raw, dict):
             self._popup_results = getattr(self, '_popup_results', []) + list(raw.get('work_popup_results') or [])
         if isinstance(raw, dict) and raw.get('refused_submit'):
@@ -1200,6 +1203,8 @@ class BrowserSession:
                                       else 'navigation_interrupted')
         # #636: the provider window, from where the main frame is and how it got there (never the hint).
         inside = self._observe(snapshot, requested_url)
+        if inside:
+            snapshot['signed_in'] = True
         if snapshot['login_required']:
             # Generic (`login_form_present`): the profile holds no session for
             # this page.  #1269: the mediated page comes with the login request
@@ -1297,6 +1302,12 @@ class BrowserSession:
             return
         resign = self._resign
         returned = self._sign_in_evidence(snapshot)
+        # An observed provider flow can establish a session within this worker,
+        # even if the destination had no cookies at startup. Keep uncertainty.
+        if resign.get('seen') or returned or (resign.get('popup') and resign['chain']):
+            self._resigned_sites.add(resign['site'])
+            if registrable_domain(landed_host(snapshot['_page'])) == resign['site']:
+                snapshot['signed_in'] = True
         # #757: ``returned`` says what Still observed, not that the site is signed in; the Work's login
         # request stays as it is, so the owner is still asked when the Work cannot go on.
         receipt = self._receipt('returned' if returned else 'unconfirmed')
@@ -1808,7 +1819,7 @@ class BrowserSession:
         self._require_page()
         self._spend_step()
         snapshot = self._snapshot()
-        return find_in_snapshot(snapshot, args.get('text'))
+        return {**find_in_snapshot(snapshot, args.get('text')), 'signed_in': snapshot['signed_in']}
 
     def _named_cover(self, exc, snapshot):
         """``exc`` again, its covered-target refusal naming the cover in model terms (#1395).
@@ -2575,6 +2586,7 @@ class WebKitWorkerDriver:
         #: #34: ``() -> bool``, whether the engine binary may start now; asked before every start.
         self._before_start = before_start
         self._seed = seed
+        self._loaded_cookie_sites = None  # Unknown until this worker acknowledges the import.
         self._command = (list(command) if command else
                          webkit_worker_command(self.profile_id, allowed_origins_for_tests,
                                                locale=locale, timezone=timezone))
@@ -2601,6 +2613,7 @@ class WebKitWorkerDriver:
     # -- process ---------------------------------------------------------------
     def _start(self):
         self.presentation = self.presentation_observed = None
+        self._loaded_cookie_sites = None
         # #34: checked before every start, a restart after a crash included (the pinned Chromium's digest).
         if self._before_start is not None and not self._before_start():
             raise WorkerError('worker_unavailable', 'chromium_changed')
@@ -2668,14 +2681,18 @@ class WebKitWorkerDriver:
                     self.presentation['unsupported'] = ([key for key in unsupported if isinstance(key, str)]
                                                         if isinstance(unsupported, list) else [])
                 break
-        rows = []
-        if self._seed is not None:
-            try:
-                rows = list(self._seed() or [])
-            except Exception:
-                rows = []
-        if rows:
-            self._send('cookies_import', ACTION_TIMEOUT_SECONDS, cookies=rows)
+        try:
+            seed = self._seed() if self._seed is not None else ()
+            rows = list(seed) if seed is not None else None
+        except Exception:
+            rows = None
+        if rows is None:
+            return
+        if rows and self._send('cookies_import', ACTION_TIMEOUT_SECONDS, cookies=rows).get('imported') != len(rows):
+            return
+        # A timeout may leave an import running in the worker. Keep the initial
+        # unknown state until the worker confirms the full import (or no rows were needed).
+        self._loaded_cookie_sites = {registrable_domain(str(row.get('domain') or '').lstrip('.')) for row in rows}
 
     def _kill(self):
         proc, self._proc = self._proc, None
@@ -2846,14 +2863,36 @@ class WebKitWorkerDriver:
         polled while the worker scrolls; once it answers true the worker is asked to end
         the request at its next probe (#244).
         """
-        message = self._request('load_more', timeout, stop=stop, rounds=rounds, seconds=seconds)
-        if isinstance(message.get('page'), dict):
-            self._held_page = message['page']
+        with self._lock:
+            message = self._request('load_more', timeout, stop=stop, rounds=rounds, seconds=seconds)
+            if isinstance(message.get('page'), dict):
+                self._held_page = self._profile_view(message['page'])
         return {key: message.get(key) for key in ('rounds', 'stopped', 'added', 'text', 'navigation_refused', 'capped')}
 
+    def _profile_view(self, page):
+        # Bind this to the landed page and the worker that captured it. A
+        # document can remain personalized even after its cookies are cleared.
+        site = registrable_domain(landed_host(page.get('url')))
+        sites = self._loaded_cookie_sites
+        signed_in = not site or sites is None or site in sites
+        if not signed_in:
+            # A redirect or an unrecorded provider can create cookies in this
+            # worker after startup. Inspect the same worker, without restarting
+            # it or retaining or exposing the exported cookie values.
+            try:
+                current = self._send('cookies_export', ACTION_TIMEOUT_SECONDS).get('sites')
+            except Exception:  # unknown: labelled signed in, never anonymous
+                current = None
+            signed_in = not isinstance(current, dict) or any(
+                rows and registrable_domain(host) == site for host, rows in current.items()
+            )
+        return {**page, '_profile_signed_in': signed_in}
+
     def snapshot(self):
-        held, self._held_page = self._held_page, None
-        page = held if held is not None else self._request('snapshot', ACTION_TIMEOUT_SECONDS).get('page') or {}
+        with self._lock:
+            held, self._held_page = self._held_page, None
+            page = held if held is not None else self._profile_view(
+                self._request('snapshot', ACTION_TIMEOUT_SECONDS).get('page') or {})
         elements = [element for element in page.get('elements') or [] if isinstance(element, dict)]
         guarded_forms = payment_forms(elements)
         # The full descriptor the payment guard classified: the worker refuses
@@ -3162,7 +3201,7 @@ class BrowserProfile:
             sites, rows = self.jar.import_rows()
         except JarError as exc:
             self._import_error = str(exc)
-            return []
+            return None
         if self._suppressed:
             sites = set(sites) - self._suppressed
             rows = [row for row in rows

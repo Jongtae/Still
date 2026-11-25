@@ -351,7 +351,7 @@ class ProfileTests(unittest.TestCase):
         with mock.patch.object(bs, 'WebKitWorkerDriver', Worker), ensure:
             profile = bs.BrowserProfile(Path(self.tmp.name), jar=locked, available=lambda: True)
             session = profile.driver_factory('w1')()
-            self.assertEqual(session.seeded, [])
+            self.assertIsNone(session.seeded, 'an unreadable jar is distinct from a known empty jar')
             session.close()
         self.assertEqual(self.jar.path.read_bytes(), before, 'the jar was left as it was')
         self.assertEqual(profile.save_error, 'key_missing')

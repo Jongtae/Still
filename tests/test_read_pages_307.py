@@ -68,10 +68,10 @@ class ReadPagesTests(ReadResultsBase):
         self.assertNotIn('read_pages', self.search(query='envelope'), 'the reader envelope is not page text')
         self.assertEqual(self.search()['read_pages'][0]['url'], URL)
 
-    def test_browser_and_private_reads_are_not_offered(self):
+    def test_non_browser_outside_reads_and_private_reads_are_not_offered(self):
         earlier, _ids = self.exchange()
-        self.page(earlier, kind='outside')  # a browser view may be a signed-in page
-        self.page(earlier, kind='owner-private', url='mail:1')
+        self.page(earlier, kind='outside')  # an address alone does not make this a browser view
+        self.page(earlier, kind='owner-private')
         self.assertNotIn('read_pages', self.search())
         with self.store.db() as db:
             self.assertEqual(db.execute('SELECT count(*) FROM read_pages_search').fetchone()[0], 0)

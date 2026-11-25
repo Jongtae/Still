@@ -40,9 +40,15 @@ OWNER_STATE_ACTIONS=('forget','delete','undo','revert')
 READ_RESULT_EXCERPT_CHARS = 4000
 READ_RESULTS_PER_WORK = 24
 READ_RESULT_RETENTION_SECONDS = 30 * 86400
-#: #307: the rows a later Work can find by what they said: public page reads that name their address.
-#: A browser view may be a signed-in page, so it is not indexed (signed-in pages are a separate decision).
-READ_PAGE_ROW_SQL = "({row}.source_kind='public' AND {row}.page_url IS NOT NULL)"
+#: #307: address-bearing public reads and mediated browser views of HTTP(S) pages,
+#: including signed-in views. Browser action receipts and owner-private rows stay out.
+READ_PAGE_BROWSER_VIEW_SQL = """(
+    {row}.tool IN ('browser_open','browser_read','browser_find')
+    AND (lower({row}.page_url) GLOB 'http://[^/?#:@ ]*'
+         OR lower({row}.page_url) GLOB 'https://[^/?#:@ ]*')
+)"""
+READ_PAGE_ROW_SQL = ("(({row}.source_kind='public' AND {row}.page_url IS NOT NULL) OR "
+                     "({row}.source_kind='outside' AND " + READ_PAGE_BROWSER_VIEW_SQL + "))")
 READ_PAGES_FOUND = 5
 _ANY_READ_RESULT_EPOCH = object()
 _READ_CHECKPOINT_WRITER = ContextVar('read_checkpoint_writer', default=None)
@@ -175,7 +181,7 @@ class QuickStore:
                 id INTEGER PRIMARY KEY AUTOINCREMENT, job_id TEXT NOT NULL, tool_event_id INTEGER,
                 call_id TEXT, tool TEXT NOT NULL, epoch INTEGER, created REAL NOT NULL,
                 source_kind TEXT NOT NULL, full_length INTEGER NOT NULL, excerpt TEXT NOT NULL,
-                page_url TEXT, page_title TEXT, page_etag TEXT, page_last_modified TEXT
+                page_url TEXT, page_title TEXT, page_etag TEXT, page_last_modified TEXT, page_signed_in INTEGER
             );
             CREATE INDEX IF NOT EXISTS work_read_results_job ON work_read_results(job_id,id);
             CREATE TABLE IF NOT EXISTS work_read_judgments(
@@ -315,9 +321,10 @@ class QuickStore:
             if 'surface' not in columns:
                 db.execute("ALTER TABLE telegram_notifications ADD COLUMN surface TEXT NOT NULL DEFAULT 'telegram'")
             read_result_columns = {row['name'] for row in db.execute('PRAGMA table_info(work_read_results)')}
-            for column in ('page_url', 'page_title', 'page_etag', 'page_last_modified'):
+            for column, declaration in (('page_url', 'TEXT'), ('page_title', 'TEXT'), ('page_etag', 'TEXT'),
+                                        ('page_last_modified', 'TEXT'), ('page_signed_in', 'INTEGER')):
                 if column not in read_result_columns:
-                    db.execute(f'ALTER TABLE work_read_results ADD COLUMN {column} TEXT')
+                    db.execute(f'ALTER TABLE work_read_results ADD COLUMN {column} {declaration}')
             self._setup_read_pages_search(db)
             columns={row['name'] for row in db.execute('PRAGMA table_info(messages)')}
             if 'workspace_id' not in columns: db.execute('ALTER TABLE messages ADD COLUMN workspace_id TEXT')
@@ -2731,7 +2738,7 @@ class QuickStore:
 
     def record_read_result(self, job_id, *, tool, text, source_kind, epoch=None, call_id=None,
                            tool_event_id=None, now=None, db=None, page_url=None, page_title=None,
-                           page_etag=None, page_last_modified=None):
+                           page_etag=None, page_last_modified=None, page_signed_in=None):
         """Keep one worker-visible excerpt locally, redacted before it can be cut."""
         from .current_context import redact_known_secrets
         from .entrusted_lines import line_state
@@ -2772,9 +2779,10 @@ class QuickStore:
                 return None
             row_id = conn.execute(
                 'INSERT INTO work_read_results(job_id,tool_event_id,call_id,tool,epoch,created,source_kind,'
-                'full_length,excerpt,page_url,page_title,page_etag,page_last_modified) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)',
+                'full_length,excerpt,page_url,page_title,page_etag,page_last_modified,page_signed_in) '
+                'VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)',
                 (job_id, tool_event_id, call_id, tool, epoch, time.time() if now is None else now,
-                 source_kind, len(text), excerpt, kept_url, page_title, etag, last_modified),
+                 source_kind, len(text), excerpt, kept_url, page_title, etag, last_modified, page_signed_in),
             ).lastrowid
             conn.execute('DELETE FROM work_read_results WHERE id IN ('
                          'SELECT id FROM work_read_results WHERE job_id=? ORDER BY id DESC LIMIT -1 OFFSET ?)',
@@ -2783,14 +2791,15 @@ class QuickStore:
 
     @staticmethod
     def _setup_read_pages_search(db):
-        """#307: an FTS5 index of the public pages a Work read, so a later Work can find one by what it said.
+        """#307: an FTS5 index of the pages a Work read, so a later Work can find one by what it said.
 
         Adopts the #221 FTS5 pattern, with the index holding its own copy of the already redacted
-        address, title and excerpt (not external content): only public page rows are indexed, and a
+        address, title and excerpt (not external content). A
         delete of any ``work_read_results`` row (cap, expiry, forget, export, restore) deletes its
         entry by rowid.  Without FTS5 the lookup finds nothing.  The portable copy and restore also
         rebuild the index after dropping the rows (``portable_state``).
         """
+        db.execute('SAVEPOINT read_pages_search_upgrade')
         try:
             existed = db.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='read_pages_search'").fetchone()
             db.execute("CREATE VIRTUAL TABLE IF NOT EXISTS read_pages_search USING fts5("
@@ -2801,54 +2810,73 @@ class QuickStore:
                 db.execute("INSERT INTO read_pages_search(read_pages_search,rank) VALUES('secure-delete',1)")
             except sqlite3.OperationalError:
                 pass
-            db.executescript(f'''
-                CREATE TRIGGER IF NOT EXISTS read_pages_search_ai AFTER INSERT ON work_read_results
-                WHEN {READ_PAGE_ROW_SQL.format(row='new')} BEGIN
-                  INSERT INTO read_pages_search(rowid,page_title,page_url,excerpt)
-                  VALUES(new.id,COALESCE(new.page_title,''),new.page_url,new.excerpt);
-                END;
+            db.executescript('''
                 CREATE TRIGGER IF NOT EXISTS read_pages_search_ad AFTER DELETE ON work_read_results BEGIN
                   DELETE FROM read_pages_search WHERE rowid=old.id;
                 END;
             ''')
-            if not existed:
+            db.execute('CREATE TABLE IF NOT EXISTS read_pages_search_meta(version INTEGER PRIMARY KEY)')
+            upgraded = db.execute('SELECT 1 FROM read_pages_search_meta WHERE version=3').fetchone()
+            if not existed or not upgraded:
+                # The pre-#1219 writer used the browser's private provenance as
+                # the row's kind. Only existing views from browser read tools
+                # move to the outside-content kind.
+                db.execute("UPDATE work_read_results AS r SET source_kind='outside' "
+                           "WHERE r.source_kind='owner-private' AND r.page_signed_in IS NULL AND "
+                           + READ_PAGE_BROWSER_VIEW_SQL.format(row='r'))
+                db.executescript(f'''
+                    DROP TRIGGER IF EXISTS read_pages_search_ai;
+                    CREATE TRIGGER read_pages_search_ai AFTER INSERT ON work_read_results
+                    WHEN {READ_PAGE_ROW_SQL.format(row='new')} BEGIN
+                      INSERT INTO read_pages_search(rowid,page_title,page_url,excerpt)
+                      VALUES(new.id,COALESCE(new.page_title,''),new.page_url,new.excerpt);
+                    END;
+                ''')
                 db.execute("INSERT INTO read_pages_search(rowid,page_title,page_url,excerpt) "
                            "SELECT id,COALESCE(page_title,''),page_url,excerpt FROM work_read_results r "
-                           f"WHERE {READ_PAGE_ROW_SQL.format(row='r')}")
+                           f"WHERE {READ_PAGE_ROW_SQL.format(row='r')} "
+                           "AND NOT EXISTS (SELECT 1 FROM read_pages_search s WHERE s.rowid=r.id)")
+                db.execute('INSERT OR IGNORE INTO read_pages_search_meta(version) VALUES(3)')
         except sqlite3.OperationalError:
-            pass
+            db.execute('ROLLBACK TO read_pages_search_upgrade')
+        finally:
+            db.execute('RELEASE read_pages_search_upgrade')
 
     def find_read_pages(self, query, *, exclude_work_id=None, before=None, after=None, limit=READ_PAGES_FOUND, now=None):
-        """#307: public pages earlier owner-typed Works read, best match first, one entry per address.
+        """#307: pages earlier owner-typed Works read, best match first, newest match per address.
 
-        Pointers only (Work, address, title, when it was read); the excerpt stays behind
+        Pointers only (Work, address, title, when it was read and session label); the excerpt stays behind
         ``search_conversation(work_id=...)``.  Unexpired rows of followable Works only.
         """
         expression = fts_prefix_expression(query) if isinstance(query, str) else ''
         if not expression:
             return []
         cutoff = (time.time() if now is None else now) - READ_RESULT_RETENTION_SECONDS
-        documents = set(self.config('file_workspace_document_jobs', []) or [])
+        from .current_context import redact_known_secrets
+
+        documents = self.config('file_workspace_document_jobs', []) or []
         try:
             with self.db() as db:
-                hits = db.execute(f"""SELECT r.job_id,r.page_url,r.page_title,r.created FROM read_pages_search s
+                hits = db.execute(f"""WITH matches AS MATERIALIZED (
+                    SELECT r.id,r.job_id,r.page_url,r.page_title,r.created,r.page_signed_in,r.source_kind,
+                           bm25(read_pages_search) AS score FROM read_pages_search s
                     JOIN work_read_results r ON r.id=s.rowid JOIN jobs j ON j.id=r.job_id
                     WHERE read_pages_search MATCH ? AND r.created>? AND {OWNER_WORDS_SQL}
                     AND (? IS NULL OR r.job_id<>?) AND (? IS NULL OR r.created<?) AND (? IS NULL OR r.created>=?)
-                    ORDER BY bm25(read_pages_search),r.id DESC LIMIT 60""",
-                    (expression, cutoff, exclude_work_id, exclude_work_id, before, before, after, after)).fetchall()
+                    AND r.job_id NOT IN (SELECT value FROM json_each(?) WHERE type='text')
+                ), ranked AS (
+                    SELECT *, row_number() OVER (PARTITION BY page_url ORDER BY created DESC,id DESC) AS newest
+                    FROM matches
+                )
+                SELECT * FROM ranked WHERE newest=1 ORDER BY score,id DESC LIMIT ?""",
+                    (expression, cutoff, exclude_work_id, exclude_work_id, before, before, after, after,
+                     json.dumps(documents), limit)).fetchall()
         except sqlite3.OperationalError:
             return []
-        found, seen = [], set()
-        for hit in hits:
-            if hit['page_url'] in seen or hit['job_id'] in documents:
-                continue
-            seen.add(hit['page_url'])
-            found.append({'work_id': hit['job_id'], 'url': hit['page_url'], 'title': hit['page_title'] or '',
-                          'read_at': hit['created']})
-            if len(found) >= limit:
-                break
-        return found
+        return [{'work_id': hit['job_id'], 'url': redact_known_secrets(self, hit['page_url']),
+                 'title': redact_known_secrets(self, hit['page_title']), 'read_at': hit['created'],
+                 'signed_in': hit['source_kind'] == 'outside' and hit['page_signed_in'] != 0}
+                for hit in hits]
 
     def revalidation_row(self, url, *, now=None):
         """The newest eligible whole page with a validator for this address."""
@@ -2858,7 +2886,7 @@ class QuickStore:
             rows = db.execute(f"""SELECT r.id,r.job_id,r.page_url,r.page_title,r.excerpt,r.created,
                         r.page_etag,r.page_last_modified
                     FROM work_read_results r JOIN jobs j ON j.id=r.job_id
-                    WHERE r.tool='public_page_read' AND {READ_PAGE_ROW_SQL.format(row='r')}
+                    WHERE r.tool='public_page_read' AND r.source_kind='public' AND r.page_url IS NOT NULL
                     AND r.page_url=? AND r.created>? AND {OWNER_WORDS_SQL}
                     AND (r.page_etag IS NOT NULL OR r.page_last_modified IS NOT NULL)
                     ORDER BY r.created DESC,r.id DESC""", (url, cutoff))
