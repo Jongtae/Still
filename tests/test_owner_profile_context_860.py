@@ -84,7 +84,8 @@ def test_preparation_ignores_selector_and_day_plan_keeps_existing_recall(service
 
 @pytest.mark.parametrize(('accepted_by', 'line_kind', 'origin', 'recall'), [
     pytest.param(preparations.ACCEPTED_OWNER_WORK, 'owner', None, True, id='owner-line'),
-    pytest.param(preparations.ACCEPTED_OWNER_SETTINGS, None, None, True, id='owner-accepted'),
+    # #921: an owner-accepted row that is not on a line keeps the #227 scope.
+    pytest.param(preparations.ACCEPTED_OWNER_SETTINGS, None, None, False, id='owner-accepted-no-line'),
     pytest.param(preparations.ACCEPTED_OWNER_WORK, None, None, False, id='self-set'),
     pytest.param(preparations.ACCEPTED_OWNER_WORK, 'look-back', None, False, id='look-back-line'),
     pytest.param(preparations.ACCEPTED_DAY_PLAN, None, preparations.ORIGIN_DAY_PLAN, True, id='day-plan'),

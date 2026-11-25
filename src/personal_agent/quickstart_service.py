@@ -2221,8 +2221,8 @@ class AgentService:
         if not row or row.get('origin')==prep.ORIGIN_DREAM:
             return False
         accepted_by=row.get('accepted_by')
-        if accepted_by in prep.OWNER_ACCEPTED:
-            return True
+        # #921: an ordinary scheduled preparation keeps the #227 scope (no recall); only a run of the
+        # owner's own line, which carries the owner's standing method, recalls the profile.
         line_id=row.get('line_id')
         # This classification includes LINE_RUN_ACCEPTED and pieces that inherit their root's standing.
         if not line_id or accepted_by not in prep.LINE_PIECE_PARENTS:
