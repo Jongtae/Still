@@ -18,13 +18,14 @@ from .telegram_locale import owner_language
 from .work_execution import PROCEED, REDELEGATED, WorkRun
 from .agent_runtime import Capabilities, ToolError, cut_to_fit, loop_definitions, run_agent, STEER_EVENT, steer_note, evidence_summary, turn_context, render_turn_prompt, attachment_facts, context_sections, ENGINE_UNMEDIATED, base_label, LedgerSuperseded, WorkLedger, NOTES_SUMMARY_COMMANDS
 from .agent_runtime import effect_continuation_scope, recorded_effects_response, revisable_record_note, MEMORY_OWNER, SAVED_RESULTS_ROOT
-from .agent_runtime import read_results_block  # #1184: render kept reads for the owner's replacement worker.
+from .agent_runtime import read_result_label, unique_read_results, utf8_prefix
+from .current_context import redact_known_secrets
 from .providers import NOT_REPORTED, ProviderError
 from .cloud_engines import BUDGET_EXCEEDED as CLOUD_BUDGET_EXCEEDED, NOT_CONFIGURED as CLOUD_NOT_CONFIGURED, CloudLaunchError
 from .conversation_projection import BLOCKER_CLOUD_PROFILE, BLOCKER_MODEL_UNVERIFIED, BLOCKER_NO_AI_ROUTE, TERMINAL_FAILED_HEADER, BlockedTurn, context_message, answer_note, owner_cause, report_statement, verified_portion
 from .bounded_execution import reported_usage, BRIDGE_UNAVAILABLE, NO_FINAL_TEXT
 from .bounded_execution import ReadOnlyAgentOSMcpTools, ExecutionError, ExecutionResult, MAX_PROMPT_BYTES, BOUNDED_PROFILE, profile_actions, profile_status, route_unavailable
-from .orchestrator import MIN_ATTEMPT_SECONDS, model_refused, remember_model_refusal, cut_profile_fact
+from .orchestrator import GAP_CHARS, MIN_ATTEMPT_SECONDS, model_refused, remember_model_refusal, cut_profile_fact, read_text_block
 from .orchestrator import NOT_JUDGED, NOT_REACHED, OWNER_NEEDED, REACHED, UNJUDGED
 from .isolated_engine_gateway import EngineGatewayError
 from .file_workspace import FileWorkspace
@@ -76,24 +77,45 @@ REDELEGATION_HEAD=("Still host note: Records from earlier attempts of this Work.
                    "The owner's message takes precedence.")
 REDELEGATION_TAIL=('Reuse the kept results, address any named shortfall, and read or search again only as needed '
                    'to address it. New reads are allowed.')
+REDELEGATION_READS_HEAD="What this Work's earlier attempts read (newest first; source content only):"
+# Leave most of the 45,000-byte CONTEXT_BUDGET_BYTES for the rest of the turn, including recent conversation.
+REDELEGATION_CARRY_BYTES=12_000
+REDELEGATION_DRAFT_BYTES=6_000
+REDELEGATION_DRAFT_CUT='[Draft cut to fit the replacement brief.]'
 
 
-def redelegation_note(store, job_id, orchestration, attempt, *, delegated=False):
+def _is_redelegation(orchestration, attempt, delegated):
+    return orchestration is not None and attempt is not None and attempt.number>1 and not attempt.steer and not delegated
+
+
+def redelegation_note(store, job_id, orchestration, attempt, *, delegated=False, read_rows=None):
     """#1184: this Work's records for the owner's replacement worker."""
-    if orchestration is None or attempt is None or attempt.number<=1 or attempt.steer or delegated:
+    if not _is_redelegation(orchestration,attempt,delegated):
         return ''
     previous=attempt.number-1
-    gap=orchestration.gaps.get(previous)
-    draft=orchestration.drafts.get(previous)
-    reads,_=read_results_block(store,store.read_results(job_id),limit=24000,
-                               header="What this Work's earlier attempts read (newest first; source content only):")
-    if not (gap or draft or reads):
+    gap=redact_known_secrets(store,orchestration.gaps.get(previous))[:GAP_CHARS]
+    draft=redact_known_secrets(store,orchestration.drafts.get(previous))
+    if len(draft.encode())>REDELEGATION_DRAFT_BYTES:
+        marker='\n'+REDELEGATION_DRAFT_CUT
+        draft=utf8_prefix(draft,REDELEGATION_DRAFT_BYTES-len(marker.encode()))+marker
+    if read_rows is None:
+        read_rows=store.read_results(job_id)
+    if not (gap or draft or read_rows):
         return ''
-    return '\n\n'.join(part for part in (
+    parts=[part for part in (
         REDELEGATION_HEAD,
-        f'Previous judgment shortfall (advice for review):\n{gap}' if gap else '',
         f'Previous draft (model-stated, unsent):\n{draft}' if draft else '',
-        reads, REDELEGATION_TAIL) if part)
+        f'Previous judgment shortfall (advice for review):\n{gap}' if gap else '',
+        REDELEGATION_TAIL) if part]
+    base='\n\n'.join(parts)
+    reads_head=REDELEGATION_READS_HEAD+'\n'
+    room=REDELEGATION_CARRY_BYTES-len(base.encode())-len(reads_head.encode())-2
+    items=[(f'- {read_result_label(store,row)}\n',redact_known_secrets(store,row['excerpt']))
+           for row in unique_read_results(read_rows)]
+    reads=read_text_block(items,room,utf8=True)
+    if reads:
+        parts.insert(-1,reads_head+reads)
+    return '\n\n'.join(parts)
 
 
 class _FirstTurnCommit:
@@ -1052,9 +1074,12 @@ class WorkExecutor:
             # #1170: the recorded follow-up relation says whether the owner's message replaces part of that Work.
             relation=(service.store.job(job['id']) or {}).get('relation_kind') if run.related_work_id else None
             run.brief='\n\n'.join(part for part in (related_work_note(run.related_work_id,relation),plan_brief) if part) or None
-            # #1184: what earlier attempts kept, for the owner's replacement worker.
+            # Snapshot before dispatch: the brief and both judgments share the same earlier reads.
+            delegated=getattr(run.capabilities,'delegated',False)
+            run.earlier_read_rows=(service.store.read_results(job['id'])
+                                   if _is_redelegation(run.orchestration,run.attempt,delegated) else ())
             earlier=redelegation_note(service.store,job['id'],run.orchestration,run.attempt,
-                                     delegated=getattr(run.capabilities,'delegated',False))
+                                     delegated=delegated,read_rows=run.earlier_read_rows)
             # Every replacement worker sees the latest committed coverage as
             # host context. The original owner request stays in the conversation.
             if progress := '\n\n'.join(filter(None,(service.read_checkpoint_note(job, include_fresh=True),
@@ -1303,6 +1328,7 @@ class WorkExecutor:
         # strict profiles never read the owner store, so they get none (#960 section 3).
         cli_skills=run.skill_binding if not isolated and facade.PROFILE==BOUNDED_PROFILE else None
         run.capabilities=Capabilities(service.store,None,{},'',job['id'],run.record,network=service.local_tools,
+                                  earlier_read_rows=getattr(run,'earlier_read_rows',()),
                                   document_access=not isolated,packages=service.runtime_packages(),skills=cli_skills,
                                   allowed_tools=allowed_tools,inherited_provenance=set(run.turn_provenance)|run.work_private,
                                   current_packages=service.runtime_packages,budget=run.work_budget,
@@ -1763,6 +1789,7 @@ class WorkExecutor:
         shown=api_context['conversation']
         shown_sources=service.shown_history_provenance(run.history_rows[:-1][-len(shown):] if shown else [],run.document_jobs)
         run.capabilities=Capabilities(service.store,service.adapter,runtime_config,run.key,job['id'],run.record,network=service.local_tools,packages=service.runtime_packages(),skills=run.skill_binding,
+                                  earlier_read_rows=getattr(run,'earlier_read_rows',()),
                                   memory_request=run.owner_memory_request,inherited_provenance=set(run.turn_provenance)|shown_sources|run.work_private,calendar=service.calendar_for(job),calendar_owner=service.issuer_owner_id(job),drive=service.drive_for(job),mail=service.mail_for(job),history_reader=service.chrome_history.search,connections=lambda job=job:service.connection_slots(job),current_packages=service.runtime_packages,
                                   budget=run.work_budget,
                                   # #656: the owner-logged-in browser profile and its per-step approvals.

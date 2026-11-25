@@ -9,7 +9,7 @@ import unittest
 from pathlib import Path
 
 from personal_agent.agent_runtime import ATTEMPT_RESULT_CHARS, Capabilities
-from personal_agent.orchestrator import (OBSERVATION_CHARS, PAGE_TEXT_MIN_CHARS, fair_shares,
+from personal_agent.orchestrator import (OBSERVATION_CHARS, PAGE_TEXT_MIN_CHARS, PAGE_TEXT_OMITTED, fair_shares,
                                          observations_with_pages)
 from personal_agent.quickstart_store import QuickStore
 
@@ -82,7 +82,7 @@ class FairSplitTests(unittest.TestCase):
         self.assertIn('R0 ', observed, 'the newest is kept')
         shown = sum(f'- r{n}:' in observed for n in range(120))
         self.assertGreater(shown, 3)
-        self.assertIn(f'({120 - shown} older results this attempt read are not shown here, for room.)', observed)
+        self.assertIn(PAGE_TEXT_OMITTED.format(count=120 - shown), observed)
         self.assertTrue(all(len(line) >= PAGE_TEXT_MIN_CHARS for line in observed.split('\n')
                             if line.startswith('R')), 'every shown result keeps at least the minimum')
 

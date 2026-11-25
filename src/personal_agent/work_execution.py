@@ -124,6 +124,7 @@ class WorkRun:
         self.subscription = None
         self.attempt_test = None
         self.brief = None
+        self.earlier_read_rows = ()
         self.unmediated_turn = False
         self.engine_meta = None
         self.work_private = None

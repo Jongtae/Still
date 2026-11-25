@@ -2165,18 +2165,42 @@ def record_outside_result(execute):
    return recorded(self,name,args)
  return run
 
-# #1184: retries can render more of this Work's own reads within a separate bound.
+def read_result_label(store,row):
+ """Label a kept read with the tool, time, source kind and any address and title."""
+ from .current_context import redact_known_secrets
+ stamp=datetime.fromtimestamp(row['created'],timezone.utc).isoformat(timespec='seconds')
+ fields=[row['tool'],stamp,row['source_kind']]
+ fields.extend(' '.join(redact_known_secrets(store,value).split())
+               for value in (row['page_url'],row['page_title']) if value)
+ return ' · '.join(fields)
+
+def unique_read_results(rows):
+ """Keep the newest row for each tool and page address in a newest-first snapshot."""
+ seen=set()
+ for row in rows:
+  if row['page_url']:
+   key=(row['tool'],row['page_url'])
+   if key in seen:continue
+   seen.add(key)
+  yield row
+
+def read_result_page(row):
+ tool=row['tool']
+ return (row['page_url'] or f"{tool}:{row['id']}",row['page_title'] or f'{tool} result',row['excerpt'])
+
+def earlier_read_pages(store,rows):
+ """Render the earlier kept reads in the page format shared by both judgments."""
+ from .current_context import redact_known_secrets
+ return tuple(tuple(redact_known_secrets(store,part) for part in read_result_page(row))
+              for row in unique_read_results(rows))
+
 def read_results_block(store,rows,*,limit=READ_RESULTS_BLOCK_CHARS,header=READ_RESULTS_HEADER):
  """Bound the recalled sources, starting with the newest result."""
  from .current_context import redact_known_secrets
  block=header
  count=0
  for row in rows:
-  stamp=datetime.fromtimestamp(row['created'],timezone.utc).isoformat(timespec='seconds')
-  fields=[row['tool'],stamp,row['source_kind']]
-  fields.extend(' '.join(redact_known_secrets(store,value).split())
-                for value in (row['page_url'],row['page_title']) if value)
-  label='\n\n- '+' · '.join(fields)+'\n'
+  label='\n\n- '+read_result_label(store,row)+'\n'
   room=limit-len(block)-len(label)
   if room<=0:break
   block+=label+redact_known_secrets(store,row['excerpt'])[:room]
@@ -3944,7 +3968,7 @@ def owner_wait_steps(rows, tools=None):
  return waits
 
 class Capabilities:
- def __init__(self,store,adapter,config,key,job_id,record,readonly=False,network=None,document_access=True,packages=None,allowed_tools=None,document_context=False,memory_approval=None,inherited_provenance=(),calendar=None,calendar_owner=None,memory_request=None,current_packages=None,lookup_sources=None,delegated=False,inherited_audit_values=(),budget=None,browser=None,browser_approvals=None,browser_unavailable=None,judgments=None,secret_redactor=None,current_context=None,preparations=None,location_request=None,owner_update=None,settings=None,information_use=None,skills=None,drive=None,mail=None,connections=None,a2a=None,lines=None,line_note=None,plan_reading='',history_reader=None,check_state_update=None):
+ def __init__(self,store,adapter,config,key,job_id,record,readonly=False,network=None,document_access=True,packages=None,allowed_tools=None,document_context=False,memory_approval=None,inherited_provenance=(),calendar=None,calendar_owner=None,memory_request=None,current_packages=None,lookup_sources=None,delegated=False,inherited_audit_values=(),budget=None,browser=None,browser_approvals=None,browser_unavailable=None,judgments=None,secret_redactor=None,current_context=None,preparations=None,location_request=None,owner_update=None,settings=None,information_use=None,skills=None,drive=None,mail=None,connections=None,a2a=None,lines=None,line_note=None,plan_reading='',history_reader=None,check_state_update=None,earlier_read_rows=()):
   # #798: the service's ``entrusted_line`` handler bound to this Work, or None (delegated
   # specialist, CLI bridge without the relay): then the tool is not offered.  ``line_note()``
   # is what a run of a line reads before its next step when the line's brief changed, or None.
@@ -4014,7 +4038,10 @@ class Capabilities:
   # #1184: each cached view carries its own durable row id, if any.
   self._browser_pages={}
   self._read_results_lock=threading.RLock()
-  self._read_result_watermark=0
+  # The start-of-attempt snapshot may include rows in this same Work ledger epoch.
+  earlier_read_rows=() if delegated else earlier_read_rows
+  self._read_result_watermark=earlier_read_rows[0]['id'] if earlier_read_rows else 0
+  self.earlier_reads=earlier_read_pages(store,earlier_read_rows)
   # #680: why this computer cannot run the embedded engine (owner-readable
   # text), or None.  A browser call then ends in the typed refusal
   # `browser_unavailable_platform` instead of a setup hint.
@@ -4283,12 +4310,13 @@ class Capabilities:
    if not browser and text is not None:
     self._keep_browser_page({'url':f'{action}:{time.time_ns()}','title':f'{action} result','text':text})
  def take_browser_pages(self):
-  """Take new results for this execution epoch alongside its in-memory page views."""
+  """Take this attempt's results first, followed by its snapshot of earlier kept reads."""
   with self._read_results_lock:
    pages=[(created,url,title,text) for url,(created,title,text,_row) in reversed(self._browser_pages.items())]
    # #1184: only suppress excerpts whose full views are still in memory.
    cached_rows=set().union(*(rows for _created,_title,_text,rows in self._browser_pages.values()))
    self._browser_pages={}
+   earlier,self.earlier_reads=self.earlier_reads,()
    try:
     rows=[] if self.delegated else self.store.read_results(
      self.job_id,epoch=getattr(getattr(self.budget,'ledger',None),'epoch',None),after_id=self._read_result_watermark)
@@ -4297,11 +4325,11 @@ class Capabilities:
    except Exception as exc:
     LOG.warning('read results unavailable for judgment (%s)',type(exc).__name__)
     rows=[]
-  for row in rows:
-   tool,text=row['tool'],row['excerpt']
-   url,title=row['page_url'] or f"{tool}:{row['id']}",row['page_title'] or f"{tool} result"
-   pages.append((row['created'],url,title,text))
-  return [(url,title,text) for _created,url,title,text in sorted(pages,key=lambda page:page[0],reverse=True)]
+  pages.extend((row['created'],*read_result_page(row)) for row in rows)
+  current=[(url,title,text) for _created,url,title,text in sorted(pages,key=lambda page:page[0],reverse=True)]
+  # #1207: a source this attempt read again is shown once, as this attempt read it.
+  urls={url for url,_title,_text in current}
+  return current+[page for page in earlier if page[0] not in urls]
  def close_browser(self):
   session,self._browser_session=self._browser_session,None
   if session is not None:session.close()
@@ -5745,6 +5773,10 @@ def turn_context(history,route,current_context=None,profile=None,prepared=None,n
 CUT_TO_FIT_ORDER=('skills','prepared','brief','current_context','profile')
 CUT_TO_FIT_MARKER='[cut here to fit the prompt limit]'
 
+def utf8_prefix(text,limit):
+ """Return the longest prefix fitting within the UTF-8 byte limit."""
+ return text.encode()[:max(0,limit)].decode(errors='ignore')
+
 def cut_to_fit(sections,overflow):
  """``(sections, cut)``: ``sections`` with at least ``overflow`` UTF-8 bytes removed from the optional sections.
 
@@ -6410,6 +6442,7 @@ GOAL_JUDGMENTS=2
 #: Bounds of the facts one completion judgment is asked over besides the
 #: owner's request, which is never cut (`goal_reached` widens its bound by it).
 GOAL_OBSERVATION_CHARS=16000  # #1451: as the CLI route's ``OBSERVATION_CHARS``
+EARLIER_READ_OBSERVATION_MIN_CHARS=GOAL_OBSERVATION_CHARS//4
 GOAL_FAILURE_CHARS=600
 #: #1451: the judgment's gap sentence (what the reply left unserved).
 GOAL_GAP_CHARS=300
@@ -6718,7 +6751,7 @@ def work_awaiting_owner_text(capabilities):
  try:return awaiting_owner_text(work_awaiting_owner(capabilities.store,capabilities.job_id))[:AWAITING_OWNER_CHARS]
  except Exception:return ''
 
-def goal_judgment(judgments,goal,claim,observations,failures,work_id=None,redact=None,conversation='',owner_context=None,*,budget=None,attachments='',read_state='',awaiting='',conversation_turns=None,effects=(),reply_source='worker',reply_delivery='to_owner',plan_reading='',continues='',read_snapshot=None,retry_on_read_change=False,effect_facts=''):
+def goal_judgment(judgments,goal,claim,observations,failures,work_id=None,redact=None,conversation='',owner_context=None,*,budget=None,attachments='',read_state='',awaiting='',conversation_turns=None,effects=(),reply_source='worker',reply_delivery='to_owner',plan_reading='',continues='',read_snapshot=None,retry_on_read_change=False,effect_facts='',earlier_reads=()):
  """``yes`` / ``no`` / ``unavailable``: did the reply serve the owner's message ``goal``?
 
  The one outcome judgment (#657, #820): one ``ConversationJudgments.goal_reached``
@@ -6768,6 +6801,13 @@ def goal_judgment(judgments,goal,claim,observations,failures,work_id=None,redact
  if effect_facts:
   facts=clean(effect_facts)[:4800]
   observed=facts+'\n'+observed[:max(0,GOAL_OBSERVATION_CHARS-len(facts)-1)]
+ if earlier_reads:
+  from .orchestrator import _observations_with_pages
+  # Give earlier reads a fair split of the unused room, with a minimum even when citations fill it.
+  room=max(EARLIER_READ_OBSERVATION_MIN_CHARS,GOAL_OBSERVATION_CHARS-len(observed)-bool(observed))
+  earlier=_observations_with_pages([],earlier_reads,clean,bound=room)
+  if earlier:
+   observed='\n'.join(filter(None,(observed[:GOAL_OBSERVATION_CHARS-len(earlier)-1],earlier)))
  admission={}
  try:
   if budget is not None and getattr(getattr(judgments,'engine',None),'work_budget',None) is not budget:
@@ -7059,7 +7099,7 @@ def run_agent(adapter,config,key,history,system,capabilities,record,scope='main'
                         awaiting=work_awaiting_owner_text(capabilities),conversation_turns=conversation_turns,
                         effect_facts=receipt_note,effects=recorded_effects(steps),reply_source=reply_source,reply_delivery=reply_delivery,
                         plan_reading=capabilities.plan_reading,continues=note,read_snapshot=read_snapshot,
-                        retry_on_read_change=bool(note))
+                        retry_on_read_change=bool(note),earlier_reads=getattr(capabilities,'earlier_reads',()))
 
   judgment=ask(read_continuation)
   if judgment is INPUT_CHANGED:
