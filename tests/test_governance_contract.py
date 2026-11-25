@@ -202,10 +202,18 @@ def test_required_validate_runs_the_whole_linux_suite() -> None:
     every = sorted(path.relative_to(ROOT).as_posix() for path in (ROOT / "tests").glob("test_*.py"))
     assert sorted(name for share in shares for name in share) == every
     assert all(shares)
+    # A text or release scope's selected files are split the same way, each in exactly one shard (#1150).
+    picked = every[:5] + [every[0]]
+    scoped = shard.shares(ROOT, 3, picked)
+    assert sorted(name for share in scoped for name in share) == sorted(set(picked))
     # #260: only a text-only pull request may skip it; a missing or unknown scope runs it.
     suite_job = jobs.split("\n  suite:\n", 1)[1].split("\n  validate:\n", 1)[0]
-    full_step = suite_job.split("- name: Run the full test suite (parallel)", 1)[1]
+    full_step = suite_job.split("- name: Run the full test suite (parallel)", 1)[1].split("- name:", 1)[0]
     assert "if: steps.scope.outputs.suite != 'text' && steps.scope.outputs.suite != 'release'" in full_step
+    scoped_step = suite_job.split("- name: Run the tests the scope selected (parallel)", 1)[1]
+    assert "if: steps.scope.outputs.suite == 'text' || steps.scope.outputs.suite == 'release'" in scoped_step
+    assert '--total 3 --files "$TEXT_TESTS"' in scoped_step and 'if [ -z "$share" ]' in scoped_step
+    assert "Run the tests the scope selected" not in jobs.split("\n  suite:\n", 1)[0], "selected tests run sharded"
     for job in (suite_job, jobs.split("\n  suite:\n", 1)[0]):
         scope_step = job.split("- name: Decide test scope", 1)[1].split("- name:", 1)[0]
         assert 'git show "$BASE_SHA:scripts/ci/test_scope.py"' in scope_step, "the scope script comes from the base"

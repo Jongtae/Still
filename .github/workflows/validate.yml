@@ -110,13 +110,6 @@ jobs:
           fi
           python3 "$trusted_scope" --base "$BASE_SHA" --head "$HEAD_SHA" --root "$GITHUB_WORKSPACE" | tee -a "$GITHUB_OUTPUT"
 
-      # #508: a release-data pull request (only versions, dates and digests swapped) runs the release tests.
-      - name: Run the tests the scope selected (parallel)
-        if: steps.scope.outputs.suite == 'text' || steps.scope.outputs.suite == 'release'
-        env:
-          TEXT_TESTS: ${{ steps.scope.outputs.tests }}
-        run: PATH="$PWD/.venv/bin:$PATH" python3 -m pytest -q -n auto --dist loadfile --durations=25 $TEXT_TESTS
-
   # #1150: the whole Linux suite, split by test file into three shards that run at once
   # (``scripts/ci/test_shard.py``). Every file runs in exactly one shard, whole, with
   # full-validate's invocation; `validate` below passes only when every shard passed.
@@ -170,6 +163,17 @@ jobs:
       - name: Run the full test suite (parallel)
         if: steps.scope.outputs.suite != 'text' && steps.scope.outputs.suite != 'release'
         run: PATH="$PWD/.venv/bin:$PATH" python3 -m pytest -q -n auto --dist loadfile --durations=25 $(python3 scripts/ci/test_shard.py --index ${{ matrix.shard }} --total 3)
+
+      # #260, #508: a text-only or release-data pull request runs the tests its scope selected,
+      # split the same way (#1150). A shard whose share is empty has nothing to run.
+      - name: Run the tests the scope selected (parallel)
+        if: steps.scope.outputs.suite == 'text' || steps.scope.outputs.suite == 'release'
+        env:
+          TEXT_TESTS: ${{ steps.scope.outputs.tests }}
+        run: |
+          share="$(python3 scripts/ci/test_shard.py --index ${{ matrix.shard }} --total 3 --files "$TEXT_TESTS")"
+          if [ -z "$share" ]; then echo "no selected test file in this share"; exit 0; fi
+          PATH="$PWD/.venv/bin:$PATH" python3 -m pytest -q -n auto --dist loadfile --durations=25 $share
 
   # The required check: the ruleset requires the context `validate`. It passes only when
   # the integrity checks and every suite shard passed (a skipped or cancelled one fails).
