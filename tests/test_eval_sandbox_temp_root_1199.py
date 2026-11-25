@@ -46,10 +46,9 @@ def test_sandbox_under_a_baseline_readable_root_is_refused_before_anything_is_ma
     assert not root.parent.exists()
 
 
-def test_sandbox_outside_the_baseline_roots_prepares(tmp_path):
-    # Pytest's own temp folder is not one of the product's baseline-readable roots.
-    roots = [Path(item).resolve() for item in sb.baseline_readable_roots(ROOT / 'src')]
-    assert not any(tmp_path.resolve() == item or item in tmp_path.resolve().parents for item in roots)
+def test_sandbox_outside_the_baseline_roots_prepares(tmp_path, monkeypatch):
+    # tmp_path is under /tmp on Linux, so name an unrelated baseline root: only the match decides.
+    monkeypatch.setattr(sb, 'baseline_readable_roots', lambda src=None: ('/unrelated-baseline-root',))
     data = sb.Sandbox(tmp_path / 'sandboxes', src=ROOT / 'src').prepare()
     assert data.is_dir() and data.parent == (tmp_path / 'sandboxes')
 

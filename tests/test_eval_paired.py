@@ -559,6 +559,8 @@ from agentos_eval import paired as p
 from test_decision_routes import ServiceFixture
 from agentos_eval import synthetic_seed
 synthetic_seed._system_temp_roots = lambda: {Path("/fixture-system-temp")}
+from agentos_eval import sandbox
+sandbox.REFUSE_BASELINE_READABLE_ROOT = False  # #1199: a fixture-transport child run, no server or Judgment AI
 fixture = ServiceFixture()
 fixture.setUp()
 try:
