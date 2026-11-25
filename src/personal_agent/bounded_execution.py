@@ -330,7 +330,7 @@ CLI_PROFILES = {
         'unavailable': {action: _ISOLATED for action in (
             'save_note', 'weather', 'web_search', 'public_page_read', 'public_download',
             'find_files', 'read_file', 'list_roots', 'save_result', 'calendar_query', 'save_memory', 'list_memory', 'search_memory', 'search_conversation', 'forget_record',
-            'list_agents', 'delegate_agent', 'propose_current_state', 'schedule_preparation', 'entrusted_line', 'ask_location',
+            'list_agents', 'delegate_agent', 'propose_current_state', 'schedule_preparation', 'update_check_state', 'entrusted_line', 'ask_location',
             'tell_owner', 'settings_read', 'settings_change', 'capability_search', 'information_use', 'a2a_message', 'drive_search', 'drive_read', 'mail_search', 'mail_read', 'browser_history_search', 'api_request', 'code_run',
             *_BROWSER_ACTIONS, *_SKILL_ACTIONS)},
                 'runtimes': {'codex': {'pinned_version': '0.153.4', 'live_tested_version': None}},
@@ -358,7 +358,7 @@ CLI_PROFILES = {
             'save_memory': _MEMORY, 'list_memory': _MEMORY, 'search_memory': _MEMORY, 'search_conversation': _MEMORY, 'forget_record': _MEMORY,
             'list_agents': _SPECIALISTS, 'delegate_agent': _SPECIALISTS,
             **{action: _BROWSER for action in _BROWSER_ACTIONS},
-            'schedule_preparation': _PREPARATIONS, 'entrusted_line': _PREPARATIONS,
+            'schedule_preparation': _PREPARATIONS, 'update_check_state': _PREPARATIONS, 'entrusted_line': _PREPARATIONS,
             'ask_location': _LOCATION,
             'tell_owner': _OWNER_UPDATE,
             'settings_read': _SETTINGS, 'settings_change': _SETTINGS, 'capability_search': _SETTINGS,

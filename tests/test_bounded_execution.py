@@ -52,6 +52,7 @@ BOUNDED_NAMES = ['ask_location', 'browser_click', 'browser_find', 'browser_histo
                  'schedule_preparation',
                  'search_conversation', 'search_memory', 'settings_change', 'settings_read',
                  'tell_owner',  # #407: an interim message to the owner, relayed to the service.
+                 'update_check_state',
                  'weather', 'web_search',
                  # #1216: authenticated API calls by slot, relayed to the service.
                  'api_request']

@@ -67,6 +67,7 @@ HOST_TOOLS={
     'propose_current_state': HostTool(True, False, False, 'current_context', False, 'value', False, None),
     # SEC-ATTN-01 (#659): an owner-accepted preparation (reminder/prepare).
     'schedule_preparation': HostTool(True, False, True, None, False, 'check', False, None),
+    'update_check_state': HostTool(True, False, True, None, False, 'patch', False, None),
     # #798: the owner's entrusted lines (list/read, and owner-started writes of a brief version); a read
     # shows a line's brief and its runs' outcomes, so the information-use audit lists it.
     'entrusted_line': HostTool(True, False, True, 'lines', False, None, False, ('action', frozenset({'list', 'read'}))),

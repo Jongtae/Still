@@ -19,7 +19,7 @@ from test_capability_search import payload
 OWNER_ONLY = {
     'list_memory', 'search_memory', 'list_roots', 'search_conversation',
     'save_note', 'save_result', 'save_memory', 'forget_record',
-    'tell_owner', 'ask_location', 'propose_current_state', 'schedule_preparation', 'finish',
+    'tell_owner', 'ask_location', 'propose_current_state', 'schedule_preparation', 'update_check_state', 'finish',
 }
 
 

@@ -509,6 +509,7 @@ def serve(data, job_id, provenance=(), native_search=False, profile=BOUNDED_PROF
                                 browser=unused_browser_factory if relay is not None and relay_browser else None,
                                 # #774: placeholders that list schedule_preparation and ask_location; their calls go to the service.
                                 preparations=RELAYED_PREPARATIONS if relay is not None else None,
+                                check_state_update=RELAYED_PREPARATIONS if relay is not None else None,
                                 # #798: a placeholder that lists entrusted_line; its calls go to the service.
                                 lines=RELAYED_LINES if relay is not None else None,
                                 # ask_location only for attended Work from the paired chat, as on the direct route.

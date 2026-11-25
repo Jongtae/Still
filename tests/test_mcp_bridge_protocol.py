@@ -303,7 +303,7 @@ class ExposedToolWireBoundary(unittest.TestCase):
         # #826: and the connected-folder documents, public pages and the information-use audit.
         self.assertEqual(names, ["browser_history_search", "calendar_query", "capability_search", *CODE_RUN, "drive_read", "drive_search", "entrusted_line", "find_files", "forget_record", "information_use",
                                  "list_memory", "list_notes", "list_roots", "mail_read", "mail_search", "public_download", "public_page_read", "read_file", "save_memory",
-                                 "save_note", "save_result", "schedule_preparation", "search_conversation", "search_memory", "settings_change", "settings_read", "weather",
+                                 "save_note", "save_result", "schedule_preparation", "search_conversation", "search_memory", "settings_change", "settings_read", "update_check_state", "weather",
                                  "web_search"])
         replies = self._wire(
             {"jsonrpc": "2.0", "id": 2, "method": "tools/call",
@@ -312,6 +312,11 @@ class ExposedToolWireBoundary(unittest.TestCase):
         self.assertIn("result", replies[2])
         listed = json.loads(replies[3]["result"]["content"][0]["text"])
         self.assertIn("wire note", [note["content"] for note in listed["notes"]])
+        replies = self._wire({"jsonrpc": "2.0", "id": 2, "method": "tools/call",
+                              "params": {"name": "update_check_state", "arguments": {
+                                  "preparation_id": "unrelated", "check_digest": "fixture", "patch": "{}"}}})
+        self.assertTrue(_refused(replies[2]))
+        self.assertEqual(replies[2]["result"]["structuredContent"]["code"], "check_outside_preparation_tree")
         expected = self.store.save_memory('profile.store.books', '교보문고에서 책을 삽니다', work_id='source-work')
         replies = self._wire({"jsonrpc": "2.0", "id": 2, "method": "tools/call",
                               "params": {"name": "search_memory", "arguments": {"query": "교보문고 책"}}})
@@ -358,7 +363,7 @@ class ExposedToolWireBoundary(unittest.TestCase):
                          ["browser_history_search", "calendar_query",
                           "capability_search", *CODE_RUN, "drive_read", "drive_search", "entrusted_line", "find_files", "forget_record", "information_use", "list_memory", "list_notes", "list_roots", "mail_read", "mail_search", "public_download", "public_page_read",
                           "read_file", "save_memory", "save_note", "save_result", "schedule_preparation", "search_conversation", "search_memory", "settings_change",
-                          "settings_read", "weather"])
+                          "settings_read", "update_check_state", "weather"])
         self.assertFalse(_refused(replies[3]))
         self.assertIn("notes", json.loads(replies[3]["result"]["content"][0]["text"]))
 

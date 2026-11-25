@@ -78,7 +78,7 @@ class Wired(unittest.TestCase):
     def caps(self):
         return Capabilities(self.store, None, {}, '', 'job', lambda *a: None, network=self.network,
                             document_access=False, allowed_tools=None, browser=lambda: None,
-                            preparations=lambda *a: None, location_request=lambda *a: None,
+                            preparations=lambda *a: None, check_state_update=lambda *a: None, location_request=lambda *a: None,
                             owner_update=lambda *a: None, settings=lambda *a: None,
                             information_use=lambda *a: None, skills=object())
 
