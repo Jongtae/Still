@@ -136,32 +136,6 @@ class OpeningTests(_LineCase):
         self.deliver_all()
         self.assertIn(msg('lines.stopped', task=revised_title), self.texts())
 
-    def test_entrust_sends_one_notice_with_name_and_owner_local_deadline(self):
-        title = '아침 관심 목록'
-        opened = self.line_call('아침 관심 목록을 맡아 줘', action='open', title=title,
-                                task=TASK, report_promise=PROMISE)
-        self.deliver_all()
-        self.telegram.clear()
-        end = self.now + 900
-        args = {'action': 'entrust', 'line': opened['line_id'],
-                'ends_at': prep.iso(end, 'UTC'), 'planner_goal': '다음 계획을 정리하기'}
-        standing = self.line_call('아침 관심 목록을 15분 동안 맡아 줘', **args)
-        self.assertEqual(standing['owner_revision'], 1)
-        # A correction increments the plan's revision before the notice is sent.
-        self.service.use_decision_engine(FixtureDecisionEngine(
-            judge=lambda context, proposition: BinaryDecision(OUTCOME_DECIDED, True, fixture_confidence())
-            if context.purpose in ('explicit-line-change', 'explicit-preparation-request') else None))
-        revised = self.line_call('아침 관심 목록에 적용할 규칙을 바꿔 줘', action='revise', line=opened['line_id'],
-                                 expected_version='1', rule=RULE)
-        self.assertEqual(revised['version'], 2)
-        self.deliver_all()
-        repeated = self.line_call('아침 관심 목록을 15분 동안 맡아 줘', **args)
-        self.assertEqual(repeated['code'], 'line_already_entrusted')
-        self.deliver_all()
-        notice = msg('lines.entrusted', title=title,
-                     end=prep.local_text(end, 'Asia/Seoul'))
-        self.assertEqual(self.texts().count(notice), 1)
-
     def test_announcement_is_sent_once_per_line_with_its_three_parts_and_a_stop_control(self):
         brief, _work = self.open_line()
         self.assertTrue(all(rule.get('basis') is None for rule in brief['rules']))
@@ -270,9 +244,20 @@ class ContinuityTests(_LineCase):
         self.assertIn(note, self.run_input(self.run_line(following)))
 
     def test_the_last_run_of_a_bounded_window_can_schedule_a_piece_for_another_day(self):
+        def judge(context, proposition):
+            if context.purpose == 'explicit-preparation-request':
+                asked = not context.facts['proposed_preparation'].startswith('Continue the line ')
+                return BinaryDecision(OUTCOME_DECIDED, asked, fixture_confidence())
+            if context.purpose == 'goal-reached':
+                return BinaryDecision(OUTCOME_DECIDED, True, fixture_confidence())
+            return None
+
+        self.service.use_decision_engine(FixtureDecisionEngine(judge=judge))
         brief, _ = self.open_line(recurrence=None, extra={'every_minutes': '5', 'until': self.due_iso(3900)})
         line = brief['line_id']
         [row] = self.work_rows(line)
+        self.assertEqual(row['accepted_by'], prep.ACCEPTED_OWNER_REQUEST)
+        self.assertIsNone(row['standing_end'])
         note = msg('lines.no_following_run')
         self.assertNotIn(note, self.run_input(self.run_line(row)))
         last = self.service.preparations.get(row['id'])

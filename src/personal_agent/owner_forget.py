@@ -313,13 +313,9 @@ class OwnerForget:
         self.lines.suppress_pending_bundles(line_id, db)
         # #938 (D4): the line's pieces that have not started are cancelled in this transaction.  They are
         # not receipt items: an undo puts the brief versions back, and the owner restarts the work by asking.
-        from . import continuous_lines as continuous, preparations as prep
-        continuous.fence(db, line_id, now, close=True)
-        db.execute("UPDATE jobs SET status='cancelled',delivery='cancelled' WHERE status='queued' AND id IN "
-                   "(SELECT last_run_job_id FROM preparations WHERE line_id=? AND origin=?)",
-                   (line_id, prep.ORIGIN_LINE_PLANNER))
-        db.execute('UPDATE preparations SET state=?,updated_at=? WHERE line_id=? AND origin=? '
-                   'AND state IN (?,?,?,?)', (prep.STATE_CANCELLED, now, line_id, prep.ORIGIN_LINE_PLANNER, *prep.ACTIVE_STATES))
+        from . import preparations as prep
+        from .condition_checks import clear_line_plans
+        clear_line_plans(self.store, db, line_id)
         db.execute(f"UPDATE preparations SET state=?,updated_at=? WHERE line_id=? AND origin=? "
                    f"AND state IN ({','.join('?' * len(prep.PIECE_PENDING_STATES))})",
                    (prep.STATE_CANCELLED, now, line_id, prep.ORIGIN_LINE_PIECE, *prep.PIECE_PENDING_STATES))
@@ -470,12 +466,8 @@ class OwnerForget:
 
     def _purge(self, db, receipt_id, now, *, final):
         receipt = db.execute('SELECT * FROM owner_state_receipts WHERE id=?', (receipt_id,)).fetchone()
-        items = json.loads(receipt['items_json'])
-        rows = items.get('rows') or []
+        rows = json.loads(receipt['items_json']).get('rows') or []
         counts = {}
-        if receipt['kind'] == 'line':
-            counts['line_plan_revisions'] = db.execute(
-                'DELETE FROM line_plan_revisions WHERE line_id=?', (items.get('line'),)).rowcount
         for row in rows:
             table = row['table']
             if receipt['kind'] == 'trust':
