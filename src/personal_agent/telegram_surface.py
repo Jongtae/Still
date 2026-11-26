@@ -340,7 +340,7 @@ class TelegramSurface(ConversationSurface):
         # #798: a line's announcement carries its stop control; a standing rule's restatement its undo.
         if kind.startswith(entrusted_lines.NOTICE_OPENED):
             return {'inline_keyboard':[[{'text':msg('button.line_stop'),'callback_data':f"p7k:{nid}:stop"}]]}
-        if kind.startswith((entrusted_lines.NOTICE_RULE, entrusted_lines.NOTICE_PLAN)):
+        if kind.startswith(entrusted_lines.NOTICE_RULE):
             return {'inline_keyboard':[[{'text':msg('button.undo'),'callback_data':f"p7k:{nid}:undo"}]]}
         # #1097: a preparation's self-change receipt carries its undo, as a line's restatement does.
         if kind.startswith(prep.SELF_CHANGE_NOTICE_PREFIX):
@@ -1024,6 +1024,7 @@ class TelegramSurface(ConversationSurface):
                         changed=True
                     else:
                         alert=(msg('preparations.self_change_undo_stale'),False)
+                # Keep Undo working for open-matters notices that were already sent (#1228).
                 elif exact and parts[2]=='undo' and notification['kind'].startswith((entrusted_lines.NOTICE_RULE, entrusted_lines.NOTICE_PLAN)) and version.isdigit():
                     try:
                         brief=service.preparations_service.undo_line_version(line_id,int(version))
