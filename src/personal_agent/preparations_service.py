@@ -3142,7 +3142,25 @@ class PreparationsService:
                     lead+='\n'+msg('lines.piece_guidance',line=row['line_id'],minutes=prep.PIECE_LEAD_SECONDS//60)
                 note=self.line_schedule_note(brief,row)
                 if note:lead+='\n'+note
+                lead+=self.plan_execute_note(row)
         return lead+'\n'+self.current_line_text(brief)+'\n'+el.outcomes_text(outcomes,row.get('timezone'))
+
+    def plan_execute_note(self, row):
+        """#1253: a line that acts on time between runs is told the plan-then-execute split, whatever the owner's words.
+
+        It applies to a row that repeats within ``prep.PLAN_EXECUTE_SECONDS`` or a line that already has a
+        check. Generic (C16): it names no task; it only points at the host's own check and plan handoff.
+        """
+        service=self.service
+        line_id=row.get('line_id')
+        checks_on_line=[target for item in self.line_rows(line_id) if item.get('check_spec')
+                        for target in service.condition_checks.state_targets(item['id'])
+                        if target['preparation_id']==item['id']] if line_id else []
+        frequent=bool(row.get('every_seconds')) and row['every_seconds']<=prep.PLAN_EXECUTE_SECONDS
+        if not (frequent or checks_on_line):return ''
+        text='\n'+msg('lines.plan_execute_guidance',minutes=max(1,(row.get('every_seconds') or 300)//60))
+        if checks_on_line:text+='\n'+msg('lines.plan_execute_checks',targets=json.dumps(checks_on_line))
+        return text
 
     def current_line_text(self, brief):
         service=self.service

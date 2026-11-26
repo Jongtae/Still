@@ -12316,6 +12316,18 @@
   "ja": "この仕事の次の回を{when}に予約しました。今回の答えに、ここまでの状況といつ続くかを書いてください。",
   "zh": "已将此受托事项的下一步安排在{when}。请在本次回答中说明目前的进展以及何时继续。"
  },
+ "lines.plan_execute_guidance": {
+  "ko": "이 일은 약 {minutes}분마다 판단하고 그 사이에도 제때 실행해야 해요. 판단은 이 일 분야의 전문가처럼 그 분야의 지표와 용어로 하세요. 판단(상황 분석, 다음 기간의 할 일과 조건·금액 결정)은 이번 실행에서 하고, 그 계획은 이 일의 조건 검사에 update_check_state로 넘기세요(calls에 허용 요청, expires에 다음 판단 시각). 조건 검사가 없으면 code_run으로 계획을 읽고 조건이 맞을 때 요청하는 코드를 검증한 뒤 schedule_preparation의 check로 세우세요. 조건에 따른 실행은 조건 검사가 하고, 이번 실행은 다음 판단 시각 전에 끝내세요.",
+  "en": "This work judges about every {minutes} minutes and must also act on time in between. Judge as a specialist in this work's field would, with its own measures and terms. Do the judging in this run (read the situation, decide the next period's actions, conditions and amounts) and hand that plan to this work's condition check with update_check_state (calls for the allowed requests, expires at the next judgement). If there is no condition check, prove with code_run a script that reads the plan and makes a request when its condition is met, then set it up as the check of schedule_preparation. The check carries out the conditions; end this run before the next judgement.",
+  "ja": "この作業は約{minutes}分ごとに判断し、その間も時間どおりに実行する必要があります。判断はこの作業の分野の専門家として、その分野の指標と用語で行ってください。判断（状況の分析、次の期間の行動・条件・金額の決定）はこの実行で行い、その計画はupdate_check_stateでこの作業の条件チェックに渡してください（callsに許可するリクエスト、expiresに次の判断時刻）。条件チェックがなければ、計画を読み条件が合ったときにリクエストするコードをcode_runで検証してから、schedule_preparationのcheckとして設定してください。条件どおりの実行は条件チェックが行い、この実行は次の判断時刻までに終えてください。",
+  "zh": "这项工作大约每{minutes}分钟判断一次，其间也要按时执行。请像这项工作所在领域的专家那样，用该领域的指标和术语来判断。判断（分析情况、决定下一时段的操作、条件和金额）在本次运行中完成，并用update_check_state把计划交给这项工作的条件检查（calls填允许的请求，expires填下一次判断时间）。如果还没有条件检查，先用code_run验证一段读取计划并在条件满足时发出请求的代码，再把它设为schedule_preparation的check。按条件执行由条件检查负责，本次运行请在下一次判断前结束。"
+ },
+ "lines.plan_execute_checks": {
+  "ko": "이 일의 조건 검사: {targets}",
+  "en": "This work's condition checks: {targets}",
+  "ja": "この作業の条件チェック：{targets}",
+  "zh": "这项工作的条件检查：{targets}"
+ },
  "lines.piece_guidance": {
   "ko": "이 일이 한 번에 끝나지 않으면 이번 실행에서는 한 단계만 하고 지금 상황을 말하며 끝내고, 나중에 더 할 일이 있으면 기다리지 말고 schedule_preparation으로 다음 조각을 예약하세요(kind prepare, line {line}, {minutes}분 이후, goal에는 한 일·찾은 상태·다음 조각이 확인할 것).",
   "en": "When this work does not finish in one go, do one step in this run and end by saying where it stands; when more is needed later, do not wait inside the run but schedule the next piece with schedule_preparation (kind prepare, line {line}, at least {minutes} minutes ahead, its goal saying what was done, the state found and what the next piece should check).",

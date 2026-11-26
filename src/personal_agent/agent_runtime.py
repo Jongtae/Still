@@ -488,7 +488,8 @@ SCHEDULE_PREPARATION_ARGUMENTS={
   '(minimum 15, default 60). For prepare windows with until. Output wakes the AI; use no packages. '
   'Print nothing when the condition is not met. In a check run, CHECKSTATEFILE is a JSON object (at most 16 KB) kept '
   'between runs and absent while you prove the code. Keep its own records there. Use update_check_state from the '
-  'Work a check wakes to change the reserved calls and expires keys.'),
+  'Work a check wakes to change the reserved calls and expires keys. For continuing work that must act on time, '
+  'judge in the Work and let the check carry out the plan\'s conditions between runs.'),
  'replaces':('The id (from settings_read preparations) of an active preparation this one takes the place of, when the owner changes what an existing watch or schedule does (another target, a new plan, a different time) (#766). '
   'In a Work the owner started, Still stops it once this one is scheduled, so the two never run side by side and the new one need not wait for the old to end; say in your answer what was stopped. '
   'A scheduled run the owner steered may replace its own preparation this way. Omit it for an additional preparation.'),
