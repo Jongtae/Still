@@ -180,6 +180,8 @@ LINE_PIECE_PARENTS = (*OWNER_ACCEPTED, ACCEPTED_OWNER_WORK, ACCEPTED_LINE_PIECE,
 LINE_PIECES_PER_DAY = 24
 MAX_PENDING_PIECES = 10
 PIECE_LEAD_SECONDS = MIN_EVERY_MINUTES * 60
+#: #1253: a line row repeating at least this often acts on time; its runs are told the plan-then-execute split.
+PLAN_EXECUTE_SECONDS = 30 * 60
 #: States in which a piece has not started yet: its parent run may still replace it (D6).
 PIECE_PENDING_STATES = (STATE_PROPOSED, STATE_SCHEDULED, STATE_PAUSED)
 #: #1005: how many of a line's finished pieces Settings lists under the line's one entry.
