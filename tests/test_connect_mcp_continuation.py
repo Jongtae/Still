@@ -154,7 +154,7 @@ class McpContinuation(_Case):
         self.assertEqual(len(self.calls), 3)
         self.run_original_results([self.job],['The requested record has two incomplete items.'])
 
-    def typed_recovery_sequence(self, states):
+    def typed_recovery_sequence(self, states, background=False):
         self.propose()
         self.service.conversation_focus.record(mock.Mock(intent='settings'),self.job['id'])
         # #172: the one owner-act judgment, scripted to read each reply as a plain yes to the open settings item.
@@ -171,13 +171,23 @@ class McpContinuation(_Case):
                 self.assertEqual(self.store.job(reply)['status'],'succeeded')
                 self.assertEqual(self.service.conversation_focus.current()['work_id'],self.job['id'])
                 if state!='connected':self.assertEqual(len(self.recovery_rows()),1)
-        self.assertEqual(self.calls,['register','observe','observe','observe'])
+                if background and state!='connected':
+                    # #1240 review: a Work the owner did not type runs between the owner's replies and
+                    # moves the conversation focus; the next typed retry still answers the same wait.
+                    self.script=[{'content':'정기 확인 결과입니다.'}]*4
+                    self.store.enqueue('정기 확인','background-'+str(index))
+                    self.assertTrue(self.service.run_one())
+                    self.assertNotEqual(self.service.conversation_focus.current().get('work_id'),self.job['id'])
+        self.assertEqual(self.calls,['register',*['observe']*len(states)])
         self.assertEqual(self.store.job(self.job['id'])['status'],'queued')
         self.run_original_results([self.job],['The requested record has two incomplete items.'])
         self.assertEqual(sum(row['resumed'] for row in self.receipts()),1)
 
     def test_typed_confirmations_keep_original_focus_through_two_setup_failures(self):
         self.typed_recovery_sequence(('failed','failed','connected'))
+
+    def test_typed_retries_reach_the_wait_after_a_background_work_moves_focus(self):
+        self.typed_recovery_sequence(('failed','connected'),background=True)
 
     def test_typed_unknown_confirmations_observe_until_original_result(self):
         self.typed_recovery_sequence(('unknown','unknown','connected'))

@@ -233,9 +233,9 @@ class OwnerActs:
         #1240: a settings draft with no expiry (#619) waits until settled, so a
         yes typed days later must not reach it.  An unbound typed act answers
         only the drafts of the owner's previous Work in this conversation - the
-        Work whose question it answers, or the Work that turn kept in focus (a
-        settings answer keeps the drafting Work in focus, so a retry it offered
-        stays answerable) - or drafts shown since that Work began;
+        Work whose question it answers, or the Work whose wait that turn itself
+        answered (recorded on that turn, so a retry it offered stays answerable
+        whatever ran in between) - or drafts shown since that Work began;
         a draft another, earlier Work left open is not offered, and the act runs
         as an ordinary turn when nothing else is open.  Anything left out stays
         open and answerable by a reaction, a reply-to its message or its button.
@@ -253,11 +253,11 @@ class OwnerActs:
         # When the owner spoke: the message's own time where the surface gave one (as ``before``).
         spoke, answered = float(row['spoke']), {row['id']}
         try:
-            focused = self.service.conversation_focus.current().get('work_id')
+            settled = (self.service.store.turn_provenance(row['id']) or {}).get('answered_work')
         except Exception:
-            focused = None
-        if isinstance(focused, str):
-            answered.add(focused)
+            settled = None
+        if isinstance(settled, str):
+            answered.add(settled)
         def since(item):
             return float(item['shown_at'] or 0) > spoke
         return [item for item in items
