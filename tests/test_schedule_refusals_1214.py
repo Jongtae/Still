@@ -48,7 +48,8 @@ class ScheduleRefusals(_Case):
     def test_send_window_drops_a_report_interval_equal_to_the_check_interval(self):
         schedule = self.owner_schedule()
         result = schedule(self.schedule_args(
-            delivery='send', every_minutes=10, report_every_minutes='10', until=self.due_iso(1860)))
+            delivery='send', every_result=True, every_minutes=10, report_every_minutes='10',
+            until=self.due_iso(1860)))
         self.assertTrue(result['scheduled'])
         self.assertEqual(result['delivery'], 'send')
         self.assertEqual(result['every_minutes'], 10)
@@ -61,8 +62,42 @@ class ScheduleRefusals(_Case):
         for delivery, minutes in [('send', 15), ('send', 20), ('when_needed', 15), ('keep', 10)]:
             with self.subTest(delivery=delivery, minutes=minutes):
                 with self.assertRaises(ToolError) as refusal:
-                    schedule(self.schedule_args(delivery=delivery, every_minutes=10,
+                    schedule(self.schedule_args(delivery=delivery, every_result=True, every_minutes=10,
                                                 report_every_minutes=minutes, until=self.due_iso(1860)))
                 self.assertEqual(refusal.exception.code, 'invalid_window')
                 self.assertFalse(refusal.exception.ran)
         self.assertEqual(self.rows(), [])
+
+
+class WatchDeliveryDefault1229(_Case):
+    """#1229: a watch tells the owner only when needed unless every result was asked for."""
+
+    def schedule(self, **extra):
+        job = self.store.job(self.receive('변경이 있는지 확인해 줘'))
+        args = {'kind': 'prepare', 'goal': 'Check for changes', 'offer': 'I’ll check.', 'due': self.due_iso(60),
+                'every_minutes': 10, 'until': self.due_iso(1860), **extra}
+        return self.service.preparation_scheduler(job, '')(args)
+
+    def test_a_watch_chosen_as_send_without_an_every_result_request_is_when_needed(self):
+        result = self.schedule(delivery='send')
+        self.assertEqual(result['delivery'], prep.DELIVERY_WHEN_NEEDED)
+        row = self.service.preparations.get(result['preparation_id'])
+        self.assertEqual(row['delivery_mode'], prep.DELIVERY_WHEN_NEEDED)
+
+    def test_an_explicit_every_result_request_keeps_every_run_delivery(self):
+        result = self.schedule(delivery='send', every_result=True)
+        self.assertEqual(result['delivery'], 'send')
+        self.assertIsNone(self.service.preparations.get(result['preparation_id'])['delivery_mode'])
+
+    def test_a_single_run_preparation_with_send_is_unchanged(self):
+        job = self.store.job(self.receive('내일 정리해 줘'))
+        result = self.service.preparation_scheduler(job, '')(
+            {'kind': 'prepare', 'goal': 'Summarize', 'offer': 'I’ll do it.', 'due': self.due_iso(60), 'delivery': 'send'})
+        self.assertEqual(result['delivery'], 'send')
+
+    def test_when_needed_run_tells_a_promised_effect_and_stays_quiet_without_change(self):
+        row = {'delivery_mode': prep.DELIVERY_WHEN_NEEDED}
+        told = prep.watch_decision(row, 'order placed', decide=lambda r, a: 'no', promised='order-executed')
+        self.assertEqual(told, (prep.DECISION_NOTIFY, 'order-executed'))
+        quiet = prep.watch_decision(row, 'nothing changed', decide=lambda r, a: 'no')
+        self.assertEqual(quiet[0], prep.DECISION_QUIET)
