@@ -51,6 +51,7 @@ def test_unattended_refusal_is_recorded_and_holds_the_check(case):
     assert not sent and not receipts(case, row)
     assert result['exit_status'] == 0, 'the code read the refusal and ended normally'
     refused, = result['refused_effects']
+    assert refused.pop('input_digest'), 'the request keeps its keyed identity'
     assert refused == {'method': 'POST', 'host': HOST, 'path': '/orders', 'layer': 'still', 'sent': False,
                        'reason': UNATTENDED_APPROVAL_TEXT}
     assert 'approval_requested' not in result and 'effects' not in result
@@ -76,6 +77,7 @@ def test_standing_authority_sends_and_nothing_is_refused(case):
     result, (decision,) = run(case, job, sent)
     assert decision['allow'] and sent == [POST]
     assert 'refused_effects' not in result and result['effects'] == [{'method': 'POST', 'host': HOST, 'path': '/orders'}]
+    assert len(result['effect_digests']) == 1
     record(case, job, result)
     assert case.service.goal_upgrade_allowed(job['id'])
     assert case.service.work_effect_state(job['id']) == ws.EFFECT_APPLIED
@@ -130,19 +132,47 @@ def test_refused_records_redact_run_local_values_or_withhold(case):
     assert row['path'] == row['reason'] == '[withheld]', 'unknown state values: withheld, never shown as sent'
 
 
+def test_only_the_same_request_sent_later_clears_the_hold(case):
+    """A later send to the same endpoint with other parameters is a different change (#1250 review)."""
+    row = setup_check(case)
+    switch(case, False)
+    job = woken(case, row)
+    sent = []
+    refused_run, _ = run(case, job, sent)
+    refused, = refused_run['refused_effects']
+    assert refused['input_digest'] and 'fixture-1' not in json.dumps(refused)
+    record(case, job, refused_run, call_id='call-1')
+
+    switch(case, True)
+    other = dict(POST, bodyText='{"order_id":"fixture-2"}')
+    other_run, _ = run(case, job, sent, process=Transport(sent, request=other))
+    assert sent == [other] and other_run['effect_digests'] != [refused['input_digest']]
+    record(case, job, other_run, call_id='call-2')
+    assert not case.service.goal_upgrade_allowed(job['id']), 'order 1 was never sent'
+
+    same_run, _ = run(case, job, sent)
+    assert sent == [other, POST] and same_run['effect_digests'] == [refused['input_digest']]
+    record(case, job, same_run, call_id='call-3')
+    assert case.service.goal_upgrade_allowed(job['id'])
+
+
 def test_a_later_run_that_sent_the_same_change_clears_the_hold():
-    """A retry is a new call (new id, masked code); it clears the hold by the change it sent."""
+    """A retry is a new call (new id, masked code); it clears the hold by the request it sent."""
     change = {'method': 'POST', 'host': HOST, 'path': '/orders'}
     refused = {'scope': 'w', 'call_id': 'c1', 'host_action': 'code_run',
+               'evidence': {'refused_effects': [{**change, 'layer': 'still', 'sent': False, 'input_digest': 'd-a'}]}}
+    retried = {'scope': 'w', 'call_id': 'c2', 'host_action': 'code_run',
+               'evidence': {'effects': [change], 'effect_digests': ['d-a']}}
+    same_endpoint = {'scope': 'w', 'call_id': 'c3', 'host_action': 'code_run',
+                     'evidence': {'effects': [change], 'effect_digests': ['d-b']}}
+    unkeyed = {'scope': 'w', 'call_id': 'c5', 'host_action': 'code_run',
                'evidence': {'refused_effects': [{**change, 'layer': 'still', 'sent': False}]}}
-    retried = {'scope': 'w', 'call_id': 'c2', 'host_action': 'code_run', 'evidence': {'effects': [change]}}
-    elsewhere = {'scope': 'w', 'call_id': 'c3', 'host_action': 'code_run',
-                 'evidence': {'effects': [{**change, 'path': '/other'}]}}
     other_read = {'scope': 'w', 'call_id': 'c4', 'host_action': 'code_run', 'evidence': {}}
     rows = lambda *details: [('code_run', 'succeeded', json.dumps(d)) for d in details]
     assert state_change_short(trail_steps(rows(refused)))
     assert state_change_short(trail_steps(rows(refused, other_read))), 'an unrelated read does not clear it'
-    assert state_change_short(trail_steps(rows(refused, elsewhere))), 'a different change does not clear it'
+    assert state_change_short(trail_steps(rows(refused, same_endpoint))), 'other parameters, other change'
     assert state_change_short(trail_steps(rows(retried, refused))), 'only a later send clears it'
+    assert state_change_short(trail_steps(rows(unkeyed, retried))), 'an unkeyed refusal is never made up for'
     assert not state_change_short(trail_steps(rows(refused, retried)))
     assert not state_change_short(trail_steps(rows(other_read)))

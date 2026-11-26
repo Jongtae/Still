@@ -3621,9 +3621,14 @@ def refused_state_change(action, detail):
  return action in CODE_ACTIONS and bool(recorded_evidence(detail).get('refused_effects'))
 
 def _code_effect_keys(rows):
- """``{(method, host, path)}`` of a code run's recorded effect rows (#1250 review)."""
- return {(str(row.get('method') or '').upper(),str(row.get('host') or ''),str(row.get('path') or ''))
-         for row in rows or () if isinstance(row,dict)}
+ """``(digests, unkeyed)`` of a code run's recorded effect rows (#1250 review).
+
+ ``digests`` are their ``input_digest`` identities; ``unkeyed`` counts the rows without one, which
+ nothing later can be shown to have made up for.
+ """
+ rows=[row for row in rows or () if isinstance(row,dict)]
+ digests={row['input_digest'] for row in rows if isinstance(row.get('input_digest'),str) and row['input_digest']}
+ return digests,sum(1 for row in rows if not (isinstance(row.get('input_digest'),str) and row['input_digest']))
 
 def recorded_withheld(action, detail, completed=frozenset()):
  """The ``Withheld`` of a call recorded as returning normally, from its recorded Evidence, or None (#679, #690).
@@ -3932,12 +3937,15 @@ def state_change_short(steps, *, reconciled=None):
   if refused_state_change(action,detail):
    # #1250: a code run is a read by declaration (``HOST_TOOLS``), as its sent ``effects`` are not (#1456);
    # a state change Still refused unsent is short too, unless a later code run sent that same change.
-   # #1250 review: matched by the effect itself (method, host, path), since a retry is a new call whose
-   # recorded code is masked, so neither the call id nor ``same_invocation`` can match it.
+   # #1250 review: matched by the request's own keyed identity (``input_digest``: method, URL with query and
+   # body), since a retry is a new call whose recorded code is masked, so neither the call id nor
+   # ``same_invocation`` can match it; a change to the same endpoint with other parameters never does.
    later=set()
    for _t,other,result,done,_r in steps[index+1:]:
-    if other in CODE_ACTIONS and result=='succeeded':later|=_code_effect_keys(recorded_evidence(done).get('effects'))
-   if not _code_effect_keys(recorded_evidence(detail).get('refused_effects'))<=later:return True
+    if other in CODE_ACTIONS and result=='succeeded':
+     later|={item for item in recorded_evidence(done).get('effect_digests') or () if isinstance(item,str) and item}
+   refused,unkeyed=_code_effect_keys(recorded_evidence(detail).get('refused_effects'))
+   if unkeyed or not refused<=later:return True
    continue
   if state not in ('failed','withheld','incomplete') or action=='delegate_agent':continue
   detail=detail if isinstance(detail,dict) else {}
