@@ -169,6 +169,8 @@ OWNER_ACCEPTED = (ACCEPTED_OWNER_REQUEST, ACCEPTED_OWNER_BUTTON, ACCEPTED_OWNER_
 #: #968 (#938 D1): rows of an owner-set-up line whose own run may revise its own plan: the owner
 #: accepted the row, or it was set up in a Work the owner typed.  Look-back and daily-plan rows do not.
 LINE_RUN_ACCEPTED = OWNER_ACCEPTED + (ACCEPTED_OWNER_WORK,)
+#: #1236: origins of rows Still sets up on its own initiative; a line mandate never stands behind them.
+STILL_SET_ORIGINS = (ORIGIN_DREAM, ORIGIN_DAY_PLAN, ORIGIN_LINE_ACCOUNT)
 #: #938: rows whose run may schedule the next piece of its line (D1); the look back's and the daily
 #: plan's rows are not among them.
 LINE_PIECE_PARENTS = (*OWNER_ACCEPTED, ACCEPTED_OWNER_WORK, ACCEPTED_LINE_PIECE, ACCEPTED_LINE_PIECE_OWNER)
