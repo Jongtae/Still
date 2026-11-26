@@ -300,7 +300,7 @@ def test_tail_failure_preserves_committed_outcome_and_enrolment(case):
 
 STEPS = (
     'run_due_preparation', 'run_due_qualification', 'dispatch_work', 'deliver_one',
-    'deliver_notification', 'expire_memory_prompts', 'release_memory_saved_notices',
+    'deliver_notification', 'expire_memory_prompts', 'release_lesson_notices',
     'sweep_after_work', 'process_browser_logins', 'start_session_keepalive',
     'purge_forgotten', 'settle_unknown_deliveries', 'run_owner_model_upkeep',
 )

@@ -95,7 +95,7 @@ def test_owner_typed_fact_saves_directly_even_after_document_read(state):
     assert [(row['memory_key'], row['content']) for row in store.memories()] == [(KEY, VALUE)]
     assert store.memory_candidates() == []
     # #955: the reply says it; no separate notice is held (C5 as amended).
-    assert store.held_notifications(store.MEMORY_SAVED_NOTICE_KIND) == []
+    assert store.held_notifications('memory_saved') == []
 
 
 def test_request_sentence_is_not_saved_as_fact(state):
@@ -109,21 +109,18 @@ def test_request_sentence_is_not_saved_as_fact(state):
     assert saves and saves[-1]['refused_because'] == 'value-is-the-request'
 
 
-def test_owner_notice_undo_retracts_exact_saved_row(state):
-    """#744 item 2, C17 case 3: recovery is real, though it is after the write."""
+def test_owner_undo_retracts_exact_saved_row(state):
+    """#744 item 2, C17 case 3: recovery is real, though it is after the write (#955: by asking or 내 기록)."""
     store, service = state
-    from unittest import mock
-    from personal_agent import memory_prompts
-    with mock.patch.object(memory_prompts, 'MEMORY_SAVED_NOTICES', True):  # #955: the kept #918 machinery
-        work, _, _ = worker(state, 'My preferred drink is jasmine tea. Remember it and read memo.txt.')
-    [notice] = store.held_notifications(store.MEMORY_SAVED_NOTICE_KIND)
-    binding = service.bind_memory_saved(notice, NOW)
-    assert VALUE in service.memory_saved_text(binding)
+    worker(state, 'My preferred drink is jasmine tea. Remember it and read memo.txt.')
     [saved] = store.memories()
-    assert service.undo_memory_saved(work, binding, [1]) == [saved['id']]
+    assert VALUE == saved['content']
+    assert service.memory_undo_request(saved['id'])['undone'] is True
     assert store.memories() == []
     assert store.memory(saved['id'], current_only=False)['state'] == 'retracted'
-    assert service.undo_memory_item(work, binding['items'][0])[0] == 'outdated'
+    from personal_agent.memory_prompts import retract_saved
+    item = {'id': saved['id'], 'digest': saved['content_digest'], 'key': saved['memory_key']}
+    assert retract_saved(store, 'w', item)['status'] == 'outdated'
 
 
 def test_upkeep_does_not_promote_document_claim_from_answer(state):

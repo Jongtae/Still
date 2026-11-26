@@ -1,4 +1,4 @@
-"""Memory candidate prompts and saved notices extracted from AgentService (#21).
+"""Memory candidate prompts extracted from AgentService (#21), and the exact undo of a direct save.
 
 AgentService remains the composition root and owns all mutable state. Calls
 between methods go through the service so forwarding entry points and patch
@@ -17,6 +17,7 @@ from .memory_service import MemoryService
 from .messages import msg
 from .providers import ProviderError
 from .quickstart_service import (
+    LESSON_NOTICE_RETELL_SECONDS,
     LOG,
     MEMORY_BUTTON_NO,
     MEMORY_BUTTON_YES,
@@ -32,33 +33,14 @@ from .quickstart_service import (
     MEMORY_CANDIDATE_STATUS,
     MEMORY_KEY_SHAPED,
     MEMORY_PROMPT_KINDS,
-    MEMORY_SAVED_AGAIN,
-    MEMORY_SAVED_BEFORE,
-    MEMORY_SAVED_ENDED,
-    MEMORY_SAVED_EXPIRED_TEXT,
-    MEMORY_SAVED_HEADER,
-    MEMORY_SAVED_KIND,
-    MEMORY_SAVED_KINDS,
-    MEMORY_SAVED_MORE,
-    MEMORY_SAVED_STATUS,
-    MEMORY_SAVED_TTL_SECONDS,
-    MEMORY_SAVED_UNDONE,
-    MEMORY_SAVED_UPKEEP_KIND,
-    MEMORY_UNDO_BUTTON,
     MEMORY_UNDO_TOOL,
     WORKING_LESSON_NOTICE_KINDS,
 )
 
 
 
-#: #955 (owner decision 2026-11-17, Constitution C5 as amended): saved facts are not told in a notice
-#: of their own; the reply that saved them says so.  The #918 machinery stays for notices sent before
-#: and as the one switch back; while off, nothing new is held, queued or retold.
-MEMORY_SAVED_NOTICES=False
-
-
 def retract_saved(store, job_id, item, asked=False):
-    """Retract one direct save exactly and say what is in use again (#918; #955 shares it with asking).
+    """Retract one direct save exactly and say what is in use again (#918; asking and 내 기록 share it, #955, #962).
 
     ``item`` is ``{'id', 'digest', 'key'?}``: the row must still be current with that digest
     (``retract_memory`` fails closed).  The retraction and its ``memory_undo`` Evidence event are one
@@ -83,7 +65,7 @@ def retract_saved(store, job_id, item, asked=False):
             'expired':[memory_id for memory_id in back if memory_id not in holding]}
 
 class MemoryPrompts:
-    """Existing memory prompts and saved notices over one service's state."""
+    """Existing memory prompts over one service's state."""
 
     def __init__(self, service):
         self.service = service
@@ -439,329 +421,38 @@ class MemoryPrompts:
             except ProviderError:pass
 
     def expire_memory_prompts(self, now=None):
-        """Close memory prompts older than ``MEMORY_CANDIDATES_TTL_SECONDS`` (#818) and saved notices older
-        than ``MEMORY_SAVED_TTL_SECONDS`` (#918); at most once a minute."""
+        """Close memory prompts older than ``MEMORY_CANDIDATES_TTL_SECONDS`` (#818); at most once a minute."""
         service=self.service
         now=time.time() if now is None else now
         if now-getattr(service,'_memory_prompt_sweep',0)<MEMORY_CANDIDATES_SWEEP_SECONDS:return
         service._memory_prompt_sweep=now
-        rows=service.store.telegram.notifications_in_state(MEMORY_PROMPT_KINDS+MEMORY_SAVED_KINDS,'sent')
-        for row in rows:
-            if row['kind'] in MEMORY_SAVED_KINDS:
-                binding=service.memory_saved_binding(row)
-                if binding and 'sent' in binding and now-float(binding['sent'])>MEMORY_SAVED_TTL_SECONDS:
-                    service.expire_memory_saved(row,binding)
-                continue
+        for row in service.store.telegram.notifications_in_state(MEMORY_PROMPT_KINDS,'sent'):
             binding=service.memory_binding(row)
             if binding and 'sent' in binding and now-float(binding['sent'])>MEMORY_CANDIDATES_TTL_SECONDS:
                 service.expire_memory_prompt(row,binding)
 
-    def work_saved_memories(self, job_id):
-        """``(shown, remaining)``: the current Memory rows this Work wrote, oldest first (#918)."""
-        service=self.service
-        rows=service.store.work_memories(MEMORY_OWNER,job_id,limit=101)
-        return rows[:MEMORY_CANDIDATES_SHOWN],max(0,len(rows)-MEMORY_CANDIDATES_SHOWN)
-
-    def queue_memory_saved(self, job):
-        """Tell the paired owner what this Work remembered, once (#918); the notice a save did not hold."""
-        service=self.service
-        shown,more=service.work_saved_memories(job['id'])
-        if shown:service.queue_notification(job,MEMORY_SAVED_KIND,fingerprint=json.dumps(
-            {'items':[[row['id'],row['content_digest']] for row in shown],'more':more}))
-
-    def release_memory_saved(self, job):
-        """The one entry point once this Work's reply is settled: tell what is current and unlisted (#918 review).
-
-        ``held`` (the save held the row in its own transaction) or missing (a
-        Work saved before this head): queued, bound at send time to every
-        current row of the Work.  Otherwise - a retried or resumed Work that
-        saved again after its notice was already told (re-review P2): a
-        bound notice still ``sent`` gets the new facts by an edit
-        (``join_memory_saved``); a settled or lost one gives them a notice of
-        their own (``_queue_separate_saved_notice``); one still queued binds
-        them when it is sent.  Caller holds ``self.lock``.
-        """
-        service=self.service
-        rows=service._saved_notice_rows(job['id'])
-        if not MEMORY_SAVED_NOTICES:
-            # #955 (owner decision 2026-11-17, C5): no standalone notice; the reply that saved a fact
-            # says it in passing, and every fact stays in 내 기록 with its undo.  A held or queued one is dropped.
-            for kind_row in rows.values():
-                if kind_row['state'] in (service.store.NOTICE_HELD,'queued'):
-                    service.store.update_notification(kind_row['id'],'cancelled')
-            return
-        row=rows.get(MEMORY_SAVED_KIND)
-        if row is None:
-            service.queue_memory_saved(job);return
-        if row['state'] in (service.store.NOTICE_HELD,'cancelled'):
-            shown,more=service.work_saved_memories(job['id'])
-            if shown:service.store.update_notification(row['id'],'queued',fingerprint=json.dumps(
-                {'items':[[item['id'],item['content_digest']] for item in shown],'more':more}))
-            elif row['state']==service.store.NOTICE_HELD:service.store.update_notification(row['id'],'cancelled')
-            return
-        if row['state']=='queued':return
-        binding=service.memory_saved_binding(row)
-        if row['state']=='sent' and binding and 'sent' in binding:
-            service.join_memory_saved(row,binding);return
-        service._queue_separate_saved_notice(job,rows)
-
-    def release_memory_saved_notices(self, now=None):
-        """Release saved-notices a crash or an unknown send left behind (#918 review); at most once a minute.
+    def release_lesson_notices(self, now=None):
+        """Release lesson notices a crash or an unknown send left behind; at most once a minute.
 
         ``held`` rows whose Work's reply is settled (``sent``, ``unknown`` or
         ``cancelled``) are queued; the release in ``deliver_one`` may have been
         cut off between the delivery update and the queue.  A notice whose own
-        send came back ``unknown`` (or that a restart found ``sending``) is
-        told again, at most ``MEMORY_SAVED_RETELLS`` times: a notice may be
-        told twice rather than never, and each undo is exact to its own
-        message.  A store without ``jobs`` for the row is left alone.
+        send came back ``unknown`` is told again, at most
+        ``NOTICE_RETELLS`` times, within ``LESSON_NOTICE_RETELL_SECONDS``.
         """
         service=self.service
         now=time.time() if now is None else now
-        if now-getattr(service,'_memory_saved_release_sweep',0)<MEMORY_CANDIDATES_SWEEP_SECONDS:return
-        service._memory_saved_release_sweep=now
+        if now-getattr(service,'_lesson_release_sweep',0)<MEMORY_CANDIDATES_SWEEP_SECONDS:return
+        service._lesson_release_sweep=now
         with service.lock:
-            for row in service.store.held_notifications(MEMORY_SAVED_KIND):
-                if row.get('job_delivery') not in service.DELIVERY_SETTLED:continue
-                job=service.store.job(row['job_id'])
-                if job:service.release_memory_saved(job)
-            # Release lesson notices held behind replies that have since settled.
             for kind in WORKING_LESSON_NOTICE_KINDS:
                 for row in service.store.held_notifications(kind):
                     if row.get('job_delivery') in service.DELIVERY_SETTLED:service.release_working_notes(row['job_id'])
-            lost=service.store.telegram.notifications_in_state(MEMORY_SAVED_KINDS,'unknown') if MEMORY_SAVED_NOTICES else ()
-            for row in lost:
-                binding=service.memory_saved_binding(row) or {}
-                retells=int(binding.get('retells') or 0)
-                if retells>=service.MEMORY_SAVED_RETELLS or now-float(row['created'])>MEMORY_SAVED_TTL_SECONDS:continue
-                items=[item if isinstance(item,list) else [item['id'],item['digest']] for item in binding.get('items',())
-                       if isinstance(item,(list,dict))]
-                service.store.update_notification(row['id'],'queued',fingerprint=json.dumps(
-                    {'items':items,'more':int(binding.get('more') or 0),'retells':retells+1}))
-                LOG.info('memory saved notice told again work=%s kind=%s',row['job_id'],row['kind'])
-            # Retry an unknown lesson notice on the same bounded terms as a saved-Memory notice.
             for row in service.store.telegram.notifications_in_state(WORKING_LESSON_NOTICE_KINDS,'unknown'):
                 try:bound=json.loads(row.get('fingerprint') or '')
                 except (TypeError,ValueError):continue
                 if not isinstance(bound,dict):continue
                 retells=int(bound.get('retells') or 0)
-                if retells>=service.MEMORY_SAVED_RETELLS or now-float(row['created'])>MEMORY_SAVED_TTL_SECONDS:continue
+                if retells>=service.NOTICE_RETELLS or now-float(row['created'])>LESSON_NOTICE_RETELL_SECONDS:continue
                 service.store.update_notification(row['id'],'queued',fingerprint=json.dumps({**bound,'retells':retells+1}))
                 LOG.info('working lesson notice told again work=%s',row['job_id'])
-
-    def queue_upkeep_memory_saved(self, work_id):
-        """After #805 upkeep saved facts: they join the Work's one notice, or get their own (#918).
-
-        Only once the Telegram Work's reply is settled (sent, unknown or
-        cancelled); before that the save held the notice, which is bound at
-        send time to everything saved.  No notice (a Work saved before this
-        head) or one cancelled because nothing was saved: this is the first.
-        One held or queued binds them when it is sent.  One sent: the facts
-        are added by editing it (``join_memory_saved``).  One already settled
-        (undone, expired) or lost: a separate upkeep notice bound to these
-        facts only, so a save is never silent.  Under ``self.lock``, like the
-        taps and the sends.
-        """
-        service=self.service
-        with service.lock:
-            job=service.store.job(work_id)
-            if not job or job.get('delivery') not in service.DELIVERY_SETTLED:return
-            service.release_memory_saved(job)
-
-    def _saved_notice_rows(self, work_id):
-        service=self.service
-        return {row['kind']:row for row in service.store.telegram.notifications_of_kinds(work_id,MEMORY_SAVED_KINDS)}
-
-    def _queue_separate_saved_notice(self, job, rows):
-        """A notice of its own for the saved facts no notice of this Work showed (#918)."""
-        service=self.service
-        listed=set()
-        for kind_row in rows.values():
-            bound=service.memory_saved_binding(kind_row)
-            listed|={item['id'] for item in (bound or {}).get('items',()) if isinstance(item,dict)}
-            listed|={item[0] for item in (bound or {}).get('items',()) if isinstance(item,list) and item}
-        upkeep=rows.get(MEMORY_SAVED_UPKEEP_KIND)
-        if upkeep and upkeep['state'] not in ('cancelled',):return
-        fresh=[item for item in service.store.work_memories(MEMORY_OWNER,job['id'],limit=101) if item['id'] not in listed]
-        if not fresh:return
-        fingerprint=json.dumps({'items':[[item['id'],item['content_digest']] for item in fresh[:MEMORY_CANDIDATES_SHOWN]],
-                                'more':max(0,len(fresh)-MEMORY_CANDIDATES_SHOWN)})
-        if upkeep:service.store.update_notification(upkeep['id'],'queued',fingerprint=fingerprint)
-        else:service.queue_notification(job,MEMORY_SAVED_UPKEEP_KIND,fingerprint=fingerprint)
-
-    @staticmethod
-    def memory_saved_binding(notification):
-        """A saved notice's recorded binding (queued ids, or the send-time binding with ``sent``), or None (#918)."""
-        try:binding=json.loads((notification or {}).get('fingerprint') or '')
-        except (TypeError,ValueError):return None
-        return binding if isinstance(binding,dict) and isinstance(binding.get('items'),list) else None
-
-    def memory_saved_item(self, row):
-        """One saved fact as the notice binds it: id, content digest, key and what it superseded (#918)."""
-        service=self.service
-        previous=service.store.memory(row['supersedes'],MEMORY_OWNER,current_only=False) if row.get('supersedes') else None
-        return {'id':row['id'],'digest':row['content_digest'],'key':row['memory_key'],
-                'previous':[previous['id'],previous['content_digest']] if previous else None,
-                # #220: the earlier facts this save ended under other keys, so the notice names them too.
-                'ended':[[item['id'],item['content_digest']] for item in service.store.ended_by(MEMORY_OWNER,row['id'])]}
-
-    def bind_memory_saved(self, notification, now):
-        """What a saved notice shows, bound at send time; None when the Work has nothing current (#918).
-
-        The Work's notice binds every current Memory row of the Work when it
-        is sent, oldest first, up to ``MEMORY_CANDIDATES_SHOWN``; an upkeep
-        notice binds only its queued ids.
-        """
-        service=self.service
-        queued=service.memory_saved_binding(notification)
-        if not queued or 'sent' in queued:return None
-        shown,more=service.work_saved_memories(notification['job_id'])
-        if notification['kind']!=MEMORY_SAVED_KIND:
-            ids=[item for item in queued['items'] if isinstance(item,list) and len(item)==2]
-            shown,more=[row for row in shown if [row['id'],row['content_digest']] in ids],int(queued.get('more') or 0)
-        items=[service.memory_saved_item(row) for row in shown]
-        if not items:return None
-        return {'items':items,'more':more,'sent':now,'done':{},'restored':{},'retells':int(queued.get('retells') or 0)}
-
-    @staticmethod
-    def memory_saved_open(binding):
-        """The 1-based indices of the saved facts whose undo is still open (#918)."""
-        return [index for index,item in enumerate(binding['items'],1) if item['id'] not in binding['done']]
-
-    def memory_saved_text(self, binding, footer=None):
-        """The notice in the owner's words: "기억했어요: <fact>" and, once undone, "되돌렸어요" (#918).
-
-        Values only, never a key; bounded; stored secrets and credential
-        shapes removed (``memory_fact``).  A fact that superseded a value
-        says so ("전에는 …"), and an undo that restored it says so ("다시 …"),
-        so a replacement is never silent.  It asks nothing.
-        """
-        service=self.service
-        items,done,restored=binding['items'],binding['done'],binding.get('restored') or {}
-        def fact_of(memory_id):
-            row=service.store.memory(memory_id,MEMORY_OWNER,current_only=False) or {}
-            return service.memory_fact(row.get('content'),MEMORY_CANDIDATE_CHARS,row.get('memory_key'))[0]
-        def line_of(item):
-            status=done.get(item['id'])
-            text=fact_of(item['id'])
-            # Review P3: a previous or restored row deleted from 내 기록 since has no text; nothing empty is shown.
-            if status=='retracted':
-                again=[restored.get(item['id'])] if restored.get(item['id']) else []
-                again+=list((binding.get('restored_ended') or {}).get(item['id']) or ())
-                back=', '.join(fact for fact in (fact_of(memory_id) for memory_id in again) if fact)
-                return text+(f' ({MEMORY_SAVED_AGAIN.format(facts=back)})' if back else '')
-            if status=='outdated':return text
-            # #425: the value this fact replaced under its own key, then the other facts it retired, each named so.
-            before=fact_of(item['previous'][0]) if item.get('previous') else ''
-            ended=', '.join(fact for fact in (fact_of(pair[0]) for pair in item.get('ended') or ()
-                                             if isinstance(pair,list) and pair) if fact)
-            notes=[*([MEMORY_SAVED_BEFORE.format(facts=before)] if before else []),
-                   *([MEMORY_SAVED_ENDED.format(facts=ended)] if ended else [])]
-            return text+(f" ({'; '.join(notes)})" if notes else '')
-        single=len(items)==1
-        all_done=bool(done) and not service.memory_saved_open(binding)
-        every_retracted=all_done and all(done.get(item['id'])=='retracted' for item in items)
-        if single:
-            item=items[0];status=done.get(item['id'])
-            head=MEMORY_SAVED_UNDONE if status=='retracted' else MEMORY_SAVED_HEADER
-            lines=[f'{head}: {line_of(item)}']
-            if status=='outdated':lines[0]+=' → '+MEMORY_SAVED_STATUS['outdated']
-        else:
-            lines=[MEMORY_SAVED_UNDONE if every_retracted else MEMORY_SAVED_HEADER]
-            for index,item in enumerate(items,1):
-                status=done.get(item['id'])
-                line=f'{index}. '+line_of(item)
-                if status:line+=' → '+MEMORY_SAVED_STATUS[status]
-                lines.append(line)
-        if binding.get('more'):lines.append(MEMORY_SAVED_MORE.format(count=binding['more']))
-        if footer and footer not in lines:lines.append(footer)
-        return '\n'.join(lines)
-
-    @classmethod
-    def memory_saved_markup(cls, notification_id, binding):
-        """No buttons (#996): the owner answers a saved notice in words or with a reaction.
-
-        A notice sent before #996 keeps its [되돌리기] taps working
-        (``legacy_memory_saved_markup`` and the ``p7u`` callback), and an
-        edit of such a notice removes its buttons.
-        """
-        return {'inline_keyboard':[]}
-
-    @classmethod
-    def legacy_memory_saved_markup(cls, notification_id, binding):
-        """One [되돌리기] per open fact (numbered when several), plus 모두 when more than one is open (#918)."""
-        open_=cls.memory_saved_open(binding)
-        if len(binding['items'])==1:
-            return {'inline_keyboard':[[{'text':MEMORY_UNDO_BUTTON,'callback_data':f'p7u:{notification_id}:1'}]] if open_ else []}
-        rows=[[{'text':f'{index} {MEMORY_UNDO_BUTTON}','callback_data':f'p7u:{notification_id}:{index}'}] for index in open_]
-        if len(open_)>1:rows.append([{'text':msg('quickstart_service.all_button', label=MEMORY_UNDO_BUTTON),'callback_data':f'p7u:{notification_id}:a'}])
-        return {'inline_keyboard':rows}
-
-    def undo_memory_item(self, job_id, item):
-        """Retract one bound fact: ``retracted`` (previous value restored when one was superseded) or ``outdated`` (#918).
-
-        Exact: the row must still be current with the bound content digest
-        (``retract_memory`` fails closed otherwise).  The undo is recorded on
-        the Work as a ``memory_undo`` event for its information-use audit and
-        Evidence.  Returns ``(status, restored_id)``.
-        """
-        undone=retract_saved(self.service.store,job_id,item)
-        return undone['status'],undone['restored'],undone['restored_ended']
-
-    def undo_memory_saved(self, job_id, binding, targets):
-        """Apply one tap to the open ``targets`` (1-based) of a bound notice; returns the ids it decided (#918)."""
-        service=self.service
-        decided=[]
-        for index in targets:
-            item=binding['items'][index-1]
-            status,restored,ended=service.undo_memory_item(job_id,item)
-            binding['done'][item['id']]=status
-            if restored:binding.setdefault('restored',{})[item['id']]=restored
-            if ended:binding.setdefault('restored_ended',{})[item['id']]=ended
-            decided.append(item['id'])
-        return decided
-
-    def join_memory_saved(self, notification, binding, now=None):
-        """Facts upkeep saved after the Work's notice was sent join it by an edit (#918, as #836 joins the ask).
-
-        Bound only when the edit is confirmed, so an undo button never covers
-        a fact the owner was not shown; the notice's undo window restarts at
-        the join (review P3), so a joined fact is undoable for the full week.
-        A refused edit falls back to a notice of its own for the new facts
-        (review P3), so they are never left untold.  Past
-        ``MEMORY_CANDIDATES_SHOWN`` a fact is only counted.
-        """
-        service=self.service
-        now=time.time() if now is None else now
-        job_id=notification['job_id']
-        listed={item['id'] for item in binding['items']}
-        new=[row for row in service.store.work_memories(MEMORY_OWNER,job_id,limit=101) if row['id'] not in listed]
-        if not new:return
-        room=max(0,MEMORY_CANDIDATES_SHOWN-len(binding['items']))
-        added=[service.memory_saved_item(row) for row in new[:room]]
-        shown={**binding,'items':binding['items']+added,'more':len(new)-len(added),'sent':now}
-        edited=False
-        if isinstance(notification.get('message_id'),int):
-            try:
-                service.telegram.edit_message_text(notification['chat_id'],notification['message_id'],
-                                                service.memory_saved_text(shown),service.memory_saved_markup(notification['id'],shown))
-                edited=True
-            except ProviderError:
-                pass
-        final=shown if edited else binding
-        # #188 (Codex on #200): a confirmed edit that added facts is a new showing of the notice.
-        service.store.update_notification(notification['id'],'sent' if service.memory_saved_open(final) else 'memory_undone',
-                                       fingerprint=json.dumps(final),delivered=edited and bool(added))
-        LOG.info('memory saved notice joined work=%s added=%s edited=%s',job_id,len(added) if edited else 0,edited)
-        if not edited:
-            job=service.store.job(job_id)
-            if job:service._queue_separate_saved_notice(job,service._saved_notice_rows(job_id))
-
-    def expire_memory_saved(self, notification, binding):
-        """Refuse further undo taps on one saved notice and remove its buttons (#918)."""
-        service=self.service
-        service.store.update_notification(notification['id'],'expired')
-        if isinstance(notification.get('message_id'),int):
-            try:service.telegram.edit_message_text(notification['chat_id'],notification['message_id'],
-                                                service.memory_saved_text(binding,MEMORY_SAVED_EXPIRED_TEXT),{'inline_keyboard':[]})
-            except ProviderError:pass

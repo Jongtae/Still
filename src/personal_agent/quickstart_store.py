@@ -1365,24 +1365,15 @@ class QuickStore:
                     basis,evidence,None if evidence_message is None else str(evidence_message),retrieval_terms,retrieval_terms_meta))
         return self._memory_row(db.execute('SELECT * FROM memories WHERE id=?',(memory_id,)).fetchone())
 
-    #: #918 review: the Telegram notice kind a direct save holds in its own transaction.
-    MEMORY_SAVED_NOTICE_KIND='memory_saved'
-    #: The notice's state while it waits for the Work's reply to be delivered.
+    #: A lesson notice's state while it waits for the Work's reply to be delivered.
     NOTICE_HELD='held'
     #: Delivery states after which a Work's reply is no longer awaited: a held notice may go out.
     DELIVERY_SETTLED=('sent','unknown','cancelled')
 
-    def save_memory(self, memory_key, content, owner_id='local-owner', work_id=None, notice=False, corrected=False,
+    def save_memory(self, memory_key, content, owner_id='local-owner', work_id=None, corrected=False,
                     invalidates=(), valid_until=None, origin=None, source_works=None, basis=None, evidence=None,
                     evidence_message=None, retrieval_terms=None, retrieval_terms_meta=None):
-        """Write one current Memory row; with ``notice``, hold its owner notice durably in the same transaction (#918).
-
-        A direct save by the owner's own AI must never end without the owner
-        being told.  When the Work is a Telegram Work, a ``memory_saved``
-        notification row is inserted ``held`` here (``INSERT OR IGNORE``: one
-        per Work); the service releases it after the reply, and a sweep
-        releases what a crash or an unknown delivery left behind.
-        """
+        """Write one current Memory row (#918 slice a); the reply that saved it says so, not a notice (#955, #962)."""
         memory_key,content=self._memory_value(memory_key,content);owner_key=self._memory_binding(owner_id)
         work_key=self._work_binding(work_id) if work_id is not None else None
         with self.db() as db:
@@ -1392,16 +1383,6 @@ class QuickStore:
                                   invalidates=invalidates,valid_until=valid_until,origin=origin,source_works=source_works,
                                   basis=basis,evidence=evidence,evidence_message=evidence_message,
                                   retrieval_terms=retrieval_terms,retrieval_terms_meta=retrieval_terms_meta)
-            if notice and isinstance(work_id,str):
-                job=db.execute('SELECT channel,chat_id FROM jobs WHERE id=?',(work_id,)).fetchone()
-                from .conversation_surface import surface_conversation
-                # #306 review: the saved-memory notice of a Work from any conversation surface, on its queue.
-                conversation=surface_conversation(job['channel'],job['chat_id']) if job else None
-                if conversation:
-                    db.execute('INSERT OR IGNORE INTO telegram_notifications(id,job_id,chat_id,generation,kind,fingerprint,state,message_id,created,surface) VALUES (?,?,?,?,?,?,?,?,?,?)',
-                               (str(uuid.uuid4()),work_id,job['chat_id'],conversation[1],self.MEMORY_SAVED_NOTICE_KIND,
-                                json.dumps({'items':[[row['id'],row['content_digest']]],'more':0}),self.NOTICE_HELD,None,time.time(),
-                                conversation[0]))
             return row
 
     def held_notifications(self, kind):

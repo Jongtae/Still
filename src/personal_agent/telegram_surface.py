@@ -56,8 +56,8 @@ from . import work_mode
 from .quickstart_service import (APPROVE_BUTTON, BROWSER_LOGIN_PHONE_ALERT, BROWSER_LOGIN_PHONE_LABEL, BROWSER_LOGIN_REOPENED_TEXT,
                                  BROWSER_LOGIN_REOPENING_TEXT, BROWSER_LOGIN_SKIP_LABEL,
                                  DENY_BUTTON, LOG, MAX_OWNER_MESSAGE_CHARS,
-                                 MEMORY_CANDIDATES_EXPIRED_TEXT, MEMORY_CANDIDATES_OUTDATED_TEXT, MEMORY_PROMPT_KINDS, MEMORY_SAVED_KINDS,
-                                 MEMORY_SAVED_OUTDATED_TEXT, MEMORY_SAVED_TTL_SECONDS, REACTION_EVENT, TELEGRAM_PHOTO_ALBUM_SETTLE_SECONDS,
+                                 MEMORY_CANDIDATES_EXPIRED_TEXT, MEMORY_CANDIDATES_OUTDATED_TEXT, MEMORY_PROMPT_KINDS,
+                                 REACTION_EVENT, TELEGRAM_PHOTO_ALBUM_SETTLE_SECONDS,
                                  TELEGRAM_RECEIVE_GRACE_SECONDS, PREPARED_IDS_PREFIX, prepared_ids, truncated_owner_message)
 
 #: Buttons that only show a Work's details; a tap on them is not an owner act (#762).
@@ -330,8 +330,6 @@ class TelegramSurface(ConversationSurface):
                                         {'text':msg('button.preparation_decline'),'callback_data':f"p7p:{nid}:deny"}]]}
         if kind in MEMORY_PROMPT_KINDS:
             return service.memory_prompt_markup(nid,bound['memory_prompt'])
-        if kind in MEMORY_SAVED_KINDS:
-            return service.memory_saved_markup(nid,bound['memory_saved'])
         if kind=='settings_change_proposed':
             return {'inline_keyboard':[[{'text':msg('button.apply'),'callback_data':f"p7s:{nid}:confirm"},
                                         {'text':msg('button.keep'),'callback_data':f"p7s:{nid}:cancel"}]]}
@@ -374,7 +372,7 @@ class TelegramSurface(ConversationSurface):
             if bound is None:
                 service.store.update_notification(notification['id'],'cancelled')
                 return True
-            memory_prompt,memory_saved=bound.get('memory_prompt'),bound.get('memory_saved')
+            memory_prompt=bound.get('memory_prompt')
             phone_preparing=notification['kind']=='browser_login_needed' and service.AUTO_PHONE_LOGIN
             reply_markup=self._notice_markup(notification,bound,phone_preparing=phone_preparing)
             sent_part=False
@@ -441,8 +439,7 @@ class TelegramSurface(ConversationSurface):
                 listed=notification['kind'] in MEMORY_PROMPT_KINDS and not service.memory_open(memory_prompt)
                 service.store.update_notification(notification['id'],'memory_listed' if listed else 'sent',
                                                message_id if isinstance(message_id,int) else None,
-                                               json.dumps(memory_prompt) if notification['kind'] in MEMORY_PROMPT_KINDS else
-                                               json.dumps(memory_saved) if notification['kind'] in MEMORY_SAVED_KINDS else None,
+                                               json.dumps(memory_prompt) if notification['kind'] in MEMORY_PROMPT_KINDS else None,
                                                delivered=True)
                 if notification['kind']=='browser_login_needed' and service.AUTO_PHONE_LOGIN:
                     # #953 (owner 2026-10-01): the person on Telegram is on their phone; the one-time
@@ -938,37 +935,6 @@ class TelegramSurface(ConversationSurface):
                         else:
                             if answered['outdated']:alert=(MEMORY_CANDIDATES_OUTDATED_TEXT,True)
                             changed=True
-            elif authorized and isinstance(data,str) and data.startswith('p7u:'):
-                # #918: the owner's undo of one saved fact (or all still open) of a
-                # saved notice.  Exact: this notification, sent, this chat and
-                # message, within its 7-day window, and a fact not yet decided
-                # here; each is then re-validated against the bound Memory row
-                # and content digest (``retract_memory`` fails closed).
-                parts=data.split(':')
-                if len(parts)==3:
-                    notification=service.store.notification(parts[1])
-                    binding=service.memory_saved_binding(notification) if notification and notification['kind'] in MEMORY_SAVED_KINDS else None
-                    open_=service.memory_saved_open(binding) if binding and 'sent' in binding else []
-                    targets=(open_ if parts[2]=='a' else
-                             [int(parts[2])] if parts[2].isdigit() and int(parts[2]) in open_ else [])
-                    exact=(targets and notification['state']=='sent'
-                           and notification['generation']==generation and notification['chat_id']==sender
-                           and notification['message_id']==message.get('message_id'))
-                    if exact and time.time()-float(binding['sent'])>MEMORY_SAVED_TTL_SECONDS:
-                        service.expire_memory_saved(notification,binding)
-                    elif exact:
-                        decided=service.undo_memory_saved(notification['job_id'],binding,targets)
-                        finished=not service.memory_saved_open(binding)
-                        service.store.update_notification(notification['id'],'memory_undone' if finished else 'sent',
-                                                       fingerprint=json.dumps(binding))
-                        outdated=any(binding['done'][item]=='outdated' for item in decided)
-                        LOG.info('memory undo by owner button work=%s decided=%s outdated=%s',notification['job_id'],len(decided),outdated)
-                        footer=MEMORY_SAVED_OUTDATED_TEXT if outdated else None
-                        try:service.telegram.edit_message_text(sender,notification['message_id'],
-                                                            service.memory_saved_text(binding,footer),
-                                                            service.legacy_memory_saved_markup(notification['id'],binding))
-                        except ProviderError:pass
-                        changed=True
             elif authorized and isinstance(data,str) and data.startswith('p7q:'):
                 # #719: stop one watch from its own notification.  Exact: this
                 # notification, sent, this chat and message; the same cancel
@@ -1382,22 +1348,21 @@ class TelegramSurface(ConversationSurface):
                if isinstance(item,dict) and isinstance(item.get('emoji'),str)][:3]
         if not emoji:return None
         with service.store.db() as db:
-            notice=service.store.telegram.notice_on_message(db,user,message_id,MEMORY_SAVED_KINDS)
             turn=db.execute('SELECT job_id FROM telegram_turns WHERE chat_id=? AND reply_message_id=? ORDER BY created DESC LIMIT 1',
                             (user,message_id)).fetchone()
-        target=dict(notice)['job_id'] if notice else (turn['job_id'] if turn else None)
+        target=turn['job_id'] if turn else None
         if target:
             with service.store.db() as db:
                 db.execute('INSERT INTO tool_events(job_id,tool,status,detail,created) VALUES (?,?,?,?,?)',
                            (target,REACTION_EVENT,'observed',
-                            json.dumps({'emoji':emoji,'on':'memory_notice' if notice else 'answer'},ensure_ascii=False),time.time()))
-            LOG.info('owner reaction work=%s on=%s',target,'memory_notice' if notice else 'answer')
+                            json.dumps({'emoji':emoji,'on':'answer'},ensure_ascii=False),time.time()))
+            LOG.info('owner reaction work=%s on=answer',target)
         # #172: a reaction on a message that showed an open item is the owner's act on that item,
         # judged off the poll thread; nothing is settled unless the judgment names it.
         if service.owner_acts.bound_to(self,user,generation,message_id):
             service.steer_spawn(lambda:service.owner_acts.answer_reaction(self,user,generation,message_id,emoji))
             return 'owner_act'
-        if not target or notice:return None
+        if not target:return None
         # #998: the answer the owner reacted to gets one self-review in the idle tick, under the
         # shared cap and pause; the Judgment AI decides whether there is anything to learn.
         try:om.enqueue_self_review(service.store,target,om.REVIEW_REACTION,'owner reaction on the answer: '+' '.join(emoji))
@@ -1554,11 +1519,6 @@ class TelegramSurface(ConversationSurface):
             except Exception as exc:
                 LOG.warning('memory candidate read failed work=%s kind=%s',job['id'],type(exc).__name__)
                 memory_pending=False
-            # #918: whether this Work saved facts at once; its one notice (with undo) follows the reply.
-            try:memory_saved=not blocked and bool(service.work_saved_memories(job['id'])[0])
-            except Exception as exc:
-                LOG.warning('saved memory read failed work=%s kind=%s',job['id'],type(exc).__name__)
-                memory_saved=False
             # #581: one durable reply, valid Telegram HTML (no leaked `**`),
             # anchored to the owner turn only when that clarifies it, with
             # bounded recovery controls only when the turn did not succeed.
@@ -1640,13 +1600,6 @@ class TelegramSurface(ConversationSurface):
                 if memory_pending and status=='sent':service.queue_memory_candidates(job)
             except Exception as exc:
                 LOG.warning('memory candidate offer failed work=%s kind=%s',job['id'],type(exc).__name__)
-            # #918: after the reply - delivered ``sent`` or ``unknown`` (review: a save is never untold; the
-            # notice cannot duplicate the reply and each undo is exact to its own message) - release the Work's
-            # one notice of what it remembered, with undo.  A crash before this line is covered by the sweep.
-            try:
-                if memory_saved:service.release_memory_saved(job)
-            except Exception as exc:
-                LOG.warning('memory saved notice failed work=%s kind=%s',job['id'],type(exc).__name__)
             # Lesson notices held behind this reply can now be queued.
             try:service.release_working_notes(job['id'])
             except Exception as exc:

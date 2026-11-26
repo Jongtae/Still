@@ -252,10 +252,14 @@ def surface_conversation(channel, chat_id):
 # what it is bound to and what it says are decided here once; each surface only adds
 # what it can (Telegram's buttons) and sends.
 
+#: #962: notice kinds no version sends any more (the #918 saved-memory notices, retired after #955).
+RETIRED_NOTICE_KINDS = ('memory_saved', 'memory_saved_upkeep')
+
+
 def notice_binding(service, notification):
     """What a queued notice is bound to now (``{}`` when nothing), or None when it is no longer to be shown."""
     from . import preparations as prep
-    from .quickstart_service import MEMORY_PROMPT_KINDS, MEMORY_SAVED_KINDS, WORKING_LESSON_NOTICE_KINDS, prepared_ids
+    from .quickstart_service import MEMORY_PROMPT_KINDS, WORKING_LESSON_NOTICE_KINDS, prepared_ids
     kind = notification['kind']
     if kind == DELIVERY_UNKNOWN_KIND:
         # #842: told while its Work is still there to tell about.
@@ -301,14 +305,9 @@ def notice_binding(service, notification):
         # #818: bound now to the queued candidates still pending; none left -> not offered.
         memory_prompt = service.bind_memory_prompt(notification, time.time())
         return {'memory_prompt': memory_prompt} if memory_prompt else None
-    if kind in MEMORY_SAVED_KINDS:
-        from . import memory_prompts
-        if not memory_prompts.MEMORY_SAVED_NOTICES:
-            # #955: one queued before the switch (or by an older version) is not sent; a sent one keeps its undo.
-            return None
-        # #918: bound now to the Work's current saved facts; none left -> nothing to tell.
-        memory_saved = service.bind_memory_saved(notification, time.time())
-        return {'memory_saved': memory_saved} if memory_saved else None
+    if kind in RETIRED_NOTICE_KINDS:
+        # #955/#962: a saved-memory notice an earlier version queued is not sent; the reply told the save.
+        return None
     if kind in WORKING_LESSON_NOTICE_KINDS:
         # Bind to the lesson rows before rendering.
         notes_text = service.working_notes_notice_text(notification)
@@ -335,7 +334,7 @@ def notice_binding(service, notification):
 def notice_text(service, notification, bound):
     """The text a notice shows, from what ``notice_binding`` bound."""
     from . import preparations as prep
-    from .quickstart_service import MEMORY_PROMPT_KINDS, MEMORY_SAVED_KINDS, WORKING_LESSON_NOTICE_KINDS
+    from .quickstart_service import MEMORY_PROMPT_KINDS, WORKING_LESSON_NOTICE_KINDS
     kind = notification['kind']
     if kind == 'preparation_proposed':
         return prep.proposal_text(bound['proposals'], bound['remaining'], service.home_zone())
@@ -343,8 +342,6 @@ def notice_text(service, notification, bound):
         return bound['scheduled_text']
     if kind in MEMORY_PROMPT_KINDS:
         return service.memory_prompt_text(notification['job_id'], bound['memory_prompt'])
-    if kind in MEMORY_SAVED_KINDS:
-        return service.memory_saved_text(bound['memory_saved'])
     if kind in WORKING_LESSON_NOTICE_KINDS:
         return bound['notes_text']
     if kind == 'settings_change_proposed':

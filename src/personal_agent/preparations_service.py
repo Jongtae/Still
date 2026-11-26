@@ -1753,6 +1753,7 @@ class PreparationsService:
         """
         from .current_context import owner_today
         service=self.service
+        day=service.preparations.budget_day(now) if lines_only else None
         with service.store.db() as db:
             reads=db.execute('SELECT e.job_id,e.detail FROM tool_events e JOIN jobs j ON j.id=e.job_id '
                              'WHERE e.tool=? AND j.owner_typed=1',(el.READ_EVENT,)).fetchall()
@@ -1775,8 +1776,10 @@ class PreparationsService:
                           'stood_by':provenance.get('by','owner'),'stood_on':owner_today(service.store,service.lines.first_saved(brief['line_id'])),
                           'use':use,'stopped_on':owner_today(service.store,brief['saved']) if brief['state']==el.STATE_STOPPED else None})
             if lines_only:
-                lines[-1].update(open_matters=brief['open_matters'],
+                lines[-1].update(el.open_matters_for_day(brief,day),
                                  can_offer_resume=bool(service.preparations.line_resume_target(brief['line_id'])))
+                day_rules=service.lines.day_rules(brief['line_id'],day)
+                if day_rules:lines[-1]['today_rules']=[rule['text'] for rule in day_rules]
         if lines_only:
             block={'lines':lines}
             while len(json.dumps(block,ensure_ascii=False))>om.LINE_INPUT_CHARS//2 and lines:lines.pop()
@@ -1888,6 +1891,8 @@ class PreparationsService:
             changes={key:service._redact_known_secrets(item[key]) for key in ('task','report_promise','open_matters') if item[key]}
             if service.lines.owner_written(line_id) and any(brief[key]!=value for key,value in changes.items()):
                 raise el.LineRefusal('line_change_needs_owner')
+            if 'open_matters' in changes and changes['open_matters']!=brief['open_matters']:
+                changes['open_matters_run_day']=None
             rules=[rule for pos,rule in enumerate(brief['rules'],1) if pos not in drops]
             rules.extend({'text':service._redact_known_secrets(text),'from':evidence['works'][0],'at':now,'basis':'inferred'}
                          for text in item['rules'])
@@ -2473,10 +2478,14 @@ class PreparationsService:
         """``entrusted_line`` read: one line's brief and latest outcomes, for a related answer."""
         brief=self.service.lines.current(line_id) if isinstance(line_id,str) and line_id else None
         if brief is None:raise el.LineRefusal('line_not_found')
-        result={**el.public_brief(brief),'ref':el.REF_PREFIX+brief['line_id'],
-                'outcomes':self.line_outcomes(line_id,limit=el.READ_OUTCOMES),
-                'text':el.brief_text(brief)+'\n'+el.outcomes_text(self.line_outcomes(line_id,limit=el.READ_OUTCOMES),
-                                                               self.service.home_zone())}
+        service=self.service
+        day=service.preparations.budget_day(service.preparations.clock())
+        day_rules=[rule['text'] for rule in service.lines.day_rules(line_id,day)]
+        outcomes=self.line_outcomes(line_id,limit=el.READ_OUTCOMES)
+        result={**el.public_brief(brief,day=day),'ref':el.REF_PREFIX+brief['line_id'],
+                'outcomes':outcomes,
+                'text':el.brief_text(brief,day=day,day_rules=day_rules)+'\n'+el.outcomes_text(outcomes,service.home_zone())}
+        if day_rules:result['today_rules']=day_rules
         return result
 
     def line_touches_money(self, line_id):
@@ -2930,6 +2939,14 @@ class PreparationsService:
         row=self.service.preparations.get(preparation_id) if preparation_id else None
         return row if row and prep.Preparations.owns_running(row,job) else None
 
+    def line_run_day(self, job, now, db):
+        """Use the slot's actual start, including for a run continued after midnight."""
+        started=db.execute(
+            "SELECT e.created FROM jobs j JOIN tool_events e ON e.job_id=j.id "
+            "WHERE j.request_key=? AND e.tool='preparation' AND json_type(e.detail,'$.slot') IS NOT NULL "
+            "ORDER BY e.id LIMIT 1", (prep.slot_key(job.get('request_key')),)).fetchone()
+        return self.service.preparations.budget_day(started['created'] if started else now,db)
+
     def line_run_row(self, job):
         """#968 (#938 D1): the row of an owner-set-up line whose current run is ``job``, or None.
 
@@ -2998,6 +3015,7 @@ class PreparationsService:
             if args.get('line'):args={**args,'line':el.line_id_of(args['line'])}
             action=args.get('action')
             try:
+                if 'rule_scope' in args and action!='revise':raise el.LineRefusal('line_invalid_rule_scope')
                 if action=='list':return self.lines_listing()
                 if action=='read':
                     result=self.line_read(args.get('line'))
@@ -3051,13 +3069,24 @@ class PreparationsService:
         if 'title' in args:
             changes['title']=service._redact_known_secrets(el.normalize_title(args['title']))
         days=el.whole_days(args.get('account_every_days'))
+        # #1249: ``rules`` on revise replaces the whole standing rule set in one change, judged once.
+        replace=None
+        if args.get('rules') is not None:
+            if rule or args.get('drop_rule') not in (None,''):raise el.LineRefusal('line_invalid_rules')
+            replace=[' '.join(service._redact_known_secrets(text).split()) for text in el.split_rules(args['rules'])]
+        scope=args.get('rule_scope','standing')
+        if scope not in ('today','standing') or (scope=='today' and (
+                not rule or args.get('drop_rule') not in (None,'') or changes or replace is not None
+                or args.get('account_every_days') not in (None,''))):
+            raise el.LineRefusal('line_invalid_rule_scope')
         current=service.lines.current(line_id) if isinstance(line_id,str) and line_id else None
         if current is None:raise el.LineRefusal('line_not_found')
         if current['state']!=el.STATE_ACTIVE:raise el.LineRefusal('line_stopped')
         if args.get('drop_rule') not in (None,'') and not (drop and 1<=drop<=len(current['rules'])):
             raise el.LineRefusal('line_invalid_rules')
-        if not (rule or drop or changes or days is not None):raise el.LineRefusal('line_nothing_to_change')
-        ruled=bool(rule or drop or set(changes)-{'open_matters'} or days is not None)
+        if replace is not None and replace==[item['text'] for item in current['rules']]:replace=None
+        if not (rule or drop or changes or days is not None or replace is not None):raise el.LineRefusal('line_nothing_to_change')
+        ruled=bool(rule or drop or replace is not None or set(changes)-{'open_matters'} or days is not None)
         if authority=='steer' and not ruled and self.line_run_row(job):
             authority='self'  # #984: open matters need no steer authority for a qualifying line run.
         if authority=='self' and ruled:
@@ -3065,18 +3094,35 @@ class PreparationsService:
         money=ruled and self.line_touches_money(line_id)
         marked=authority=='steer' and bool(service.store.outside_content_sources(job['id']))
         if money or marked:
-            change=el.change_text(current,rule=rule,drop=drop,changes=changes,days=days)
+            change=el.change_text(current,rule=rule,drop=drop,changes=changes,days=days,today=scope=='today',
+                                  replace=replace)
             judged=service.decision_judge.explicit_line_change_request(
                 service.owner_request_words(job),change,self.line_owner_rules(current),service.preparation_conversation(job),work_id=job['id'])
             if judged.outcome!=JUDGMENT_YES:raise el.LineRefusal('line_change_needs_owner')
         now=service.preparations.clock()
-        # A standing rule keeps the owner turn it came from: the typed Work, or the steer that asked.
+        day=service.preparations.budget_day(now)
+        # Keep the owner turn the rule came from, whether typed or steered.
         source=service.owner_steer_words(job)[-1][0] if authority=='steer' else job['id']
+        rule_entry={'text':rule,'from':source,'at':now}
+        if scope=='today':
+            brief,today_rules=service.lines.add_day_rule(line_id,job['id'],expected,day,rule_entry)
+            return {**el.public_brief(brief,day=day),'today_rules':today_rules,'restated':False,'money_rules':money,
+                    'next_step':msg('lines.today_rule_saved',date=day)}
         def update(brief):
-            rules=[item for number,item in enumerate(brief['rules'],1) if number!=drop]
-            if rule:rules.append({'text':rule,'from':source,'at':now})
-            return {**brief,**changes,'rules':rules,
-                    **({'account_every_days':days} if days is not None else {})}
+            if replace is not None:
+                kept={item['text']:item for item in brief['rules']}
+                # An unchanged rule keeps the owner turn it came from; a new one records this turn.
+                rules=[kept.get(text) or {'text':text,'from':source,'at':now} for text in replace]
+            else:
+                rules=[item for number,item in enumerate(brief['rules'],1) if number!=drop]
+            if rule:rules.append(rule_entry)
+            updated={**brief,**changes,'rules':rules,
+                     **({'account_every_days':days} if days is not None else {})}
+            # A run that repeats the existing text keeps its original provenance.
+            if 'open_matters' in changes and (authority=='owner' or
+                    ' '.join(changes['open_matters'].split())!=brief['open_matters']):
+                updated['open_matters_run_day']=run_day
+            return updated
         # The plan version and before/after receipt commit together, even for withheld reports.
         own_row=self.own_running_row(job) if authority!='owner' and not ruled else None
         if authority!='owner' and not ruled and own_row is None:
@@ -3084,6 +3130,7 @@ class PreparationsService:
         with service.store.db() as db:
             db.execute('BEGIN IMMEDIATE')
             service.store.require_read_checkpoint_writer(db)
+            run_day=self.line_run_day(job,now,db) if 'open_matters' in changes and authority!='owner' else None
             before,after=service.lines.write(line_id,job['id'],expected,'rule' if rule else 'revised',update,db=db)
             if authority!='self' and after['version']!=before['version']:
                 checks.clear_line_plans(service.store,db,line_id)
@@ -3104,7 +3151,7 @@ class PreparationsService:
         restated=changed and [item['text'] for item in before['rules']]!=[item['text'] for item in after['rules']]
         untold=self.line_rule_notice(job,line_id,after['version']) if restated else ''
         LOG.info('line revised id=%s version=%s work=%s rule=%s by=%s',line_id,after['version'],job['id'],restated,authority)
-        result={**el.public_brief(after),'restated':restated,'money_rules':money,
+        result={**el.public_brief(after,day=day),'restated':restated,'money_rules':money,
                 'next_step':self.told(msg('lines.revised_next' if restated else 'lines.revised_quiet_next'),untold)}
         if authority=='self' and changed:
             # #1228: the worker receives the receipt and undo version even when the report is withheld.
@@ -3116,7 +3163,8 @@ class PreparationsService:
         version=el.whole_days(args.get('version'))
         if version is None:raise el.LineRefusal('line_version_required')
         after=self.undo_line_version(args.get('line'),version,job['id'])
-        return {**el.public_brief(after),'next_step':msg('lines.undone_next')}
+        day=self.service.preparations.budget_day(self.service.preparations.clock())
+        return {**el.public_brief(after,day=day),'next_step':msg('lines.undone_next')}
 
     def _line_stop(self, job, args, *, steered=False):
         service=self.service
@@ -3141,7 +3189,8 @@ class PreparationsService:
         next_step=self.told(msg(next_key),untold)
         if effects['unconfirmed']:
             next_step+=' '+msg('lines.stopped_unconfirmed',count=effects['unconfirmed'])
-        return {**el.public_brief(after),'scope':scope,'changed':changed,'effects':effects,'next_step':next_step}
+        day=service.preparations.budget_day(service.preparations.clock())
+        return {**el.public_brief(after,day=day),'scope':scope,'changed':changed,'effects':effects,'next_step':next_step}
 
     def _line_restart(self, job, args):
         service=self.service
@@ -3166,7 +3215,8 @@ class PreparationsService:
                     self.ensure_line_account(job,after,accepted_by=prep.ACCEPTED_DREAM)
             else:self.ensure_line_account(job,after)
         except prep.PreparationRefusal as exc:LOG.warning('line account not scheduled id=%s code=%s',line_id,exc.code)
-        return {**el.public_brief(after),'next_step':msg('lines.restarted_next',line=line_id)}
+        day=service.preparations.budget_day(service.preparations.clock())
+        return {**el.public_brief(after,day=day),'next_step':msg('lines.restarted_next',line=line_id)}
 
     def line_run_input(self, job, row):
         """What a run of a line reads with its request: the current brief and the line's earlier outcomes.
@@ -3198,7 +3248,14 @@ class PreparationsService:
             # #1252: a run that continues the line reconciles an open change before acting again.
             effects=self.line_effects_text(self.line_effects(row['line_id']))
             if effects:lead+='\n'+effects
-        return lead+'\n'+el.brief_text(brief)+'\n'+el.outcomes_text(outcomes,row.get('timezone'))
+        return lead+'\n'+self.current_line_text(brief)+'\n'+el.outcomes_text(outcomes,row.get('timezone'))
+
+    def current_line_text(self, brief):
+        service=self.service
+        day=service.preparations.budget_day(service.preparations.clock())
+        day_rules=[rule['text'] for rule in service.lines.day_rules(brief['line_id'],day)]
+        return el.brief_text(brief,day=day,day_rules=day_rules,
+                             past_day_rules=service.lines.past_day_rules(brief['line_id'],day))
 
     def record_line_judgment_reads(self, work_id, text):
         """Record only briefs retained in the bounded block, after its call went out."""
@@ -3267,7 +3324,7 @@ class PreparationsService:
             brief=service.lines.current(read[0])
             if brief is None or brief['state']!=el.STATE_ACTIVE or brief['version']==read[1]:return None
             self._record_line_read(job['id'],brief)
-            return msg('lines.changed_during_run')+'\n'+el.brief_text(brief)
+            return msg('lines.changed_during_run')+'\n'+self.current_line_text(brief)
         except Exception:
             LOG.info('line note unavailable job=%s',job.get('id'))
             return None

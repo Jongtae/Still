@@ -503,8 +503,8 @@ SCHEDULE_PREPARATION_ARGUMENTS={
 #: #798: one continuing responsibility the owner entrusted, with an identity of its own.
 ENTRUSTED_LINE_DESCRIPTION=(
  'Keep work in one line across schedules. Open it with the task in the owner’s words, report promise and standing '
- 'rules, then schedule with schedule_preparation line. Reuse the line for the same work. Use rule or drop_rule only '
- 'for standing corrections. Apply a correction for today only if its duration is unclear, and say so. Record completion '
+ 'rules, then schedule with schedule_preparation line. Reuse the line for the same work. Revise with rule_scope=today '
+ 'for corrections tied to today (today’s date or this session) or of unclear duration, unless the owner says to keep them. Record completion '
  'and its reason in open_matters. Use stop with scope work when asked to stop current work or the scope is unclear. '
  'Use scope line when asked to end the line. Still announces openings, standing rule changes and stops.')
 ENTRUSTED_LINE_ARGUMENTS={
@@ -518,6 +518,10 @@ ENTRUSTED_LINE_ARGUMENTS={
           'never invent a label. If the owner asks to remove the title, revise it to an empty string to use the task fallback.'),
  'scope':('For stop only. "work" (default) cancels current and pending runs and keeps the mission active. '
           '"line" ends the mission and cancels its work.'),
+ 'rule_scope':('For revise. Use today with rule alone to apply it until owner-local midnight, and tell the owner '
+               'it applies today. Use standing (default) for lasting rules. drop_rule removes a standing rule.'),
+ 'rules':('For open: the standing rules, one per line. For revise: the complete new standing rule set, one per line, '
+          'when the owner asks to replace or rewrite several rules at once; it is judged and saved as one change.'),
  'expected_version':'For revise: the version you read (list, read or open). A newer version wins and is shown to you.',
  'version':'For undo: the version to undo (the current one).',
  'account_every_days':'How often the line gives an account of itself (default 7): 1-12 days, or whole weeks up to 84 days.',
@@ -525,7 +529,7 @@ ENTRUSTED_LINE_ARGUMENTS={
  'open_matters':('For open or revise: what later runs must still do, wait for or avoid, and a recorded end with its reason; '
                  'at most 1000 characters, in plain words. It is the line\'s plan, not a log: what a run observed or did '
                  '(figures, prices, times checked) goes in that run\'s own answer, whose start later runs receive. Change it only '
-                 'when what later runs should do changes; a run\'s change is shown to the owner with its before and after.'),
+                 'when what later runs should do changes. Run-written matters become dated notes after the owner’s day ends.'),
 }
 #: #774 step 2: ask the owner, in the paired Telegram chat, for a current position.
 ASK_LOCATION_DESCRIPTION=('Ask the owner through their paired Telegram chat to share their current location for this request. Use it only when the answer depends on where the owner is now and the current context does not already hold a fresh position. '
@@ -691,7 +695,7 @@ DEFINITIONS=[
                            'host, path (exact or ending in /*) and action_id. If the API documents an '
                            'idempotency_header, name it and send action_id as its value. Keep action_id for the same action.'}),
         ['preparation_id','check_digest','patch']),
- schema('entrusted_line',ENTRUSTED_LINE_DESCRIPTION,described({'action':{'type':'string','enum':['list','read','open','revise','undo','stop','restart']},'line':STRING,'scope':{'type':'string','enum':['work','line']},'title':STRING,'task':STRING,'report_promise':STRING,'rules':STRING,'rule':STRING,'drop_rule':STRING,'open_matters':STRING,'expected_version':STRING,'version':STRING,'account_every_days':STRING},ENTRUSTED_LINE_ARGUMENTS),['action']),
+ schema('entrusted_line',ENTRUSTED_LINE_DESCRIPTION,described({'action':{'type':'string','enum':['list','read','open','revise','undo','stop','restart']},'line':STRING,'scope':{'type':'string','enum':['work','line']},'title':STRING,'task':STRING,'report_promise':STRING,'rules':STRING,'rule':STRING,'rule_scope':{'type':'string','enum':['today','standing']},'drop_rule':STRING,'open_matters':STRING,'expected_version':STRING,'version':STRING,'account_every_days':STRING},ENTRUSTED_LINE_ARGUMENTS),['action']),
  schema('tell_owner',TELL_OWNER_DESCRIPTION,{'text':STRING},['text']),
  schema('ask_location',ASK_LOCATION_DESCRIPTION,described({'reason':STRING,'button_label':STRING,'mode':{'type':'string','enum':['ask','with_answer']}},ASK_LOCATION_ARGUMENTS),['reason']),
  schema('skill_load',SKILL_LOAD_DESCRIPTION,{'skill':STRING,'part':{'type':'string','enum':['full','header']}},['skill']),
@@ -5433,10 +5437,10 @@ class Capabilities:
     result={**candidate,'requires_owner_approval':True,'refused_because':THIRD_PARTY_MEMORY_WRITE}
    else:
     # #918 slice (a), owner decision 2026-09-30: the owner's own worker saves at once as
-    # current Memory, attributed to this Work; the owner is told afterwards with an undo
-    # (``AgentService`` memory_saved notice) instead of being asked.  A same-key save
-    # supersedes the previous value, which the undo restores.
-    # Review: the owner notice is held in the same transaction as the row, so a save is never untold.
+    # current Memory, attributed to this Work, instead of being asked.  #955: the reply says in
+    # passing what it will keep in mind (MEMORY_SAVED_WORKER_NOTE); the owner undoes it exactly by
+    # asking (forget_record revert) or from 내 기록 (#962).  A same-key save supersedes the previous
+    # value, which the undo restores.
     from .owner_forget import OwnerForget
     forget=OwnerForget(self.store)
     if forget.is_forgotten(MEMORY_OWNER,args['memory_key'],args['content']):
@@ -5459,12 +5463,9 @@ class Capabilities:
       terms_values={'retrieval_terms':terms,'retrieval_terms_meta':build_meta('keyed',previous=None,
        route=worker.get('route') or '',model=worker.get('model') or '',
        observed_model=worker.get('observed_model') or '',policy='worker',run=self.job_id,at=time.time())}
-    from . import memory_prompts
     saved=self.store.save_memory(args['memory_key'],args['content'],MEMORY_OWNER,work_id=self.job_id,
-                                 notice=memory_prompts.MEMORY_SAVED_NOTICES,  # #955: off by owner decision
                                  corrected=args.get('correction') is True,**terms_values)
     result={**saved,'saved':True,'auto_saved':True,'correction':args.get('correction') is True}
-    # #955 (owner 2026-11-17): no separate notice tells the save; the reply does (MEMORY_SAVED_WORKER_NOTE).
    # #605 N4: a written value is kept out of this Work's public lookups - except (#804) a
    # ``profile.`` fact the owner's worker saved: the owner gave it to be used (their
    # workplace, their home), so it may shape a lookup like the request itself.

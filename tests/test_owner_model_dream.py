@@ -816,21 +816,19 @@ class Told(Dream):
         finally:
             self.service.current_work_id = None
 
-    def test_a_dream_pushes_no_notice_and_its_rows_stay_out_of_the_requests_own_notice(self):
-        from personal_agent.quickstart_service import MEMORY_SAVED_KIND
+    def test_a_dream_pushes_no_notice_and_its_rows_stay_out_of_the_requests_own_records(self):
         self.store.put('telegram', {'enabled': True, 'user_id': CHAT, 'generation': GENERATION})
         self.day('a', 'b')
         newest = self.settled('11월에 제주 여행 가', telegram=True)
-        self.notice(newest, MEMORY_SAVED_KIND)
         self.dreams = [dream([fact('profile.plan.trip', '2026년 11월 제주 여행', 't3', evidence='11월에 제주 여행 가')],
                              diary='제주 여행 계획을 말했다.')]
         self.tick()
-        self.assertEqual(self.notices(newest), {MEMORY_SAVED_KIND: 'sent'}, 'nothing queued, no edit')
+        self.assertEqual(self.notices(newest), {}, 'nothing queued')
         rows = self.store.memories(MEMORY_OWNER)
         self.assertEqual(sorted(row['memory_key'].split('.')[0] for row in rows), ['diary', 'profile'])
         self.assertEqual({row['origin'] for row in rows}, {om.ORIGIN_DREAM}, 'the fact and the daily record')
         self.assertEqual(self.store.work_memories(MEMORY_OWNER, newest), [],
-                         'a later notice of the request never lists what the look back wrote')
+                         'the request\'s own saves never list what the look back wrote')
 
     def test_a_replacement_is_raised_once_on_the_line_of_the_next_request_it_matters_to(self):
         old = self.profile('profile.place.office', '판교 사무실')
