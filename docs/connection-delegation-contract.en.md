@@ -63,6 +63,8 @@ Generating a skill from scratch inside a Work is not part of this order. Curated
 
 The library is owner data: versioned, with per-function call counts. It is removed with its secret set and listed with that set in the context, so the AI calls the functions instead of re-reading the vendor's documentation. Still stores, verifies and lists the library; it never selects functions for a request or reads what they are for. A function is a method, never a permission: every state-changing request still needs the owner's exact approval. A failed function is fixed by the AI and saved again only through the same gate.
 
+A state-changing request in a `code_run` that Still refuses before sending it, without asking anyone, is recorded on the run as `refused_effects`: method, host, path, where it was refused (`layer: still`, before any transport, `sent: false`) and Still's reason. Examples are a scheduled run with no owner present and no standing autonomy, a replay or unknown-effect hold, or a changed connection. The run's code may still end normally, but the change it was for did not happen. The Work's effect floor therefore reads it as withheld, and a `reached` judgment leaves that Work `partial`, never `succeeded`. A later run of the same call that sent its changes clears it. A run that only reads is unaffected (#1250).
+
 `capability_search` is metadata discovery on the existing owner-state tool relay.
 `configured` reads local AI configuration names without starting a server;
 `registry` sends only a short public server-name token to the official Registry.

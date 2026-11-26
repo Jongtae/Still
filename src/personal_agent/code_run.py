@@ -523,6 +523,10 @@ class CodeRunner:
         #: Per run: host -> [(set name, slot), ...] of every named secret set on it (#619: all of them, so a
         #: money set is never hidden behind another set on the same host), approval requests, dispatch claims.
         self._owners, self._asked, self._claims = {}, [], []
+        #: #1250: state-changing requests to a set's host that Still refused unsent and asked no one about.
+        self._refused = []
+        self._refused_overflow = False
+        self._claim_digests = {}
         #: #1489: the sets this Work's runs were already told how to keep their steps for.
         self._hinted = set()
         #: #209: the declared intranet hosts the current run reaches (each request rechecks the list).
@@ -577,7 +581,8 @@ class CodeRunner:
         current = slots(self.store)
         masked, plain, set_hosts = [], {}, {}
         # #1456: each run starts with no set hosts, approval requests or dispatch claims of an earlier run.
-        self._owners, self._asked, self._claims = {}, [], []
+        self._owners, self._asked, self._claims, self._refused, self._claim_digests = {}, [], [], [], {}
+        self._refused_overflow = False
         for name in names:
             slot = current.get(name)
             if slot is None or slot.get('kind') != CODE_KIND:
@@ -680,8 +685,13 @@ class CodeRunner:
             try:
                 outcome = self._session(node, runtime, workdir, command, policy, roots, timeout, requests, 'run',
                                         masked=masked, plain=plain, **download_options)
-            except Exception:
+            except Exception as exc:
                 self.scratch_secrets = self._scratch_values(states)
+                # #1250 review: a run cut off after Still refused a change still reports that refusal.  Its
+                # state values may not be known, so the records are withheld unless they are.
+                if self._refused or self._refused_overflow:
+                    exc.refused_effects = self._redacted_refusals(unknown=self.scratch_secrets is None)
+                    self._refused, self._refused_overflow = [], False
                 raise
             saved, scratch_secrets = self._save_states(states)
             self.scratch_secrets = None if self._state_unknown else scratch_secrets
@@ -918,6 +928,10 @@ class CodeRunner:
                     and (not self.require_success_for_observed_effects or exit_status == 0))
         if self._claims:
             result['effects'] = [{'method': method, 'host': host, 'path': path} for _claim, method, host, path in self._claims]
+            # #1250 review: the keyed identity of each sent request, which a refused one is compared with.
+            digests = [self._claim_digests[claim] for claim, *_rest in self._claims if self._claim_digests.get(claim)]
+            if digests:
+                result['effect_digests'] = digests
             if not observed:
                 result['effect'] = 'unknown'
             else:
@@ -930,7 +944,78 @@ class CodeRunner:
             self.approvals.self_set_write_finished(ticket, observed=observed)
         if self._asked:
             result['approval_requested'] = list(self._asked)
-        self._asked, self._claims = [], []
+        if self._refused or self._refused_overflow:
+            result['refused_effects'] = self._redacted_refusals()
+        self._asked, self._claims, self._refused, self._claim_digests = [], [], [], {}
+        self._refused_overflow = False
+
+    def _note_refused(self, message, reason):
+        """#1250: keep a state-changing request to a secret set's host that Still refused before sending it.
+
+        Not one the owner was asked to approve (``approval_requested``) and not a parameter-flow check.
+        The run itself can still succeed (its code reads the refusal), so without this record a check
+        that meant to change state and could not read as done.  The record says where Still refused it
+        (``layer: still``, before any transport), and why in Still's own words; never a body or a value.
+        """
+        method = str(message.get('method') or '').upper()
+        host = _host(message.get('host'))
+        if method in READ_METHODS or (host not in self._owners and _hostname(host) not in self._owners):
+            return
+        if len(self._refused) >= MAX_CHECKED_REQUESTS:
+            # #1250 review: more than are kept; one unkeyed marker stands for them, so no later send clears them all.
+            self._refused_overflow = True
+            return
+        # Held in memory as sent; redacted only once the run's own state values are known (``_redacted_refusals``).
+        row = {'method': method[:10], 'host': host[:253], 'path': str(message.get('path') or '/'),
+               'layer': 'still', 'sent': False, 'reason': str(reason or '')}
+        digest = self._request_digest(message, method, host if host in self._owners else _hostname(host))
+        if digest:
+            row['input_digest'] = digest
+        self._refused.append(row)
+
+    def _request_digest(self, message, method, host):
+        """The keyed identity the dispatch ledger gives this exact request (``ApiRequests._effect_identities``), or None.
+
+        Over the Work, the set, the method, the URL with its query and the body; a keyed digest, so it
+        carries no value.  Computed as ``_state_change`` computes it, so a refused request and a later sent
+        one compare by what they would change, not by their endpoint (#1250 review).  None when it cannot
+        be computed: such a refusal is then never taken as made up by a later send.
+        """
+        from .api_requests import ApiRequests
+        owners = self._owners.get(host) or ()
+        if not owners:
+            return None
+        money = [owner for owner in owners if owner[1].get('money') is True]
+        _name, slot = (money or owners)[0]
+        path, query = str(message.get('path') or '/'), str(message.get('query') or '')
+        url = f'https://{host}{path}' + (f'?{query}' if query else '')
+        try:
+            identity, _keys = ApiRequests(self.store, self.work_id, approvals=self.approvals)._effect_identities(
+                slot, method, url, message.get('bodyText'))
+        except Exception:  # noqa: BLE001 - an unknown identity only keeps the refusal standing
+            return None
+        return identity if isinstance(identity, str) and identity else None
+
+    def _redacted_refusals(self, *, unknown=None):
+        """The refused requests with stored secrets and this run's own state values redacted (#1250 review).
+
+        A run can obtain a token, keep it in its state file and put it in a refused path; that value is
+        known only after the run (``scratch_secrets``).  When it is not known (``_state_unknown``), the
+        path and reason are withheld rather than shown unredacted.
+        """
+        from .current_context import redact_known_secrets
+        scratch = self.scratch_secrets
+        if unknown is None:
+            unknown = scratch is None and getattr(self, '_state_unknown', False)
+        extra = {'extra_values': scratch} if scratch else {}
+
+        def clean(text, limit):
+            return '[withheld]' if unknown else redact_known_secrets(self.store, text, **extra)[:limit]
+        rows = [{**row, 'path': clean(row['path'], 300), 'reason': clean(row['reason'], 300)} for row in self._refused]
+        if self._refused_overflow:
+            rows.append({'method': '', 'host': '', 'path': '', 'layer': 'still', 'sent': False, 'overflow': True,
+                         'reason': f'more than {MAX_CHECKED_REQUESTS} refused requests; the rest are not listed'})
+        return rows
 
     def _load_states(self, names, workdir, env):
         """#1380: each named set's run state as ``<SET>_STATE_FILE`` in the run directory.
@@ -1173,6 +1258,9 @@ class CodeRunner:
                 api._release_effect(claim)
                 return False,str(exc)
         self._claims.append((claim, method, host, redact_known_secrets(self.store, path)))
+        # #1250 review: the request's own keyed identity (the dispatch ledger's ``input_digest``), so a later
+        # refused/sent comparison covers its query and body, never only its endpoint.
+        self._claim_digests[claim] = identity
         return True, ''
 
     def _session(self, node, runtime, workdir, argv, policy, roots, timeout, requests, phase,
@@ -1238,8 +1326,10 @@ class CodeRunner:
                         entry['headers'] = '\n'.join(f'{pair[0]}: {pair[1]}' for pair in pairs[:64]
                                                      if isinstance(pair, list) and len(pair) == 2)[:APPROVAL_BODY_CHARS]
                         recorded.append(entry)
-                    claims = len(self._claims)
+                    claims, asked = len(self._claims), len(self._asked)
                     allow, reason = self._decide(message, policy, check=recorded is not None)
+                    if not allow and phase == 'run' and recorded is None and len(self._asked) == asked:
+                        self._note_refused(message, reason)
                     if callable(on_claim) and len(self._claims) > claims:
                         receipt, method, host, path = self._claims[-1]
                         # Rendered after the run, once its state values are known (#1195 review).
@@ -1309,10 +1399,16 @@ def evidence(result):
     and the ones waiting for the owner (``refused_because``), by method, host and path only.
     """
     kept = {key: result.get(key) for key in ('exit_status', 'timed_out', 'packages', 'hosts', 'secrets', 'sandbox', 'code_digest',
-                                             'failed_phase', 'effects', 'effect', 'download_artifact', 'check_proof') if key in result}
+                                             'failed_phase', 'effects', 'effect_digests', 'effect', 'download_artifact', 'check_proof')
+            if key in result}
     if result.get('approval_requested'):
         kept['refused_because'] = 'owner-approval-requested'
         kept['approval_requested'] = result['approval_requested']
+    if result.get('refused_effects'):
+        # #1250: refused unsent by Still, nobody asked; by method, host, path and Still's reason only.
+        kept['refused_effects'] = [{key: row.get(key) for key in ('method', 'host', 'path', 'layer', 'sent', 'reason', 'input_digest',
+                                                         'overflow') if key in row}
+                                   for row in result['refused_effects'][:MAX_CHECKED_REQUESTS] if isinstance(row, dict)]
     if isinstance(result.get('library'), dict):
         # #1486: what happened to each set's library, never its source.  #1489: and why a proposal was not
         # kept (Still's own text naming functions and arguments), so the Work's records can show it.
