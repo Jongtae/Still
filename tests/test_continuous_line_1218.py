@@ -996,3 +996,24 @@ def test_executor_renewal_respects_planner_authority(case, boundary, code):
     assert {row['id'] for row in c.preps.rows()} == before
     if executor:
         assert current(c, executor)['state'] == prep.STATE_SCHEDULED
+
+
+@pytest.mark.parametrize(('accepted_by', 'origin'), [
+    (prep.ACCEPTED_OWNER_WORK, prep.ORIGIN_LINE_ACCOUNT),
+    (prep.ACCEPTED_DREAM, None),
+    (prep.ACCEPTED_DAY_PLAN, prep.ORIGIN_DAY_PLAN),
+])
+def test_an_active_mandate_never_stands_behind_rows_still_set_up(case, accepted_by, origin):
+    # #1236 (C17): a row Still set up on its own on an entrusted line keeps never paying.
+    c = case
+    line_id = line(c)
+    setup_check(c, owner_accepted=False, line=line_id)
+    switch(c, True)
+    entrust(c, line_id, job=owner(c, 'Maintain the agreed target for the next fifteen minutes', 'entrust'))
+    row = c.preps.create(kind=prep.KIND_PREPARE, goal='Report on the line', due_at=c.clock[0], timezone='UTC',
+                         recurrence=None, channel='web', created_from=c.owner, state=prep.STATE_SCHEDULED,
+                         accepted_by=accepted_by, origin=origin, line_id=line_id)
+    assert c.preps.start(row, channel='web', chat_id=None, now=c.clock[0])
+    sent = []
+    assert run_work(c, wake_job(c, row), sent)['allow'] is False
+    assert sent == []

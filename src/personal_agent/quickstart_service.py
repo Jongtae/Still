@@ -1070,8 +1070,13 @@ class AgentService:
         if preparation_id is None:return False
         from . import continuous_lines as continuous
         with (self.store.db() if db is None else nullcontext(db)) as db:
-            row=db.execute('SELECT accepted_by,line_id,state FROM preparations WHERE id=?',(preparation_id,)).fetchone()
-            if row and continuous.active(db,row['line_id'],self.preparations.clock()):
+            row=db.execute('SELECT accepted_by,line_id,state,origin FROM preparations WHERE id=?',(preparation_id,)).fetchone()
+            # #1236 (C17): an active mandate stands behind the rows the owner's own Works set up on the line,
+            # never behind a row Still set up on its own there (look back, line account, day plan, or a
+            # self-set piece descended from one), which keeps never paying.
+            if (row and row['accepted_by'] in prep.LINE_RUN_ACCEPTED+(prep.ACCEPTED_LINE_PIECE_OWNER,)
+                    and row['origin'] not in prep.STILL_SET_ORIGINS
+                    and continuous.active(db,row['line_id'],self.preparations.clock())):
                 return False
             # A derived line standing lapses with its mandate. The saved row has its original provenance.
             return row is None or row['accepted_by'] in prep.SELF_SET
