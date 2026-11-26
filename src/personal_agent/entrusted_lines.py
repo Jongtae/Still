@@ -463,6 +463,17 @@ def is_notice(kind):
     return isinstance(kind, str) and kind.startswith(NOTICE_KINDS)
 
 
+def rule_notice_range(versions):
+    """#1227: decode the version suffix of a rule notice, including a legacy single version."""
+    first, sep, last = versions.partition(':')
+    if not sep:
+        last = first
+    if not (first.isdecimal() and last.isdecimal()):
+        return None
+    first, last = int(first), int(last)
+    return (first, last) if 0 < first <= last else None
+
+
 def excerpt(text, limit=OUTCOME_CHARS):
     text = ' '.join(str(text or '').split())
     return text if len(text) <= limit else text[:limit - 1] + '…'

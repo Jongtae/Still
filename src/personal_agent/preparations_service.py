@@ -2531,15 +2531,21 @@ class PreparationsService:
 
     def line_owner_rules(self, brief):
         """The rules in force, each beside the owner's own words it came from (#798, money-touching lines)."""
-        service=self.service
-        lines=[]
-        for number,rule in enumerate(brief['rules'],1):
-            source=service.store.job(rule['from']) if rule.get('from') else None
-            words=(service.scrub_work_text(source['id'],source.get('message'))
-                   if source and not service.store.work_request_forgotten(source['id']) else '')
-            lines.append(msg('lines.rule_with_words',number=number,rule=rule['text']+(' '+msg('lines.inferred') if rule.get('basis')=='inferred' else ''),
-                             words=el.excerpt(words,el.WORDS_CHARS) or msg('label.not_recorded')))
+        lines=[msg('lines.rule_with_words',number=number,rule=self.rule_text(rule),words=self.rule_words(rule))
+               for number,rule in enumerate(brief['rules'],1)]
         return '\n'.join(lines) or msg('lines.no_rules')
+
+    @staticmethod
+    def rule_text(rule, lang='ko'):
+        return rule['text']+(' '+msg('lines.inferred',lang) if rule.get('basis')=='inferred' else '')
+
+    def rule_words(self, rule, lang='ko'):
+        """The owner's own words a rule came from, excerpted, or the not-recorded label."""
+        service=self.service
+        source=service.store.job(rule['from']) if rule.get('from') else None
+        words=(service.scrub_work_text(source['id'],source.get('message'))
+               if source and not service.store.work_request_forgotten(source['id']) else '')
+        return el.excerpt(words,el.WORDS_CHARS) or msg('label.not_recorded',lang)
 
     def line_account_row(self, line_id):
         return next((row for row in self.line_rows(line_id) if row.get('origin')==prep.ORIGIN_LINE_ACCOUNT
@@ -2592,6 +2598,61 @@ class PreparationsService:
             service.record_conversation_notice(text,channel=job['channel'],db=db)
             return ''
         return text
+
+    def line_rule_notice(self, job, line_id, version):
+        """#1227: the rule changes of one owner Work reach the owner as one notice.
+
+        A later change in the same Work re-points the Work's still-queued notice of this line at
+        ``line:first:last`` (a Work's notices wait while it is in its lane), when every version
+        since ``first`` was written by this Work.  Otherwise, or with no surface, as ``line_notice``.
+        """
+        service=self.service
+        if service.surface_of(job) is not None:
+            prefix=f'{el.NOTICE_RULE}{line_id}:'
+            with service.store.db() as db:
+                row=db.execute("SELECT kind FROM telegram_notifications WHERE job_id=? AND kind LIKE ? AND state='queued' "
+                               "ORDER BY rowid DESC LIMIT 1",(job['id'],prefix+'%')).fetchone()
+            suffix=row['kind'].removeprefix(prefix) if row else ''
+            if suffix.isdecimal():
+                first=int(suffix)
+                # Each version of the set was written by this Work and changed the rules, so the set's
+                # one undo reverts nothing the notice does not show.
+                stored=[service.lines.version(line_id,number) for number in range(first-1,version+1)] if first<version else []
+                texts=lambda brief:[rule['text'] for rule in (brief or {}).get('rules') or []]
+                if stored and all(item and item['written_in']==job['id'] and texts(item)!=texts(prior)
+                                  for prior,item in zip(stored,stored[1:])):
+                    if service.store.rebind_notification(job['id'],row['kind'],f'{line_id}:{first}:{version}'):return ''
+        return self.line_notice(job,el.NOTICE_RULE,line_id,version)
+
+    def rule_changes(self, line_id, first, last):
+        """Return pairs of rules before and after the net change, with None for an absent rule."""
+        service=self.service
+        end=service.lines.version(line_id,last)
+        if end is None:return []
+        earlier=service.lines.version(line_id,first-1) if first>1 else None
+        base={rule['text']:rule for rule in (earlier or {}).get('rules',[])}
+        previous=base
+        origins={}
+        for number in range(first,last+1):
+            stored=end if number==last else service.lines.version(line_id,number)
+            if stored is None:
+                # A missing version cannot establish a replacement across the gap.
+                previous=None
+                origins.clear()
+                continue
+            current={rule['text']:rule for rule in stored['rules']}
+            if previous is not None:
+                dropped=previous.keys()-current
+                added=current.keys()-previous
+                if len(dropped)==len(added)==1:
+                    old=dropped.pop()
+                    origins[added.pop()]=origins.pop(old,old)
+            previous=current
+        # Pair only net drops with net additions, even if a rule text returned later in the Work.
+        dropped={text:rule for text,rule in base.items() if text not in current}
+        changes=[(dropped.pop(origins.get(text),None),rule) for text,rule in current.items() if text not in base]
+        changes.extend((rule,None) for rule in dropped.values())
+        return changes
 
     @staticmethod
     def told(next_step, untold):
@@ -2667,8 +2728,12 @@ class PreparationsService:
             return bool(row and row['line_id'] and
                         (row['delivery']=='cancelled' or prep.line_refusal(db,row['line_id'])))
 
-    def undo_line_version(self, line_id, version, work_id=None):
-        """Put back the brief as it was before ``version``, only while ``version`` is still current."""
+    def undo_line_version(self, line_id, version, work_id=None, *, through=None):
+        """Put back the brief as it was before ``version``, only while ``through`` (else ``version``) is still current.
+
+        #1227: one rule notice covers versions ``version``..``through`` of one owner Work; its undo
+        reverts the whole set, or nothing once a later change followed.
+        """
         service=self.service
         earlier=service.lines.version(line_id,int(version)-1) if int(version)>1 else None
         if earlier is None:raise el.LineRefusal('line_nothing_to_undo')
@@ -2679,7 +2744,7 @@ class PreparationsService:
             return restored
         with service.store.db() as db:
             db.execute('BEGIN IMMEDIATE')
-            before,after=service.lines.write(line_id,work_id,int(version),'undo',restore,db=db)
+            before,after=service.lines.write(line_id,work_id,int(through or version),'undo',restore,db=db)
             if after['version']!=before['version']:
                 continuous.fence(db,line_id,service.preparations.clock(),work_id=work_id)
         if after['account_every_days']!=before['account_every_days']:self.retime_line_account(before,after)
@@ -3025,8 +3090,9 @@ class PreparationsService:
         if authority!='owner' and changed and (self.line_version_read(job['id']) or (None,))[0]==line_id:
             # The run's own write is not a change made during the run for its next step (``line_note``).
             self._record_line_read(job['id'],after)
-        restated=bool(rule) and changed
-        untold=self.line_notice(job,el.NOTICE_RULE,line_id,after['version']) if restated else ''
+        # #1227: any change to the rules is told (a dropped rule too), once per owner Work.
+        restated=changed and [item['text'] for item in before['rules']]!=[item['text'] for item in after['rules']]
+        untold=self.line_rule_notice(job,line_id,after['version']) if restated else ''
         LOG.info('line revised id=%s version=%s work=%s rule=%s by=%s',line_id,after['version'],job['id'],restated,authority)
         result={**el.public_brief(after),'restated':restated,'money_rules':money,
                 'next_step':self.told(msg('lines.revised_next' if restated else 'lines.revised_quiet_next'),untold)}
@@ -3223,8 +3289,10 @@ class PreparationsService:
             name=el.line_name(brief,service._redact_known_secrets)
             return msg('lines.entrusted',lang,title=name,end=prep.local_text(deadline.timestamp(),zone))
         line_id,_sep,version=fingerprint.partition(':')
+        rule_notice=kind.startswith(el.NOTICE_RULE)
+        versions=el.rule_notice_range(version) if rule_notice else None
         brief=service.lines.readable(line_id)
-        if brief is None or not version.isdigit():return None
+        if brief is None or not (versions if rule_notice else version.isdecimal()):return None
         name=el.line_name(brief,service._redact_known_secrets)
         if kind.startswith(el.NOTICE_OPENED):
             if brief['state']!=el.STATE_ACTIVE:return None
@@ -3233,15 +3301,28 @@ class PreparationsService:
                 return service._redact_known_secrets(msg('lines.stood_announced',task=name,promise=brief['report_promise'],
                                                         days=provenance['evidence']['days']))
             return service._redact_known_secrets(msg('lines.announced',task=name,promise=brief['report_promise']))
-        if kind.startswith(el.NOTICE_RULE):
-            # Told while its rule is still in force (a later change or an undo may have removed it).
-            stored=service.lines.version(line_id,int(version))
-            rule=stored['rules'][-1]['text'] if stored and stored['rules'] else None
-            if rule is None or rule not in [item['text'] for item in brief['rules']]:return None
-            text=msg('lines.restated',title=name,rule=rule)
-            if self.line_touches_money(line_id):
-                text+='\n\n'+msg('lines.money_rules')+'\n'+self.line_owner_rules(stored)
-            return service._redact_known_secrets(str(text or ''))
+        if rule_notice:
+            # #1227: what changed, never the whole list; told while each change is still in force
+            # (a later change or an undo may have reverted it).  On a money line (C17 case 2) each
+            # changed rule carries the owner's own words it came from.
+            current={item['text'] for item in brief['rules']}
+            changes=[(before,after) for before,after in self.rule_changes(line_id,*versions)
+                     if (after['text'] in current if after else before['text'] not in current)]
+            if not changes:return None
+            money=self.line_touches_money(line_id)
+            lang=owner_language(service.store,notification.get('job_id')) or 'ko'
+            lines=[msg('lines.rules_changed',lang,title=name)]
+            for before,after in changes:
+                if before is None:
+                    line=msg('lines.rule_added',lang,rule=self.rule_text(after,lang))
+                elif after is None:
+                    line=msg('lines.rule_dropped',lang,rule=self.rule_text(before,lang))
+                else:
+                    line=msg('lines.rule_replaced',lang,before=self.rule_text(before,lang),after=self.rule_text(after,lang))
+                if money and after is not None:
+                    line+=' '+msg('lines.your_words',lang,words=self.rule_words(after,lang))
+                lines.append(line)
+            return service._redact_known_secrets('\n'.join(lines))
         if kind.startswith(el.NOTICE_STOPPED):
             return service._redact_known_secrets(msg('lines.stopped',task=name))
         if kind.startswith(el.NOTICE_WORK_STOPPED):

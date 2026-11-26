@@ -11848,17 +11848,35 @@
   "ja": "{task}。{promise}報告します。やめるときは「やめて」と言ってください。",
   "zh": "{task}。我会{promise}汇报。要结束时请说“停止”。"
  },
- "lines.restated": {
-  "ko": "「{title}」에 앞으로 매번 적용할 규칙이에요. {rule}",
-  "en": "The new rule for “{title}” applies every time from now on: {rule}.",
-  "ja": "「{title}」には今後、毎回このルールを適用します。{rule}",
-  "zh": "“{title}”以后每次都遵循这条新规则：{rule}。"
+ "lines.rules_changed": {
+  "ko": "「{title}」 규칙을 이렇게 바꿨어요. 오늘만이 아니라 매번 적용해요:",
+  "en": "Changed the rules for “{title}”. This applies every time, not only today:",
+  "ja": "「{title}」のルールを次のように変えました。今日だけでなく毎回適用します:",
+  "zh": "“{title}”的规则已改为如下，不只今天，以后每次都适用："
  },
- "lines.money_rules": {
-  "ko": "지금 적용되는 규칙 전체와 각각을 정한 원래 말이에요:",
-  "en": "All rules now in force, each with your original words:",
-  "ja": "現在有効なすべてのルールと、それぞれのもとになったあなたの言葉:",
-  "zh": "现在生效的全部规则，以及每条规则对应的您的原话："
+ "lines.rule_added": {
+  "ko": "추가: {rule}",
+  "en": "Added: {rule}",
+  "ja": "追加: {rule}",
+  "zh": "新增：{rule}"
+ },
+ "lines.rule_dropped": {
+  "ko": "뺌: {rule}",
+  "en": "Dropped: {rule}",
+  "ja": "削除: {rule}",
+  "zh": "删除：{rule}"
+ },
+ "lines.rule_replaced": {
+  "ko": "{before} → {after} (바꿈)",
+  "en": "{before} → {after} (changed)",
+  "ja": "{before} → {after}（変更）",
+  "zh": "{before} → {after}（更改）"
+ },
+ "lines.your_words": {
+  "ko": "(원래 말: \"{words}\")",
+  "en": "(your words: \"{words}\")",
+  "ja": "（あなたの言葉: 「{words}」）",
+  "zh": "（您的原话：“{words}”）"
  },
  "lines.rule_with_words": {
   "ko": "{number}. {rule} (원래 말: \"{words}\")",
@@ -11879,10 +11897,10 @@
   "zh": "已停止“{task}”的当前工作。我仍保留这项委托。如果您想结束整项委托，可以告诉我。"
  },
  "lines.undone": {
-  "ko": "방금 정한 규칙을 되돌렸어요. 이전 규칙대로 할게요.",
-  "en": "The rule you just set is undone. The earlier rules apply.",
-  "ja": "設定したルールを元に戻しました。以前のルールで続けます。",
-  "zh": "刚才设定的规则已撤销，按之前的规则执行。"
+  "ko": "방금 바꾼 규칙을 되돌렸어요. 이전 규칙대로 할게요.",
+  "en": "The rule change you just made is undone. The earlier rules apply.",
+  "ja": "変更したルールを元に戻しました。以前のルールで続けます。",
+  "zh": "刚才的规则更改已撤销，按之前的规则执行。"
  },
  "lines.undo_stale": {
   "ko": "그 뒤에 규칙이 다시 바뀌어서 되돌리지 않았어요.",
@@ -12065,10 +12083,10 @@
   "zh": "已开启受托事项 {line}。现在请用 schedule_preparation 并设置 line={line} 安排其运行。Still 会单独告知主人已接手，回复中不要重复。"
  },
  "lines.revised_next": {
-  "ko": "규칙을 저장했어요. 앞으로 매번 적용된다는 안내는 Still이 되돌리기 버튼과 함께 따로 보내니 답에서 반복하지 마세요.",
-  "en": "Saved the rule. Still tells the owner it now applies every time, with an undo, in its own message; do not repeat that in your reply.",
-  "ja": "ルールを保存しました。今後毎回適用される旨は Still が元に戻すボタン付きで別に送るので、返答で繰り返さないでください。",
-  "zh": "规则已保存。Still 会单独发送“今后每次适用”的通知并附撤销按钮，回复中不要重复。"
+  "ko": "규칙을 저장했어요. 무엇이 바뀌었는지는 Still이 되돌리기 버튼과 함께 한 번에 따로 알리니, 답에서 바뀐 규칙이나 규칙 목록을 반복하지 마세요.",
+  "en": "Saved the rule. Still tells the owner what changed, once, with an undo, in its own message; do not repeat the change or list the rules in your reply.",
+  "ja": "ルールを保存しました。何が変わったかは Still が元に戻すボタン付きで一度だけ別に知らせるので、返答で変更やルール一覧を繰り返さないでください。",
+  "zh": "规则已保存。Still 会单独发送一次通知说明改了什么并附撤销按钮，回复中不要重复更改内容或列出规则。"
  },
  "lines.revised_quiet_next": {
   "ko": "맡은 일의 기록을 고쳤어요.",

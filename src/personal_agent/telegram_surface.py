@@ -999,6 +999,8 @@ class TelegramSurface(ConversationSurface):
                 exact=(notification and notification['state']=='sent' and notification['generation']==generation
                        and notification['chat_id']==sender and notification['message_id']==message.get('message_id'))
                 line_id,_sep,version=str((notification or {}).get('fingerprint') or '').partition(':')
+                rule_range=(entrusted_lines.rule_notice_range(version)
+                            if exact and notification['kind'].startswith(entrusted_lines.NOTICE_RULE) else None)
                 if exact and parts[2]=='stop' and notification['kind'].startswith(entrusted_lines.NOTICE_OPENED):
                     try:
                         brief,stopped=service.preparations_service.stop_line(line_id)
@@ -1025,9 +1027,12 @@ class TelegramSurface(ConversationSurface):
                     else:
                         alert=(msg('preparations.self_change_undo_stale'),False)
                 # Keep Undo working for open-matters notices that were already sent (#1228).
-                elif exact and parts[2]=='undo' and notification['kind'].startswith((entrusted_lines.NOTICE_RULE, entrusted_lines.NOTICE_PLAN)) and version.isdigit():
+                elif exact and parts[2]=='undo' and (rule_range or (
+                        notification['kind'].startswith(entrusted_lines.NOTICE_PLAN) and version.isdecimal())):
+                    # #1227: a rule notice of one owner Work covers ``first:last``; its undo reverts the whole set.
+                    first,last=rule_range or (int(version),None)
                     try:
-                        brief=service.preparations_service.undo_line_version(line_id,int(version))
+                        brief=service.preparations_service.undo_line_version(line_id,first,through=last)
                     except entrusted_lines.LineRefusal:
                         brief=None
                         alert=(msg('lines.undo_stale'),False)
