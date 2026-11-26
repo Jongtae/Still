@@ -220,7 +220,7 @@ class OwnerActs:
         return items
 
     def _within_cost_bound(self, job, items):
-        """The items an unbound typed act is judged against: a cost bound, not an interpretation rule.
+        """The items an unbound typed act is judged against: what the owner's previous turn left open.
 
         A saved-memory notice stays open for days and a proposal for a day or
         more, so one is almost always open; judging every typed message against
@@ -228,20 +228,34 @@ class OwnerActs:
         act (no reply-to) therefore includes such a long-lived item only when it
         was shown after the owner's previous typed message in this conversation
         - the owner has not spoken since.  Short-lived items (step approvals,
-        settings drafts) are always included while open.  A
-        long-lived item left out stays open and answerable by a reaction, a
-        reply-to its message or its button.
+        budget offers) are always included while open.
+
+        #1240: a settings draft with no expiry (#619) waits until settled, so a
+        yes typed days later must not reach it.  An unbound typed act answers
+        only the drafts of the owner's previous Work in this conversation - the
+        Work whose question it answers - or drafts shown since that Work began;
+        a draft another, earlier Work left open is not offered, and the act runs
+        as an ordinary turn when nothing else is open.  Anything left out stays
+        open and answerable by a reaction, a reply-to its message or its button.
         """
-        if not any(item['kind'] in LONG_LIVED for item in items):
+        bounded = LONG_LIVED | {KIND_SETTINGS}
+        if not any(item['kind'] in bounded for item in items):
             return items
         with self.service.store.db() as db:
-            row = db.execute('SELECT created FROM jobs WHERE channel=? AND chat_id IS ? AND owner_typed=1 '
+            row = db.execute('SELECT id, COALESCE(source_at, created) AS spoke FROM jobs WHERE channel=? AND chat_id IS ? AND owner_typed=1 '
                              'AND id IS NOT ? AND created<? ORDER BY created DESC LIMIT 1',
                              (job.get('channel'), job.get('chat_id'), job.get('id'),
                               float(job.get('created') or time.time()))).fetchone()
-        spoke = float(row['created']) if row else None
+        if row is None:
+            return items
+        # When the owner spoke: the message's own time where the surface gave one (as ``before``).
+        spoke, previous = float(row['spoke']), row['id']
+        def since(item):
+            return float(item['shown_at'] or 0) > spoke
         return [item for item in items
-                if item['kind'] not in LONG_LIVED or spoke is None or float(item['shown_at'] or 0) > spoke]
+                if (item['kind'] == KIND_SETTINGS and (item['ref'].get('work_id') == previous or since(item)))
+                or (item['kind'] in LONG_LIVED and since(item))
+                or item['kind'] not in bounded]
 
     # -- judge ---------------------------------------------------------------------
     def read(self, job, act, *, target=None, before=None, reaction=False):

@@ -13,6 +13,7 @@ from unittest.mock import patch
 from datetime import datetime
 import tempfile
 import threading
+import time
 import unittest
 from http.cookiejar import CookieJar
 from http.server import ThreadingHTTPServer
@@ -813,8 +814,8 @@ class TypedConfirmation(ReviewRemediation):
         self.assertIn('현재 맥락 사용', items[0]['shown_text'])
         self.assertEqual(self.store.config('settings_audit')[-1]['terminal'], 'applied')
 
-    def second_pending_work(self):
-        work = self.store.enqueue('시간대 바꿔 줘', 'second-settings', owner_typed=True)
+    def second_pending_work(self, owner_typed=True):
+        work = self.store.enqueue('시간대 바꿔 줘', 'second-settings', owner_typed=owner_typed)
         job = self.store.job(work)
         with self.store.db() as db:
             db.execute("UPDATE jobs SET status='partial' WHERE id=?", (work,))
@@ -824,8 +825,12 @@ class TypedConfirmation(ReviewRemediation):
 
     def test_typed_yes_settles_only_the_item_the_judgment_names(self):
         # #172: each Work's drafts are one item; a yes settles the one named, never every wait at once.
+        # #1240: both are open to this yes - the owner's previous Work's draft, and one a Work the owner
+        # did not type showed since (on the settings clock, after the owner spoke).
+        self.clock[0] = time.time()
         work, first = self.web_draft()
-        _other, second = self.second_pending_work()
+        self.clock[0] = time.time()
+        _other, second = self.second_pending_work(owner_typed=False)
         judged = self.judge('approve', pick=lambda items: next(item['id'] for item in items
                                                                 if '현재 맥락 사용' in item['shown_text']))
         self.owner_turn('응, 그렇게 바꿔')
