@@ -140,7 +140,7 @@ def test_dream_owner_fact_and_diary_stay_direct_without_candidate_notice(lookbac
     assert all(r['origin']==om.ORIGIN_DREAM for r in rows)
     assert not case.store.memory_candidates()
     assert case.store.notification_of(newest,'memory_candidates') is None
-    assert not case.store.held_notifications(case.store.MEMORY_SAVED_NOTICE_KIND)
+    assert not case.store.held_notifications('memory_saved')
     assert all('prefer coffee' not in json.dumps(c.facts) for c,_,_ in case.asked+case.gathered)
 
 

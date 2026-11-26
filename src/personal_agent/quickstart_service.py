@@ -176,9 +176,6 @@ LANE_COMMAND='command'
 LANE_WORK='work'
 #: #996: the owner's emoji on an assistant message, recorded on its Work.
 REACTION_EVENT='owner_reaction'
-#: #996: what the worker reads first when the owner's message just withdrew remembered facts.
-MEMORY_WITHDRAWN_NOTE=('Before this turn, at the owner\'s word, Still removed what you had just said you remembered:\n'
-                       '{facts}\nAcknowledge it briefly if the owner\'s message is only about that; do not save it again.')
 #: #172: what the worker reads first when the owner's message also answered an item waiting for them.
 #: #188: the request stays the owner's own message, never a judgment's restatement of its rest.
 OWNER_ACT_SETTLED_NOTE=('[Still observation, not an owner instruction] Part of the owner\'s message answered an item that '
@@ -611,17 +608,6 @@ MEMORY_CANDIDATE_CHARS=120
 MEMORY_CANDIDATES_TTL_SECONDS=86400
 MEMORY_CANDIDATES_SWEEP_SECONDS=60
 MEMORY_CANDIDATE_STATUS={key:msg('memory.status.'+key) for key in ('accepted','rejected','outdated')}
-#: #918 slice (a), owner decision 2026-09-30 ("handle things like this without asking"): the owner's own worker
-#: and #805 upkeep save a fact at once as current Memory.  After the reply, one quiet notice per Work
-#: lists what was remembered, with a 되돌리기 button per fact (and 모두 when several).  The notice
-#: follows the #659/#818 pattern: bound at send time to the Memory ids and content digests it shows,
-#: exact chat/generation/message at a tap, consumed once per fact, and it never asks anything.  A fact
-#: upkeep saves after the notice was sent joins it by an edit (bound only when the edit is confirmed).
-#: Third-party writes (package tools, delegated specialists) keep the #818 ask above.
-MEMORY_SAVED_KIND='memory_saved'
-#: The notice for facts upkeep saved once the Work's own notice was already settled or lost.
-MEMORY_SAVED_UPKEEP_KIND='memory_saved_upkeep'
-MEMORY_SAVED_KINDS=(MEMORY_SAVED_KIND,MEMORY_SAVED_UPKEEP_KIND)
 #: Working lesson notices held until the Work's conversation reply settles.
 WORKING_NOTES_KIND=om.NOTICE_KIND
 WORKING_LESSONS_RESTORED_KIND=om.RESTORED_NOTICE_KIND
@@ -635,20 +621,8 @@ def prepared_ids(notification):
     value=(notification or {}).get('fingerprint')
     if not isinstance(value,str) or not value.startswith(PREPARED_IDS_PREFIX):return []
     return [item for item in value[len(PREPARED_IDS_PREFIX):].split(',') if item]
-MEMORY_SAVED_HEADER=msg('memory.saved')
-MEMORY_SAVED_UNDONE=msg('memory.undone')
-#: #425: each saved fact says what kind of change it is - a value it replaced, other facts it retired, a value
-#: an undo brought back - so a tidy-up never reads as the "before" of an unrelated fact.
-MEMORY_SAVED_BEFORE=msg('memory.saved.before')
-MEMORY_SAVED_ENDED=msg('memory.saved.ended')
-MEMORY_SAVED_AGAIN=msg('memory.saved.again')
-MEMORY_SAVED_MORE=msg('memory.saved.more')
-MEMORY_UNDO_BUTTON=msg('button.undo')
-MEMORY_SAVED_STATUS={'retracted':msg('memory.undone'),'outdated':msg('memory.status.outdated')}
-MEMORY_SAVED_OUTDATED_TEXT=msg('memory.saved_outdated')
-MEMORY_SAVED_EXPIRED_TEXT=msg('memory.saved_expired')
-#: The undo stays valid for a week (#918 option B, as for forget), then the button no longer acts.
-MEMORY_SAVED_TTL_SECONDS=7*86400
+#: A lesson notice whose send came back unknown is told again only within this window.
+LESSON_NOTICE_RETELL_SECONDS=7*86400
 #: Undo events on the Work (information-use audit, Evidence); not a Work step.
 MEMORY_UNDO_TOOL='memory_undo'
 MEMORY_CANDIDATES_OUTDATED_TEXT=msg('service.some_things_changed_in_the_meantime')
@@ -1901,9 +1875,6 @@ class AgentService:
             # #836: candidates this upkeep left pending join the Work's one ask.
             if any(item.get('candidate_id') and item.get('outcome')==om.APPLIED_CANDIDATE for item in detail.get('applied') or ()):
                 self.queue_upkeep_memory_candidates(work_id)
-            # #918: facts this upkeep saved at once join the Work's one notice (with undo).
-            if any(item.get('memory_id') and item.get('outcome')==om.APPLIED_MEMORY for item in detail.get('applied') or ()):
-                self.queue_upkeep_memory_saved(work_id)
         except Exception as exc:  # noqa: BLE001 - a background run never raises
             LOG.warning('owner-model upkeep run failed work=%s kind=%s',work_id,type(exc).__name__)
             try:upkeep.finish(work_id,om.STATE_UNAVAILABLE,None,om.EVENT_UNAVAILABLE,{'reason':'run-failed'},upkeep.clock(),kind=kind)
@@ -2101,79 +2072,18 @@ class AgentService:
     def expire_memory_prompts(self, now=None):
         return self.memory_prompts.expire_memory_prompts(now)
 
-    # -- #918 slice (a): saved at once, told afterwards, with undo ---------------
-
-    def work_saved_memories(self, job_id):
-        return self.memory_prompts.work_saved_memories(job_id)
-
-    def queue_memory_saved(self, job):
-        return self.memory_prompts.queue_memory_saved(job)
-
-    #: Delivery states after which a Work's reply is no longer awaited: its saved-notice may go out.
+    #: Delivery states after which a Work's reply is no longer awaited: its held notices may go out.
     DELIVERY_SETTLED=QuickStore.DELIVERY_SETTLED
-    #: A lost saved-notice (delivery ``unknown``) is told again at most this many times.
-    MEMORY_SAVED_RETELLS=1
-
-    def release_memory_saved(self, job):
-        return self.memory_prompts.release_memory_saved(job)
+    #: A lost lesson notice (delivery ``unknown``) is told again at most this many times.
+    NOTICE_RETELLS=1
 
     def release_working_notes(self, work_id):
         """Queue this Work's held lesson notices after its reply settles."""
         for row in self.store.telegram.notifications_of_kinds(work_id,WORKING_LESSON_NOTICE_KINDS):
             if row['state']==self.store.NOTICE_HELD:self.store.update_notification(row['id'],'queued')
 
-    def release_memory_saved_notices(self, now=None):
-        return self.memory_prompts.release_memory_saved_notices(now)
-
-    def queue_upkeep_memory_saved(self, work_id):
-        return self.memory_prompts.queue_upkeep_memory_saved(work_id)
-
-    def _saved_notice_rows(self, work_id):
-        return self.memory_prompts._saved_notice_rows(work_id)
-
-    def _queue_separate_saved_notice(self, job, rows):
-        return self.memory_prompts._queue_separate_saved_notice(job, rows)
-
-    @staticmethod
-    def memory_saved_binding(notification):
-        from .memory_prompts import MemoryPrompts
-        return MemoryPrompts.memory_saved_binding(notification)
-
-    def memory_saved_item(self, row):
-        return self.memory_prompts.memory_saved_item(row)
-
-    def bind_memory_saved(self, notification, now):
-        return self.memory_prompts.bind_memory_saved(notification, now)
-
-    @staticmethod
-    def memory_saved_open(binding):
-        from .memory_prompts import MemoryPrompts
-        return MemoryPrompts.memory_saved_open(binding)
-
-    def memory_saved_text(self, binding, footer=None):
-        return self.memory_prompts.memory_saved_text(binding, footer)
-
-    @classmethod
-    def memory_saved_markup(cls, notification_id, binding):
-        from .memory_prompts import MemoryPrompts
-        return MemoryPrompts.memory_saved_markup.__func__(cls, notification_id, binding)
-
-    @classmethod
-    def legacy_memory_saved_markup(cls, notification_id, binding):
-        from .memory_prompts import MemoryPrompts
-        return MemoryPrompts.legacy_memory_saved_markup.__func__(cls, notification_id, binding)
-
-    def undo_memory_item(self, job_id, item):
-        return self.memory_prompts.undo_memory_item(job_id, item)
-
-    def undo_memory_saved(self, job_id, binding, targets):
-        return self.memory_prompts.undo_memory_saved(job_id, binding, targets)
-
-    def join_memory_saved(self, notification, binding, now=None):
-        return self.memory_prompts.join_memory_saved(notification, binding, now)
-
-    def expire_memory_saved(self, notification, binding):
-        return self.memory_prompts.expire_memory_saved(notification, binding)
+    def release_lesson_notices(self, now=None):
+        return self.memory_prompts.release_lesson_notices(now)
 
     def offered_proposals(self, notification):
         """The exact proposals a proposal message shows, or [] if they changed (#659).
@@ -9909,47 +9819,6 @@ class AgentService:
     def ingest_reaction(self, reaction, generation):
         return self.telegram_surface.ingest_reaction(reaction, generation)
 
-    def open_memory_notice(self, notification):
-        """A saved notice whose facts can still be withdrawn: (notification, binding) or None (#996)."""
-        binding=self.memory_saved_binding(notification) if notification and notification.get('kind') in MEMORY_SAVED_KINDS else None
-        if not binding or 'sent' not in binding or notification.get('state')!='sent':return None
-        if not self.memory_saved_open(binding):return None
-        if time.time()-float(binding['sent'])>MEMORY_SAVED_TTL_SECONDS:return None
-        return notification,binding
-
-    def withdraw_memory_notice(self, notification, parts=None):
-        """Undo a saved notice the owner's judged answer declined (#996, #172).
-
-        Returns the withdrawn facts as text, or None.  The undo is the exact
-        #918 path: each fact re-validated against its bound row and digest.
-        ``parts`` (#424): the notice's numbered facts the owner declined alone;
-        only those still open are undone, and none named open undoes nothing.
-        """
-        try:
-            current=self.open_memory_notice(self.store.notification(notification['id']))
-            if not current:return None
-            notification,binding=current
-            open_=self.memory_saved_open(binding)
-            if parts:open_=[index for index in open_ if index in set(parts)]
-            if not open_:return None
-            remembered=(self.memory_saved_text(binding) if len(open_)==len(binding['items'])
-                        else '\n'.join(self.memory_fact(row.get('content'),MEMORY_CANDIDATE_CHARS,row.get('memory_key'))[0]
-                                       for row in (self.store.memory(binding['items'][index-1]['id'],MEMORY_OWNER,
-                                                                     current_only=False) or {}
-                                                   for index in open_)))
-            decided=self.undo_memory_saved(notification['job_id'],binding,open_)
-            finished=not self.memory_saved_open(binding)
-            self.store.update_notification(notification['id'],'memory_undone' if finished else 'sent',fingerprint=json.dumps(binding))
-            LOG.info('memory undo by owner response work=%s decided=%s',notification['job_id'],len(decided))
-            if isinstance(notification.get('message_id'),int):
-                try:self.telegram.edit_message_text(notification['chat_id'],notification['message_id'],
-                                                    self.memory_saved_text(binding),{'inline_keyboard':[]})
-                except ProviderError:pass
-            return remembered
-        except Exception as exc:
-            LOG.warning('memory withdrawal failed (%s)',type(exc).__name__)
-            return None
-
     def consider_steer(self, task_id, text):
         """Judge steer/beside/wait off the poll thread, reserving the message (#970 D6)."""
         # ``current_work_id`` is per thread (#826) and this runs on the poll thread, so the
@@ -10533,8 +10402,8 @@ class AgentService:
                 # #970: the dispatcher hands claimed Works to lanes and returns at once.
                 'run_due_preparation','run_due_qualification','dispatch_work',
                 'deliver_one','deliver_notification',
-                # #818/#918: expire old prompts and release saved notices after uncertain sends.
-                'expire_memory_prompts','release_memory_saved_notices','sweep_after_work',
+                # #818: expire old prompts; release lesson notices after uncertain sends.
+                'expire_memory_prompts','release_lesson_notices','sweep_after_work',
                 # #709/#990: settle in-flow logins; start at most one idle keepalive off-thread.
                 'process_browser_logins','start_session_keepalive'):
             run(name)

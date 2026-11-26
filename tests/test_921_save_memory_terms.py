@@ -88,7 +88,7 @@ def test_terms_are_filtered_saved_atomically_and_searchable(state, fts, monkeypa
     assert hits(store, 'invented921') == []
     assert store.memory_candidates() == []
     # #955: the save is told in the reply; no separate saved notice is held.
-    assert store.held_notifications(store.MEMORY_SAVED_NOTICE_KIND) == []
+    assert store.held_notifications('memory_saved') == []
     shown = json.dumps([result, caps.evidence, worker_result('save_memory', result)])
     assert 'beverage' not in shown
     assert 'retrieval_terms' not in shown
@@ -160,7 +160,7 @@ def test_a_secret_in_the_fact_is_still_refused_before_any_write(state, field):
     result = saved(state, **{field: secret, 'terms': TERMS})
     assert result == {'saved': False, 'state': 'refused', 'refused_because': SECRET_SHAPED_VALUE}
     assert store.memories() == [] and store.memory_candidates() == []
-    assert store.held_notifications(store.MEMORY_SAVED_NOTICE_KIND) == []
+    assert store.held_notifications('memory_saved') == []
     assert secret not in json.dumps([result, caps.evidence])
 
 
@@ -192,7 +192,7 @@ def test_candidates_drop_terms_without_filtering_or_persisting_them(state, write
         persisted = [dict(row) for row in db.execute('SELECT * FROM memory_candidates')]
     shown = json.dumps([result, caps.evidence, candidate, persisted, worker_result('save_memory', result)])
     assert 'beverage' not in shown and 'retrieval_terms' not in shown
-    assert store.held_notifications(store.MEMORY_SAVED_NOTICE_KIND) == []
+    assert store.held_notifications('memory_saved') == []
 
 
 def test_correction_terms_belong_only_to_the_new_row(state):

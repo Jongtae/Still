@@ -920,18 +920,18 @@ class ReviewRegressions(MattermostCase):
         with self.assertRaises(Exception):
             PersonalKnowledgeOrchestrator._request('x', 'slackish:g1', '회의 메모')
 
-    def test_working_lessons_and_saved_memory_notices_reach_this_surface(self):
+    def test_working_lesson_notices_reach_this_surface(self):
         from personal_agent import owner_model as om
         self.owner_says('기억해줘')
         work = self.mm_jobs()[0]
         om.WorkingLessons(self.store).apply(
             [{'op': 'add', 'id': '', 'text': '01 회의는 오전에 잡기', 'why': 'the owner corrected the time', 'reason': ''}],
             '회의 시간', work['id'], origin=om.ORIGIN_SELF_REVIEW)
-        self.store.save_memory('profile.meeting', '회의는 오전', 'local-owner', work_id=work['id'], notice=True)
+        self.store.save_memory('profile.meeting', '회의는 오전', 'local-owner', work_id=work['id'])
         with self.store.db() as db:
             rows = [tuple(row) for row in db.execute(
                 'SELECT kind, surface, chat_id FROM telegram_notifications WHERE job_id=? ORDER BY kind', (work['id'],))]
-        self.assertEqual(len(rows), 2)
+        self.assertEqual(len(rows), 1, '#962: a save holds no notice of its own')
         self.assertTrue(all(surface == 'mattermost' and chat == OWNER for _kind, surface, chat in rows), rows)
 
     def test_a_reconnect_between_parts_stops_the_rest(self):

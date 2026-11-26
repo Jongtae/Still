@@ -5367,10 +5367,10 @@ class Capabilities:
     result={**candidate,'requires_owner_approval':True,'refused_because':THIRD_PARTY_MEMORY_WRITE}
    else:
     # #918 slice (a), owner decision 2026-09-30: the owner's own worker saves at once as
-    # current Memory, attributed to this Work; the owner is told afterwards with an undo
-    # (``AgentService`` memory_saved notice) instead of being asked.  A same-key save
-    # supersedes the previous value, which the undo restores.
-    # Review: the owner notice is held in the same transaction as the row, so a save is never untold.
+    # current Memory, attributed to this Work, instead of being asked.  #955: the reply says in
+    # passing what it will keep in mind (MEMORY_SAVED_WORKER_NOTE); the owner undoes it exactly by
+    # asking (forget_record revert) or from 내 기록 (#962).  A same-key save supersedes the previous
+    # value, which the undo restores.
     from .owner_forget import OwnerForget
     forget=OwnerForget(self.store)
     if forget.is_forgotten(MEMORY_OWNER,args['memory_key'],args['content']):
@@ -5393,12 +5393,9 @@ class Capabilities:
       terms_values={'retrieval_terms':terms,'retrieval_terms_meta':build_meta('keyed',previous=None,
        route=worker.get('route') or '',model=worker.get('model') or '',
        observed_model=worker.get('observed_model') or '',policy='worker',run=self.job_id,at=time.time())}
-    from . import memory_prompts
     saved=self.store.save_memory(args['memory_key'],args['content'],MEMORY_OWNER,work_id=self.job_id,
-                                 notice=memory_prompts.MEMORY_SAVED_NOTICES,  # #955: off by owner decision
                                  corrected=args.get('correction') is True,**terms_values)
     result={**saved,'saved':True,'auto_saved':True,'correction':args.get('correction') is True}
-    # #955 (owner 2026-11-17): no separate notice tells the save; the reply does (MEMORY_SAVED_WORKER_NOTE).
    # #605 N4: a written value is kept out of this Work's public lookups - except (#804) a
    # ``profile.`` fact the owner's worker saved: the owner gave it to be used (their
    # workplace, their home), so it may shape a lookup like the request itself.

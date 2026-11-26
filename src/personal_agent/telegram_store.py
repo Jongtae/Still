@@ -312,13 +312,6 @@ class TelegramStore:
         with self.store.db() as db:
             db.execute('DELETE FROM telegram_photo_albums WHERE last_received<=?',(cutoff,))
 
-    @staticmethod
-    def notice_on_message(db, chat_id, message_id, kinds):
-        """The newest notification of one of ``kinds`` sent as ``message_id`` in this chat, or None."""
-        return db.execute('SELECT * FROM telegram_notifications WHERE chat_id=? AND message_id=? AND kind IN (%s) '
-                          'ORDER BY created DESC LIMIT 1'%','.join('?'*len(kinds)),
-                          (chat_id,message_id,*kinds)).fetchone()
-
     # -- statements the service runs on notifications, photos and cards --
 
     def notifications_in_state(self, kinds, state):

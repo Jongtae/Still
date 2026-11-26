@@ -14,7 +14,7 @@ This module is the thin glue around that judgment:
   each ``{kind, id, shown_text, shown_at, message_id, expires_at}`` plus the
   reference its own settle path needs.  Every source and every check is the
   existing one: the pending settings drafts (``SettingsOrchestrator.pending_or_renewable``),
-  every open step-approval prompt, the open saved-memory notice, open memory
+  every open step-approval prompt, open memory
   proposals and preparation proposals (their sent Telegram messages, bound as
   their buttons are).
 * ``read`` narrows the candidates to the item(s) shown on the message a reply
@@ -24,7 +24,7 @@ This module is the thin glue around that judgment:
   and ``unrelated`` settle nothing and the act is an ordinary turn.
 * ``settle`` runs the chosen item's existing path, unchanged in authority:
   settings ``settle_pending``; ``_decide_browser_step`` with the
-  offer digest; the saved-memory undo; the memory-proposal and preparation
+  offer digest; the memory-proposal and preparation
   button paths.  Nothing pending is deleted on a miss.
 
 What stays code (enforcement): which conversation and identity an item
@@ -52,19 +52,17 @@ SHOWN_CHARS = 700
 KIND_SETTINGS = 'settings-drafts'
 KIND_STEP = 'action-approval'
 KIND_BUDGET = 'budget-continue'
-KIND_MEMORY_SAVED = 'memory-saved'
 KIND_MEMORY_PROPOSAL = 'memory-proposal'
 KIND_PREPARATION = 'preparation-proposal'
 
 #: Items that stay open for many turns (days, or until answered); see ``OwnerActs._within_cost_bound``.
-LONG_LIVED = frozenset({KIND_MEMORY_SAVED, KIND_MEMORY_PROPOSAL, KIND_PREPARATION})
+LONG_LIVED = frozenset({KIND_MEMORY_PROPOSAL, KIND_PREPARATION})
 
 #: What an answer does to an item of each kind, told to the judgment in generic words.
 ANSWERS = {
     KIND_BUDGET: 'approve continues the same Work with its recorded progress and a fresh budget; decline leaves it stopped',
     KIND_SETTINGS: 'approve applies the settings change as shown; decline keeps the current setting',
     KIND_STEP: 'approve lets the waiting action run once, exactly as shown; decline stops it',
-    KIND_MEMORY_SAVED: 'decline removes what the assistant said it remembered; approve keeps it',
     KIND_MEMORY_PROPOSAL: 'approve remembers the facts shown; decline does not remember them',
     KIND_PREPARATION: 'approve schedules what was proposed; decline does not',
 }
@@ -165,10 +163,9 @@ class OwnerActs:
 
         With ``target``, only those sent as that message, however many newer ones were sent since (#188).
         """
-        from .quickstart_service import (MEMORY_CANDIDATES_TTL_SECONDS, MEMORY_PROMPT_KINDS, MEMORY_SAVED_KINDS,
-                                         MEMORY_SAVED_TTL_SECONDS, PAYMENT_APPROVAL_SECONDS)
+        from .quickstart_service import MEMORY_CANDIDATES_TTL_SECONDS, MEMORY_PROMPT_KINDS, PAYMENT_APPROVAL_SECONDS
         service = self.service
-        kinds = ('budget_continue', 'browser_approval_needed', 'preparation_proposed', *MEMORY_SAVED_KINDS, *MEMORY_PROMPT_KINDS)
+        kinds = ('budget_continue', 'browser_approval_needed', 'preparation_proposed', *MEMORY_PROMPT_KINDS)
         items = []
         for notification in service.store.telegram.sent_of_kinds(chat, kinds, limit=ITEM_LIMIT * 3, message_id=target,
                                                                 surface=surface.name):
@@ -194,13 +191,6 @@ class OwnerActs:
                 requested = float(current[1].get('requested_at') or 0)
                 items.append({**base, 'kind': KIND_STEP, 'shown_text': service.browser_step_prompt(notification['job_id']),
                               'shown_at': max(requested, float(sent_at or 0)), 'expires_at': requested + PAYMENT_APPROVAL_SECONDS})
-            elif kind in MEMORY_SAVED_KINDS:
-                current = service.open_memory_notice(notification)
-                if not current:
-                    continue
-                sent = float(current[1]['sent'])
-                items.append({**base, 'kind': KIND_MEMORY_SAVED, 'shown_text': service.memory_saved_text(current[1]),
-                              'shown_at': max(sent, float(sent_at or 0)), 'expires_at': sent + MEMORY_SAVED_TTL_SECONDS})
             elif kind in MEMORY_PROMPT_KINDS:
                 binding = service.memory_binding(notification)
                 if not binding or 'sent' not in binding or not service.memory_open(binding):
@@ -222,8 +212,7 @@ class OwnerActs:
     def _within_cost_bound(self, job, items):
         """The items an unbound typed act is judged against: what the owner's previous turn left open.
 
-        A saved-memory notice stays open for days and a proposal for a day or
-        more, so one is almost always open; judging every typed message against
+        A memory or preparation proposal stays open for a day or more, so one is almost always open; judging every typed message against
         it would add a Judgment AI call to nearly every turn.  An unbound typed
         act (no reply-to) therefore includes such a long-lived item only when it
         was shown after the owner's previous typed message in this conversation
@@ -274,8 +263,8 @@ class OwnerActs:
         act to the item(s) shown on that message before anything is judged; a
         target that showed nothing open settles nothing.  Returns
         ``{item, approve, rest, parts}``; a reaction has no rest.  ``parts``
-        (#424) names numbered facts of a saved-memory notice the act alone
-        answers; an act that answers part of any other item settles nothing.
+        (#424) are numbered entries the act alone answers; an act that answers
+        part of an item settles nothing.
         """
         service = self.service
         items = self.open_items(job, before=before, target=target)
@@ -302,12 +291,9 @@ class OwnerActs:
                          answer['answer'], item['kind'] if item else None)
         if item is None or answer['answer'] not in ('approve', 'decline'):
             return None
-        if item['kind'] == KIND_MEMORY_SAVED and answer['answer'] == 'approve':
-            return None  # keeping what was remembered needs nothing settled
         parts = answer.get('parts') or []
-        if parts and item['kind'] != KIND_MEMORY_SAVED:
-            # #424: only a saved-memory notice settles part of itself; part of any other item is not what
-            # was shown, so nothing executes (as a change).
+        if parts:
+            # #424: part of an item is not what was shown, so nothing executes (as a change).
             return None
         return {'item': item, 'approve': answer['answer'] == 'approve', 'rest': '' if reaction else answer['rest'],
                 'parts': parts}
@@ -350,12 +336,6 @@ class OwnerActs:
             current = service.open_step_notification(service.store.notification(ref['notification_id']))
             result['text'] = (service.answer_step_approval(current[0], approve) if current
                               else msg('notice.step_approval_stale'))
-        elif kind == KIND_MEMORY_SAVED:
-            # #424: an act that names some of a notice's numbered facts undoes only those.
-            withdrawn = service.withdraw_memory_notice({'id': ref['notification_id']}, parts=answer.get('parts'))
-            if withdrawn:
-                from .quickstart_service import MEMORY_WITHDRAWN_NOTE
-                result['note'] = MEMORY_WITHDRAWN_NOTE.format(facts=withdrawn)
         elif kind == KIND_MEMORY_PROPOSAL:
             with service.lock:
                 notification = service.store.notification(ref['notification_id'])
@@ -396,8 +376,6 @@ class OwnerActs:
                      if all(item['ref'].get(key) == value for key, value in ref.items())), None)
         if item is None:
             return None
-        if item['kind'] == KIND_MEMORY_SAVED and approve:
-            return item['kind']   # keeping what was remembered needs nothing settled
         self._settle_and_tell(surface, chat, generation, job, {'item': item, 'approve': approve, 'rest': ''}, by='button')
         return item['kind']
 

@@ -442,11 +442,8 @@ class Invalidate(Upkeep):
         self.assertNotIn('판교', snapshot)
         [(_status, detail)] = self.evidence(job)
         self.assertEqual([item['invalidated'] for item in detail['applied']], [1])
-        # The notice names what ended; #425: as a fact retired with it, apart from a same-key "before".
-        item = self.service.memory_saved_item(new)
-        self.assertEqual(item['ended'], [[old['id'], old['content_digest']]])
-        self.assertIn('강남 사무실 (함께 정리한 기억: 판교 사무실)',
-                      self.service.memory_saved_text({'items': [item], 'done': {}, 'restored': {}}))
+        # #425: what the save ended under another key is recorded apart from a same-key "before".
+        self.assertEqual([row['id'] for row in self.store.ended_by(MEMORY_OWNER, new['id'])], [old['id']])
 
     def test_undo_restores_every_row_the_save_ended(self):
         first = self.saved('profile.place.workplace', '판교 사무실')
@@ -624,13 +621,13 @@ class Invalidate(Upkeep):
         self.store.retract_memory(MEMORY_OWNER, c['id'], c['content_digest'])
         self.assertEqual([row['id'] for row in self.store.memories(MEMORY_OWNER)], [a['id']])
 
-    def test_the_undone_notice_names_the_facts_that_came_back(self):
+    def test_the_undo_names_the_facts_that_came_back(self):
         """Codex review on #226: an undo that brings back facts under other keys says so."""
+        from personal_agent.memory_prompts import retract_saved
         old = self.saved('profile.place.workplace', '판교 사무실')
         new = self.saved('profile.place.work', '강남 사무실', invalidates=[(old['id'], 'moved')])
-        binding = {'items': [self.service.memory_saved_item(new)], 'done': {}, 'restored': {}}
-        self.service.undo_memory_saved('job', binding, [1])
-        self.assertIn('강남 사무실 (다시 판교 사무실)', self.service.memory_saved_text(binding))
+        undone = retract_saved(self.store, 'job', {'id': new['id'], 'digest': new['content_digest'], 'key': new['memory_key']})
+        self.assertEqual((undone['status'], undone['restored_ended']), ('retracted', [old['id']]))
 
     def test_any_undo_order_keeps_one_current_value_and_ends_where_it_began(self):
         """Codex reviews on #226: every order of undos over saves that end rows under other keys."""
@@ -706,14 +703,14 @@ class Invalidate(Upkeep):
         [(_status, detail)] = self.evidence(job)
         self.assertEqual([item['reason'] for item in detail['dropped']], ['invalidates'])
 
-    def test_the_undone_notice_leaves_out_a_fact_whose_last_day_passed(self):
+    def test_the_undo_leaves_out_a_fact_whose_last_day_passed(self):
         old = self.saved('profile.schedule.trip', '제주 여행 중', valid_until='2099-01-02')
         new = self.saved('profile.place.now', '서울', invalidates=[(old['id'], 'back')])
         with self.store.db() as db:
             db.execute("UPDATE memories SET valid_until='2000-01-01' WHERE id=?", (old['id'],))
-        binding = {'items': [self.service.memory_saved_item(new)], 'done': {}, 'restored': {}}
-        self.service.undo_memory_saved('job', binding, [1])
-        self.assertNotIn('다시', self.service.memory_saved_text(binding))
+        from personal_agent.memory_prompts import retract_saved
+        undone = retract_saved(self.store, 'job', {'id': new['id'], 'digest': new['content_digest'], 'key': new['memory_key']})
+        self.assertEqual((undone['restored_ended'], undone['expired']), ([], [old['id']]))
 
     def test_a_settings_edit_keeps_the_last_day(self):
         from personal_agent.memory_service import MemoryService
