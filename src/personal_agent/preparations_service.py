@@ -2805,7 +2805,7 @@ class PreparationsService:
         ``sent`` (a dispatch Still observed handed off, which is not the service's confirmation that the
         goal took effect), ``not_applied`` (reconciled as not applied), ``unconfirmed`` (claimed with no
         definite answer, so it may have run). From code-run Evidence: ``refused`` (Still refused it before
-        sending, #1250) and ``asked`` (waiting for the owner's approval). ``unconfirmed_items`` names up to
+        sending, #1250) and ``asked`` (a Work of the line waiting now for the owner's approval). ``unconfirmed_items`` names up to
         ``LINE_EFFECTS_NAMED`` of them by operation, host and connection name; never a body or a value.
         """
         from .agent_runtime import classify_effect_rows, effect_rows, recorded_evidence, refused_state_change
@@ -2834,7 +2834,13 @@ class PreparationsService:
             if not isinstance(detail,dict):continue
             evidence=recorded_evidence(detail)
             if refused_state_change('code_run',detail):out['refused']+=len(evidence.get('refused_effects') or ())
-            out['asked']+=len(evidence.get('approval_requested') or ())
+        # Waiting now, by the current approval state (``step_approval_pending``: requested, not expired), not by
+        # the request ever having been made (#1252 review).  A Work holds at most one request, kept in one map by
+        # Work id, so only the line's Works that have an entry there are asked.
+        from .quickstart_service import BROWSER_REQUESTS_KEY
+        requests=store.config(BROWSER_REQUESTS_KEY,{})
+        requests=requests if isinstance(requests,dict) else {}
+        out['asked']=sum(1 for work in works if work in requests and self.service.step_approval_pending(work))
         return out
 
     def line_effects_text(self, effects, *, account=False):

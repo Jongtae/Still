@@ -3,7 +3,10 @@
 Real local code throughout: the condition-check dispatch, the code runner and approval adapter, the
 effect ledger, the line's run input and its stop.  Only the sandbox process and the decision engine are injected.
 """
+import time
+
 from personal_agent import preparations as prep
+from personal_agent.browser_signin import PAYMENT_APPROVAL_SECONDS
 from personal_agent.messages import msg
 from test_condition_check_orders_1194 import POST, receipts, run_due, setup_check, switch
 from test_condition_checks_972 import HOST, case, current, wake_job  # noqa: F401 - fixture
@@ -83,3 +86,19 @@ def test_stop_without_open_changes_says_nothing_extra(case):
     assert msg('lines.stopped_unconfirmed', count=0) not in stopped['next_step']
     assert 'Keep a watch' in stopped['next_step'] or stopped['next_step'] == msg('lines.stopped_next')
     assert current(case, row)['state'] == prep.STATE_CANCELLED
+
+
+def test_waiting_for_approval_is_the_current_request_state(case):
+    """Counted while a line Work's request is pending, not forever after it was made (#1252 review)."""
+    line, row = line_with_check(case)
+    job = woken(case, row)
+    service = case.service
+    asked = lambda: service.preparations_service.line_effects(line)['asked']
+    assert asked() == 0
+    service._put_browser_request(job['id'], {'state': 'requested', 'requested_at': time.time(), 'digest': 'd'})
+    assert service.step_approval_pending(job['id']) and asked() == 1
+    service._put_browser_request(job['id'], {'state': 'issued', 'requested_at': time.time(), 'digest': 'd'})
+    assert asked() == 0, 'approved: no longer waiting'
+    service._put_browser_request(job['id'], {'state': 'requested', 'requested_at': time.time() - PAYMENT_APPROVAL_SECONDS - 5,
+                                             'digest': 'd'})
+    assert asked() == 0, 'expired: no longer waiting'
