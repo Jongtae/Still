@@ -525,6 +525,7 @@ class CodeRunner:
         self._owners, self._asked, self._claims = {}, [], []
         #: #1250: state-changing requests to a set's host that Still refused unsent and asked no one about.
         self._refused = []
+        self._claim_digests = {}
         #: #1489: the sets this Work's runs were already told how to keep their steps for.
         self._hinted = set()
         #: #209: the declared intranet hosts the current run reaches (each request rechecks the list).
@@ -579,7 +580,7 @@ class CodeRunner:
         current = slots(self.store)
         masked, plain, set_hosts = [], {}, {}
         # #1456: each run starts with no set hosts, approval requests or dispatch claims of an earlier run.
-        self._owners, self._asked, self._claims, self._refused = {}, [], [], []
+        self._owners, self._asked, self._claims, self._refused, self._claim_digests = {}, [], [], [], {}
         for name in names:
             slot = current.get(name)
             if slot is None or slot.get('kind') != CODE_KIND:
@@ -920,6 +921,10 @@ class CodeRunner:
                     and (not self.require_success_for_observed_effects or exit_status == 0))
         if self._claims:
             result['effects'] = [{'method': method, 'host': host, 'path': path} for _claim, method, host, path in self._claims]
+            # #1250 review: the keyed identity of each sent request, which a refused one is compared with.
+            digests = [self._claim_digests[claim] for claim, *_rest in self._claims if self._claim_digests.get(claim)]
+            if digests:
+                result['effect_digests'] = digests
             if not observed:
                 result['effect'] = 'unknown'
             else:
@@ -934,7 +939,7 @@ class CodeRunner:
             result['approval_requested'] = list(self._asked)
         if self._refused:
             result['refused_effects'] = self._redacted_refusals()
-        self._asked, self._claims, self._refused = [], [], []
+        self._asked, self._claims, self._refused, self._claim_digests = [], [], [], {}
 
     def _note_refused(self, message, reason):
         """#1250: keep a state-changing request to a secret set's host that Still refused before sending it.
@@ -951,8 +956,35 @@ class CodeRunner:
         if len(self._refused) >= MAX_CHECKED_REQUESTS:
             return
         # Held in memory as sent; redacted only once the run's own state values are known (``_redacted_refusals``).
-        self._refused.append({'method': method[:10], 'host': host[:253], 'path': str(message.get('path') or '/'),
-                              'layer': 'still', 'sent': False, 'reason': str(reason or '')})
+        row = {'method': method[:10], 'host': host[:253], 'path': str(message.get('path') or '/'),
+               'layer': 'still', 'sent': False, 'reason': str(reason or '')}
+        digest = self._request_digest(message, method, host if host in self._owners else _hostname(host))
+        if digest:
+            row['input_digest'] = digest
+        self._refused.append(row)
+
+    def _request_digest(self, message, method, host):
+        """The keyed identity the dispatch ledger gives this exact request (``ApiRequests._effect_identities``), or None.
+
+        Over the Work, the set, the method, the URL with its query and the body; a keyed digest, so it
+        carries no value.  Computed as ``_state_change`` computes it, so a refused request and a later sent
+        one compare by what they would change, not by their endpoint (#1250 review).  None when it cannot
+        be computed: such a refusal is then never taken as made up by a later send.
+        """
+        from .api_requests import ApiRequests
+        owners = self._owners.get(host) or ()
+        if not owners:
+            return None
+        money = [owner for owner in owners if owner[1].get('money') is True]
+        _name, slot = (money or owners)[0]
+        path, query = str(message.get('path') or '/'), str(message.get('query') or '')
+        url = f'https://{host}{path}' + (f'?{query}' if query else '')
+        try:
+            identity, _keys = ApiRequests(self.store, self.work_id, approvals=self.approvals)._effect_identities(
+                slot, method, url, message.get('bodyText'))
+        except Exception:  # noqa: BLE001 - an unknown identity only keeps the refusal standing
+            return None
+        return identity if isinstance(identity, str) and identity else None
 
     def _redacted_refusals(self):
         """The refused requests with stored secrets and this run's own state values redacted (#1250 review).
@@ -1211,6 +1243,9 @@ class CodeRunner:
                 api._release_effect(claim)
                 return False,str(exc)
         self._claims.append((claim, method, host, redact_known_secrets(self.store, path)))
+        # #1250 review: the request's own keyed identity (the dispatch ledger's ``input_digest``), so a later
+        # refused/sent comparison covers its query and body, never only its endpoint.
+        self._claim_digests[claim] = identity
         return True, ''
 
     def _session(self, node, runtime, workdir, argv, policy, roots, timeout, requests, phase,
@@ -1349,13 +1384,15 @@ def evidence(result):
     and the ones waiting for the owner (``refused_because``), by method, host and path only.
     """
     kept = {key: result.get(key) for key in ('exit_status', 'timed_out', 'packages', 'hosts', 'secrets', 'sandbox', 'code_digest',
-                                             'failed_phase', 'effects', 'effect', 'download_artifact', 'check_proof') if key in result}
+                                             'failed_phase', 'effects', 'effect_digests', 'effect', 'download_artifact', 'check_proof')
+            if key in result}
     if result.get('approval_requested'):
         kept['refused_because'] = 'owner-approval-requested'
         kept['approval_requested'] = result['approval_requested']
     if result.get('refused_effects'):
         # #1250: refused unsent by Still, nobody asked; by method, host, path and Still's reason only.
-        kept['refused_effects'] = [{key: row.get(key) for key in ('method', 'host', 'path', 'layer', 'sent', 'reason')}
+        kept['refused_effects'] = [{key: row.get(key) for key in ('method', 'host', 'path', 'layer', 'sent', 'reason', 'input_digest')
+                                    if key in row}
                                    for row in result['refused_effects'][:MAX_CHECKED_REQUESTS] if isinstance(row, dict)]
     if isinstance(result.get('library'), dict):
         # #1486: what happened to each set's library, never its source.  #1489: and why a proposal was not
