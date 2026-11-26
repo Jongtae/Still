@@ -10,10 +10,11 @@ The existing preparations.Preparations store retains persistence ownership.
 import json
 import uuid
 from contextlib import contextmanager, nullcontext
-from datetime import datetime
+from datetime import datetime, timezone
 
 from . import entrusted_lines as el
 from . import condition_checks as checks
+from . import continuous_lines as continuous
 from . import preparations as prep
 from . import owner_model as om
 from . import work_status as ws
@@ -267,7 +268,14 @@ class PreparationsService:
                 raise not_run(ToolError(msg('preparations.resume_line_day_plan_only'),'resume_line_day_plan_only'))
             steers=service.owner_steer_words(job)
             steered=bool(unattended and not planning and steers)
-            if unattended and not planning:
+            planner=None
+            if (unattended and not planning and not steered and args.get('kind')==prep.KIND_PREPARE
+                    and args.get('check') not in (None,'')):
+                running=self.own_running_row(job)
+                if (running and running.get('origin')==prep.ORIGIN_LINE_PLANNER
+                        and running.get('line_id') and args.get('line')==running['line_id']):
+                    planner=running
+            if unattended and not planning and planner is None:
                 # #938: the run of a qualifying line row schedules its line's next piece, and only that.
                 # #968/#984: a steered run's own replacement, or work that is not piece-shaped, takes the
                 # owner-present path below instead.
@@ -322,17 +330,19 @@ class PreparationsService:
                 # over the whole replacement (every changed place of its instruction), not a display preview.
                 raise not_run(ToolError(msg('preparations.steer_not_asked'),'unattended_run'))
             accepted_from=steers[-1][0] if steered and not args.get('replaces') else None
-            accepted_by=(prep.ACCEPTED_OWNER_STEER if accepted_from else
+            # A planner-created executor gets its standing from the active mandate at run time.
+            accepted_by=(prep.ACCEPTED_OWNER_WORK if planner else
+                         prep.ACCEPTED_OWNER_STEER if accepted_from else
                          prep.ACCEPTED_DAY_PLAN if planning else
                          prep.ACCEPTED_OWNER_REQUEST if asked else
                          prep.ACCEPTED_OWNER_WORK if owner_work else None)
             accepted=accepted_by is not None
             # #766: the preparation this one takes the place of (a changed target or plan); it stops
-            # once this one is scheduled.  Only in the owner's own Work, which schedules at once, so a
-            # proposal never stops what is running.
+            # once this one is scheduled. A proposal never stops what is running. The line planner's
+            # replacement instead checks the automatic pause and mandate in the scheduling transaction.
             replaces=args.get('replaces')
             current=None
-            if replaces not in (None,''):
+            if planner is None and replaces not in (None,''):
                 current=service.preparations.get(replaces) if isinstance(replaces,str) else None
                 if not current or current['state'] not in prep.ACTIVE_STATES:
                     raise not_run(ToolError(str(prep.PreparationRefusal('replace_not_found')),'replace_not_found'))
@@ -348,31 +358,61 @@ class PreparationsService:
                 held=self.held_line(job['id'])
                 if held:raise not_run(ToolError(msg('lines.refused_line_unnamed',line=held),'line_unnamed'))
             line_id=self.scheduled_line(line_arg,current,accepted=accepted,planning=planning)
+            explicitly_linked=False
+            if line_id and owner_work and not planning:
+                with service.store.db() as db:
+                    active_line=continuous.active(db,line_id,now)
+                if active_line and (asked or service.store.outside_content_sources(job['id'])):
+                    brief=service.lines.current(line_id)
+                    if brief:
+                        preview=f"Schedule on the entrusted line {brief['task']!r}: {summary}"
+                        explicitly_linked=service.decision_judge.explicit_preparation_request(
+                            service.owner_request_words(job),preview,service.preparation_conversation(job)).outcome==JUDGMENT_YES
             stopped=None
             try:
                 # #582: a goal the owner declined is not set up again unless they ask for it again.
                 if not asked and service.declined_before(job['id'],goal,now):
                     raise not_run(prep.PreparationRefusal('declined_before'))
-                with (service.store.db() if current else nullcontext()) as db:
+                with (service.store.db() if current or line_id else nullcontext()) as db:
                     if db is not None:
                         db.execute('BEGIN IMMEDIATE')
                         service.store.require_read_checkpoint_writer(db)
-                        target=db.execute('SELECT state FROM preparations WHERE id=?',(replaces,)).fetchone()
-                        if not target or target['state'] not in prep.ACTIVE_STATES:
-                            raise not_run(prep.PreparationRefusal('replace_not_found'))
+                        if planner is not None:
+                            now=service.preparations.clock()
+                        mandate=continuous.active(db,line_id,now)
+                        if planner is not None:
+                            self.require_planner_executor(db,job['id'],planner,mandate,window[1],now,replaces=replaces)
+                        elif mandate and (planning or (not explicitly_linked
+                                and continuous.member_revision(db,job['id'],line_id)!=mandate['revision'])):
+                            raise not_run(prep.PreparationRefusal('line_standing_link'))
+                        if replaces and planner is None:
+                            target=db.execute('SELECT state FROM preparations WHERE id=?',(replaces,)).fetchone()
+                            if not target or target['state'] not in prep.ACTIVE_STATES:
+                                raise not_run(prep.PreparationRefusal('replace_not_found'))
+                            if mandate:
+                                if not asked:
+                                    raise not_run(prep.PreparationRefusal('replace_not_allowed'))
+                                continuous.fence(db,line_id,now,work_id=job['id'])
+                        if line_id and prep.line_refusal(db,line_id):
+                            raise not_run(prep.PreparationRefusal('line_inactive'))
+                        if mandate and explicitly_linked and service.owner_typed_work(job) and not replaces:
+                            continuous.record_membership(db,job['id'],line_id,mandate['revision'],refresh=True)
                     row=service.preparations.create(kind=kind,goal=goal,due_at=due_at,timezone=timezone,recurrence=recurrence,
                                                  channel=channel,created_from=job['id'],
                                                  state=prep.STATE_SCHEDULED if accepted else prep.STATE_PROPOSED,
                                                  accepted_by=accepted_by,accepted_from=accepted_from,
                                                  window=window,delivery_mode=delivery_mode,title=title,offer=offer,
                                                  report_every_minutes=fields['report_every_minutes'],line_id=line_id,
-                                                 requested_until=fields['requested_until'],check=spec,db=db,replaces=replaces)
+                                                 requested_until=fields['requested_until'],check=spec,db=db,replaces=replaces,
+                                                 deduplicate=planner is None)
                     # #574: another Work's identical proposal is this one; the owner's own Work accepts it.
                     already=bool(row.get('already_proposed'))
                     if already and accepted:
                         row=service.preparations.accept(row['id'],accepted_by,accepted_from=accepted_from,db=db,replaces=replaces)
-                    if db is not None and row['state']==prep.STATE_SCHEDULED and replaces!=row['id']:
+                    if replaces and row['state']==prep.STATE_SCHEDULED and replaces!=row['id']:
                         stopped=service.preparations.cancel(replaces,db=db)
+                    if line_id and spec and row['state']==prep.STATE_SCHEDULED and continuous.active(db,line_id,now):
+                        continuous.trigger(db,line_id,{'kind':'check_ready','check':spec['digest'],'at':now,'output':''})
             except prep.PreparationRefusal as exc:
                 raise ToolError(str(exc),exc.code,**ran_field(exc)) from None
             LOG.info('preparation %s id=%s work=%s kind=%s already_proposed=%s',row['state'],row['id'],job['id'],kind,already)
@@ -424,6 +464,35 @@ class PreparationsService:
                 if terms.get('report_seconds'):result['report_every_minutes']=terms['report_seconds']//60
             return result
         return schedule
+
+    def require_planner_executor(self, db, work_id, planner, mandate, until_at, now, *, replaces):
+        """Check planner authority in the same transaction that creates the executor (#1218)."""
+        service=self.service
+        job=db.execute('SELECT request_key,status FROM jobs WHERE id=?',(work_id,)).fetchone()
+        line_id=planner['line_id']
+        if (not mandate or mandate['planner_id']!=planner['id'] or not job or job['status']!='running'
+                or prep.preparation_of(job['request_key'])!=planner['id']
+                or prep.Preparations.run_refusal(db,work_id,now)
+                or continuous.member_revision(db,work_id,line_id)!=mandate['revision']
+                or service.stop.is_set() or service._stopped_in(db,work_id)):
+            raise not_run(ToolError(UNATTENDED_APPROVAL_TEXT,'unattended_run'))
+        if not now<until_at<=mandate['ends_at']:
+            raise not_run(ToolError('The executor window must end by the mandate end time.','line_invalid_end'))
+        if replaces not in (None,''):
+            target=db.execute('SELECT updated_at,check_status FROM preparations WHERE id=? AND line_id=? '
+                              'AND state=? AND check_spec IS NOT NULL',
+                              (replaces,line_id,prep.STATE_PAUSED)).fetchone() if isinstance(replaces,str) else None
+            status=json.loads(target['check_status'] or '{}') if target else {}
+            # Older automatic pauses used the check time. An explicit pause advances updated_at.
+            if (not target or status.get('paused')!='failures'
+                    or target['updated_at']!=status.get('paused_at',status.get('last_run_at'))):
+                raise not_run(ToolError(UNATTENDED_APPROVAL_TEXT,'unattended_run'))
+        slot=prep.slot_key(job['request_key'])
+        if db.execute('SELECT 1 FROM preparations p JOIN jobs j ON j.id=p.created_from '
+                      'WHERE p.line_id=? AND p.check_spec IS NOT NULL '
+                      'AND (j.request_key=? OR instr(j.request_key,?)=1) LIMIT 1',
+                      (line_id,slot,slot+prep.CONTINUATION_SEPARATOR)).fetchone():
+            raise not_run(prep.PreparationRefusal('line_executor_exists'))
 
     def offer_line_resume(self, job, line_id, fields, channel):
         """#1027: make an offer through #659 without scheduling or changing the line."""
@@ -726,7 +795,9 @@ class PreparationsService:
         """One readable receipt, shared by messenger notices and the existing Settings result."""
         lang = owner_language(self.service.store) or 'ko'
         if event['target'] == 'lines.open_matters':
-            text = msg('lines.self_change_notice', lang, line=event['line_id'], version=event['version'],
+            brief = self.service.lines.readable(event['line_id'])
+            name = el.line_name(brief, self.service._redact_known_secrets) if brief else msg('label.not_recorded', lang)
+            text = msg('lines.self_change_notice', lang, line=name, version=event['version'],
                        before=el.excerpt(event['before']['open_matters'], 1000),
                        after=el.excerpt(event['after']['open_matters'], 1000))
             if event.get('outside_content'):
@@ -895,9 +966,18 @@ class PreparationsService:
         try:self.line_tick(now)
         except Exception as exc:  # noqa: BLE001 - line upkeep never stops existing preparations
             LOG.warning('line tick unavailable kind=%s',type(exc).__name__)
+        with service.store.db() as db:
+            expired=[item['line_id'] for item in db.execute(
+                'SELECT line_id FROM line_mandates WHERE closed=0 AND ends_at<=?', (now,))]
+        for line_id in expired:
+            self.stop_line(line_id, end_line=False, due_before=now)
+        try:
+            picked=int(service.condition_checks.run_due_planner(now))
+        except Exception as exc:
+            LOG.warning('line planner admission failed kind=%s',type(exc).__name__)
+            picked=0
         # Fetch enough to skip paused/untold dream rows without hiding due owner work.
         rows=service.preparations.due(now,limit=prep.MAX_ACTIVE+prep.TICK_LIMIT,busy=service.lane_work_ids())
-        picked=0
         for row in rows:
             if row['state']==prep.STATE_SCHEDULED and row.get('accepted_by')==prep.ACCEPTED_DREAM:
                 if not self.look_back_on() or row.get('offered_at') is None:
@@ -1065,19 +1145,29 @@ class PreparationsService:
             row=service.preparations.get(preparation_id)
             # #969: the owner's goal and accepted risk lead; limits the AI set itself are its plan.
             if not row:return msg('preparations.run_fact')+'\n'+msg('preparations.own_limits')
-            count,maximum,recurrence=int(row['run_count']),row.get('max_runs'),row.get('recurrence')
-            # ``start`` counts the run and leaves ``due_at`` on its slot until the run is settled.
-            if recurrence==prep.RECURRENCE_WINDOW:
-                following=prep.next_window_slot(row,row['due_at'])
-            else:
-                following=prep.next_due(row['due_at'],row['timezone'],recurrence,row['due_at'],row.get('rule_start'),count)
+            count,maximum=int(row['run_count']),row.get('max_runs')
             local=lambda slot:prep.local_text(slot,row['timezone'])
-            schedule=(msg('preparations.run_next',due=local(following)) if following is not None
-                      else msg('preparations.run_last'))
-            if row.get('check_spec'):
-                schedule=msg('checks.scheduled')
-            if row.get('until_at') is not None:
-                schedule+=msg('preparations.run_end',end=local(row['until_at']))
+            planner=row.get('origin')==prep.ORIGIN_LINE_PLANNER
+            recurrence=None if planner else row.get('recurrence')
+            until_at=row.get('until_at')
+            if planner:
+                schedule=msg('checks.planner_triggered')
+                following=None
+                with service.store.db() as db:
+                    mandate=continuous.current_planner(db,row,service.preparations.clock())
+                until_at=mandate['ends_at'] if mandate else None
+            else:
+                # ``start`` counts the run and leaves ``due_at`` on its slot until the run is settled.
+                if recurrence==prep.RECURRENCE_WINDOW:
+                    following=prep.next_window_slot(row,row['due_at'])
+                else:
+                    following=prep.next_due(row['due_at'],row['timezone'],recurrence,row['due_at'],row.get('rule_start'),count)
+                schedule=(msg('preparations.run_next',due=local(following)) if following is not None
+                          else msg('preparations.run_last'))
+                if row.get('check_spec'):
+                    schedule=msg('checks.scheduled')
+            if until_at is not None:
+                schedule+=msg('preparations.run_end',end=local(until_at))
             terms=prep.stored_window_terms(row)
             if recurrence==prep.RECURRENCE_WINDOW and following is None and terms.get('requested_until') is not None:
                 requested=terms['requested_until']
@@ -1095,7 +1185,7 @@ class PreparationsService:
             else:
                 delivery=msg('preparations.run_delivery_bundle') if self.held_row(row) else msg('preparations.run_delivery_needed' if row.get('delivery_mode')==prep.DELIVERY_WHEN_NEEDED
                              else 'preparations.run_delivery',channel=row['channel'])
-            targets=service.condition_checks.state_targets(preparation_id)
+            targets=service.condition_checks.state_targets(preparation_id, work_id=job['id'])
             check_state=('\n'+msg('checks.update_targets', targets=json.dumps(targets))) if targets else ''
             return msg('preparations.run_record', id=preparation_id,
                        position=msg('preparations.run_bounded',run=count,maximum=maximum) if maximum else str(count),
@@ -1187,7 +1277,13 @@ class PreparationsService:
             content+='\n\n'+self.line_run_input(job,row)
         handoff=checks.handoff_event(service.store,job)
         if handoff:
-            content+='\n\n'+checks.handoff_text(service.store,handoff['trace'],(row or {}).get('timezone'))
+            from .quickstart_store import owner_words_work
+            trace=handoff['trace']
+            for event in trace.get('events',()):
+                source=service.store.job(event['source_work_id']) if event.get('source_work_id') else None
+                if owner_words_work(source) and not service.store.work_request_forgotten(source['id']):
+                    event['output']=service._redact_known_secrets(source['message'])
+            content+='\n\n'+checks.handoff_text(service.store,trace,(row or {}).get('timezone'))
         rows.append({'role':'user','content':content,'job_id':job['id'],'channel':job.get('channel'),'qualifier':None,
                      'request_key':job.get('request_key'),'created':job.get('created')})
         return rows
@@ -1489,7 +1585,7 @@ class PreparationsService:
         home_zone=service.home_zone()
         day=service.preparations.budget_day(service.preparations.clock())
         rows=[]
-        lines={brief['line_id']:brief['task'] for brief in service.lines.lines()}
+        lines={brief['line_id']:el.line_name(brief) for brief in service.lines.lines()}
         # #1005: a line's finished pieces come back once per line in ``piece_groups``.
         for row in service.preparations.rows(finished_pieces=False):
             # Preserve Lane S's decision Evidence; Settings claims a held failure was told
@@ -1522,7 +1618,7 @@ class PreparationsService:
                          'window_recurrence':terms.get('recurrence'),
                          'report_every_minutes':terms['report_seconds']//60 if terms.get('report_seconds') else None,
                          'last_decision':row.get('last_decision'),'last_decision_reason':row.get('last_decision_reason'),
-                         # #798: the entrusted line this row works for, by its task sentence.
+                         # #798: the short name of the line this row works for.
                          'line_id':row.get('line_id'),'line_task':lines.get(row.get('line_id')),
                          'line_account':row.get('origin')==prep.ORIGIN_LINE_ACCOUNT})
             if row['state']==prep.STATE_PROPOSED and row.get('origin')==prep.ORIGIN_LINE_RESUME:
@@ -2279,6 +2375,11 @@ class PreparationsService:
             return ''
         if self.line_has_pending_work(brief['line_id'],exclude=row['id']):
             return ''
+        if row.get('origin')==prep.ORIGIN_LINE_PLANNER:
+            with self.service.store.db() as db:
+                mandate=continuous.current_planner(db,row,self.service.preparations.clock())
+            will_wait=row['state']==prep.STATE_SCHEDULED or row.get('run_return_state')==prep.STATE_SCHEDULED
+            return '' if mandate and will_wait else msg('lines.no_following_run')
         now=max(self.service.preparations.clock(),row['due_at'])
         count=row['run_count']+(row['state']==prep.STATE_SCHEDULED)
         if row.get('run_return_state'):
@@ -2329,14 +2430,15 @@ class PreparationsService:
         return out
 
     def line_entry(self, brief):
-        """One line as the list answer shows it: task, promise, last delivered report, next run or blocker."""
+        """One line as the list answer shows it: name, promise, last delivered report, next run or blocker."""
         service=self.service
         rows=self.line_rows(brief['line_id'])
         home_zone=service.home_zone()
         zone=home_zone or (rows[0]['timezone'] if rows else None)
         delivered=[item for item in self.line_outcomes(brief['line_id'],limit=el.OUTCOMES_SHOWN)
                    if item['outcome']==el.OUTCOME_DELIVERED]
-        entry={'line_id':brief['line_id'],'version':brief['version'],'state':brief['state'],'task':brief['task'],
+        entry={'line_id':brief['line_id'],'version':brief['version'],'state':brief['state'],
+               'title':el.line_name(brief),'task':brief['task'],
                'report_promise':brief['report_promise'],
                'last_report':prep.local_text(delivered[0]['at'],zone) if delivered else None}
         day=service.preparations.budget_day(service.preparations.clock())
@@ -2388,10 +2490,25 @@ class PreparationsService:
         """``entrusted_line`` read: one line's brief and latest outcomes, for a related answer."""
         brief=self.service.lines.current(line_id) if isinstance(line_id,str) and line_id else None
         if brief is None:raise el.LineRefusal('line_not_found')
-        return {**el.public_brief(brief),'ref':el.REF_PREFIX+brief['line_id'],
+        result={**el.public_brief(brief),'ref':el.REF_PREFIX+brief['line_id'],
                 'outcomes':self.line_outcomes(line_id,limit=el.READ_OUTCOMES),
                 'text':el.brief_text(brief)+'\n'+el.outcomes_text(self.line_outcomes(line_id,limit=el.READ_OUTCOMES),
                                                                self.service.home_zone())}
+        with self.service.store.db() as db:
+            now=self.service.preparations.clock()
+            mandate=continuous.active(db,line_id,now)
+            if mandate:
+                day=self.service.preparations.budget_day(now,db)
+                result['standing']={'ends_at':datetime.fromtimestamp(mandate['ends_at'],timezone.utc).isoformat(), 'owner_revision':mandate['revision'],
+                                    'planner_wakes':mandate['wakes'] if mandate['wake_day']==day else 0,
+                                    'daily_wakes':checks.DAILY_WAKES}
+                plan=continuous.plan_target(db,line_id)
+                if plan and plan['expires']>now:
+                    check=db.execute('SELECT state,check_spec,until_at FROM preparations WHERE id=?',(plan['check_id'],)).fetchone()
+                    if (check and check['state']==prep.STATE_SCHEDULED and check['check_spec'] and check['until_at']>now
+                            and json.loads(check['check_spec'])['digest']==plan['digest']):
+                        result['standing']['plan']={'id':plan['id'], 'expires':datetime.fromtimestamp(plan['expires'],timezone.utc).isoformat(), 'safe_mode':'hold'}
+        return result
 
     def line_touches_money(self, line_id):
         """Whether a run of this line declared or reached a payment, or called a connection the owner marked money-capable.
@@ -2455,24 +2572,39 @@ class PreparationsService:
             if stood:self.record_line_row_started(job['id'],brief['line_id'],'account',restart,db)
             return result
 
-    def line_notice(self, job, kind, line_id, version):
+    def line_notice(self, job, kind, line_id, version, *, db=None, fingerprint=None):
         """Queue one owner notice of a line on ``job``'s conversation (``lines.NOTICE_*``).
 
         Returns '' when a surface took it, else the notice's text: this conversation has no
         surface that sends notices (the local web chat), so the reply says it instead.
+        With a transaction, queue or record the notice alongside the state change itself.
         """
         service=self.service
-        notice=f'{kind}{line_id}:{version}'
-        service.queue_notification(job,notice,fingerprint=f'{line_id}:{version}')
-        if service.store.notification_of(job['id'],notice):return ''
-        return self.line_notice_text({'kind':notice,'fingerprint':f'{line_id}:{version}'}) or ''
+        key=f'{line_id}:{version}'
+        notice=f'{kind}{key}'
+        fingerprint=fingerprint or key
+        if db is None:
+            service.queue_notification(job,notice,fingerprint=fingerprint)
+            if service.store.notification_of(job['id'],notice):return ''
+        else:
+            surface=service.surface_of(job)
+            if surface is not None:
+                generation=job['channel'][len(surface.channel_prefix):]
+                service.store.telegram.queue_notification(job['id'],job['chat_id'],generation,
+                                                          notice,fingerprint,surface=surface.name,db=db)
+                return ''
+        text=self.line_notice_text({'kind':notice,'fingerprint':fingerprint,'job_id':job['id']}) or ''
+        if db is not None and text:
+            service.record_conversation_notice(text,channel=job['channel'],db=db)
+            return ''
+        return text
 
     @staticmethod
     def told(next_step, untold):
         """The worker's next step, with the notice to say in the reply when Still could not send it."""
         return next_step if not untold else msg('lines.say_in_reply',text=untold)
 
-    def stop_line(self, line_id, work_id=None, *, end_line=True):
+    def stop_line(self, line_id, work_id=None, *, end_line=True, due_before=None):
         """Cancel the line's work and optionally end its brief. Return ``(brief, changed)``.
 
         The announcement button ends the line. Within the tool, the owner may stop just its work.
@@ -2482,13 +2614,19 @@ class PreparationsService:
         with service.store.db() as db:
             db.execute('BEGIN IMMEDIATE')
             service.store.require_read_checkpoint_writer(db)
+            mandate=continuous.record(db,line_id)
+            if due_before is not None and not continuous.lapsed(db,line_id,due_before):
+                return service.lines.current(line_id,db),False
+            continuous.fence(db,line_id,service.preparations.clock(),close=True)
             if end_line:
                 before,after=service.lines.write(line_id,work_id,None,'stopped',
                                                  lambda brief:{**brief,'state':el.STATE_STOPPED},db=db)
             else:
                 before=after=service.lines.current(line_id,db)
-                if after is None:raise el.LineRefusal('line_not_found')
-                if after['state']!=el.STATE_ACTIVE:return after,False
+                if after is None or after['state']!=el.STATE_ACTIVE:
+                    if due_before is None:
+                        if after is None:raise el.LineRefusal('line_not_found')
+                        return after,False
             changes_before=db.total_changes
             keys=prep.line_works_sql('request_key')
             db.execute(f"UPDATE jobs SET delivery='cancelled' WHERE delivery='pending' AND {keys}",(line_id,))
@@ -2513,12 +2651,15 @@ class PreparationsService:
             cancelled=[]
             for row in self.line_rows(line_id,db):
                 if row['state'] not in prep.ACTIVE_STATES:continue
-                if not end_line and row['state']==prep.STATE_RUNNING and row['last_run_job_id']:
+                if row['state']==prep.STATE_RUNNING and row['last_run_job_id']:
                     # Ordinary row cancellation lets a running Work finish. This stop reaches its next step.
                     service.store.append_config_list(WORK_STOP_KEY,row['last_run_job_id'],WORK_STOP_KEEP,db=db)
+                    db.execute("UPDATE jobs SET status='cancelled',delivery='cancelled' WHERE id=? AND status='queued'",
+                               (row['last_run_job_id'],))
                 cancelled.append(service.preparations.cancel(row['id'],db=db))
         for row in cancelled:self.withdraw_cancelled_location(row)
-        changed=(after['version']!=before['version']) if end_line else bool(cancelled or replies_changed)
+        changed=(after['version']!=before['version']) if end_line else bool(
+            cancelled or replies_changed or (mandate and not mandate['closed']))
         LOG.info('line stop id=%s end_line=%s changed=%s',line_id,end_line,changed)
         return after,changed
 
@@ -2542,7 +2683,11 @@ class PreparationsService:
             # Undo reverts a rule change; a stop since then stays the owner's.
             restored['state']=brief['state']
             return restored
-        before,after=service.lines.write(line_id,work_id,int(version),'undo',restore)
+        with service.store.db() as db:
+            db.execute('BEGIN IMMEDIATE')
+            before,after=service.lines.write(line_id,work_id,int(version),'undo',restore,db=db)
+            if after['version']!=before['version']:
+                continuous.fence(db,line_id,service.preparations.clock(),work_id=work_id)
         if after['account_every_days']!=before['account_every_days']:self.retime_line_account(before,after)
         return after
 
@@ -2722,8 +2867,15 @@ class PreparationsService:
                 if action=='read':
                     result=self.line_read(args.get('line'))
                     self._record_line_read(job['id'],result,held=True)
+                    if service.owner_typed_work(job):
+                        with service.store.db() as db:
+                            db.execute('BEGIN IMMEDIATE')
+                            service.store.require_read_checkpoint_writer(db)
+                            # Revision zero only links this Work to historical effect receipts.
+                            if continuous.record(db,result['line_id']):
+                                continuous.record_membership(db,job['id'],result['line_id'],0)
                     return result
-                if action not in ('open','revise','undo','stop','restart'):raise refused('line_invalid_action')
+                if action not in ('open','revise','undo','stop','restart','entrust'):raise refused('line_invalid_action')
                 if service.owner_typed_work(job):return getattr(self,'_line_'+action)(job,args)
                 # #968: a scheduled run writes only its own line: as the owner's steer asks, or its open matters.
                 authority=self.own_line_authority(job,action,args.get('line'))
@@ -2736,11 +2888,64 @@ class PreparationsService:
                 raise refused(exc.code) from None
         return handle
 
+    def _line_entrust(self, job, args):
+        service=self.service
+        line_id=args.get('line')
+        now=service.preparations.clock()
+        try:
+            ends_at=continuous.parse_end(args.get('ends_at'))
+        except (ValueError, OverflowError, OSError):
+            raise el.LineRefusal('line_invalid_end') from None
+        current=service.lines.current(line_id)
+        if not current or current['state']!=el.STATE_ACTIVE:
+            raise el.LineRefusal('line_stopped')
+        goal=service._redact_known_secrets(str(args.get('planner_goal') or current['task'])).strip()
+        if not goal or len(goal)>prep.BRIEF_MAX_CHARS:
+            raise el.LineRefusal('line_invalid_planner')
+        end=args['ends_at']
+        summary=(f"Entrust the line {el.line_name(current)!r} until {end}. Task: {current['task']!r}. "
+                 "Its runs follow the owner's current payment "
+                 f"autonomy. Planner instruction: {goal}")
+        from .quickstart_store import owner_words_work
+        if not owner_words_work(job) or service.decision_judge.explicit_preparation_request(
+                service.owner_request_words(job),summary,service.preparation_conversation(job)).outcome!=JUDGMENT_YES:
+            raise el.LineRefusal('line_change_needs_owner')
+        channel=service.preparation_channel(job,prep.KIND_PREPARE,'send')
+        with service.store.db() as db:
+            db.execute('BEGIN IMMEDIATE')
+            service.store.require_read_checkpoint_writer(db)
+            now=service.preparations.clock()
+            if not now<ends_at<=service.condition_checks._next_day(now,db):
+                raise el.LineRefusal('line_invalid_end')
+            latest=service.lines.current(line_id,db)
+            if not latest or latest['version']!=current['version']:
+                raise el.LineRefusal('line_plan_stale')
+            if continuous.active(db,line_id,now) or continuous.lapsed(db,line_id,now):
+                raise el.LineRefusal('line_already_entrusted')
+            executors=[row for row in self.line_rows(line_id,db)
+                       if row.get('check_spec') and row['state'] in (prep.STATE_SCHEDULED,prep.STATE_RUNNING,prep.STATE_PAUSED)]
+            if len(executors)>1 or any(row['state']==prep.STATE_RUNNING for row in executors):
+                raise el.LineRefusal('line_executor_exists')
+            try:
+                row=service.preparations.create(
+                    kind=prep.KIND_PREPARE,goal=goal,due_at=now,timezone=service.home_zone() or 'UTC',
+                    recurrence=None,channel=channel,created_from=job['id'],state=prep.STATE_SCHEDULED,
+                    accepted_by=prep.ACCEPTED_OWNER_WORK,origin=prep.ORIGIN_LINE_PLANNER,line_id=line_id,db=db)
+            except prep.PreparationRefusal as exc:
+                raise not_run(ToolError(str(exc),exc.code)) from None
+            revision=continuous.entrust(db,line_id,job['id'],row['id'],now,ends_at)
+            # Keep the brief and deadline of this entrustment even if a correction fences its plan.
+            self.line_notice(job,el.NOTICE_ENTRUSTED,line_id,revision,db=db,
+                             fingerprint=f"{line_id}:{revision}:{current['version']}:{end}")
+        return {**el.public_brief(current),'ends_at':end,
+                'owner_revision':revision,'planner_id':row['id']}
+
     def _line_open(self, job, args):
         service=self.service
         rules=el.split_rules(args.get('rules'))
         days=el.whole_days(args.get('account_every_days'))
         brief=service.lines.open(job['id'],task=service._redact_known_secrets(args.get('task') or ''),
+                                 title=service._redact_known_secrets(el.normalize_title(args.get('title'))),
                                  report_promise=service._redact_known_secrets(args.get('report_promise') or ''),
                                  rules=[service._redact_known_secrets(rule) for rule in rules],
                                  open_matters=service._redact_known_secrets(args.get('open_matters') or ''),
@@ -2765,6 +2970,8 @@ class PreparationsService:
         drop=el.whole_days(args.get('drop_rule'))
         changes={key:service._redact_known_secrets(args[key]) for key in ('task','report_promise','open_matters')
                  if isinstance(args.get(key),str) and args[key].strip()}
+        if 'title' in args:
+            changes['title']=service._redact_known_secrets(el.normalize_title(args['title']))
         days=el.whole_days(args.get('account_every_days'))
         current=service.lines.current(line_id) if isinstance(line_id,str) and line_id else None
         if current is None:raise el.LineRefusal('line_not_found')
@@ -2773,13 +2980,22 @@ class PreparationsService:
             raise el.LineRefusal('line_invalid_rules')
         if not (rule or drop or changes or days is not None):raise el.LineRefusal('line_nothing_to_change')
         ruled=bool(rule or drop or set(changes)-{'open_matters'} or days is not None)
-        if authority=='steer' and not ruled and self.line_run_row(job):
+        with service.store.db() as db:
+            entrusted=bool(continuous.active(db,line_id,service.preparations.clock()))
+        if authority=='steer' and not ruled and self.line_run_row(job) and not entrusted:
             authority='self'  # #984: open matters need no steer authority for a qualifying line run.
         if authority=='self' and ruled:
             raise not_run(ToolError(msg('lines.refused_run_open_matters_only'),'unattended_run'))
         money=ruled and self.line_touches_money(line_id)
         marked=authority=='steer' and bool(service.store.outside_content_sources(job['id']))
-        if money or marked:
+        if entrusted and authority!='self' and not ruled:
+            stop_request=service.decision_judge.explicit_line_change_request(
+                service.owner_request_words(job),
+                f"Close today's work on {el.line_name(current)!r} now and cancel its runs. Task: {current['task']}",
+                self.line_owner_rules(current),service.preparation_conversation(job),work_id=job['id'])
+            if stop_request.outcome==JUDGMENT_YES:
+                return self._line_stop(job,{**args,'scope':'work'},confirmed=True)
+        if money or marked or (entrusted and authority!='self'):
             change=el.change_text(current,rule=rule,drop=drop,changes=changes,days=days)
             judged=service.decision_judge.explicit_line_change_request(
                 service.owner_request_words(job),change,self.line_owner_rules(current),service.preparation_conversation(job),work_id=job['id'])
@@ -2801,6 +3017,8 @@ class PreparationsService:
             db.execute('BEGIN IMMEDIATE')
             service.store.require_read_checkpoint_writer(db)
             before,after=service.lines.write(line_id,job['id'],expected,'rule' if rule else 'revised',update,db=db)
+            if authority!='self' and after['version']!=before['version']:
+                continuous.fence(db,line_id,now,work_id=job['id'])
             if own_row and after['version']!=before['version']:
                 fingerprint=f"{line_id}:{after['version']}"
                 event={'target':'lines.open_matters','line_id':line_id,'version':after['version'],
@@ -2835,17 +3053,20 @@ class PreparationsService:
         after=self.undo_line_version(args.get('line'),version,job['id'])
         return {**el.public_brief(after),'next_step':msg('lines.undone_next')}
 
-    def _line_stop(self, job, args, *, steered=False):
+    def _line_stop(self, job, args, *, steered=False, confirmed=False):
         service=self.service
         line_id=args.get('line')
         scope=args.get('scope','work')
         if scope not in ('work','line'):raise el.LineRefusal('line_invalid_scope')
         current=service.lines.current(line_id) if isinstance(line_id,str) else None
         if current is None:raise el.LineRefusal('line_not_found')
-        if steered and service.store.outside_content_sources(job['id']):
+        with service.store.db() as db:
+            entrusted=bool(continuous.active(db,line_id,service.preparations.clock()))
+        if not confirmed and ((steered and service.store.outside_content_sources(job['id'])) or entrusted):
             change=('end this entrusted mission and stop everything under it' if scope=='line' else
                     'stop the current work and pending runs while keeping this entrusted mission active')
-            if not self.steer_asked(job,f"{change}: {current['task']}",self.line_owner_rules(current)):
+            if not self.steer_asked(job,f"{change} on {el.line_name(current)!r}. Task: {current['task']}",
+                                    self.line_owner_rules(current)):
                 raise el.LineRefusal('line_change_needs_owner')
         after,changed=self.stop_line(line_id,job['id'],end_line=scope=='line')
         kind,next_key=(el.NOTICE_STOPPED,'lines.stopped_next') if scope=='line' else (
@@ -2999,16 +3220,30 @@ class PreparationsService:
         """The text of one queued line notice, or None when it no longer applies."""
         service=self.service
         kind=notification['kind']
-        line_id,_sep,version=str(notification.get('fingerprint') or '').partition(':')
+        fingerprint=str(notification.get('fingerprint') or '')
+        if kind.startswith(el.NOTICE_ENTRUSTED):
+            parts=fingerprint.split(':',3)
+            if len(parts)!=4 or not parts[2].isdigit():return None
+            line_id,_revision,brief_version,end=parts
+            brief=service.lines.version(line_id,brief_version)
+            if brief is None:return None
+            try:deadline=datetime.fromisoformat(end)
+            except ValueError:return None
+            zone=service.home_zone() or prep.offset_name(deadline)
+            lang=owner_language(service.store,notification.get('job_id')) or 'ko'
+            name=el.line_name(brief,service._redact_known_secrets)
+            return msg('lines.entrusted',lang,title=name,end=prep.local_text(deadline.timestamp(),zone))
+        line_id,_sep,version=fingerprint.partition(':')
         brief=service.lines.readable(line_id)
         if brief is None or not version.isdigit():return None
+        name=el.line_name(brief,service._redact_known_secrets)
         if kind.startswith(el.NOTICE_OPENED):
             if brief['state']!=el.STATE_ACTIVE:return None
             provenance=service.lines.provenance(line_id)
             if provenance.get('by')=='look-back':
-                return service._redact_known_secrets(msg('lines.stood_announced',task=brief['task'],promise=brief['report_promise'],
+                return service._redact_known_secrets(msg('lines.stood_announced',task=name,promise=brief['report_promise'],
                                                         days=provenance['evidence']['days']))
-            return service._redact_known_secrets(msg('lines.announced',task=brief['task'],promise=brief['report_promise']))
+            return service._redact_known_secrets(msg('lines.announced',task=name,promise=brief['report_promise']))
         if kind.startswith(el.NOTICE_PLAN):
             with service.store.db() as db:
                 receipt=db.execute("SELECT detail FROM tool_events WHERE tool='line_self_change' "
@@ -3020,12 +3255,12 @@ class PreparationsService:
             stored=service.lines.version(line_id,int(version))
             rule=stored['rules'][-1]['text'] if stored and stored['rules'] else None
             if rule is None or rule not in [item['text'] for item in brief['rules']]:return None
-            text=msg('lines.restated',rule=rule)
+            text=msg('lines.restated',title=name,rule=rule)
             if self.line_touches_money(line_id):
                 text+='\n\n'+msg('lines.money_rules')+'\n'+self.line_owner_rules(stored)
             return service._redact_known_secrets(str(text or ''))
         if kind.startswith(el.NOTICE_STOPPED):
-            return service._redact_known_secrets(msg('lines.stopped',task=brief['task']))
+            return service._redact_known_secrets(msg('lines.stopped',task=name))
         if kind.startswith(el.NOTICE_WORK_STOPPED):
-            return service._redact_known_secrets(msg('lines.work_stopped',task=brief['task']))
+            return service._redact_known_secrets(msg('lines.work_stopped',task=name))
         return None

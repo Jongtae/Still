@@ -11849,10 +11849,10 @@
   "zh": "{task}。我会{promise}汇报。要结束时请说“停止”。"
  },
  "lines.restated": {
-  "ko": "앞으로: {rule}. 오늘만이 아니라 매번 적용해요.",
-  "en": "From now on: {rule}. This applies every time, not only today.",
-  "ja": "今後: {rule}。今日だけでなく毎回適用します。",
-  "zh": "从现在起：{rule}。这每次都适用，不只是今天。"
+  "ko": "「{title}」에 앞으로 매번 적용할 규칙이에요. {rule}",
+  "en": "The new rule for “{title}” applies every time from now on: {rule}.",
+  "ja": "「{title}」には今後、毎回このルールを適用します。{rule}",
+  "zh": "“{title}”以后每次都遵循这条新规则：{rule}。"
  },
  "lines.money_rules": {
   "ko": "지금 적용되는 규칙 전체와 각각을 정한 원래 말이에요:",
@@ -11891,10 +11891,10 @@
   "zh": "此后规则又有变化，因此没有撤销。"
  },
  "lines.brief": {
-  "ko": "맡은 일 (버전 {version}): {task}\n보고 약속: {promise}\n지금 적용되는 규칙:\n{rules}\n열린 사항: {open}\n정기 보고: {days}일마다",
-  "en": "Entrusted line (version {version}): {task}\nReport promise: {promise}\nRules in force:\n{rules}\nOpen matters: {open}\nPeriodic account: every {days} days",
-  "ja": "任された仕事（バージョン {version}）: {task}\n報告の約束: {promise}\n有効なルール:\n{rules}\n未解決の事項: {open}\n定期報告: {days}日ごと",
-  "zh": "受托事项（版本 {version}）：{task}\n汇报承诺：{promise}\n现行规则：\n{rules}\n未决事项：{open}\n定期汇报：每 {days} 天"
+  "ko": "맡은 일 (버전 {version}): {title}\n할 일: {task}\n보고 약속: {promise}\n지금 적용되는 규칙:\n{rules}\n열린 사항: {open}\n정기 보고: {days}일마다",
+  "en": "Entrusted line (version {version}): {title}\nTask: {task}\nReport promise: {promise}\nRules in force:\n{rules}\nOpen matters: {open}\nPeriodic account: every {days} days",
+  "ja": "任された仕事（バージョン {version}）: {title}\n作業内容: {task}\n報告の約束: {promise}\n有効なルール:\n{rules}\n未解決の事項: {open}\n定期報告: {days}日ごと",
+  "zh": "受托事项（版本 {version}）：{title}\n任务：{task}\n汇报承诺：{promise}\n现行规则：\n{rules}\n未决事项：{open}\n定期汇报：每 {days} 天"
  },
  "lines.no_rules": {
   "ko": "(없음)",
@@ -12183,6 +12183,12 @@
   "en": "task is one sentence of at most 300 characters.",
   "ja": "task は300文字以内の一文です。",
   "zh": "task 为不超过 300 字的一句话。"
+ },
+ "lines.refused_line_invalid_title": {
+  "ko": "맡은 일의 이름은 40자 이내로 적어 주세요.",
+  "en": "Use a line name of up to 40 characters.",
+  "ja": "仕事の名前は40文字以内で入力してください。",
+  "zh": "请使用不超过 40 个字符的名称。"
  },
  "lines.refused_line_invalid_promise": {
   "ko": "report_promise에는 무엇을 언제 보고할지 300자 이내로 적어요.",
@@ -12777,5 +12783,53 @@
   "ko": "맡긴 일 {line}의 남은 사항이 바뀌었어요. 변경 전: {before}. 변경 후: {after}. 되돌리려면 이 일의 {version}번 변경을 되돌려 달라고 하거나 되돌리기를 누르세요. 긴 내용은 줄여 표시하며 전체 내용은 이 일의 기록에 남아 있어요.",
   "ja": "任せた仕事 {line} の未解決事項が変わりました。変更前：{before}。変更後：{after}。戻すには、この仕事のバージョン {version} を元に戻すよう頼むか、元に戻すを押してください。長い内容は省略されますが、全文は履歴に残っています。",
   "zh": "委托事项 {line} 的待办事项已更改。更改前：{before}。更改后：{after}。要撤销，请让 Still 撤销此事项的版本 {version}，或点击撤销。较长内容可能缩略，完整内容保留在历史记录中。"
+ },
+ "lines.refused_line_invalid_end": {
+  "ko": "오늘의 종료 시각을 시간대와 함께 정해 주세요.",
+  "en": "Give an end time for today with a timezone offset.",
+  "ja": "今日の終了時刻をタイムゾーンのオフセット付きで指定してください。",
+  "zh": "请提供今天的结束时间，并注明时区偏移。"
+ },
+ "lines.entrusted": {
+  "ko": "「{title}」을 {end}까지 맡을게요. 주문은 현재 자율 결제 모드 설정을 따라요. 오늘 작업을 멈추려면 “{title} 멈춰”라고 해 주세요.",
+  "en": "I’ll handle “{title}” until {end}. Orders follow your current payment autonomy setting. To stop today’s work, say “stop {title}”.",
+  "ja": "「{title}」を {end} までお預かりします。注文は自律決済モードの現在の設定に従います。今日の作業を止めるには「{title}を止めて」と言ってください。",
+  "zh": "我会负责“{title}”直到 {end}。下单遵循自主付款模式的当前设置。要停止今天的工作，请说“停止{title}”。"
+ },
+ "lines.refused_line_invalid_planner": {
+  "ko": "계획 작업의 지시가 비어 있거나 너무 길어요.",
+  "en": "The planner needs an instruction within the preparation length limit.",
+  "ja": "計画作業の指示が空か長すぎます。",
+  "zh": "规划任务的指令为空或过长。"
+ },
+ "lines.refused_line_already_entrusted": {
+  "ko": "이 일은 오늘 이미 맡겨 두셨어요. 바뀐 지시는 수정으로 반영해 주세요.",
+  "en": "This line is already entrusted for today. Revise it to change the instructions.",
+  "ja": "この継続作業は本日すでに委任されています。指示は修正してください。",
+  "zh": "今天已委托这项工作。请通过修订更改指令。"
+ },
+ "lines.refused_line_executor_exists": {
+  "ko": "진행 중인 조건 검사 하나만 실행기로 둘 수 있어요.",
+  "en": "Keep one condition check as the line executor and let any current check Work finish first.",
+  "ja": "継続作業の実行には条件チェックを一つだけ残し、実行中の作業を先に完了してください。",
+  "zh": "一项工作只能有一个条件检查执行器，请先等待正在运行的检查任务结束。"
+ },
+ "lines.refused_line_plan_stale": {
+  "ko": "이 일의 지시가 바뀌었어요. 최신 지시를 확인해 주세요.",
+  "en": "The instructions for this line changed. Read the current instructions.",
+  "ja": "この継続作業の指示が変更されました。最新の指示を確認してください。",
+  "zh": "此项工作的指令已变更。请查看当前指令。"
+ },
+ "lines.standing_link": {
+  "ko": "소유자가 이 일에 연결하도록 맡긴 작업만 추가할 수 있어요.",
+  "en": "Add work to this entrusted line only when the owner asked for the link.",
+  "ja": "所有者がこの継続作業への追加を依頼した場合にのみ追加できます。",
+  "zh": "只有所有者要求关联时，才可将工作添加到这项委托。"
+ },
+ "checks.planner_triggered": {
+  "ko": "조건 검사 결과나 소유자의 지시에 따라 계획 작업이 실행돼요.",
+  "en": "The planner runs when the executor reports an event or the owner changes instructions.",
+  "ja": "実行側のイベントや所有者の指示変更に応じて計画作業が実行されます。",
+  "zh": "执行器报告事件或所有者更改指令时，规划任务会运行。"
  }
 }

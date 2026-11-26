@@ -1064,14 +1064,17 @@ class AgentService:
                                            or self.preparations_service.held_row(row))
                 else 'to_owner')
 
-    def self_set_run(self, job):
+    def self_set_run(self, job, *, db=None):
         """Self-set scheduled run, or one whose preparation provenance is unavailable (#717)."""
         preparation_id=prep.preparation_of((job or {}).get('request_key'))
         if preparation_id is None:return False
-        row=self.preparations.get(preparation_id)
-        # The Work retains its preparation request key after cancellation/deletion.
-        # Missing consent provenance must never widen payment authority.
-        return row is None or row.get('accepted_by') in prep.SELF_SET
+        from . import continuous_lines as continuous
+        with (self.store.db() if db is None else nullcontext(db)) as db:
+            row=db.execute('SELECT accepted_by,line_id,state FROM preparations WHERE id=?',(preparation_id,)).fetchone()
+            if row and continuous.active(db,row['line_id'],self.preparations.clock()):
+                return False
+            # A derived line standing lapses with its mandate. The saved row has its original provenance.
+            return row is None or row['accepted_by'] in prep.SELF_SET
 
     def owner_accepted_run(self, job):
         """#821 (owner decision 2026-11-14): ``job`` is the current run of a preparation the owner accepted.
@@ -5350,7 +5353,7 @@ class AgentService:
         # before. The accepted watch deadline still bounds active execution;
         # #798: so does stopping its entrusted line (stop wins at the next step).
         return bool(refusal and (job.get('status')!='running'
-                                 or refusal in ('preparation-window-expired',prep.LINE_STOPPED,prep.LINE_UNREADABLE)))
+                                 or refusal in ('preparation-window-expired','line-day-ended',prep.LINE_STOPPED,prep.LINE_UNREADABLE)))
 
     def work_budget(self, job_id):
         # #1301: resume the original request's counters and remaining active
@@ -7765,7 +7768,7 @@ class AgentService:
             if result and status_notice:self._deliver_payment_autonomy_notice(job,result)
             return result
         mode=self.payment_autonomy_settings(db=db)
-        if self.unattended_work(job) and self.self_set_run(job):
+        if self.unattended_work(job) and self.self_set_run(job,db=db):
             # #717: a run the owner's AI or the look back set up on its own never pays, even in the mode.
             if ticket:raise not_run(ToolError(msg('payment_autonomy.changed'),'payment_autonomy_changed'))
             return None

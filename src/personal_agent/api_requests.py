@@ -1148,7 +1148,7 @@ class ApiRequests:
         return True
 
     def _effect_guard(self, slot, identity, replay_keys, *, method=None, effect=None, destination=None,
-                      request_ref=None, approved_next=False):
+                      request_ref=None, approved_next=False, check_request=None):
         """Recheck current authority and atomically reserve an exact dispatch.
 
         The preflight (no method) also refuses replay before requesting payment
@@ -1162,7 +1162,7 @@ class ApiRequests:
             db.execute('BEGIN IMMEDIATE')
             effect_evidence = getattr(self.approvals, 'api_effect_evidence', None)
             if callable(effect_evidence):
-                evidence = effect_evidence(db, effect)
+                evidence = effect_evidence(db, effect, check_request, slot)
                 receipt_id = self.work_id
             else:
                 evidence = {}
@@ -1175,7 +1175,8 @@ class ApiRequests:
             dispatches = external_effect_events(self.store, self.work_id, db=db)
             refusal = effect_mutation_refusal(db, self.store, self.work_id, target,
                                              replay_keys=replay_keys(db, [*dispatches[0], *dispatches[1]]),
-                                             dispatches=dispatches, approved_next=approved_next)
+                                             dispatches=dispatches, approved_next=approved_next,
+                                             logical_action=evidence.get('logical_action_digest'))
             if refusal == 'effect_unknown':
                 raise ApiError(UNKNOWN_EFFECT_TEXT, 'effect_unknown', effect='unknown', ran=False)
             if refusal == 'effect_replayed':
