@@ -3283,16 +3283,28 @@ class PreparationsService:
             money=self.line_touches_money(line_id)
             lang=owner_language(service.store,notification.get('job_id')) or 'ko'
             lines=[msg('lines.rules_changed',lang,title=name)]
+            # #1256: a rewrite (new rules in place of two or more removed ones) tells the removed
+            # rules by count; Undo still restores them.  A pure removal still names each rule.
+            dropped=[before for before,after in changes if after is None]
+            rewrite=len(dropped)>=2 and len(dropped)<len(changes)
+            words={id(after):self.rule_words(after,lang) for _before,after in changes if money and after is not None}
+            # Words shared by every changed rule (one owner message) are quoted once, after the list.
+            shared=next(iter(words.values())) if len(words)>=2 and len(set(words.values()))==1 else None
             for before,after in changes:
                 if before is None:
                     line=msg('lines.rule_added',lang,rule=self.rule_text(after,lang))
                 elif after is None:
+                    if rewrite:continue
                     line=msg('lines.rule_dropped',lang,rule=self.rule_text(before,lang))
                 else:
                     line=msg('lines.rule_replaced',lang,before=self.rule_text(before,lang),after=self.rule_text(after,lang))
-                if money and after is not None:
-                    line+=' '+msg('lines.your_words',lang,words=self.rule_words(after,lang))
+                if id(after) in words and shared is None:
+                    line+=' '+msg('lines.your_words',lang,words=words[id(after)])
                 lines.append(line)
+            if rewrite:
+                lines.append(msg('lines.rules_dropped_count',lang,count=len(dropped)))
+            if shared is not None:
+                lines.append(msg('lines.your_words',lang,words=shared))
             return service._redact_known_secrets('\n'.join(lines))
         if kind.startswith(el.NOTICE_STOPPED):
             return service._redact_known_secrets(msg('lines.stopped',task=name))

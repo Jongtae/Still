@@ -11830,6 +11830,12 @@
   "ja": "削除: {rule}",
   "zh": "删除：{rule}"
  },
+ "lines.rules_dropped_count": {
+  "ko": "뺌: 이전 규칙 {count}개",
+  "en": "Dropped: {count} earlier rules",
+  "ja": "削除: 以前のルール{count}件",
+  "zh": "删除：之前的 {count} 条规则"
+ },
  "lines.rule_replaced": {
   "ko": "{before} → {after} (바꿈)",
   "en": "{before} → {after} (changed)",
