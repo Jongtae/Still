@@ -181,6 +181,7 @@ def test_scheduling_and_line_records_are_not_external_sends(case):
         ('entrusted_line', 'succeeded', {'scope': 'main', 'call_id': 'l1', 'host_action': 'entrusted_line',
                                          'arguments': {'action': 'revise'}}),
         ('update_check_state', 'succeeded', {'scope': 'main', 'call_id': 'u1', 'host_action': 'update_check_state'}),
+        ('delegate_agent', 'succeeded', {'scope': 'main', 'call_id': 'd1', 'host_action': 'delegate_agent'}),
     ])
     effects = case.service.preparations_service.line_effects(line)
     assert effects['sent'] == 0 and effects['unconfirmed'] == 0

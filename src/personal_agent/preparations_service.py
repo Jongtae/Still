@@ -2818,8 +2818,8 @@ class PreparationsService:
         ``LINE_EFFECTS_NAMED`` of them by operation, host and connection name; never a body or a value.
         """
         from .manifests import LOCAL_WRITE_ACTIONS
-        from .agent_runtime import (CODE_ACTIONS, EFFECT_CHANGED, EFFECT_UNKNOWN, INTERNAL_STATE_ACTIONS,
-                                    REVISABLE_RECORD_ACTIONS, _call_target, classify_effect_rows, dispatch_call_accounted,
+        from .agent_runtime import (CODE_ACTIONS, EFFECT_CHANGED, EFFECT_UNKNOWN, REVISABLE_RECORD_ACTIONS,
+                                    EFFECT_FREE_READS, _call_target, _state_free_actions, classify_effect_rows, dispatch_call_accounted,
                                     dispatch_call_keys, effect_call_history_of, effect_rows, refused_rows,
                                     refused_state_change)
         store=self.service.store
@@ -2849,9 +2849,11 @@ class PreparationsService:
         accounted=dispatch_call_keys(observed,claims)
         ledger_ids={item['id'] for item in ledger}
         # Nor a code run (its state changes are its dispatch claims, #1456), nor a host action declared to write
-        # only locally (``LOCAL_WRITE_ACTIONS``: no open world, such as a check's state or a setting) or Still's
-        # own records (``REVISABLE_RECORD_ACTIONS``, ``INTERNAL_STATE_ACTIONS``): they change nothing outside.
-        local=CODE_ACTIONS|LOCAL_WRITE_ACTIONS|REVISABLE_RECORD_ACTIONS|INTERNAL_STATE_ACTIONS
+        # only locally (``LOCAL_WRITE_ACTIONS``: no open world, such as a check's state or a setting), Still's own
+        # records (``REVISABLE_RECORD_ACTIONS``), nor what the effect floor holds changes no outside state by its kind
+        # (``_state_free_actions``: internal bookkeeping, a delegation, whose own calls are recorded as their own).
+        # Its reads stay decided by their own record: a browser step that declared a change counts.
+        local=CODE_ACTIONS|LOCAL_WRITE_ACTIONS|REVISABLE_RECORD_ACTIONS|(_state_free_actions()-EFFECT_FREE_READS)
         def own(action,detail):
             return (action not in local and not dispatch_call_accounted(detail,accounted)
                     and detail.get('permission_event') not in ledger_ids)
