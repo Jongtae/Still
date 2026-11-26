@@ -158,3 +158,28 @@ def test_succeeded_browser_change_counts_as_sent_and_a_running_one_does_not(case
     effects = case.service.preparations_service.line_effects(line)
     assert effects['sent'] == 1
     assert case.service.preparations_service.line_effects_text(effects, account=True)
+
+
+def test_a_code_run_send_counts_once_through_its_dispatch(case):
+    """The run's own Evidence and its dispatch claim are one change (#1252 review)."""
+    line, row = line_with_check(case)
+    switch(case, True)
+    job = woken(case, row)
+    sent = []
+    result, _ = run(case, job, sent)
+    assert sent == [POST]
+    record(case, job, result)
+    effects = case.service.preparations_service.line_effects(line)
+    assert (effects['sent'], effects['unconfirmed']) == (1, 0)
+
+
+def test_scheduling_and_line_records_are_not_external_sends(case):
+    line, row = line_with_check(case)
+    job = woken(case, row)
+    _events(case, job, [
+        ('schedule_preparation', 'succeeded', {'scope': 'main', 'call_id': 's1', 'host_action': 'schedule_preparation'}),
+        ('entrusted_line', 'succeeded', {'scope': 'main', 'call_id': 'l1', 'host_action': 'entrusted_line',
+                                         'arguments': {'action': 'revise'}}),
+    ])
+    effects = case.service.preparations_service.line_effects(line)
+    assert effects['sent'] == 0 and effects['unconfirmed'] == 0

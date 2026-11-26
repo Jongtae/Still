@@ -2808,7 +2808,8 @@ class PreparationsService:
         sending, #1250) and ``asked`` (a Work of the line waiting now for the owner's approval). ``unconfirmed_items`` names up to
         ``LINE_EFFECTS_NAMED`` of them by operation, host and connection name; never a body or a value.
         """
-        from .agent_runtime import (EFFECT_CHANGED, EFFECT_UNKNOWN, _call_target, classify_effect_rows, dispatch_call_accounted,
+        from .agent_runtime import (CODE_ACTIONS, EFFECT_CHANGED, EFFECT_UNKNOWN, INTERNAL_STATE_ACTIONS,
+                                    REVISABLE_RECORD_ACTIONS, _call_target, classify_effect_rows, dispatch_call_accounted,
                                     dispatch_call_keys, effect_call_history_of, effect_rows, refused_rows,
                                     refused_state_change)
         store=self.service.store
@@ -2837,13 +2838,17 @@ class PreparationsService:
         # connector call by its permission event) is read through that row (#1252 review).
         accounted=dispatch_call_keys(observed,claims)
         ledger_ids={item['id'] for item in ledger}
-        def own(detail):
-            return not dispatch_call_accounted(detail,accounted) and detail.get('permission_event') not in ledger_ids
-        unknown=[(action,detail) for _work,action,effect,_status,detail in calls if effect==EFFECT_UNKNOWN and own(detail)]
+        # Nor a code run (its state changes are its dispatch claims, #1456), nor Still's own records a call revises
+        # (a scheduled piece, the line's brief: ``REVISABLE_RECORD_ACTIONS``), which change nothing outside.
+        local=CODE_ACTIONS|REVISABLE_RECORD_ACTIONS|INTERNAL_STATE_ACTIONS
+        def own(action,detail):
+            return (action not in local and not dispatch_call_accounted(detail,accounted)
+                    and detail.get('permission_event') not in ledger_ids)
+        unknown=[(action,detail) for _work,action,effect,_status,detail in calls if effect==EFFECT_UNKNOWN and own(action,detail)]
         out['unconfirmed']+=len(unknown)+len(unscoped)
         # A change a call's own record shows it made (a browser step, a package tool), once it ended: never one still running.
-        out['sent']+=sum(1 for _work,_action,effect,status,detail in calls if effect==EFFECT_CHANGED and status=='succeeded'
-                         and own(detail))
+        out['sent']+=sum(1 for _work,action,effect,status,detail in calls if effect==EFFECT_CHANGED and status=='succeeded'
+                         and own(action,detail))
         for action,detail in unknown:
             if len(out['unconfirmed_items'])>=self.LINE_EFFECTS_NAMED:break
             target=_call_target(action,detail)
