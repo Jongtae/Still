@@ -1065,13 +1065,21 @@ class AgentService:
                 else 'to_owner')
 
     def self_set_run(self, job, *, db=None):
-        """Self-set scheduled run, or one whose preparation provenance is unavailable (#717)."""
+        """Scheduled run without current owner payment standing (#717, #1237)."""
+        return self._run_standing_refusal(job,db=db) is not None
+
+    def _run_standing_refusal(self, job, *, db=None):
+        """The payment ticket's refusal message key if the run has no standing."""
         preparation_id=prep.preparation_of((job or {}).get('request_key'))
-        if preparation_id is None:return False
+        if preparation_id is None:return None
         with (self.store.db() if db is None else nullcontext(db)) as db:
-            row=db.execute('SELECT accepted_by,origin FROM preparations WHERE id=?',(preparation_id,)).fetchone()
-        return (row is None or row['origin'] in (prep.ORIGIN_DREAM,prep.ORIGIN_DAY_PLAN,prep.ORIGIN_LINE_ACCOUNT)
-                or row['accepted_by'] not in prep.PAYMENT_STANDING)
+            row=db.execute('SELECT accepted_by,origin,standing_end FROM preparations WHERE id=?',(preparation_id,)).fetchone()
+        if (row is None or row['origin'] in (prep.ORIGIN_DREAM,prep.ORIGIN_DAY_PLAN,prep.ORIGIN_LINE_ACCOUNT)
+                or row['accepted_by'] not in prep.PAYMENT_STANDING):
+            return 'payment_autonomy.changed'
+        if row['standing_end'] is not None and self.preparations.clock() >= row['standing_end']:
+            return 'payment_autonomy.standing_required'
+        return None
 
     def owner_accepted_run(self, job):
         """#821 (owner decision 2026-11-14): ``job`` is the current run of a preparation the owner accepted.
@@ -7765,9 +7773,12 @@ class AgentService:
             if result and status_notice:self._deliver_payment_autonomy_notice(job,result)
             return result
         mode=self.payment_autonomy_settings(db=db)
-        if self.unattended_work(job) and self.self_set_run(job,db=db):
-            # #717: a run the owner's AI or the look back set up on its own never pays, even in the mode.
-            if ticket:raise not_run(ToolError(msg('payment_autonomy.changed'),'payment_autonomy_changed'))
+        refusal=self._run_standing_refusal(job,db=db)
+        if refusal:
+            if ticket:
+                if not mode['enabled']:refusal='payment_autonomy.changed'
+                lang=owner_language(self.store,job['id']) if refusal=='payment_autonomy.standing_required' else None
+                raise not_run(ToolError(msg(refusal,lang),'payment_autonomy_changed'))
             return None
         if binding is None:return mode if mode['enabled'] and not self.work_stopped(job['id']) else None
         keys=self._browser_step_keys(binding)
@@ -8955,7 +8966,8 @@ class AgentService:
                     'connection':identity,'operation':operation})
             return {'behavior':'allow','updatedInput':values if isinstance(values,dict) else {}}
         if effect=='payment':
-            return {'behavior':'deny','message':'이 동작은 정확한 입력에 대한 소유자 승인을 기다립니다. 다른 방법으로 같은 동작을 실행하지 말고, 승인을 받은 뒤 남은 일을 이어가세요.'}
+            return {'behavior':'deny','message':self.scheduled_payment_refusal(job) or
+                    '이 동작은 정확한 입력에 대한 소유자 승인을 기다립니다. 다른 방법으로 같은 동작을 실행하지 말고, 승인을 받은 뒤 남은 일을 이어가세요.'}
         if decided is not None:
             return {'behavior':'deny','message':(f'{service_name}의 {operation}은(는) 현재 소유자 설정({decided})에서 허용되지 않아 실행하지 않았습니다. '
                                                  '거절된 동작을 다른 경로로 실행하지 마세요.')}

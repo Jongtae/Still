@@ -5,7 +5,7 @@ import json
 import pytest
 
 from personal_agent import agent_runtime as runtime, code_run, condition_checks as checks, preparations as prep
-from personal_agent.api_requests import ApiRequests, save_slot
+from personal_agent.api_requests import ApiError, ApiRequests, save_slot
 from personal_agent.browser_jar import MemoryKey
 from personal_agent.decision import BinaryDecision, FixtureDecisionEngine, OUTCOME_DECIDED, fixture_confidence
 from personal_agent.messages import msg
@@ -171,20 +171,25 @@ def test_autonomy_off_holds_even_a_matching_plan(case):
     assert not sent and not receipts(case, row)
 
 
-def test_owner_accepts_resume_and_its_check_and_piece_inherit_standing(case):
-    c = case
-    line_id = open_line(c)
+def accept_resume(c, line_id):
     offered = c.preps.create(kind='prepare', goal='Resume the agreed work today', due_at=c.clock[0] + 120,
                              timezone='UTC', recurrence=None, channel='web', created_from=c.owner,
                              state=prep.STATE_PROPOSED, origin=prep.ORIGIN_LINE_RESUME, line_id=line_id,
                              offer='Continue today?')
     c.service.preparation_request({'operation': 'accept', 'id': offered['id'], 'fingerprint': prep.digest([offered])})
-    assert current(c, offered)['accepted_by'] == prep.ACCEPTED_OWNER_BUTTON
+    return current(c, offered)
+
+
+def test_owner_accepts_resume_and_its_check_and_piece_inherit_standing(case):
+    c = case
+    line_id = open_line(c)
+    row = accept_resume(c, line_id)
+    assert row['accepted_by'] == prep.ACCEPTED_OWNER_BUTTON
     end = c.preps.owner_day_end(c.clock[0])
     notice = msg('lines.entrusted', title='Incoming reports', end=prep.local_text(end, c.service.home_zone()))
     with c.store.db() as db:
         assert db.execute('SELECT COUNT(*) FROM messages WHERE content=?', (notice,)).fetchone()[0] == 1
-    job = start(c, current(c, offered))
+    job = start(c, row)
     c.store.api_slot_key = MemoryKey()
     save_slot(c.store, 'fixture', [HOST], {'TOKEN': SECRET}, encrypted=True, money=True, code={'fields': ['TOKEN']})
     proof = code_run.CodeRunner(c.store, job['id'], popen=lambda *args, **kwargs: FakeProcess(), **WIRE)
@@ -196,6 +201,7 @@ def test_owner_accepts_resume_and_its_check_and_piece_inherit_standing(case):
     assert exc.value.code == 'unattended_run'
     row = schedule(c, job, line_id, **args)
     assert row['accepted_by'] == prep.ACCEPTED_OWNER_BUTTON
+    assert row['standing_end'] == end
     c.clock[0] = row['due_at']
     switch(c, True)
     sent = []
@@ -203,6 +209,7 @@ def test_owner_accepts_resume_and_its_check_and_piece_inherit_standing(case):
     assert sent == [POST]
     piece = start_piece(c, row)
     assert piece['accepted_by'] == prep.ACCEPTED_LINE_PIECE_OWNER
+    assert piece['standing_end'] == end
 
 
 def test_keep_today_judgment_uses_line_title_and_emits_one_notice(case):
@@ -232,9 +239,27 @@ def test_keep_today_judgment_uses_line_title_and_emits_one_notice(case):
         texts = [r['content'] for r in db.execute("SELECT content FROM messages WHERE role='assistant'")]
     [notice] = texts
     assert 'Incoming reports' in notice and prep.local_text(row['until_at'], c.service.home_zone()) in notice
+    assert row['standing_end'] == row['until_at']
     assert '멈춰' in notice or 'stop' in notice
     assert '\n' not in notice
     assert 'ask which title' in runtime.ENTRUSTED_LINE_ARGUMENTS['action']
+    with pytest.raises(runtime.ToolError) as exc:
+        schedule(c, start(c, row), line_id, due=at(row['until_at'] + 60))
+    assert exc.value.code == 'standing_window'
+
+
+def test_keep_today_persists_standing_when_adopting_an_existing_proposal(case):
+    c = case
+    line_id = open_line(c)
+    proposed = c.preps.create(kind='prepare', goal='Process the next report', due_at=c.clock[0] + 120,
+                              timezone='UTC', recurrence=None, channel='web', created_from=c.owner,
+                              state=prep.STATE_PROPOSED, line_id=line_id)
+    c.service.use_decision_engine(engine(preparation=True))
+    job = owner(c, 'Keep Incoming reports running today', 'adopt-today')
+    accepted = schedule(c, job, line_id)
+    assert accepted['id'] == proposed['id']
+    assert accepted['accepted_by'] == prep.ACCEPTED_OWNER_REQUEST
+    assert accepted['standing_end'] == c.preps.owner_day_end(c.clock[0])
 
 
 @pytest.mark.parametrize('steered', [False, True])
@@ -256,6 +281,101 @@ def test_correction_keeps_exact_row_standing(case, steered, standing):
     replacement = schedule(c, job, line_id, replaces=original['id'], goal='Use the revised limits')
     assert replacement['accepted_by'] == standing
     assert current(c, original)['state'] == prep.STATE_CANCELLED
+
+
+@pytest.fixture(params=['keep-today', 'resume-offer'])
+def today_row(case, request):
+    line_id = open_line(case)
+    if request.param == 'resume-offer':
+        return accept_resume(case, line_id)
+    case.service.use_decision_engine(engine(preparation=True))
+    job = owner(case, 'Keep Incoming reports running today', 'keep-today')
+    return schedule(case, job, line_id)
+
+
+def test_today_piece_cannot_be_moved_to_tomorrow(case, today_row):
+    end = case.preps.owner_day_end(case.clock[0])
+    line_id = today_row['line_id']
+    job = start(case, today_row)
+    with pytest.raises(runtime.ToolError) as exc:
+        schedule(case, job, line_id, due=at(end + 60))
+    assert exc.value.code == 'standing_window'
+    piece = schedule(case, job, line_id, due=at(case.clock[0] + 600))
+    with pytest.raises(runtime.ToolError) as exc:
+        schedule(case, job, line_id, due=at(end + 60))
+    assert exc.value.code == 'standing_window'
+    assert current(case, piece)['due_at'] == piece['due_at']
+    assert piece['standing_end'] == end
+
+
+@pytest.mark.parametrize('window', [False, True])
+def test_replacement_cannot_extend_today_standing(case, today_row, window):
+    end = case.preps.owner_day_end(case.clock[0])
+    line_id = today_row['line_id']
+    case.service.use_decision_engine(engine(preparation=True))
+    job = owner(case, 'Use the revised limits', 'correction')
+    args = {'every_minutes': '5', 'until': at(end + 60)} if window else {'due': at(end + 60)}
+    with pytest.raises(runtime.ToolError) as exc:
+        schedule(case, job, line_id, replaces=today_row['id'], **args)
+    assert exc.value.code == 'standing_window'
+    assert current(case, today_row)['state'] == prep.STATE_SCHEDULED
+    replacement = schedule(case, job, line_id, replaces=today_row['id'], goal='Use the revised limits')
+    assert replacement['standing_end'] == end
+    assert current(case, today_row)['state'] == prep.STATE_CANCELLED
+
+
+@pytest.mark.parametrize('in_flight', [False, True])
+def test_payment_dispatch_after_today_standing_ends(case, today_row, monkeypatch, in_flight):
+    end = case.preps.owner_day_end(case.clock[0])
+    job = start(case, today_row)
+    switch(case, True)
+    api = money_api(case, job, lambda *_a, **_kw: pytest.fail('sent after the cutoff'))
+    if in_flight:
+        guard = api._effect_guard
+
+        def cross_cutoff(*args, **kwargs):
+            if kwargs.get('method') is not None:
+                case.clock[0] = end + 1
+            return guard(*args, **kwargs)
+
+        monkeypatch.setattr(api, '_effect_guard', cross_cutoff)
+    else:
+        case.clock[0] = end + 1
+    with pytest.raises(ApiError if in_flight else runtime.ToolError) as exc:
+        api.call({'slot': 'fixture', 'url': f'https://{HOST}/orders', 'method': 'POST', 'body': '{}'})
+    assert str(exc.value) == msg('payment_autonomy.standing_required')
+    assert case.service.self_set_run(job)
+    assert not case.service.browser_step_requests()
+    assert not any(event['tool'] == 'payment_autonomy' for event in case.store.task_events(job['id']))
+
+
+def money_api(c, job, transport):
+    c.store.api_slot_key = MemoryKey()
+    save_slot(c.store, 'fixture', [HOST], SECRET, encrypted=True, money=True)
+    return ApiRequests(c.store, job['id'], approvals=c.service.browser_approvals_for(job), transport=transport)
+
+
+def test_ordinary_owner_accepted_line_can_schedule_and_pay_tomorrow(case):
+    c = case
+    line_id = open_line(c)
+    tomorrow = c.preps.owner_day_end(c.clock[0]) + 60
+    row = c.preps.create(kind='prepare', goal='Report changes', due_at=c.clock[0] + 60, timezone='UTC',
+                         recurrence=None, channel='web', created_from=c.owner, state=prep.STATE_PROPOSED,
+                         line_id=line_id)
+    row = c.preps.accept(row['id'], prep.ACCEPTED_OWNER_SETTINGS)
+    piece = schedule(c, start(c, row), line_id, due=at(tomorrow))
+    job = start(c, piece)
+    switch(c, True)
+    sent = []
+
+    def transport(*args, **kwargs):
+        sent.append(args)
+        return 200, {'content-type': 'application/json'}, b'{}'
+
+    api = money_api(c, job, transport)
+    api.call({'slot': 'fixture', 'url': f'https://{HOST}/orders', 'method': 'POST', 'body': '{}'})
+    assert len(sent) == 1
+    assert not c.service.self_set_run(job)
 
 
 @pytest.mark.parametrize(('origin', 'standing'), [

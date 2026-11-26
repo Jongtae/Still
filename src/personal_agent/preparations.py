@@ -268,7 +268,9 @@ COLUMN_MIGRATIONS = (('prepared_text', 'TEXT'),
                      ('self_change_undone', 'INTEGER NOT NULL DEFAULT 0'),
                      ('dream_held', 'INTEGER NOT NULL DEFAULT 0'),
                      # #938: a piece's parent run, as that run's slot key (one child per run).
-                     ('piece_of', 'TEXT'), ('check_spec', 'TEXT'), ('check_next_at', 'REAL'), ('check_status', 'TEXT'))
+                     ('piece_of', 'TEXT'), ('check_spec', 'TEXT'), ('check_next_at', 'REAL'), ('check_status', 'TEXT'),
+                     # #1237: payment standing expires independently of the schedule's slot and run bounds.
+                     ('standing_end', 'REAL'))
 
 
 def run_seconds():
@@ -424,6 +426,7 @@ REFUSALS = {
     'line_pieces_daily': msg('preparations.line_pieces_daily', maximum=LINE_PIECES_PER_DAY),
     'line_pieces_limit': msg('preparations.line_pieces_limit', maximum=MAX_PENDING_PIECES),
     'line_stopped': msg('lines.refused_line_stopped'),
+    'standing_window': msg('preparations.resume_followup_today'),
 }
 
 
@@ -1587,7 +1590,7 @@ class Preparations:
     def create(self, *, kind, goal, due_at, timezone, recurrence, channel, created_from, state,
                accepted_by=None, owner=OWNER, window=None, delivery_mode=None, title=None, offer=None, origin=None,
                report_every_minutes=None, line_id=None, max_runs=None, requested_until=None, bundle_channel=None, accepted_from=None,
-               piece_of=None, db=None, check=None, replaces=None):
+               piece_of=None, db=None, check=None, replaces=None, standing_end=None):
         """One new row (idempotent for the same Work, kind, goal and slot).
 
         #574: when another Work already proposed the same kind, goal, due and
@@ -1604,6 +1607,7 @@ class Preparations:
         #798: ``line_id`` is the entrusted line this row works for; the caller checked it is active.
         ``db`` joins a caller's transaction, so creation and its recovery evidence commit together.
         ``replaces`` is the validated row the caller will cancel in that transaction, excluded from the check cap.
+        ``standing_end`` is the cutoff promised for today's work, independent of the schedule's window.
 
         #938: ``piece_of`` is the slot key of the run that schedules this piece of its line (origin
         ``ORIGIN_LINE_PIECE``).  In this transaction the line must still be active (a stop at the same
@@ -1641,6 +1645,12 @@ class Preparations:
                     'weekly': 'FREQ=WEEKLY'}.get(recurrence, recurrence)
             recurrence = normalize_rrule(f'{rule};COUNT={max_runs}')
             max_runs = int(rule_parts(recurrence)['COUNT'])
+        now = self.clock()
+        if standing_end is not None and (
+                now >= standing_end or due_at >= standing_end or recurrence is not None
+                or (window is not None and window[1] > standing_end)
+                or (replaces and requested_until is not None and requested_until > standing_end)):
+            raise not_run(PreparationRefusal('standing_window'))
         every_seconds = until_at = window_end = None
         try:
             terms = window_terms(window, recurrence, due_at, timezone, report_every_minutes, delivery_mode, requested_until)
@@ -1657,7 +1667,6 @@ class Preparations:
         if check is not None and (kind != KIND_PREPARE or not window or piece_of):
             raise not_run(PreparationRefusal('invalid_check'))
         check_spec = json.dumps(check, sort_keys=True) if check is not None else None
-        now = self.clock()
         owns_transaction = db is None
         with (self.store.db() if owns_transaction else nullcontext(db)) as db:
             if owns_transaction:db.execute('BEGIN IMMEDIATE')
@@ -1680,6 +1689,9 @@ class Preparations:
                               (created_from, kind, goal, due_at, *ACTIVE_STATES, check_spec, line_id,
                                ORIGIN_LINE_RESUME, ORIGIN_LINE_ACCOUNT)).fetchone()
             if same:
+                # A retry cannot add or widen standing on a row it already scheduled.
+                if (standing_end is not None or replaces) and same['standing_end'] != standing_end:
+                    raise not_run(PreparationRefusal('standing_window'))
                 return dict(same)
             # #574: another Work's identical proposal still waiting for the owner is that same proposal,
             # not a second one.  Scheduled rows are left alone: the owner may want two.
@@ -1715,7 +1727,7 @@ class Preparations:
                    'delivery_mode': delivery_mode, 'last_decision': None, 'last_decision_reason': None,
                    'last_notified_digest': None, 'last_notified_text': None, 'last_notified_at': None,
                    'title_text': title, 'offer_text': offer, 'origin': origin, 'offered_at': None, 'line_id': line_id,
-                   'piece_of': piece_of}
+                   'piece_of': piece_of, 'standing_end': standing_end}
             if check_spec is not None:
                 row.update(check_spec=check_spec, check_next_at=min(due_at, until_at))
             db.execute(f"INSERT INTO preparations({','.join(row)}) VALUES ({','.join('?' * len(row))})", tuple(row.values()))
@@ -1847,7 +1859,8 @@ class Preparations:
             account['check_status'] = previous
         return account
 
-    def accept(self, preparation_id, accepted_by, *, accepted_from=None, db=None, replaces=None, offer_digest=None):
+    def accept(self, preparation_id, accepted_by, *, accepted_from=None, db=None, replaces=None, offer_digest=None,
+               standing_end=None):
         """``proposed`` → ``scheduled``: the owner's explicit yes.
 
         #395: a watch whose window has already ended is refused (``expired``)
@@ -1867,7 +1880,8 @@ class Preparations:
                 self._exact_line_resume(dict(row), offer_digest)
                 if accepted_by not in (ACCEPTED_OWNER_BUTTON, ACCEPTED_OWNER_ANSWER):
                     raise PreparationRefusal('line_resume_stale')
-                if row['created_at'] < self.owner_day_start(now, db):
+                standing_end = self.owner_day_end(row['created_at'], db)
+                if now >= standing_end or row['due_at'] >= standing_end:
                     raise PreparationRefusal('line_resume_stale')
                 brief = self.line_resume_target(row['line_id'], db)
                 event = db.execute("SELECT detail FROM tool_events WHERE job_id=? AND tool=? "
@@ -1881,9 +1895,10 @@ class Preparations:
                     self.ensure_line_account(after, created_from=accepted_from, db=db)
             if row and row['state'] == STATE_PROPOSED and row['check_spec'] and row['until_at'] > now:
                 self._check_admission(db, row['check_spec'], replaces)
-            changed = db.execute("UPDATE preparations SET state='scheduled',accepted_by=?,accepted_from=?,updated_at=? WHERE id=? AND state='proposed' "
+            changed = db.execute("UPDATE preparations SET state='scheduled',accepted_by=?,accepted_from=?,standing_end=?,updated_at=? "
+                                 "WHERE id=? AND state='proposed' "
                                  'AND (recurrence IS NOT ? OR until_at>=?) AND (check_spec IS NULL OR until_at>?)',
-                                 (accepted_by, accepted_from, now, preparation_id, RECURRENCE_WINDOW, now, now)).rowcount
+                                 (accepted_by, accepted_from, standing_end, now, preparation_id, RECURRENCE_WINDOW, now, now)).rowcount
             row = self._schedule_row(db.execute('SELECT * FROM preparations WHERE id=?', (preparation_id,)).fetchone(), db)
             if not changed:
                 if not row:

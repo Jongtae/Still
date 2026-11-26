@@ -244,9 +244,20 @@ class ContinuityTests(_LineCase):
         self.assertIn(note, self.run_input(self.run_line(following)))
 
     def test_the_last_run_of_a_bounded_window_can_schedule_a_piece_for_another_day(self):
+        def judge(context, proposition):
+            if context.purpose == 'explicit-preparation-request':
+                asked = not context.facts['proposed_preparation'].startswith('Continue the line ')
+                return BinaryDecision(OUTCOME_DECIDED, asked, fixture_confidence())
+            if context.purpose == 'goal-reached':
+                return BinaryDecision(OUTCOME_DECIDED, True, fixture_confidence())
+            return None
+
+        self.service.use_decision_engine(FixtureDecisionEngine(judge=judge))
         brief, _ = self.open_line(recurrence=None, extra={'every_minutes': '5', 'until': self.due_iso(3900)})
         line = brief['line_id']
         [row] = self.work_rows(line)
+        self.assertEqual(row['accepted_by'], prep.ACCEPTED_OWNER_REQUEST)
+        self.assertIsNone(row['standing_end'])
         note = msg('lines.no_following_run')
         self.assertNotIn(note, self.run_input(self.run_line(row)))
         last = self.service.preparations.get(row['id'])

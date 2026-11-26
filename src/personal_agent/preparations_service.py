@@ -371,6 +371,7 @@ class PreparationsService:
                 if held:raise not_run(ToolError(msg('lines.refused_line_unnamed',line=held),'line_unnamed'))
             line_id=self.scheduled_line(line_arg,current,accepted=accepted,planning=planning)
             keep_today=False
+            standing_end=None
             if (line_id and not current and not recurrence and not resume and not planning
                     and not steered and owner_work and owner_words_work(job)):
                 end=service.preparations.owner_day_end(now)
@@ -384,6 +385,7 @@ class PreparationsService:
                         if keep_today:
                             asked=True
                             accepted_by=prep.ACCEPTED_OWNER_REQUEST
+                            standing_end=window[1] if window else end
             stopped=None
             try:
                 # #582: a goal the owner declined is not set up again unless they ask for it again.
@@ -396,20 +398,22 @@ class PreparationsService:
                         if resume:
                             live=db.execute('SELECT * FROM preparations WHERE id=?',(resume['id'],)).fetchone()
                             active=db.execute('SELECT status FROM jobs WHERE id=?',(job['id'],)).fetchone()
-                            end=service.preparations.owner_day_end(resume['created_at'],db)
+                            end=resume['standing_end'] or service.preparations.owner_day_end(resume['created_at'],db)
                             if (not live or not prep.Preparations.owns_running(live,job)
                                     or not active or active['status']!='running'
                                     or prep.Preparations.run_refusal(db,job['id'],now)
                                     or service.stop.is_set() or service._stopped_in(db,job['id'])
                                     or recurrence or not now<=due_at<end or (window and window[1]>end)):
                                 raise not_run(ToolError(msg('preparations.resume_followup_today'),'unattended_run'))
+                            standing_end=end
                         if current:
-                            target=db.execute('SELECT state,accepted_by,accepted_from FROM preparations WHERE id=?',
+                            target=db.execute('SELECT state,accepted_by,accepted_from,standing_end FROM preparations WHERE id=?',
                                               (replaces,)).fetchone()
                             if not target or target['state'] not in prep.ACTIVE_STATES:
                                 raise not_run(prep.PreparationRefusal('replace_not_found'))
                             if target['accepted_by']!=current['accepted_by']:
                                 raise not_run(prep.PreparationRefusal('replace_not_allowed'))
+                            standing_end=target['standing_end']
                             if target['accepted_by'] not in prep.PAYMENT_STANDING:
                                 accepted_by=target['accepted_by'] or prep.ACCEPTED_OWNER_WORK
                             elif asked and line_id:
@@ -423,11 +427,13 @@ class PreparationsService:
                                                  accepted_by=accepted_by,accepted_from=accepted_from,
                                                  window=window,delivery_mode=delivery_mode,title=title,offer=offer,
                                                  report_every_minutes=fields['report_every_minutes'],line_id=line_id,
-                                                 requested_until=fields['requested_until'],check=spec,db=db,replaces=replaces)
+                                                 requested_until=fields['requested_until'],check=spec,db=db,replaces=replaces,
+                                                 standing_end=standing_end)
                     # #574: another Work's identical proposal is this one; the owner's own Work accepts it.
                     already=bool(row.get('already_proposed'))
                     if already and accepted:
-                        row=service.preparations.accept(row['id'],accepted_by,accepted_from=accepted_from,db=db,replaces=replaces)
+                        row=service.preparations.accept(row['id'],accepted_by,accepted_from=accepted_from,db=db,
+                                                        replaces=replaces,standing_end=standing_end)
                     if replaces and row['state']==prep.STATE_SCHEDULED and replaces!=row['id']:
                         if asked:
                             checks.clear_line_plans(service.store,db,line_id)
@@ -539,7 +545,7 @@ class PreparationsService:
         The piece is one ``prepare`` of the same line, with no recurrence, window or ``replaces``.  Its
         goal is the handoff the run writes.  Who stands behind it, where it goes and how it is told are
         inherited from ``parent`` and never read from the call: ``prep.piece_standing`` (payment follows
-        the chain's owner-accepted root; owner decision 2026-11-18), the parent's channel and delivery
+        the chain's owner-accepted root and its cutoff), the parent's channel and delivery
         mode.  The parent run, line and bounds are re-checked in the same transaction that keeps one
         child per run.  No proposal, no message, no declined-goal judgment: the owner's line and its stop
         control stand for it.
@@ -573,7 +579,8 @@ class PreparationsService:
                                                 created_from=job['id'],state=prep.STATE_SCHEDULED,accepted_by=accepted_by,
                                                 delivery_mode=parent.get('delivery_mode'),title=fields['title'],offer=fields['offer'],
                                                 origin=prep.ORIGIN_LINE_PIECE,line_id=parent['line_id'],
-                                                piece_of=prep.slot_key(job['request_key']),db=db)
+                                                piece_of=prep.slot_key(job['request_key']),db=db,
+                                                standing_end=parent['standing_end'])
         except prep.PreparationRefusal as exc:
             raise ToolError(str(exc),exc.code,**ran_field(exc)) from None
         replaced=bool(row.get('piece_replaced'))
@@ -2553,7 +2560,7 @@ class PreparationsService:
         service=self.service
         brief=service.lines.current(row['line_id'],db)
         now=service.preparations.clock()
-        end=row['until_at'] or service.preparations.owner_day_end(now,db)
+        end=row['standing_end']
         surface=service.surface_of(job)
         if surface:
             generation=job['channel'][len(surface.channel_prefix):]
