@@ -107,6 +107,16 @@ class _LineCase(_Case):
 
 
 class OpeningTests(_LineCase):
+    def test_a_refused_rule_names_the_limit_it_broke(self):
+        """#1239: the refusal says which rule and which limit, so the AI fixes it in one try."""
+        too_long = '가' * 412
+        opened = self.line_call('관심 목록을 맡아 줘', action='open', task=TASK, report_promise=PROMISE,
+                                  rules='짧은 규칙\n' + too_long)
+        self.assertIn('2번째 규칙이 412자예요', str(opened), opened)
+        many = '\n'.join(f'규칙 {n}' for n in range(1, 24))
+        opened = self.line_call('관심 목록을 맡아 줘', action='open', task=TASK, report_promise=PROMISE, rules=many)
+        self.assertIn('규칙이 23개예요', str(opened), opened)
+
     def test_title_is_versioned_and_used_in_owner_notices(self):
         title = '아침 관심 목록'
         opened = self.line_call('아침 관심 목록을 맡아 줘', action='open', title=title,
