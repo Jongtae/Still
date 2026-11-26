@@ -17,6 +17,7 @@ import threading
 import time
 from concurrent.futures import ThreadPoolExecutor
 from functools import wraps
+from graphlib import CycleError, TopologicalSorter
 import unicodedata
 from collections import namedtuple
 from pathlib import Path
@@ -2658,7 +2659,7 @@ EFFECT_CONTINUATION = 'effect_continuation'
 
 
 class EffectAncestryError(ValueError):
- """The host cannot verify a line piece's carried effects."""
+ """The host cannot verify a preparation's carried effects."""
 
 
 def effect_work_chain(db, work_id):
@@ -2692,42 +2693,54 @@ def effect_work_chain(db, work_id):
  return chain
 
 
-def _effect_preparation_tree(db, preparation):
- """Follow piece slots within the line, including retained links after deletion."""
- from .preparations import preparation_lineage
- lineage = preparation_lineage(db, preparation)
- if not lineage or not lineage['line_id']:
-  return {preparation}
- line = lineage['line_id']
- links = db.execute("SELECT id,piece_of FROM preparations WHERE line_id=? AND piece_of IS NOT NULL "
-                    "UNION ALL SELECT job_id,json_extract(detail,'$.piece_of') FROM tool_events "
-                    "WHERE tool='preparation_lineage' AND status='deleted' AND json_extract(detail,'$.line_id')=?",
-                    (line, line))
+def _effect_preparation_tree(db, preparation, *, include_replacements=True):
+ """Find connected lineage. Check-state access uses only same-line piece links."""
+ line = None
+ if not include_replacements:
+  from .preparations import preparation_lineage
+  lineage = preparation_lineage(db, preparation)
+  if not lineage or not lineage['line_id']:
+   return {preparation}
+  line = lineage['line_id']
+ links = db.execute("SELECT id,piece_of,NULL AS replaces FROM preparations "
+                    "WHERE piece_of IS NOT NULL AND (? IS NULL OR line_id=?) "
+                    "UNION ALL SELECT job_id,json_extract(detail,'$.piece_of'),json_extract(detail,'$.replaces') "
+                    "FROM tool_events WHERE tool='preparation_lineage' "
+                    "AND ((status='deleted' AND (? IS NULL OR json_extract(detail,'$.line_id')=?)) "
+                    "OR (status='replaced' AND ?))",
+                    (line, line, line, line, include_replacements))
  parents, children = {}, {}
  for row in links:
-  if parent := preparation_of(row['piece_of']):
-   parents[row['id']] = parent
+  if parent := row['replaces'] or preparation_of(row['piece_of']):
+   parents.setdefault(row['id'], set()).add(parent)
    children.setdefault(parent, set()).add(row['id'])
 
- max_depth = 1024
- ancestors = set()
- while preparation in parents:
-  if preparation in ancestors or len(ancestors) == max_depth:
-   raise EffectAncestryError('cyclic or excessive preparation ancestry')
-  ancestors.add(preparation)
-  preparation = parents[preparation]
+ # A row can have both piece and replacement parents.
+ tree, pending = {preparation}, [preparation]
+ while pending:
+  current = pending.pop()
+  for relatives in (parents, children):
+   for relative in relatives.get(current, ()):
+    if relative not in tree:
+     tree.add(relative)
+     pending.append(relative)
 
- tree = level = {preparation}
- for _ in range(max_depth + 1):
-  level = {child for parent in level for child in children.get(parent, ())}
-  if not level:
-   return tree
-  tree.update(level)
- raise EffectAncestryError('excessive preparation tree depth')
+ # Check directed depth and cycles only within this effect scope.
+ depths = {}
+ try:
+  graph = TopologicalSorter({row: parents.get(row, ()) for row in tree})
+  for row in graph.static_order():
+   depth = max((depths[parent] + 1 for parent in parents.get(row, ())), default=0)
+   if depth > 1024:
+    raise EffectAncestryError('excessive preparation tree depth')
+   depths[row] = depth
+ except CycleError:
+  raise EffectAncestryError('cyclic preparation ancestry') from None
+ return tree
 
 
 def effect_record_ids(db, work_id):
- """Effect records of a Work's request chain and its preparation's entire piece tree."""
+ """Effect records of a Work's request chain and its preparation's piece and replacement lineage."""
  from .preparations import CHECK_RECORD_PREFIX, REQUEST_KEY_PREFIX
  records = {work_id}
  if isinstance(work_id, str) and work_id.startswith(CHECK_RECORD_PREFIX):
@@ -2796,7 +2809,7 @@ def external_effect_events(store, work_id, *, attributed_to=None, db=None):
 
  Reuse the existing Work relation validation and tool events. API claims live
  on the original Work, with the dispatching Work attributed in their evidence.
- Results span the request chain and the Works and checks of the preparation's piece tree.
+ Results span the request chain and the Works and checks of the preparation's piece and replacement lineage.
  ``attributed_to`` selects one Work's effects. API evidence names the Work, falling back to the event's Work
  for older records; connector events belong to the Work on their own row.
  No raw arguments or new durable store. Mutation admission separately requires

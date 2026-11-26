@@ -438,6 +438,10 @@ class PreparationsService:
                         if asked:
                             checks.clear_line_plans(service.store,db,line_id)
                         stopped=service.preparations.cancel(replaces,db=db)
+                        if stopped['changed']:
+                            # Keep the dispatch lineage even if either row is later deleted.
+                            db.execute('INSERT INTO tool_events(job_id,tool,status,detail,created) VALUES (?,?,?,?,?)',
+                                       (row['id'],'preparation_lineage','replaced',json.dumps({'replaces':replaces}),now))
                     if keep_today and row['state']==prep.STATE_SCHEDULED and row['accepted_by'] in prep.OWNER_ACCEPTED:
                         self.today_notice(job,row,db)
             except prep.PreparationRefusal as exc:

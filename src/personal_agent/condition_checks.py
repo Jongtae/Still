@@ -517,7 +517,7 @@ class ConditionChecks:
 
         with self.store.db() as db:
             try:
-                tree = _effect_preparation_tree(db, preparation)
+                tree = _effect_preparation_tree(db, preparation, include_replacements=False)
             except EffectAncestryError:
                 return []
             rows = db.execute("SELECT id, check_spec FROM preparations "
@@ -547,7 +547,7 @@ class ConditionChecks:
                 preparation = prep.preparation_of(job['request_key']) if job else None
                 try:
                     allowed = preparation and isinstance(check_id, str) and (
-                        check_id == preparation or check_id in _effect_preparation_tree(db, preparation))
+                        check_id == preparation or check_id in _effect_preparation_tree(db, preparation, include_replacements=False))
                 except EffectAncestryError:
                     allowed = False
                 if not allowed:

@@ -5,7 +5,7 @@ import json
 import pytest
 
 from personal_agent import agent_runtime as runtime, code_run, condition_checks as checks, preparations as prep
-from personal_agent.api_requests import ApiError, ApiRequests, save_slot
+from personal_agent.api_requests import UNKNOWN_EFFECT_TEXT, ApiError, ApiRequests, save_slot
 from personal_agent.browser_jar import MemoryKey
 from personal_agent.decision import BinaryDecision, FixtureDecisionEngine, OUTCOME_DECIDED, fixture_confidence
 from personal_agent.messages import msg
@@ -13,7 +13,9 @@ from test_check_plan_1201 import update
 from test_code_run import FakeProcess
 from test_condition_check_orders_1194 import ARGS_WITH_SET, POST, receipts, run_due, setup_check, start_piece, switch
 from test_condition_check_state_972 import StateProcess, saved
-from test_condition_checks_972 import HOST, SECRET, WIRE, case, current, finish, record, status, tick, wake_job  # noqa: F401
+from test_condition_checks_972 import (  # noqa: F401
+    HOST, SECRET, WIRE, case, current, finish, prove, record, schedule as schedule_check, status, tick, wake_job,
+)
 from test_preparations import engine
 
 
@@ -281,6 +283,75 @@ def test_correction_keeps_exact_row_standing(case, steered, standing):
     replacement = schedule(c, job, line_id, replaces=original['id'], goal='Use the revised limits')
     assert replacement['accepted_by'] == standing
     assert current(c, original)['state'] == prep.STATE_CANCELLED
+
+
+@pytest.mark.parametrize(('failure', 'corrections'), [(None, 1), ('exit', 1), (None, 2)])
+def test_check_correction_carries_dispatch_receipts(case, failure, corrections):
+    c = case
+    original = setup_check(c, line=open_line(c))
+    switch(c, True)
+    sent = []
+    assert run_due(c, sent, failure=failure)['allow']
+    receipt, = receipts(c, original)
+    assert receipt['status'] == ('dispatching' if failure else 'observed')
+
+    replacement = original
+    for number in range(corrections):
+        target = replacement
+        c.owner = owner(c, f'Use correction {number}', f'correction-{number}')['id']
+        assert prove(c, ARGS_WITH_SET)['check_proof']
+        replacement = schedule_check(c, ARGS_WITH_SET, replaces=target['id'], goal=f'Use correction {number}')
+        assert current(c, target)['state'] == prep.STATE_CANCELLED
+        assert replacement['line_id'] == original['line_id']
+        if target is not original:
+            c.preps.delete(target['id'])
+
+    decision = run_due(c, sent)
+    assert not decision['allow']
+    if failure:
+        assert decision['reason'] == UNKNOWN_EFFECT_TEXT
+    else:
+        assert '이미 보낸 API 동작' in decision['reason']
+    assert sent == ([] if failure else [POST])
+    assert not receipts(c, replacement)
+    with c.store.db() as db:
+        assert prep.CHECK_RECORD_PREFIX + replacement['id'] in runtime.effect_record_ids(
+            db, prep.CHECK_RECORD_PREFIX + original['id'])
+
+
+@pytest.mark.parametrize('cycle', [True, False])
+def test_invalid_replacement_ancestry_fails_closed(case, cycle):
+    edges = [('next', 'original'), ('original', 'next')] if cycle else [
+        (f'row-{i + 1}', f'row-{i}') for i in range(1025)]
+    with case.store.db() as db:
+        db.executemany("INSERT INTO tool_events(job_id,tool,status,detail,created) "
+                       "VALUES (?,'preparation_lineage','replaced',?,?)",
+                       [(row, json.dumps({'replaces': parent}), case.clock[0]) for row, parent in edges])
+        record_id = prep.CHECK_RECORD_PREFIX + edges[0][1]
+        with pytest.raises(runtime.EffectAncestryError, match='cyclic' if cycle else 'depth'):
+            runtime.effect_record_ids(db, record_id)
+        unrelated = prep.CHECK_RECORD_PREFIX + 'unrelated'
+        assert runtime.effect_record_ids(db, unrelated) == {unrelated}
+
+
+@pytest.mark.parametrize('same_line', [True, False])
+def test_unrelated_check_keeps_its_own_dispatch_scope_after_correction(case, same_line):
+    c = case
+    line = open_line(c)
+    original = setup_check(c, line=line)
+    switch(c, True)
+    sent = []
+    assert run_due(c, sent)['allow']
+
+    replacement = schedule_check(c, ARGS_WITH_SET, replaces=original['id'], goal='Revised observation')
+    assert current(c, original)['state'] == prep.STATE_CANCELLED
+    assert not run_due(c, sent)['allow']
+    unrelated_line = line if same_line else open_line(c, 'Other reports')
+    unrelated = schedule_check(c, ARGS_WITH_SET, line=unrelated_line, goal='Independent observation')
+    c.preps.pause(replacement['id'])
+    assert run_due(c, sent)['allow']
+    assert sent == [POST, POST]
+    assert len(receipts(c, unrelated)) == 1
 
 
 @pytest.fixture(params=['keep-today', 'resume-offer'])

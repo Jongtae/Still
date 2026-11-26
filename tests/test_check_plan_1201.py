@@ -91,6 +91,10 @@ def test_ended_and_replaced_rows_refuse_writes(keyed, end):
     else:
         replacement = schedule(c, goal='Revised observation', replaces=row['id'])
         assert replacement['id'] != row['id']
+        assert not c.checks.state_targets(piece['id'])
+        with pytest.raises(runtime.ToolError) as exc:
+            update(c, wake_job(c, piece)['id'], replacement, {'plan': 1})
+        assert exc.value.code == 'check_outside_preparation_tree'
     with pytest.raises(runtime.ToolError) as exc:
         update(c, wake_job(c, piece)['id'], row, {'plan': 1})
     assert exc.value.code == 'check_inactive'

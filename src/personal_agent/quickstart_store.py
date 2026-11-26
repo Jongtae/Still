@@ -173,6 +173,8 @@ class QuickStore:
             CREATE TABLE IF NOT EXISTS forgotten_messages(message_id INTEGER PRIMARY KEY, receipt_id TEXT NOT NULL, created REAL NOT NULL);
             CREATE TABLE IF NOT EXISTS jobs(id TEXT PRIMARY KEY, request_key TEXT UNIQUE, message TEXT, channel TEXT, chat_id INTEGER, status TEXT, response TEXT, error TEXT, delivery TEXT, provider TEXT, model TEXT, created REAL);
             CREATE TABLE IF NOT EXISTS tool_events(id INTEGER PRIMARY KEY AUTOINCREMENT, job_id TEXT, tool TEXT, status TEXT, detail TEXT, created REAL);
+            -- #1237: the effect scope reads preparation lineage on every effect check; keep that read off a full scan.
+            CREATE INDEX IF NOT EXISTS tool_events_preparation_lineage ON tool_events(status) WHERE tool='preparation_lineage';
             CREATE TABLE IF NOT EXISTS work_read_checkpoints(
                 job_id TEXT PRIMARY KEY, epoch INTEGER NOT NULL, value TEXT NOT NULL,
                 resume_pending INTEGER NOT NULL DEFAULT 0, resume_count INTEGER NOT NULL DEFAULT 0
