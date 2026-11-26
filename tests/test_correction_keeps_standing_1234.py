@@ -24,6 +24,8 @@ def judged(c, *, change_yes=True):
             return None
         text = context.facts['proposed_preparation']
         seen.append(text)
+        if context.too_large():  # a production adapter refuses an oversized context unasked
+            return None
         if 'Accepted work:' in text:
             verdict = change_yes and 'sell whenever the exit rule is met' in text and 'sell before 15:20' in text
         else:
@@ -95,3 +97,15 @@ def test_replacing_self_set_work_is_judged_as_a_new_schedule(case):
                    CORRECTED, replaces=old['id'])
     assert 'Accepted work:' not in seen[-1]
     assert new['accepted_by'] == prep.ACCEPTED_OWNER_WORK
+
+
+def test_a_long_correction_reaches_the_judgment_whole(case):
+    c = case
+    seen = judged(c)
+    long_original = ORIGINAL + ' ' + 'a' * 3000
+    row = schedule(c, owner(c, 'Trade today, sell before 15:20 only on a stop loss', 'first'), long_original)
+    assert row['accepted_by'] == prep.ACCEPTED_OWNER_REQUEST
+    new = schedule(c, owner(c, 'Change the rule so it keeps trading during the session', 'correction'),
+                   CORRECTED + ' ' + 'b' * 3000, replaces=row['id'])
+    assert len(seen[-1]) > 6000
+    assert new['accepted_by'] == prep.ACCEPTED_OWNER_REQUEST
