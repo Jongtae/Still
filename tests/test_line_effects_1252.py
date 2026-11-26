@@ -190,3 +190,17 @@ def test_scheduling_and_line_records_are_not_external_sends(case):
     ])
     effects = case.service.preparations_service.line_effects(line)
     assert effects['sent'] == 0 and effects['unconfirmed'] == 0
+
+
+def test_a_failed_browser_submission_is_unconfirmed(case):
+    """A click that posted a form and then timed out changed something; its outcome is open (#1252 review)."""
+    line, row = line_with_check(case)
+    job = woken(case, row)
+    _events(case, job, [
+        ('browser_click', 'running', {'scope': 'main', 'call_id': 'c1', 'arguments': {'url': 'https://shop.example/pay'},
+                                      'declared_effect': 'navigate'}),
+        ('browser_click', 'failed', {'scope': 'main', 'call_id': 'c1', 'declared_effect': 'navigate', 'effect': 'none',
+                                     'code': 'browser_timeout', 'observed_step': {'posted': True}}),
+    ])
+    effects = case.service.preparations_service.line_effects(line)
+    assert (effects['unconfirmed'], effects['sent']) == (1, 0)

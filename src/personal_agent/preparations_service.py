@@ -2857,10 +2857,11 @@ class PreparationsService:
         def own(action,detail):
             return (action not in local and not dispatch_call_accounted(detail,accounted)
                     and detail.get('permission_event') not in ledger_ids)
-        # Unconfirmed: a call whose effect is unknown, and a change still in flight - a stop does not wait for the
-        # running step, which may already have reached the outside; it is no send until its end is recorded.
+        # Unconfirmed: a call whose effect is unknown, and a change that did not end succeeded - one still in flight
+        # (a stop does not wait for the running step) or one that failed after it reached the outside (a submission
+        # that then timed out).  Only a succeeded change is a send.
         unknown=[(action,detail) for _work,action,effect,status,detail in calls
-                 if (effect==EFFECT_UNKNOWN or (effect==EFFECT_CHANGED and status=='running')) and own(action,detail)]
+                 if (effect==EFFECT_UNKNOWN or (effect==EFFECT_CHANGED and status!='succeeded')) and own(action,detail)]
         out['unconfirmed']+=len(unknown)+len(unscoped)
         # A change a call's own record shows it made (a browser step, a package tool), once it ended: never one still running.
         out['sent']+=sum(1 for _work,action,effect,status,detail in calls if effect==EFFECT_CHANGED and status=='succeeded'
