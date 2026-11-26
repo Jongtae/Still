@@ -2808,6 +2808,7 @@ class PreparationsService:
         sending, #1250) and ``asked`` (a Work of the line waiting now for the owner's approval). ``unconfirmed_items`` names up to
         ``LINE_EFFECTS_NAMED`` of them by operation, host and connection name; never a body or a value.
         """
+        from .manifests import LOCAL_WRITE_ACTIONS
         from .agent_runtime import (CODE_ACTIONS, EFFECT_CHANGED, EFFECT_UNKNOWN, INTERNAL_STATE_ACTIONS,
                                     REVISABLE_RECORD_ACTIONS, _call_target, classify_effect_rows, dispatch_call_accounted,
                                     dispatch_call_keys, effect_call_history_of, effect_rows, refused_rows,
@@ -2838,9 +2839,10 @@ class PreparationsService:
         # connector call by its permission event) is read through that row (#1252 review).
         accounted=dispatch_call_keys(observed,claims)
         ledger_ids={item['id'] for item in ledger}
-        # Nor a code run (its state changes are its dispatch claims, #1456), nor Still's own records a call revises
-        # (a scheduled piece, the line's brief: ``REVISABLE_RECORD_ACTIONS``), which change nothing outside.
-        local=CODE_ACTIONS|REVISABLE_RECORD_ACTIONS|INTERNAL_STATE_ACTIONS
+        # Nor a code run (its state changes are its dispatch claims, #1456), nor a host action declared to write
+        # only locally (``LOCAL_WRITE_ACTIONS``: no open world, such as a check's state or a setting) or Still's
+        # own records (``REVISABLE_RECORD_ACTIONS``, ``INTERNAL_STATE_ACTIONS``): they change nothing outside.
+        local=CODE_ACTIONS|LOCAL_WRITE_ACTIONS|REVISABLE_RECORD_ACTIONS|INTERNAL_STATE_ACTIONS
         def own(action,detail):
             return (action not in local and not dispatch_call_accounted(detail,accounted)
                     and detail.get('permission_event') not in ledger_ids)

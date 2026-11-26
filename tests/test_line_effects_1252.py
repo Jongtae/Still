@@ -180,6 +180,7 @@ def test_scheduling_and_line_records_are_not_external_sends(case):
         ('schedule_preparation', 'succeeded', {'scope': 'main', 'call_id': 's1', 'host_action': 'schedule_preparation'}),
         ('entrusted_line', 'succeeded', {'scope': 'main', 'call_id': 'l1', 'host_action': 'entrusted_line',
                                          'arguments': {'action': 'revise'}}),
+        ('update_check_state', 'succeeded', {'scope': 'main', 'call_id': 'u1', 'host_action': 'update_check_state'}),
     ])
     effects = case.service.preparations_service.line_effects(line)
     assert effects['sent'] == 0 and effects['unconfirmed'] == 0
