@@ -102,3 +102,20 @@ def test_waiting_for_approval_is_the_current_request_state(case):
     service._put_browser_request(job['id'], {'state': 'requested', 'requested_at': time.time() - PAYMENT_APPROVAL_SECONDS - 5,
                                              'digest': 'd'})
     assert asked() == 0, 'expired: no longer waiting'
+
+
+def test_unknown_browser_change_is_unconfirmed(case):
+    """A browser change with no definite answer has no ledger claim; it still counts (#1252 review)."""
+    import json
+    line, row = line_with_check(case)
+    job = woken(case, row)
+    url = 'https://shop.example/checkout'
+    with case.store.db() as db:
+        for status, detail in [('running', {'arguments': {'url': url}, 'declared_effect': 'mutate'}),
+                               ('failed', {'effect': 'unknown', 'declared_effect': 'mutate'})]:
+            db.execute('INSERT INTO tool_events(job_id,tool,status,detail,created) VALUES (?,?,?,?,?)',
+                       (job['id'], 'browser_open', status, json.dumps({'scope': 'main', 'call_id': 'b1', **detail}),
+                        case.clock[0]))
+    effects = case.service.preparations_service.line_effects(line)
+    assert effects['unconfirmed'] == 1
+    assert effects['unconfirmed_items'] == [{'operation': 'browser_open', 'host': 'shop.example'}]

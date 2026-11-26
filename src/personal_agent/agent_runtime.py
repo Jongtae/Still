@@ -2951,7 +2951,12 @@ def _unknown_effect_targets(observed,claims,calls,unscoped,*,include_claims=True
 
 def _effect_call_history(db,work_id):
  """Classify recorded calls once per Work, preserving running-event target fields."""
- ids=list(effect_record_ids(db,work_id))
+ return effect_call_history_of(db,effect_record_ids(db,work_id))
+
+def effect_call_history_of(db,ids):
+ """``_effect_call_history`` over the given Works and check records (#1252: every Work of one line)."""
+ ids=list(ids)
+ if not ids:return [],[]
  rows=db.execute("SELECT job_id,tool,status,detail FROM tool_events WHERE job_id IN ("+','.join('?' for _ in ids)+") ORDER BY id",ids)
  calls,arguments,unscoped={},{},[]
  for row in rows:

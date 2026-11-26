@@ -2808,7 +2808,9 @@ class PreparationsService:
         sending, #1250) and ``asked`` (a Work of the line waiting now for the owner's approval). ``unconfirmed_items`` names up to
         ``LINE_EFFECTS_NAMED`` of them by operation, host and connection name; never a body or a value.
         """
-        from .agent_runtime import classify_effect_rows, effect_rows, recorded_evidence, refused_state_change
+        from .agent_runtime import (EFFECT_UNKNOWN, _call_target, classify_effect_rows, dispatch_call_accounted,
+                                    dispatch_call_keys, effect_call_history_of, effect_rows, recorded_evidence,
+                                    refused_state_change)
         store=self.service.store
         with store.db() as db:
             works=[item['id'] for item in db.execute(
@@ -2818,6 +2820,9 @@ class PreparationsService:
                 "WHERE tool='preparation_lineage' AND status='deleted' AND json_extract(detail,'$.line_id')=?",(line_id,line_id))]
             ids=[*works,*(prep.CHECK_RECORD_PREFIX+item for item in rows)]
             ledger=effect_rows(db,ids)
+            # #1252 review: calls whose own record is unknown (a browser step, a connector or API call with no
+            # ledger claim), classified by the one rule (``record_effect``) as ``unknown_effect_targets`` reads them.
+            calls,unscoped=effect_call_history_of(db,ids)
             runs=db.execute("SELECT tool,detail FROM tool_events WHERE job_id IN ("+','.join('?' for _ in works)+") "
                             "AND status='succeeded' AND (tool='code_run' OR json_extract(detail,'$.host_action')='code_run')",
                             works).fetchall() if works else []
@@ -2828,6 +2833,19 @@ class PreparationsService:
         for _event,evidence in claims[:self.LINE_EFFECTS_NAMED]:
             out['unconfirmed_items'].append({key:str(evidence[key])[:120] for key in ('operation','host','identity','service')
                                              if isinstance(evidence.get(key),str) and evidence[key]})
+        # Not counted twice: a call its ledger claim already accounts for is read through that claim.
+        accounted=dispatch_call_keys(observed,claims)
+        unknown=[(action,detail) for _work,action,effect,_status,detail in calls
+                 if effect==EFFECT_UNKNOWN and not dispatch_call_accounted(detail,accounted)]
+        out['unconfirmed']+=len(unknown)+len(unscoped)
+        for action,detail in unknown:
+            if len(out['unconfirmed_items'])>=self.LINE_EFFECTS_NAMED:break
+            target=_call_target(action,detail)
+            host=next(iter(sorted(target[2])),'') if target else ''
+            item={'operation':str(action)[:120]}
+            if host:item['host']=host[:120]
+            if target and target[1] and target[1]!=host:item['identity']=str(target[1])[:120]
+            out['unconfirmed_items'].append(item)
         for run in runs:
             try:detail=json.loads(run['detail'] or '{}')
             except (TypeError,ValueError):continue
