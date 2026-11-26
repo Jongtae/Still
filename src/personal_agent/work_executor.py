@@ -2245,7 +2245,6 @@ class WorkExecutor:
         # These are owner decisions/status receipts, not completed result reports.
         if service.preparations_service.notice_job(job) != job:
             service.queue_memory_candidates(job)
-            service.release_memory_saved(job)
         # #659: preparations this Work proposed wait for the owner's yes.
         service.queue_preparation_proposal(job)
         # #583: the look-back's suggestions are offered once, after the owner's own request.

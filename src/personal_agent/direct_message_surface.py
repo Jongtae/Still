@@ -644,10 +644,6 @@ class DirectMessageSurface(ConversationSurface):
                 memory_pending = not blocked and bool(service.pending_memory_candidates(job['id'])[0])
             except Exception:
                 memory_pending = False
-            try:
-                memory_saved = not blocked and bool(service.work_saved_memories(job['id'])[0])
-            except Exception:
-                memory_saved = False
             post_id = None
             try:
                 post_id = self._post_reply(cfg, text, job)
@@ -667,7 +663,6 @@ class DirectMessageSurface(ConversationSurface):
                                (job['id'], job['chat_id'], time.time()))
                     db.execute(f'UPDATE {self.TURNS_TABLE} SET reply_post_id=? WHERE job_id=?', (post_id, job['id']))
             for step in ((lambda: service.queue_memory_candidates(job)) if memory_pending and status == 'sent' else None,
-                         (lambda: service.release_memory_saved(job)) if memory_saved else None,
                          lambda: service.release_working_notes(job['id'])):
                 if step is None:
                     continue
@@ -691,7 +686,7 @@ class DirectMessageSurface(ConversationSurface):
         notification = service.store.next_notification(self.name, service.lane_work_ids())
         if not notification:
             return False
-        from .quickstart_service import MEMORY_PROMPT_KINDS, MEMORY_SAVED_KINDS
+        from .quickstart_service import MEMORY_PROMPT_KINDS
         with service.lock:
             with service.store.db() as db:
                 state = db.execute('SELECT state FROM telegram_notifications WHERE id=?', (notification['id'],)).fetchone()
@@ -720,9 +715,8 @@ class DirectMessageSurface(ConversationSurface):
                 if hint:
                     text = f'{text}\n\n{msg(hint)}'
                 post_id = self._post_notice(cfg, text, notification, bound)
-                memory_prompt, memory_saved = bound.get('memory_prompt'), bound.get('memory_saved')
-                shown = (json.dumps(memory_prompt) if kind in MEMORY_PROMPT_KINDS else
-                         json.dumps(memory_saved) if kind in MEMORY_SAVED_KINDS else None)
+                memory_prompt = bound.get('memory_prompt')
+                shown = json.dumps(memory_prompt) if kind in MEMORY_PROMPT_KINDS else None
                 if self.NOTICE_CONFIRMED_ON_POST:
                     self.notice_delivered(notification, post_id, shown, memory_prompt=memory_prompt)
                 elif shown is not None:

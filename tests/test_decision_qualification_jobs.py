@@ -574,7 +574,7 @@ class QualificationJobTests(JobFixture):
         service.run_due_qualification = lambda: calls.append('qualification')
         for name in (
                 'run_due_preparation', 'run_one', 'deliver_one', 'deliver_notification',
-                'expire_memory_prompts', 'release_memory_saved_notices', 'sweep_after_work',
+                'expire_memory_prompts', 'release_lesson_notices', 'sweep_after_work',
                 'process_browser_logins', 'start_session_keepalive', 'purge_forgotten',
                 'settle_unknown_deliveries', 'run_owner_model_upkeep'):
             setattr(service, name, lambda: None)

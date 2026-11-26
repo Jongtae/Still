@@ -21,8 +21,8 @@ Bounded by docs/secretary-agency-contract.en.md ("Amendment - #805 phase 1"):
 * **Validation (Still).** Out-of-enum, oversized, non-``profile.`` and
   duplicate proposals are dropped.  What is kept is saved at once as current
   Memory attributed to the source Work (#918 slice a, owner decision
-  2026-09-30: the owner's own AI acts for the owner and the owner is told
-  afterwards with an undo, the Work's ``memory_saved`` notice).  The per-fact
+  2026-09-30: the owner's own AI acts for the owner; #955: no notice tells
+  it, the next answer it shapes does, and 내 기록 keeps its exact undo).  The per-fact
   #597 judgment and the MemoryCandidate ask are no longer on this path; C5
   is unchanged for third-party writers.
 * **Minimisation.** An owner pause switch and a rolling 24-hour cap on
@@ -1740,8 +1740,8 @@ class Upkeep:
                 dropped.append({'key_digest': key_digest(key), 'reason': 'invalidates'})
                 continue
             # #918 slice (a), owner decision 2026-09-30: the owner's own Judgment AI saves at once as
-            # current Memory, attributed to the source Work (#794); the owner is told afterwards with
-            # an undo (the Work's memory_saved notice) instead of a per-fact #597 judgment and an ask.
+            # current Memory, attributed to the source Work (#794), instead of a per-fact #597 judgment
+            # and an ask; #955: told when it next shapes an answer, undone exactly from 내 기록 (#962).
             # A write is not a model call, so the cap and the deadline do not stop it; the pause does.
             cited_works = (list(dict.fromkeys(source_works[ref] for ref in item.get('sources', ())
                                               if ref in source_works)) if source_works is not None else None)
@@ -1762,8 +1762,7 @@ class Upkeep:
                     **terms_identity(terms_confidence), policy='dream' if origin == ORIGIN_DREAM else 'upkeep',
                     run=job['id'], at=self.clock()) if terms else None)
             try:
-                # Review: the owner notice is held in the same transaction as the row, so a save is never untold.
-                memory = self.store.save_memory(key, content, MEMORY_OWNER, work_id=job['id'], notice=origin is None,
+                memory = self.store.save_memory(key, content, MEMORY_OWNER, work_id=job['id'],
                                                 # A fact citing no turn (a pure tidy-up) records none: the legacy lookup stays.
                                                 origin=origin, source_works=cited_works or None,
                                                 invalidates=[(full, end['reason'])

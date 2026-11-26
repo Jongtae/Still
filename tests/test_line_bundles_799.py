@@ -441,21 +441,6 @@ class Bundles(_LinesCase):
         self.assertNotIn('Held answer with a candidate',self.sends()[0]['text'])
         self.assertEqual(self.store.job(job['id'])['delivery'],'none')
 
-    def test_held_memory_saved_status_is_sent_without_releasing_report(self):
-        from unittest import mock
-        from personal_agent import memory_prompts
-        patcher=mock.patch.object(memory_prompts,'MEMORY_SAVED_NOTICES',True)  # #955: the kept #918 machinery
-        patcher.start();self.addCleanup(patcher.stop)
-        row,job=self.start_held_notice_run()
-        self.store.save_memory('profile.fixture799','Owner fact saved',work_id=job['id'],notice=True)
-        self.script=[{'content':'Held answer with a saved fact'}]*4
-        self.assertTrue(self.service.run_one())
-        self.assertTrue(self.service.deliver_notification())
-        self.assertFalse(self.service.deliver_notification())
-        self.assertIn('Owner fact saved',self.sends()[0]['text'])
-        self.assertNotIn('Held answer with a saved fact',self.sends()[0]['text'])
-        self.assertEqual(self.store.job(job['id'])['delivery'],'none')
-
     def test_held_budget_continue_request_then_report_is_bundled(self):
         import time
         from personal_agent.work_execution import WorkRun

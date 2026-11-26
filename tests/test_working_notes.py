@@ -343,16 +343,16 @@ class Told(TelegramHarness):
         self.store.update_notification(row['id'], 'sending')
         self.store.recover()
         self.assertEqual(self.notices(job), ['unknown'])
-        self.service._memory_saved_release_sweep = 0
-        self.service.release_memory_saved_notices()
+        self.service._lesson_release_sweep = 0
+        self.service.release_lesson_notices()
         self.assertTrue(self.service.deliver_notification())
         self.assertEqual(self.sends()[-1]['text'], msg('working_notes.saved', change='요약 길이'))
         [again] = self.notification(job, WORKING_NOTES_KIND)
         self.assertEqual((again['state'], json.loads(again['fingerprint'])['retells']), ('sent', 1))
         # Review P1: told again at most once, like a saved-memory notice.
         self.store.update_notification(again['id'], 'unknown')
-        self.service._memory_saved_release_sweep = 0
-        self.service.release_memory_saved_notices()
+        self.service._lesson_release_sweep = 0
+        self.service.release_lesson_notices()
         self.assertEqual(self.notices(job), ['unknown'])
 
     def test_a_notice_saved_before_the_reply_was_sent_follows_the_reply(self):
@@ -372,8 +372,8 @@ class Told(TelegramHarness):
         self.service.deliver_one()
         self.assertEqual(self.store.job(job)['delivery'], 'pending', 'the reply waits out its backoff')
         self.assertFalse(self.service.deliver_notification(), 'the work loop sends no notice ahead of it')
-        self.service._memory_saved_release_sweep = 0
-        self.service.release_memory_saved_notices()
+        self.service._lesson_release_sweep = 0
+        self.service.release_lesson_notices()
         self.assertEqual(self.notices(job), [self.store.NOTICE_HELD], 'the sweep keeps it held too')
         self.assertEqual(self.sends(), [])
         outage[0] = False
@@ -389,13 +389,13 @@ class Told(TelegramHarness):
     def test_a_held_notice_is_released_by_the_sweep_once_the_reply_settled(self):
         """A crash between the reply's delivery and the release, or a cancelled reply, leaves it to the sweep."""
         job = self.reviewed(review([add_lesson('요약은 세 줄로')], '요약 길이'), delivery='pending')
-        self.service._memory_saved_release_sweep = 0
-        self.service.release_memory_saved_notices()
+        self.service._lesson_release_sweep = 0
+        self.service.release_lesson_notices()
         self.assertEqual(self.notices(job), [self.store.NOTICE_HELD])
         with self.store.db() as db:
             db.execute("UPDATE jobs SET delivery='cancelled' WHERE id=?", (job,))
-        self.service._memory_saved_release_sweep = 0
-        self.service.release_memory_saved_notices()
+        self.service._lesson_release_sweep = 0
+        self.service.release_lesson_notices()
         self.assertEqual(self.notices(job), ['queued'])
 
     def test_a_secret_never_enters_the_lessons_or_the_notice(self):
