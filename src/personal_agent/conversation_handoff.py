@@ -1382,7 +1382,8 @@ class ConversationJudgments:
         context = self._context('explicit-preparation-request', {'owner_message': utterance,
                                                                    'recent_conversation': conversation or 'none',
                                                                    'proposed_preparation': proposal},
-                                uncut=('owner_message', 'recent_conversation'))
+                                # #1234: a correction is judged over every changed place, uncut.
+                                uncut=('owner_message', 'recent_conversation', 'proposed_preparation'))
         decision = self.engine.judge(context, PREPARATION_REQUEST_PROPOSITION)
         verdict = self.policy.binary(decision)
         return Judgment(JUDGMENT_UNAVAILABLE if verdict == 'unknown' else verdict,

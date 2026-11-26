@@ -321,10 +321,20 @@ class PreparationsService:
             # #717: the owner's own typed Work (the same test as a direct settings request, #619);
             # #774: a location continuation re-runs an earlier message, so it is not one.
             owner_work=service.owner_typed_work(job) or steered
+            # #1234: the owner's correction of work they accepted is judged as that change, over the
+            # accepted work and every changed place, not as a new schedule the owner never asked for.
+            replaced=(service.preparations.get(args['replaces']) if owner_work and not planning and planner is None
+                      and isinstance(args.get('replaces'),str) else None)
+            judged=summary
+            if replaced and replaced['state'] in prep.ACTIVE_STATES and replaced.get('accepted_by') in prep.OWNER_ACCEPTED:
+                judged=('Change scheduled work the owner already accepted.\nAccepted work: '
+                         +prep.proposal_summary(replaced,service.home_zone())+'\nReplacement: '+summary
+                         +'\nIts instruction changed at these places:\n'
+                         +(prep.hunks_text(prep.changed_hunks(replaced.get('goal_text'),goal)) or 'none'))
             # #717: the judgment no longer decides whether it is scheduled, only who asked: a run the
             # owner asked for keeps what the owner's payment autonomy allows (``self_set_run``).
             asked=bool(owner_work and service.decision_judge.explicit_preparation_request(
-                service.owner_request_words(job),summary,service.preparation_conversation(job)).outcome==JUDGMENT_YES)
+                service.owner_request_words(job),judged,service.preparation_conversation(job)).outcome==JUDGMENT_YES)
             if steered and service.store.outside_content_sources(job['id']) and not (asked and self.steer_asked(
                     job,('replace this scheduled work with: ' if args.get('replaces') else 'start new scheduled work: ')+summary
                     +'\nits whole instruction changed at these places:\n'
