@@ -11879,7 +11879,7 @@
   "zh": "受托事项（版本 {version}）：{title}\n任务：{task}\n汇报承诺：{promise}\n现行规则：\n{rules}\n未决事项：{open}\n定期汇报：每 {days} 天"
  },
  "lines.today_rules": {
-  "ko": "{date} 하루에만 적용되는 규칙이에요. 기존 규칙과 다르면 오늘은 아래 규칙을 따라요.\n{rules}",
+  "ko": "하루에만 적용되는 규칙이에요({date}). 기존 규칙과 다르면 오늘은 아래 규칙을 따라요.\n{rules}",
   "en": "Rules for {date} only. Where they differ from standing rules, follow these today.\n{rules}",
   "ja": "{date} のみ適用するルールです。常設ルールと異なる場合、今日は以下に従ってください。\n{rules}",
   "zh": "以下规则仅适用于 {date}。如与长期规则有冲突，当天请遵循以下规则。\n{rules}"

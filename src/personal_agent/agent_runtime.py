@@ -504,7 +504,7 @@ SCHEDULE_PREPARATION_ARGUMENTS={
 ENTRUSTED_LINE_DESCRIPTION=(
  'Keep work in one line across schedules. Open it with the task in the owner’s words, report promise and standing '
  'rules, then schedule with schedule_preparation line. Reuse the line for the same work. Revise with rule_scope=today '
- 'for corrections tied to today (오늘, today’s date, this session) or of unclear duration, unless the owner says to keep them. Record completion '
+ 'for corrections tied to today (today’s date or this session) or of unclear duration, unless the owner says to keep them. Record completion '
  'and its reason in open_matters. Use stop with scope work when asked to stop current work or the scope is unclear. '
  'Use scope line when asked to end the line. Still announces openings, standing rule changes and stops.')
 ENTRUSTED_LINE_ARGUMENTS={
