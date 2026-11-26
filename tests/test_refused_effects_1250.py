@@ -176,3 +176,51 @@ def test_a_later_run_that_sent_the_same_change_clears_the_hold():
     assert state_change_short(trail_steps(rows(unkeyed, retried))), 'an unkeyed refusal is never made up for'
     assert not state_change_short(trail_steps(rows(refused, retried)))
     assert not state_change_short(trail_steps(rows(other_read)))
+
+
+def test_a_run_cut_off_after_a_refusal_keeps_it_on_its_failure_record(case):
+    """The sandbox stops after Still refused the change: the failed call still holds the Work (#1250 review)."""
+    import pytest
+    from personal_agent.agent_runtime import ToolError, _error_observation
+    row = setup_check(case)
+    switch(case, False)
+    job = woken(case, row)
+    with case.store.db() as db:
+        db.execute("UPDATE jobs SET status='running' WHERE id=?", (job['id'],))
+    sent = []
+    process = Transport(sent, failure='proxy')
+    runner = code_run.CodeRunner(case.store, job['id'], approvals=case.service.browser_approvals_for(job),
+                                 popen=lambda *a, **k: process, **WIRE)
+    with pytest.raises(code_run.CodeRunError) as caught:
+        runner.run(ARGS_WITH_SET)
+    assert not sent
+    refused, = caught.value.refused_effects
+    assert refused['sent'] is False and refused['input_digest'] and 'fixture-1' not in json.dumps(refused)
+    error = ToolError(str(caught.value), caught.value.code)
+    error.refused_effects = caught.value.refused_effects
+    observation = _error_observation(error, True, 'code_run')
+    assert observation['refused_effects'] == [refused]
+    detail = {'scope': 'worker', 'call_id': 'cut', 'host_action': 'code_run', **observation}
+    with case.store.db() as db:
+        db.execute('INSERT INTO tool_events(job_id,tool,status,detail,created) VALUES (?,?,?,?,?)',
+                   (job['id'], 'code_run', 'failed', json.dumps(detail), case.clock[0]))
+    assert refused_state_change('code_run', detail)
+    assert not case.service.goal_upgrade_allowed(job['id'])
+    assert runner._refused == [], 'reported once, not carried into the next run'
+
+
+def test_refusals_beyond_the_kept_bound_leave_an_unkeyed_marker(case):
+    """Sending the kept ones later never clears the ones that were not kept (#1250 review)."""
+    runner = code_run.CodeRunner(case.store, 'work', popen=lambda *a, **k: FakeProcess(requests=[POST]), **WIRE)
+    runner._owners = {HOST: [('fixture', {'revision': 1})]}
+    runner._request_digest = lambda message, method, host: 'd-' + message['path']
+    for index in range(code_run.MAX_CHECKED_REQUESTS + 3):
+        runner._note_refused(dict(POST, path=f'/orders/{index}'), 'refused')
+    runner.scratch_secrets, runner._state_unknown = [], False
+    rows = runner._redacted_refusals()
+    assert len(rows) == code_run.MAX_CHECKED_REQUESTS + 1 and rows[-1]['overflow'] is True
+    assert 'input_digest' not in rows[-1]
+    kept = [row['input_digest'] for row in rows[:-1]]
+    refused = {'scope': 'w', 'call_id': 'c1', 'host_action': 'code_run', 'evidence': {'refused_effects': rows}}
+    sent = {'scope': 'w', 'call_id': 'c2', 'host_action': 'code_run', 'evidence': {'effects': [], 'effect_digests': kept}}
+    assert state_change_short(trail_steps([('code_run', 'succeeded', json.dumps(d)) for d in (refused, sent)]))

@@ -2922,6 +2922,11 @@ def dispatch_call_accounted(detail, keys):
  return detail.get('effect_call_ref') in refs or detail.get('dispatch_event') in events or event in events
 
 
+def refused_field(exc):
+ """``{'refused_effects': [...]}`` of a code run cut off after Still refused a change (#1250 review), else nothing."""
+ rows=getattr(exc,'refused_effects',None)
+ return {'refused_effects':[row for row in rows if isinstance(row,dict)]} if isinstance(rows,list) and rows else {}
+
 def dispatch_event_field(exc):
  event = getattr(exc, 'dispatch_event', None)
  return {'dispatch_event': event} if type(event) is int else {}
@@ -3632,13 +3637,19 @@ def recorded_evidence(detail):
  evidence=detail.get('evidence') if isinstance(detail.get('evidence'),dict) else {}
  return {**evidence,'needs_setup':True} if owner_wait(evidence) else evidence
 
+def refused_rows(detail):
+ """A recorded code run's refused requests: from its Evidence, or (a run cut off) its failure record (#1250)."""
+ detail=detail if isinstance(detail,dict) else {}
+ rows=recorded_evidence(detail).get('refused_effects') or detail.get('refused_effects')
+ return [row for row in rows if isinstance(row,dict)] if isinstance(rows,list) else []
+
 def refused_state_change(action, detail):
  """Whether a recorded code run had a state-changing request Still refused before sending it (#1250).
 
- ``refused_effects`` in its Evidence (``code_run.evidence``): the run itself may have succeeded,
- but the change it meant to make was not sent, so the request it served is not done.
+ ``refused_effects`` in its Evidence (``code_run.evidence``), or on the failure record of a run cut off
+ after the refusal: the change it meant to make was not sent, so the request it served is not done.
  """
- return action in CODE_ACTIONS and bool(recorded_evidence(detail).get('refused_effects'))
+ return action in CODE_ACTIONS and bool(refused_rows(detail))
 
 def _code_effect_keys(rows):
  """``(digests, unkeyed)`` of a code run's recorded effect rows (#1250 review).
@@ -3964,7 +3975,7 @@ def state_change_short(steps, *, reconciled=None):
    for _t,other,result,done,_r in steps[index+1:]:
     if other in CODE_ACTIONS and result=='succeeded':
      later|={item for item in recorded_evidence(done).get('effect_digests') or () if isinstance(item,str) and item}
-   refused,unkeyed=_code_effect_keys(recorded_evidence(detail).get('refused_effects'))
+   refused,unkeyed=_code_effect_keys(refused_rows(detail))
    if unkeyed or not refused<=later:return True
    continue
   if state not in ('failed','withheld','incomplete') or action=='delegate_agent':continue
@@ -5169,7 +5180,11 @@ class Capabilities:
   if name in CODE_ACTIONS:
    from .code_run import CodeRunError
    try:result=self.code_runner().run(args)
-   except CodeRunError as exc:raise ToolError(str(exc),exc.code,requires=exc.requires) from None
+   except CodeRunError as exc:
+    error=ToolError(str(exc),exc.code,requires=exc.requires)
+    # #1250 review: a run cut off after Still refused a change keeps that refusal on its failure record.
+    if getattr(exc,'refused_effects',None):error.refused_effects=exc.refused_effects
+    raise error from None
    self.evidence.append({'tool':name,'result':result})
    return result
   if name in DRIVE_ACTIONS:
@@ -6454,7 +6469,7 @@ def _error_observation(exc,validated,action=None):
  if not validated:return {'error':str(exc),'code':getattr(exc,'code',None) or 'invalid_call','retry':'permanent','effect':'none',**ran_field(exc)}
  code,retry,effect=classify_failure(exc,action)
  text=str(exc) or (TRANSIENT_FAILURE_TEXT if code=='transient_failure' else type(exc).__name__)
- observation={'error':text,'code':code,'retry':retry,'effect':effect,**ran_field(exc),**executed_field(exc),**observed_field(exc),**dispatch_event_field(exc)}
+ observation={'error':text,'code':code,'retry':retry,'effect':effect,**ran_field(exc),**executed_field(exc),**observed_field(exc),**dispatch_event_field(exc),**refused_field(exc)}
  if getattr(exc,'requires',None):observation['requires']=exc.requires
  return observation
 
