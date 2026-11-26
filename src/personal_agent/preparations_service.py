@@ -2808,7 +2808,7 @@ class PreparationsService:
         sending, #1250) and ``asked`` (a Work of the line waiting now for the owner's approval). ``unconfirmed_items`` names up to
         ``LINE_EFFECTS_NAMED`` of them by operation, host and connection name; never a body or a value.
         """
-        from .agent_runtime import (EFFECT_UNKNOWN, _call_target, classify_effect_rows, dispatch_call_accounted,
+        from .agent_runtime import (EFFECT_CHANGED, EFFECT_UNKNOWN, _call_target, classify_effect_rows, dispatch_call_accounted,
                                     dispatch_call_keys, effect_call_history_of, effect_rows, refused_rows,
                                     refused_state_change)
         store=self.service.store
@@ -2833,11 +2833,17 @@ class PreparationsService:
         for _event,evidence in claims[:self.LINE_EFFECTS_NAMED]:
             out['unconfirmed_items'].append({key:str(evidence[key])[:120] for key in ('operation','host','identity','service')
                                              if isinstance(evidence.get(key),str) and evidence[key]})
-        # Not counted twice: a call its ledger claim already accounts for is read through that claim.
+        # Not counted twice: a call its ledger row already accounts for (an API dispatch by its call reference, a
+        # connector call by its permission event) is read through that row (#1252 review).
         accounted=dispatch_call_keys(observed,claims)
-        unknown=[(action,detail) for _work,action,effect,_status,detail in calls
-                 if effect==EFFECT_UNKNOWN and not dispatch_call_accounted(detail,accounted)]
+        ledger_ids={item['id'] for item in ledger}
+        def own(detail):
+            return not dispatch_call_accounted(detail,accounted) and detail.get('permission_event') not in ledger_ids
+        unknown=[(action,detail) for _work,action,effect,_status,detail in calls if effect==EFFECT_UNKNOWN and own(detail)]
         out['unconfirmed']+=len(unknown)+len(unscoped)
+        # A change a call's own record shows it made (a browser step, a package tool), once it ended: never one still running.
+        out['sent']+=sum(1 for _work,_action,effect,status,detail in calls if effect==EFFECT_CHANGED and status=='succeeded'
+                         and own(detail))
         for action,detail in unknown:
             if len(out['unconfirmed_items'])>=self.LINE_EFFECTS_NAMED:break
             target=_call_target(action,detail)

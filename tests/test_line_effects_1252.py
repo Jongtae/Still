@@ -119,3 +119,42 @@ def test_unknown_browser_change_is_unconfirmed(case):
     effects = case.service.preparations_service.line_effects(line)
     assert effects['unconfirmed'] == 1
     assert effects['unconfirmed_items'] == [{'operation': 'browser_open', 'host': 'shop.example'}]
+
+
+def _events(case, job, rows):
+    import json
+    ids = []
+    with case.store.db() as db:
+        for tool, status, detail in rows:
+            ids.append(db.execute('INSERT INTO tool_events(job_id,tool,status,detail,created) VALUES (?,?,?,?,?)',
+                                  (job['id'], tool, status, json.dumps(detail), case.clock[0])).lastrowid)
+    return ids
+
+
+def test_failed_connector_change_counts_once(case):
+    """The permission claim and the call's unknown record are one change (#1252 review)."""
+    line, row = line_with_check(case)
+    job = woken(case, row)
+    permission, = _events(case, job, [('connector_permission', 'allowed', {
+        'scope': 'ai-connection', 'host_action': 'connector_permission',
+        'evidence': {'engine': 'claude', 'service': 'Calendar', 'identity': 'cal', 'operation': 'create_event',
+                     'kind': 'mcp', 'decision': 'allow', 'effect': 'mutate'}})])
+    _events(case, job, [('connector_read', 'failed', {'scope': 'ai-connection', 'host_action': 'connector_read',
+                                                      'call_id': 'k1', 'effect': 'unknown', 'permission_event': permission})])
+    effects = case.service.preparations_service.line_effects(line)
+    assert (effects['unconfirmed'], effects['sent']) == (1, 0)
+    assert effects['unconfirmed_items'] == [{'operation': 'create_event', 'identity': 'cal', 'service': 'Calendar'}]
+
+
+def test_succeeded_browser_change_counts_as_sent_and_a_running_one_does_not(case):
+    line, row = line_with_check(case)
+    job = woken(case, row)
+    url = {'url': 'https://shop.example/checkout'}
+    _events(case, job, [
+        ('browser_open', 'running', {'scope': 'main', 'call_id': 'b1', 'arguments': url, 'declared_effect': 'mutate'}),
+        ('browser_open', 'succeeded', {'scope': 'main', 'call_id': 'b1', 'declared_effect': 'mutate'}),
+        ('browser_open', 'running', {'scope': 'main', 'call_id': 'b2', 'arguments': url, 'declared_effect': 'mutate'}),
+    ])
+    effects = case.service.preparations_service.line_effects(line)
+    assert effects['sent'] == 1
+    assert case.service.preparations_service.line_effects_text(effects, account=True)
