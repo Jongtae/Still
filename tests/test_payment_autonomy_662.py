@@ -23,7 +23,7 @@ class Mode:
         draft = settings.propose('owner', 'http', 'payment_autonomy', 'enabled', 'on' if enabled else 'off')
         return settings.confirm('owner', 'http', draft['draft_id'], draft['digest'])
 
-    def scheduled_job(self, key='scheduled', accepted_by=None, origin=None):
+    def scheduled_job(self, key='scheduled', accepted_by=prep.ACCEPTED_OWNER_REQUEST, origin=None):
         row = self.service.preparations.create(kind='prepare', goal='pay', due_at=1000, timezone='UTC',
                                               recurrence='daily', channel='web', created_from=None,
                                               state=prep.STATE_SCHEDULED, accepted_by=accepted_by, origin=origin)

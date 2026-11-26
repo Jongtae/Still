@@ -12808,52 +12808,40 @@
   "ja": "この実行は外部の内容を読んでから計画を変更しました。",
   "zh": "本次运行在阅读外部内容后更改了计划。"
  },
- "lines.refused_line_invalid_end": {
-  "ko": "오늘의 종료 시각을 시간대와 함께 정해 주세요.",
-  "en": "Give an end time for today with a timezone offset.",
-  "ja": "今日の終了時刻をタイムゾーンのオフセット付きで指定してください。",
-  "zh": "请提供今天的结束时间，并注明时区偏移。"
- },
  "lines.entrusted": {
-  "ko": "「{title}」을 {end}까지 맡을게요. 주문은 현재 자율 결제 모드 설정을 따라요. 오늘 작업을 멈추려면 “{title} 멈춰”라고 해 주세요.",
-  "en": "I’ll handle “{title}” until {end}. Orders follow your current payment autonomy setting. To stop today’s work, say “stop {title}”.",
-  "ja": "「{title}」を {end} までお預かりします。注文は自律決済モードの現在の設定に従います。今日の作業を止めるには「{title}を止めて」と言ってください。",
-  "zh": "我会负责“{title}”直到 {end}。下单遵循自主付款模式的当前设置。要停止今天的工作，请说“停止{title}”。"
+  "ko": "「{title}」을 {end}까지 맡을게요. 결제가 필요한 작업은 현재 자율 결제 설정을 따라요. 오늘 작업을 멈추려면 “{title} 멈춰”라고 해 주세요.",
+  "en": "I’ll handle “{title}” until {end}. Payments follow your current payment autonomy setting. To stop today’s work, say “stop {title}”.",
+  "ja": "「{title}」を {end} までお預かりします。支払いは現在の自律決済設定に従います。今日の作業を止めるには「{title}を止めて」と言ってください。",
+  "zh": "我会负责“{title}”直到 {end}。付款会遵循当前的自主付款设置。要停止今天的工作，请说“停止{title}”。"
  },
- "lines.refused_line_invalid_planner": {
-  "ko": "계획 작업의 지시가 비어 있거나 너무 길어요.",
-  "en": "The planner needs an instruction within the preparation length limit.",
-  "ja": "計画作業の指示が空か長すぎます。",
-  "zh": "规划任务的指令为空或过长。"
+ "payment_autonomy.standing_required": {
+  "ko": "자율 결제는 켜져 있어요. 이 예약 작업에서 사용하려면 직접 맡겨 주셔야 해요. 이 일을 오늘 맡아 달라고 말해 주세요.",
+  "en": "Payment autonomy is on. This scheduled run needs your authorization to use it. You can ask me to take over this line for today.",
+  "ja": "自律決済はオンです。この予約実行で使うには、あなたからの依頼が必要です。この作業を今日の分だけ任せるよう伝えてください。",
+  "zh": "自主付款已开启。这次定时运行需要您授权才能使用。您可以让我接手这项工作直到今天的运行结束。"
  },
- "lines.refused_line_already_entrusted": {
-  "ko": "이 일은 오늘 이미 맡겨 두셨어요. 바뀐 지시는 수정으로 반영해 주세요.",
-  "en": "This line is already entrusted for today. Revise it to change the instructions.",
-  "ja": "この継続作業は本日すでに委任されています。指示は修正してください。",
-  "zh": "今天已委托这项工作。请通过修订更改指令。"
+ "checks.plan_held": {
+  "ko": "이 검사에는 현재 적용할 실행 계획이 없어서 변경을 보류했어요.",
+  "en": "This check’s plan needs an update before it can make changes.",
+  "ja": "このチェックで変更を行うには、計画を更新する必要があります。",
+  "zh": "这项检查需要更新计划后才能执行变更。"
  },
- "lines.refused_line_executor_exists": {
-  "ko": "진행 중인 조건 검사 하나만 실행기로 둘 수 있어요.",
-  "en": "Keep one condition check as the line executor and let any current check Work finish first.",
-  "ja": "継続作業の実行には条件チェックを一つだけ残し、実行中の作業を先に完了してください。",
-  "zh": "一项工作只能有一个条件检查执行器，请先等待正在运行的检查任务结束。"
+ "checks.plan_call_refused": {
+  "ko": "이 요청은 현재 검사 계획의 허용 범위에 없어요.",
+  "en": "This request is outside the check’s current plan.",
+  "ja": "このリクエストは現在のチェック計画の範囲外です。",
+  "zh": "此请求超出了当前检查计划的范围。"
  },
- "lines.refused_line_plan_stale": {
-  "ko": "이 일의 지시가 바뀌었어요. 최신 지시를 확인해 주세요.",
-  "en": "The instructions for this line changed. Read the current instructions.",
-  "ja": "この継続作業の指示が変更されました。最新の指示を確認してください。",
-  "zh": "此项工作的指令已变更。请查看当前指令。"
+ "checks.plan_refresh": {
+  "ko": "현재 검사 계획을 갱신해 주세요.",
+  "en": "Update the check’s plan using update_check_state.",
+  "ja": "update_check_state でチェック計画を更新してください。",
+  "zh": "请用 update_check_state 更新检查计划。"
  },
- "lines.standing_link": {
-  "ko": "소유자가 이 일에 연결하도록 맡긴 작업만 추가할 수 있어요.",
-  "en": "Add work to this entrusted line only when the owner asked for the link.",
-  "ja": "所有者がこの継続作業への追加を依頼した場合にのみ追加できます。",
-  "zh": "只有所有者要求关联时，才可将工作添加到这项委托。"
- },
- "checks.planner_triggered": {
-  "ko": "조건 검사 결과나 소유자의 지시에 따라 계획 작업이 실행돼요.",
-  "en": "The planner runs when the executor reports an event or the owner changes instructions.",
-  "ja": "実行側のイベントや所有者の指示変更に応じて計画作業が実行されます。",
-  "zh": "执行器报告事件或所有者更改指令时，规划任务会运行。"
+ "preparations.resume_followup_today": {
+  "ko": "이어 가기로 하신 일은 오늘의 실행 시간 안에 예약해 주세요.",
+  "en": "Schedule this follow-up within today’s agreed run window.",
+  "ja": "再開する作業は、今日の実行時間内で予約してください。",
+  "zh": "请在今天约定的运行时段内安排后续工作。"
  }
 }

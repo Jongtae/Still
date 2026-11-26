@@ -1043,6 +1043,7 @@ class CodeRunner:
         refused and the owner is asked to approve exactly it.  Any other state change follows the
         pilot posture: no per-action approval, still claimed once and never replayed.
         """
+        from .agent_runtime import ToolError
         from .api_requests import ApiError, ApiRequests
         from .browser_session import step_binding
         from .current_context import redact_known_secrets
@@ -1068,7 +1069,9 @@ class CodeRunner:
         port = message.get('port')
         if destination == _hostname(destination) and isinstance(port, int) and port != 443:
             destination = f'{destination}:{port}'
-        headers = {key.lower(): value for key, value in message.get('headers', ())}
+        pairs = message.get('headers')
+        headers = {pair[0].lower(): pair[1] for pair in pairs if isinstance(pair, list) and len(pair) == 2
+                   and isinstance(pair[0], str)} if isinstance(pairs, list) else {}
         check_request = (name if len(owners) == 1 else None, method, destination, path, headers)
         try:
             identity, replay_keys = api._effect_identities(slot, method, url, body)
@@ -1096,7 +1099,10 @@ class CodeRunner:
                 lines.append(self._exact_request_label(method, host, path, query, body))
             label = '\n\n'.join(lines)
             mode = getattr(self.approvals, 'payment_autonomy', None)
-            ticket = mode(binding, label) if callable(mode) else None
+            try:
+                ticket = mode(binding, label) if callable(mode) else None
+            except ToolError as exc:
+                return False, str(exc)
             api._payment_ticket = (binding, label, ticket) if ticket else None
             exact = not ticket and self.approvals.consume(binding)
             if ticket or exact:

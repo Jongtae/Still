@@ -201,7 +201,7 @@ REDACTED_ARGUMENTS={name:tool.recorded_by_length for name,tool in HOST_TOOLS.ite
 SCRUBBED_ARGUMENTS={'schedule_preparation':('goal','title','offer'),
                     'update_check_state':('preparation_id','check_digest'),
                     # #798: a line's brief is the owner's own words, kept like a preparation goal.
-                    'entrusted_line':('title','task','report_promise','rules','rule','open_matters','planner_goal'),
+                    'entrusted_line':('title','task','report_promise','rules','rule','open_matters'),
                     # Memory queries are model-authored owner text and may
                     # contain a stored credential; scrub every durable call record.
                     'search_memory':'query',
@@ -486,48 +486,35 @@ SCHEDULE_PREPARATION_ARGUMENTS={
  'check':('A JSON object with the proven code_run code, hosts, secrets and timeout_seconds, plus every_seconds '
   '(minimum 15, default 60). For prepare windows with until. Output wakes the AI; use no packages. '
   'Print nothing when the condition is not met. In a check run, CHECKSTATEFILE is a JSON object (at most 16 KB) kept '
-  'between its runs and absent while you prove the code, so keep a hold duration or report-once state there. '
-  'An entrusted line uses CHECKPLANFILE for the immutable executor plan. An empty object means hold effects. '
-  'If there is no active executor, the current line planner can prove the code in its own Work and schedule '
-  'one prepare with check, its own line ID and until no later than the mandate end. Omit replaces for that renewal.'),
+  'between runs and absent while you prove the code. Keep bookkeeping there. Use update_check_state from the '
+  'Work a check wakes to change the reserved calls and expires keys.'),
  'replaces':('The id (from settings_read preparations) of an active preparation this one takes the place of, when the owner changes what an existing watch or schedule does (another target, a new plan, a different time) (#766). '
   'In a Work the owner started, Still stops it once this one is scheduled, so the two never run side by side and the new one need not wait for the old to end; say in your answer what was stopped. '
-  'A scheduled run the owner steered may replace its own preparation this way. '
-  'The current line planner may use the preparation_id from its check report to replace a check Still paused after '
-  'consecutive failures. Name the same line, prove the replacement check in this Work, and keep until within the mandate. '
-  'Omit replaces for an additional preparation.'),
+  'A scheduled run the owner steered may replace its own preparation this way. Omit it for an additional preparation.'),
  'line':('The id of the entrusted line (entrusted_line) this preparation does the work of (#798): the line you opened for a '
   'continuing responsibility, or an existing one when the owner starts the same work again; continue it instead of opening '
   'another. A replacement keeps its line by itself. After you read a line in this Work, say here whether the preparation continues it (its id) or is separate work (none).'),
- 'resume_line':('Daily plan only: true to offer resuming an owner line for today. Name the line, use a one-off prepare, and give an offer of one or two lines. The owner must accept before it is scheduled.'),
+ 'resume_line':('Daily plan only: offer resuming an owner line for today. Name the line, use a one-off prepare, '
+  'and give an offer of one or two lines. After the owner accepts, the resumed run can schedule follow-up work '
+  'on the same line within today’s window.'),
  'offer':('Required for kind prepare (a call without it is refused and nothing is scheduled): what the owner reads for the scheduled preparation or proposal (#393, #755), apart from goal, which each run receives as its brief: at most 6 short lines (400 characters) in the owner\'s own words, one point a line: the limits that matter to their decision (money, risk, counts), which of those you chose yourself and are assuming (say so), what it will not do, and when they will hear from it. Write plain words, not the method\'s terms: say what a term means for the owner, and prefer concrete amounts and times to ratios. State something as blocked only when Still or the service actually blocks it; otherwise say it is how you will do it. Still shows the time, repetition and last run itself, so the offer need not repeat them. In a Work the owner started, state what is set up and that it can be cancelled; in a continuation, retry or replay Work, describe what would run after acceptance without claiming it is set up. Ask nothing (#755).'),
 }
 #: #798: one continuing responsibility the owner entrusted, with an identity of its own.
 ENTRUSTED_LINE_DESCRIPTION=(
- 'Keep entrusted work in one line across schedules. Open it with the task in the owner\'s words, report promise '
- 'and standing rules (one per line), then schedule with schedule_preparation line; reuse the line for the same work. '
- 'Use rule or drop_rule only for standing corrections; if unclear, apply the change today only and say so. '
- 'The mission runs until its end condition, the owner ends it, or you judge it complete or impossible; record the end '
- 'and reason in open_matters and honor a recorded end. An owner request to close today uses stop with scope work at once. '
- 'Use entrust only when the owner explicitly handed over the line for today, with ends_at and the planner goal; '
- 'entrusted members use the current payment autonomy setting. list shows what you handle; read gives a brief and outcomes. '
- 'For stop, choose the scope from the owner\'s words; if unclear, stop current work only and say the mission is still held. '
- 'Still announces openings, standing rules, entrustments and stops; do not repeat those notices.')
+ 'Keep work in one line across schedules. Open it with the task in the owner’s words, report promise and standing '
+ 'rules, then schedule with schedule_preparation line. Reuse the line for the same work. Use rule or drop_rule only '
+ 'for standing corrections. Apply a correction for today only if its duration is unclear, and say so. Record completion '
+ 'and its reason in open_matters. Use stop with scope work when asked to stop current work or the scope is unclear. '
+ 'Use scope line when asked to end the line. Still announces openings, standing rule changes and stops.')
 ENTRUSTED_LINE_ARGUMENTS={
- 'action':('list, read, open, revise, undo, stop, restart or entrust. Only a Work the owner started may open, revise, undo, stop or restart, '
-           'with two exceptions for a scheduled run of a line: one the owner steered may revise or stop its own line as their words ask; '
-           'a run of a line the owner set up may revise its own line\'s open_matters only. For entrust, if more than one active line '
-           'could be meant, use list and read as needed. Ask a one-line question that gives each candidate\'s title and '
-           'a known detail the owner would remember, such as when it started, what it covered, or how its last run ended. '
-           'Never show IDs or guess. Wait for the owner\'s answer before entrusting.'),
+ 'action':('list, read, open, revise, undo, stop, restart. A scheduled run may revise its own open_matters, '
+           'or revise or stop its line as the owner steered it. If more than one active line could be meant, use list '
+           'and read, then ask which title and include a recognizable detail for each. Wait for the answer and omit IDs.'),
  'line':'The line id (from list, read or open), for every action but list and open.',
  'title':('Optional for open or revise. Copy the phrase the owner used for the line in this Work. '
           'When the owner starts calling the line by a different term, revise its title to that term. '
           'Use plain words on one line, at most 40 characters, with no IDs. Omit title if their words supply no suitable phrase; '
           'never invent a label. If the owner asks to remove the title, revise it to an empty string to use the task fallback.'),
- 'ends_at':'For entrust: the owner’s end time today, as an ISO datetime with offset.',
- 'planner_goal':'For entrust: the instruction for each planner Work. Checks and planner Works run separately.',
-
  'scope':('For stop only. "work" (default) cancels current and pending runs and keeps the mission active. '
           '"line" ends the mission and cancels its work.'),
  'expected_version':'For revise: the version you read (list, read or open). A newer version wins and is shown to you.',
@@ -694,18 +681,16 @@ DEFINITIONS=[
  schema('propose_current_state',PROPOSE_CURRENT_STATE_DESCRIPTION,described({'predicate':{'type':'string','enum':['current_place','work_mode','availability_hint']},'value':STRING,'place_ref':STRING,'source':STRING,'until':STRING,'supersedes':STRING},PROPOSE_CURRENT_STATE_ARGUMENTS),['predicate']),
  schema('schedule_preparation',SCHEDULE_PREPARATION_DESCRIPTION,described({'kind':{'type':'string','enum':['reminder','prepare']},'goal':STRING,'due':STRING,'timezone':STRING,'recurrence':{'type':'string','enum':['daily','weekdays','weekly']},'rrule':STRING,'every_minutes':STRING,'until':STRING,'max_runs':STRING,'report_every_minutes':STRING,'delivery':{'type':'string','enum':['send','keep','when_needed']},'every_result':{'type':'boolean'},'title':STRING,'offer':STRING,'replaces':STRING,'line':STRING,'resume_line':{'type':'boolean'},'check':STRING},SCHEDULE_PREPARATION_ARGUMENTS),['kind','goal','due']),
  schema('update_check_state',
-        'Update the condition check in this Work’s preparation, piece tree or active entrusted line. '
-        'Use the preparation_id and check_digest listed for this Work. Each top-level key in patch replaces that key, and null removes it. '
-        'Other keys stay. For an entrusted line, publish an immutable plan with the owner_revision listed for this Work. '
-        'The patch is the complete plan data under state in CHECKPLANFILE. CHECKSTATEFILE remains mutable check bookkeeping.',
-        described({'preparation_id':STRING,'check_digest':STRING,'patch':STRING,'plan':STRING},
-                  {'patch':'A JSON-encoded object of up to 16 KiB.',
-                   'plan':'JSON with owner_revision (integer), expires (ISO datetime with offset), safe_mode ("hold") '
-                          'and calls (array of connection (secret set), host, method, path, action_id). Path is exact or '
-                          'ends in /*. Keep action_id for the same logical action across revisions. If the API documents '
-                          'an idempotency header, name it in idempotency_header and send action_id as its value.'}),
+        'Patch CHECKSTATEFILE for the next check in this Work’s preparation or piece tree. Use its listed '
+        'preparation_id and check_digest. Each top-level key replaces its old value, and null removes it. '
+        'An optional calls list limits state-changing requests; an empty list holds them. Optional expires is an '
+        'ISO datetime with offset; after it the list holds all changes.',
+        described({'preparation_id':STRING,'check_digest':STRING,'patch':STRING},
+                  {'patch':'JSON object, up to 16 KiB. Each calls entry has connection (secret set), method, '
+                           'host, path (exact or ending in /*) and action_id. If the API documents an '
+                           'idempotency_header, name it and send action_id as its value. Keep action_id for the same action.'}),
         ['preparation_id','check_digest','patch']),
- schema('entrusted_line',ENTRUSTED_LINE_DESCRIPTION,described({'action':{'type':'string','enum':['list','read','open','revise','undo','stop','restart','entrust']},'line':STRING,'scope':{'type':'string','enum':['work','line']},'title':STRING,'task':STRING,'report_promise':STRING,'rules':STRING,'rule':STRING,'drop_rule':STRING,'open_matters':STRING,'expected_version':STRING,'version':STRING,'account_every_days':STRING,'ends_at':STRING,'planner_goal':STRING},ENTRUSTED_LINE_ARGUMENTS),['action']),
+ schema('entrusted_line',ENTRUSTED_LINE_DESCRIPTION,described({'action':{'type':'string','enum':['list','read','open','revise','undo','stop','restart']},'line':STRING,'scope':{'type':'string','enum':['work','line']},'title':STRING,'task':STRING,'report_promise':STRING,'rules':STRING,'rule':STRING,'drop_rule':STRING,'open_matters':STRING,'expected_version':STRING,'version':STRING,'account_every_days':STRING},ENTRUSTED_LINE_ARGUMENTS),['action']),
  schema('tell_owner',TELL_OWNER_DESCRIPTION,{'text':STRING},['text']),
  schema('ask_location',ASK_LOCATION_DESCRIPTION,described({'reason':STRING,'button_label':STRING,'mode':{'type':'string','enum':['ask','with_answer']}},ASK_LOCATION_ARGUMENTS),['reason']),
  schema('skill_load',SKILL_LOAD_DESCRIPTION,{'skill':STRING,'part':{'type':'string','enum':['full','header']}},['skill']),
@@ -2742,13 +2727,11 @@ def _effect_preparation_tree(db, preparation):
 
 
 def effect_record_ids(db, work_id):
- """Effect records of a request chain, its preparation tree and its recorded lines."""
- from . import continuous_lines as continuous
- from .preparations import CHECK_RECORD_PREFIX, REQUEST_KEY_PREFIX, line_works_sql
+ """Effect records of a Work's request chain and its preparation's entire piece tree."""
+ from .preparations import CHECK_RECORD_PREFIX, REQUEST_KEY_PREFIX
  records = {work_id}
  if isinstance(work_id, str) and work_id.startswith(CHECK_RECORD_PREFIX):
   preparation = work_id.removeprefix(CHECK_RECORD_PREFIX)
-  lines = continuous.effect_lines(db, work_id, preparation)
  else:
   job = db.execute('SELECT request_key FROM jobs WHERE id=?', (work_id,)).fetchone()
   if job is None:
@@ -2756,27 +2739,15 @@ def effect_record_ids(db, work_id):
   chain = effect_work_chain(db, work_id)
   records.update(work['id'] for work in chain)
   preparation = preparation_of(job['request_key'])
-  lines = set()
-  for work in chain:
-   item = preparation_of(work['request_key'])
-   lines.update(continuous.effect_lines(db, work['id'], item))
-   if item:
-    records.add(CHECK_RECORD_PREFIX + item)
+  if not preparation:
+   # A non-preparation Work can still be linked to a preparation by its existing request chain.
+   return records | {CHECK_RECORD_PREFIX + item for work in chain if (item := preparation_of(work['request_key']))}
 
- for line_id in lines:
-  records.update(row['work_id'] for row in db.execute(
-   'SELECT work_id FROM line_work_memberships WHERE line_id=?', (line_id,)))
-  records.update(row['id'] for row in db.execute(
-   f'SELECT id FROM jobs WHERE {line_works_sql("request_key", include_deleted=True)}', (line_id, line_id)))
-  records.update(CHECK_RECORD_PREFIX + row['id'] for row in db.execute(
-   "SELECT id FROM preparations WHERE line_id=? UNION SELECT job_id FROM tool_events "
-   "WHERE tool='preparation_lineage' AND status='deleted' AND json_extract(detail,'$.line_id')=?",
-   (line_id, line_id)))
- if preparation:
-  for item in _effect_preparation_tree(db, preparation):
-   records.add(CHECK_RECORD_PREFIX + item)
-   works = db.execute('SELECT id FROM jobs WHERE request_key GLOB ?', (f'{REQUEST_KEY_PREFIX}{item}:*',))
-   records.update(work['id'] for work in works)
+ for item in _effect_preparation_tree(db, preparation):
+  records.add(CHECK_RECORD_PREFIX + item)
+  works = db.execute('SELECT id FROM jobs WHERE request_key GLOB ?',
+                     (f'{REQUEST_KEY_PREFIX}{item}:*',))
+  records.update(work['id'] for work in works)
  return records
 
 
@@ -6114,7 +6085,7 @@ def _evidence_detail(name,result):
   return {key:result.get(key) for key in ('preparation_id','kind','state','scheduled','requires_owner_acceptance',
                                           'due','recurrence','delivery','accepted_by','every_minutes','until','max_runs')} | (
    {'check':result['check']} if 'check' in result else {})
- if name=='update_check_state':return {key:result[key] for key in ('keys','bytes','plan_id','owner_revision','expires') if key in result}
+ if name=='update_check_state':return {key:result[key] for key in ('keys','bytes') if key in result}
  if name=='entrusted_line':
   # #798: which line, its version and state; never the brief's text.
   return {key:result.get(key) for key in ('line_id','version','state','restated','changed','money_rules') if key in result}|(

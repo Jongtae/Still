@@ -142,13 +142,13 @@ class _Runs(_Case):
         return bs.step_binding(job['id'], 'api_request', SITE + '/charge', 'POST /charge',
                                argument='{"amount":"10"}', state='api-payment-v2|slot@1|payment')
 
-    def assert_payment_refused(self, job):
+    def assert_payment_refused(self, job, connector_text=UNATTENDED_APPROVAL_TEXT):
         with self.assertRaises(ToolError) as caught:
             self.service.browser_approvals_for(job).request(self.binding(job), 'POST /charge 10')
         self.assertEqual((caught.exception.code, str(caught.exception)), ('unattended_run', UNATTENDED_APPROVAL_TEXT))
         self.assertIs(caught.exception.ran, False)
         result = self.service.connector_permission(job, {'engine': 'codex', 'tool_name': ACTION, 'input': INPUT})
-        self.assertEqual(result, {'behavior': 'deny', 'message': UNATTENDED_APPROVAL_TEXT})
+        self.assertEqual(result, {'behavior': 'deny', 'message': connector_text})
         self.assertIsNone(self.service._browser_request(job['id']))
         self.assertIsNone(self.store.notification_of(job['id'], 'browser_approval_needed'))
 
@@ -396,12 +396,10 @@ class SignInBoundaries(_Runs):
                 self.assertEqual(self.notices(job['id']), [])
 
     def test_self_set_runs_have_no_payment_request_or_autonomy_authorization(self):
-        # Payment keeps the #717 autonomy contract unchanged (``self_set_run``): a NULL acceptance on a
-        # present row and an owner-accepted ``when_needed`` run are not narrowed here; #821 adds no
-        # scheduled payment path and removes none.
+        # #1237: absent or self-set provenance gives the run no standing under payment autonomy.
         self.money_connection()
         self.service.set_payment_autonomy({'enabled': True, 'revision': 0})
-        for provenance in (*prep.SELF_SET, 'missing'):
+        for provenance in (*prep.SELF_SET, None, 'missing'):
             with self.subTest(provenance=provenance):
                 row, job = self.started(accepted_by=prep.ACCEPTED_OWNER_REQUEST if provenance in ('missing', 'when_needed')
                                         else provenance, quiet=provenance == 'when_needed')
@@ -411,7 +409,7 @@ class SignInBoundaries(_Runs):
                 self.assertIsNone(self.service._authorize_payment_autonomy(job, None, 'pay'))
                 self.assertIsNone(self.service._authorize_payment_autonomy(job, self.binding(job), 'pay 10'))
                 self.assertIsNone(self.service._authorize_payment_autonomy(job, self.binding(job), 'pay 10', dispatch=True))
-                self.assert_payment_refused(job)
+                self.assert_payment_refused(job, msg('payment_autonomy.standing_required'))
 
     def test_owner_accepted_payment_without_autonomy_is_refused(self):
         self.money_connection()

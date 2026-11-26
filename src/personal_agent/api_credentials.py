@@ -228,22 +228,24 @@ class ApiCredentials:
         """The set's saved run state text, or '' when none, unreadable or saved for other metadata."""
         return self._read_bound(STATE_PREFIX + name, fingerprint(name, slot))
 
-    def _read_bound(self, key, binding):
+    def _read_bound(self, key, binding, *, strict=False):
         token = self.store.secret(key)
         if not token:
             return ''
-        return self.read_sealed_state(token, binding)
-
-    def read_sealed_state(self, token, binding):
-        """Open an encrypted run-state value, checking its host-controlled binding."""
         try:
             payload = json.loads(self._cipher().decrypt(token.encode()))
         except Exception:
+            if strict:
+                raise CredentialError() from None
             return ''
-        if not isinstance(payload, dict) or payload.get('version') != 1 or payload.get('binding') != binding:
-            return ''
-        state = payload.get('state')
-        return state if isinstance(state, str) else ''
+        if isinstance(payload, dict) and payload.get('version') == 1:
+            if payload.get('binding') != binding:
+                return ''
+            if isinstance(payload.get('state'), str):
+                return payload['state']
+        if strict:
+            raise CredentialError()
+        return ''
 
     def _state_strings(self, token, cipher=None):
         """The redacted string values of one saved run-state ciphertext (``state_values``' rule).
@@ -325,9 +327,9 @@ class ApiCredentials:
     # Kept under the run-state namespace, so the store-wide redaction pass covers it like a set's state.
     # A set name never contains ':' (``api_requests.NAME``), so the two cannot collide.
 
-    def read_check_state(self, check_id, digest):
+    def read_check_state(self, check_id, digest, *, strict=False):
         """The check's saved state, or '' when none, unreadable or saved for other check code."""
-        return self._read_bound(CHECK_STATE_PREFIX + check_id, {'check': check_id, 'digest': digest})
+        return self._read_bound(CHECK_STATE_PREFIX + check_id, {'check': check_id, 'digest': digest}, strict=strict)
 
     def write_check_state(self, check_id, digest, text):
         """Save the check's state under the same rules as a set's run state; False when refused."""

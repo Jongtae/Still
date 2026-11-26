@@ -1068,18 +1068,10 @@ class AgentService:
         """Self-set scheduled run, or one whose preparation provenance is unavailable (#717)."""
         preparation_id=prep.preparation_of((job or {}).get('request_key'))
         if preparation_id is None:return False
-        from . import continuous_lines as continuous
         with (self.store.db() if db is None else nullcontext(db)) as db:
-            row=db.execute('SELECT accepted_by,line_id,state,origin FROM preparations WHERE id=?',(preparation_id,)).fetchone()
-            # #1236 (C17): an active mandate stands behind the rows the owner's own Works set up on the line,
-            # never behind a row Still set up on its own there (look back, line account, day plan, or a
-            # self-set piece descended from one), which keeps never paying.
-            if (row and row['accepted_by'] in prep.LINE_RUN_ACCEPTED+(prep.ACCEPTED_LINE_PIECE_OWNER,)
-                    and row['origin'] not in prep.STILL_SET_ORIGINS
-                    and continuous.active(db,row['line_id'],self.preparations.clock())):
-                return False
-            # A derived line standing lapses with its mandate. The saved row has its original provenance.
-            return row is None or row['accepted_by'] in prep.SELF_SET
+            row=db.execute('SELECT accepted_by,origin FROM preparations WHERE id=?',(preparation_id,)).fetchone()
+        return (row is None or row['origin'] in (prep.ORIGIN_DREAM,prep.ORIGIN_DAY_PLAN,prep.ORIGIN_LINE_ACCOUNT)
+                or row['accepted_by'] not in prep.PAYMENT_STANDING)
 
     def owner_accepted_run(self, job):
         """#821 (owner decision 2026-11-14): ``job`` is the current run of a preparation the owner accepted.
@@ -5358,7 +5350,7 @@ class AgentService:
         # before. The accepted watch deadline still bounds active execution;
         # #798: so does stopping its entrusted line (stop wins at the next step).
         return bool(refusal and (job.get('status')!='running'
-                                 or refusal in ('preparation-window-expired','line-day-ended',prep.LINE_STOPPED,prep.LINE_UNREADABLE)))
+                                 or refusal in ('preparation-window-expired',prep.LINE_STOPPED,prep.LINE_UNREADABLE)))
 
     def work_budget(self, job_id):
         # #1301: resume the original request's counters and remaining active
@@ -7921,6 +7913,11 @@ class AgentService:
             except Exception:
                 LOG.warning('payment autonomy notice delivery failed')
 
+    def scheduled_payment_refusal(self, job):
+        if self.unattended_work(job) and self.payment_autonomy_settings()['enabled'] and self.self_set_run(job):
+            return msg('payment_autonomy.standing_required', owner_language(self.store,job['id']))
+        return None
+
     def browser_approvals_for(self, job):
         """The runtime's per-step approval surface for one Work: consume or request."""
         service=self
@@ -7939,7 +7936,11 @@ class AgentService:
             def self_set_write_finished(self,ticket,**kwargs):return service.self_set_write_finished(job,ticket,**kwargs)
             def consume(self,binding):return service._consume_browser_step(job,binding)
             def payment_autonomy(self,binding,description,**kwargs):
-                return service._authorize_payment_autonomy(job,binding,description,**kwargs)
+                authorization=service._authorize_payment_autonomy(job,binding,description,**kwargs)
+                if binding is not None and not authorization and not kwargs.get('dispatch'):
+                    refusal=service.scheduled_payment_refusal(job)
+                    if refusal:raise not_run(ToolError(refusal,'unattended_run'))
+                return authorization
             def request(self,binding,description):return service._request_browser_step(job,binding,description)
             def unattended(self):return service.unattended_work(job)
             def payment_autonomy_notice(self,ticket):return service._deliver_payment_autonomy_notice(job,ticket)
@@ -8879,7 +8880,8 @@ class AgentService:
                 pending=self._browser_request(job['id']) or {}
                 allow=bool(autonomy) or pending.get('state')=='issued' and pending.get('digest')==self._browser_step_keys(binding)['digest']
                 if not allow:
-                    if self.unattended_work(job):return {'behavior':'deny','message':UNATTENDED_APPROVAL_TEXT}  # #619
+                    if self.unattended_work(job):
+                        return {'behavior':'deny','message':self.scheduled_payment_refusal(job) or UNATTENDED_APPROVAL_TEXT}
                     if not note:return {'behavior':'deny','message':note_required}
                     approval_label=f'{note}\n\n{APPROVAL_EXACT_LABEL} {label}'
                     if len(approval_label)>8000 or self._redact_known_secrets(approval_label)!=approval_label:

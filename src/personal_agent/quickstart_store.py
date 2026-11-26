@@ -101,7 +101,6 @@ def forgotten_turn(role, work='jobs.id'):
             f"WHERE fm.job_id={work} AND fm.role='{role}')")
 from .telegram_store import TelegramStore
 from .preparations import TABLE_SQL as PREPARATIONS_TABLE_SQL, migrate as migrate_preparations
-from .continuous_lines import TABLE_SQL as CONTINUOUS_LINES_TABLE_SQL
 from .owner_model import TABLE_SQL as OWNER_MODEL_TABLE_SQL, migrate as owner_model_migrate
 
 
@@ -272,7 +271,7 @@ class QuickStore:
             except sqlite3.OperationalError:
                 self.messages_search_available = False
             # SEC-ATTN-01 (#659): owner-accepted preparations, one indexed tick query.
-            db.executescript(PREPARATIONS_TABLE_SQL + CONTINUOUS_LINES_TABLE_SQL)
+            db.executescript(PREPARATIONS_TABLE_SQL)
             # #719: the watch window and silent-unless-needed columns, among others.
             migrate_preparations(db)
             # #805: the durable post-Work owner-model upkeep queue; #998: keyed by (Work, kind).
@@ -984,15 +983,25 @@ class QuickStore:
         running=db.execute("SELECT 1 FROM jobs WHERE id=? AND status='running'",(job_id,)).fetchone()
         queued=db.execute("SELECT 1 FROM jobs WHERE id=? AND status='queued'",(source_job_id,)).fetchone()
         if not running or not queued or not isinstance(content,str) or not content.strip():return False
-        from . import continuous_lines as continuous
-        from .preparations import preparation_of
+        from .condition_checks import clear_line_plans
+        from .entrusted_lines import READ_EVENT
+        from .preparations import preparation_lineage, preparation_of
         created = db.execute('INSERT OR IGNORE INTO work_steers(source_job_id,job_id,content,created) VALUES (?,?,?,?)',
                              (source_job_id,job_id,content,time.time())).rowcount
         source = db.execute('SELECT owner_typed,owner_words,channel FROM jobs WHERE id=?', (source_job_id,)).fetchone()
         if created and owner_words_work(dict(source)):
             target = db.execute('SELECT request_key FROM jobs WHERE id=?', (job_id,)).fetchone()
-            for line_id in continuous.effect_lines(db, job_id, preparation_of(target['request_key'])):
-                continuous.fence(db, line_id, time.time(), source_work_id=source_job_id)
+            row = preparation_lineage(db, preparation_of(target['request_key']))
+            if row:
+                clear_line_plans(self, db, row['line_id'])
+            else:
+                # An owner Work can be steered too. Reuse its explicit line read when
+                # it identifies one line; a Work comparing several still has to ask.
+                lines = db.execute("SELECT DISTINCT json_extract(detail,'$.evidence.line_id') AS line_id "
+                                   "FROM tool_events WHERE job_id=? AND tool=? AND "
+                                   "json_extract(detail,'$.evidence.held')=1 LIMIT 2", (job_id, READ_EVENT)).fetchall()
+                if len(lines)==1:
+                    clear_line_plans(self, db, lines[0]['line_id'])
         self.link_work_relation(source_job_id,job_id,'steer',db=db)
         return True
 

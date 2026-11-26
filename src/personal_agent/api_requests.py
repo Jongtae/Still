@@ -1162,7 +1162,7 @@ class ApiRequests:
             db.execute('BEGIN IMMEDIATE')
             effect_evidence = getattr(self.approvals, 'api_effect_evidence', None)
             if callable(effect_evidence):
-                evidence = effect_evidence(db, effect, check_request, slot)
+                evidence = effect_evidence(db, effect, check_request)
                 receipt_id = self.work_id
             else:
                 evidence = {}
