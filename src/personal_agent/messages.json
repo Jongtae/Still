@@ -11878,6 +11878,18 @@
   "ja": "任された仕事（バージョン {version}）: {title}\n作業内容: {task}\n報告の約束: {promise}\n有効なルール:\n{rules}\n未解決の事項: {open}\n定期報告: {days}日ごと",
   "zh": "受托事项（版本 {version}）：{title}\n任务：{task}\n汇报承诺：{promise}\n现行规则：\n{rules}\n未决事项：{open}\n定期汇报：每 {days} 天"
  },
+ "lines.today_rules": {
+  "ko": "하루에만 적용되는 규칙이에요({date}). 기존 규칙과 다르면 오늘은 아래 규칙을 따라요.\n{rules}",
+  "en": "Rules for {date} only. Where they differ from standing rules, follow these today.\n{rules}",
+  "ja": "{date} のみ適用するルールです。常設ルールと異なる場合、今日は以下に従ってください。\n{rules}",
+  "zh": "以下规则仅适用于 {date}。如与长期规则有冲突，当天请遵循以下规则。\n{rules}"
+ },
+ "lines.previous_run_notes": {
+  "ko": "이전 실행의 메모 ({date}, 참고용): {text}",
+  "en": "Previous run notes ({date}, for reference): {text}",
+  "ja": "過去の実行メモ（{date}、参考用）: {text}",
+  "zh": "以往运行的备注（{date}，仅供参考）：{text}"
+ },
  "lines.no_rules": {
   "ko": "(없음)",
   "en": "(none)",
@@ -12058,6 +12070,12 @@
   "ja": "任された仕事の記録を更新しました。",
   "zh": "已更新受托事项。"
  },
+ "lines.today_rule_saved": {
+  "ko": "{date} 하루 동안 적용할 규칙으로 기록했어요. 오늘만 적용된다고 알려 주세요.",
+  "en": "Saved the rule for {date} only. Tell the owner it applies today.",
+  "ja": "{date} のみ適用するルールとして記録しました。今日だけ適用されると伝えてください。",
+  "zh": "已保存仅适用于 {date} 的规则。请告诉主人它只在当天生效。"
+ },
  "lines.self_revised_next": {
   "en": "Updated the line's open matters (version {version}). They stay in the line's records. The owner receives no separate notice and can ask to undo this version.",
   "ko": "맡은 일의 남은 사항을 고쳤어요(버전 {version}). 남은 사항은 이 일의 기록에 남고, 주인에게 별도 알림을 보내지 않아요. 주인은 이 버전의 변경을 되돌려 달라고 할 수 있어요.",
@@ -12124,6 +12142,12 @@
   "ja": "停止の範囲（scope）は work または line で指定してください。",
   "zh": "停止范围（scope）必须为 work 或 line。"
  },
+ "lines.refused_line_invalid_rule_scope": {
+  "ko": "rule_scope는 revise에서 today 또는 standing으로 지정해 주세요. today를 쓸 때는 rule 한 가지만 바꿀 수 있어요.",
+  "en": "Use rule_scope with revise and choose today or standing. With today, pass a rule by itself.",
+  "ja": "rule_scope は revise で today または standing を指定してください。today の場合は変更内容を rule のみにしてください。",
+  "zh": "rule_scope 只能用于 revise，请选择 today 或 standing。使用 today 时，只能传入 rule。"
+ },
  "lines.refused_line_stopped": {
   "ko": "이 일은 그만한 상태예요. 소유자가 원할 때만 restart로 다시 시작하세요.",
   "en": "This line is stopped. Restart it only if the owner asks.",
@@ -12153,6 +12177,12 @@
   "en": "The line is not in the expected form.",
   "ja": "仕事の記録の形式が正しくありません。",
   "zh": "受托事项格式不正确。"
+ },
+ "lines.past_day_rules": {
+  "ko": "지난 날의 오늘만 규칙 (참고용 과거 전략이에요. 지금 지킬 규칙은 아니에요):\n{rules}",
+  "en": "Earlier days' today-only rules (past strategies for reference, not rules in force):\n{rules}",
+  "ja": "過去の日の当日限りのルール（参考用の過去の戦略です。今守るルールではありません）：\n{rules}",
+  "zh": "以往当天有效的规则（仅作参考的过去策略，并非当前要遵守的规则）：\n{rules}"
  },
  "lines.rules_too_many": {
   "ko": "규칙이 {count}개예요. 최대 {max}개까지라 합치거나 줄여서 다시 보내 주세요.",
