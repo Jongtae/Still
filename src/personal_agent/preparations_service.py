@@ -2809,7 +2809,7 @@ class PreparationsService:
         ``LINE_EFFECTS_NAMED`` of them by operation, host and connection name; never a body or a value.
         """
         from .agent_runtime import (EFFECT_UNKNOWN, _call_target, classify_effect_rows, dispatch_call_accounted,
-                                    dispatch_call_keys, effect_call_history_of, effect_rows, recorded_evidence,
+                                    dispatch_call_keys, effect_call_history_of, effect_rows, refused_rows,
                                     refused_state_change)
         store=self.service.store
         with store.db() as db:
@@ -2824,7 +2824,7 @@ class PreparationsService:
             # ledger claim), classified by the one rule (``record_effect``) as ``unknown_effect_targets`` reads them.
             calls,unscoped=effect_call_history_of(db,ids)
             runs=db.execute("SELECT tool,detail FROM tool_events WHERE job_id IN ("+','.join('?' for _ in works)+") "
-                            "AND status='succeeded' AND (tool='code_run' OR json_extract(detail,'$.host_action')='code_run')",
+                            "AND status IN ('succeeded','failed') AND (tool='code_run' OR json_extract(detail,'$.host_action')='code_run')",
                             works).fetchall() if works else []
         observed,claims=classify_effect_rows(ledger)
         out={'sent':0,'not_applied':0,'unconfirmed':len(claims),'refused':0,'asked':0,'unconfirmed_items':[]}
@@ -2850,8 +2850,8 @@ class PreparationsService:
             try:detail=json.loads(run['detail'] or '{}')
             except (TypeError,ValueError):continue
             if not isinstance(detail,dict):continue
-            evidence=recorded_evidence(detail)
-            if refused_state_change('code_run',detail):out['refused']+=len(evidence.get('refused_effects') or ())
+            # A run cut off after a refusal keeps it on its failure record (``refused_rows``).
+            if refused_state_change('code_run',detail):out['refused']+=len(refused_rows(detail))
         # Waiting now, by the current approval state (``step_approval_pending``: requested, not expired), not by
         # the request ever having been made (#1252 review).  A Work holds at most one request, kept in one map by
         # Work id, so only the line's Works that have an entry there are asked.
