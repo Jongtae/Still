@@ -423,7 +423,8 @@ class TelegramSurface(ConversationSurface):
                                 sent_part=True
                             text=ai_text(msg(f'telegram_surface.{heading}_final', lang, total=len(parts), part=parts[-1]))
                         elif (notification['kind'] in (om.RESTORED_NOTICE_KIND, prep.CHECK_DISPATCH_NOTICE_KIND)
-                              or notification['kind'].startswith(prep.SELF_CHANGE_NOTICE_PREFIX)):
+                              # #1227: one Work's rule changes can be long; Undo goes on the last part.
+                              or notification['kind'].startswith((prep.SELF_CHANGE_NOTICE_PREFIX, entrusted_lines.NOTICE_RULE))):
                             # Full lessons and receipts can exceed a Telegram message.
                             # Put any undo button on the last part.
                             while len(text)>3800:

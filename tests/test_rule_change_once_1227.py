@@ -197,3 +197,45 @@ class MoneyOnceTests(_OnceCase):
         [notice] = self.rule_notices()
         self.assertIn(msg('lines.rule_dropped', rule=KEPT), notice['text'])
         self.assertNotIn(RULE_B, notice['text'])
+
+    def test_a_replaced_limit_another_work_put_back_is_told_as_added_not_as_removed(self):
+        # Codex review of #1232: a stale "before -> after" would read as the limit being gone.
+        brief, _work = self.open_line(rules=[KEPT])
+        self.touch_money(brief)
+        self.owner_turn(True)
+        self.clear_opening()
+        self.revise_calls('한도를 하루 20만원으로 바꿔 줘',
+                          {'action': 'revise', 'line': brief['line_id'], 'expected_version': '1', 'drop_rule': '1', 'rule': '하루 20만원까지만'})
+        # A second owner Work puts the earlier limit back before the first notice went out.
+        self.revise_calls('아니 10만원 한도도 다시 넣어 줘',
+                          {'action': 'revise', 'line': brief['line_id'], 'expected_version': '2', 'rule': KEPT})
+        self.assertEqual([rule['text'] for rule in self.service.lines.current(brief['line_id'])['rules']], ['하루 20만원까지만', KEPT])
+        self.deliver_all()
+        [first] = [body for body in self.rule_notices() if '하루 20만원까지만' in body['text']]
+        self.assertEqual(first['text'], msg('lines.rules_changed', title=TASK) + '\n'
+                         + msg('lines.rule_added', rule='하루 20만원까지만') + ' '
+                         + msg('lines.your_words', words='한도를 하루 20만원으로 바꿔 줘'))
+        self.assertNotIn(KEPT, first['text'])
+
+
+class LongNoticeTests(_OnceCase):
+    def test_a_long_set_of_changes_is_sent_in_parts_with_undo_on_the_last(self):
+        brief, _work = self.open_line()
+        line_id = brief['line_id']
+        self.clear_opening()
+        rules = [f'{number:02d} ' + '가' * 296 for number in range(14)]
+        self.revise_calls('규칙 열네 개를 정해 줘', *({'action': 'revise', 'line': line_id, 'expected_version': str(number + 1), 'rule': rule}
+                                                 for number, rule in enumerate(rules)))
+        self.assertEqual(len(self.service.lines.current(line_id)['rules']), 14)
+        self.deliver_all()
+        sent = [body for body in self.sends() if any(rule in str(body.get('text')) for rule in rules)]
+        self.assertGreater(len(sent), 1)
+        self.assertTrue(all(len(body['text']) <= 4096 for body in sent))
+        # Every rule reaches the owner, and only the last part carries Undo.
+        joined = '\n'.join(body['text'] for body in sent)
+        self.assertTrue(all(msg('lines.rule_added', rule=rule) in joined for rule in rules))
+        self.assertEqual([bool(body.get('reply_markup')) for body in sent], [False] * (len(sent) - 1) + [True])
+        last = sent[-1]
+        self.tap(self.undo_data(last), self.message_id_of(last))
+        current = self.service.lines.current(line_id)
+        self.assertEqual((current['version'], current['rules']), (16, []))

@@ -3306,8 +3306,12 @@ class PreparationsService:
             # (a later change or an undo may have reverted it).  On a money line (C17 case 2) each
             # changed rule carries the owner's own words it came from.
             current={item['text'] for item in brief['rules']}
-            changes=[(before,after) for before,after in self.rule_changes(line_id,*versions)
-                     if (after['text'] in current if after else before['text'] not in current)]
+            # Each side is checked against the rules now in force, and only what still holds is told:
+            # a replaced rule another Work put back is not told as removed (Codex review of #1232).
+            held=lambda rule:rule if rule and rule['text'] in current else None
+            gone=lambda rule:rule if rule and rule['text'] not in current else None
+            changes=[(gone(before),held(after)) for before,after in self.rule_changes(line_id,*versions)]
+            changes=[change for change in changes if change!=(None,None)]
             if not changes:return None
             money=self.line_touches_money(line_id)
             lang=owner_language(service.store,notification.get('job_id')) or 'ko'
