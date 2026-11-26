@@ -259,3 +259,72 @@ class LongNoticeTests(_OnceCase):
         self.tap(self.undo_data(last), self.message_id_of(last))
         current = self.service.lines.current(line_id)
         self.assertEqual((current['version'], current['rules']), (16, []))
+
+
+class RewriteNoticeTests(_OnceCase):
+    """#1256: a whole rewrite is told as the new rules, the removed ones by count, the owner's words once."""
+
+    touch_money = lines798.MoneyTests.touch_money
+    owner_turn = lines798.MoneyTests.owner_turn
+
+    def test_a_money_line_rewrite_lists_new_rules_counts_removed_ones_and_quotes_the_words_once(self):
+        old = [KEPT, RULE_A, RULE_B, '11/26 오늘만 매도 제한 해제']
+        brief, _work = self.open_line(rules=old)
+        line_id = brief['line_id']
+        self.touch_money(brief)
+        self.owner_turn(True)
+        self.clear_opening()
+        new = ['예산은 총 10만 원, 현금만', '손실 -2%면 정리', '보고는 추천을 맨 앞에']
+        words = '규칙을 아래 세 개로 바꿔 줘. 나머지는 모두 지워.'
+        self.revise_calls(words, {'action': 'revise', 'line': line_id, 'expected_version': '1', 'rules': '\n'.join(new)})
+        self.deliver_all()
+        [notice] = self.rule_notices()
+        self.assertEqual(notice['text'], '\n'.join([msg('lines.rules_changed', title=TASK),
+                                                    *(msg('lines.rule_added', rule=rule) for rule in new),
+                                                    msg('lines.rules_dropped_count', count=len(old)),
+                                                    msg('lines.your_words', words=words)]))
+        for rule in old:
+            self.assertNotIn(rule, notice['text'])
+        # Undo still puts every removed rule back.
+        self.tap(self.undo_data(notice), self.message_id_of(notice))
+        self.assertEqual([rule['text'] for rule in self.service.lines.current(line_id)['rules']], old)
+
+    def test_a_rewrite_that_keeps_a_rule_does_not_restate_it_and_counts_only_what_left(self):
+        old = [KEPT, RULE_A, RULE_B]
+        brief, _work = self.open_line(rules=old)
+        line_id = brief['line_id']
+        self.owner_turn(True)
+        self.clear_opening()
+        self.revise_calls('한도만 남기고 30분마다 보고로 바꿔 줘',
+                          {'action': 'revise', 'line': line_id, 'expected_version': '1', 'rules': KEPT + '\n30분마다 보고하기'})
+        self.deliver_all()
+        [notice] = self.rule_notices()
+        self.assertEqual(notice['text'], '\n'.join([msg('lines.rules_changed', title=TASK),
+                                                    msg('lines.rule_added', rule='30분마다 보고하기'),
+                                                    msg('lines.rules_dropped_count', count=2)]))
+
+    def test_removing_rules_without_new_ones_still_names_each_removed_rule(self):
+        brief, _work = self.open_line(rules=[KEPT, RULE_A, RULE_B])
+        line_id = brief['line_id']
+        self.touch_money(brief)
+        self.owner_turn(True)
+        self.clear_opening()
+        self.revise_calls('한도만 남기고 지워 줘', {'action': 'revise', 'line': line_id, 'expected_version': '1', 'rules': KEPT})
+        self.deliver_all()
+        [notice] = self.rule_notices()
+        self.assertIn(msg('lines.rule_dropped', rule=RULE_A), notice['text'])
+        self.assertIn(msg('lines.rule_dropped', rule=RULE_B), notice['text'])
+        self.assertNotIn(msg('lines.rules_dropped_count', count=2), notice['text'])
+
+    def test_rules_from_different_owner_words_keep_their_own_words(self):
+        brief, _work = self.open_line(rules=[KEPT])
+        self.touch_money(brief)
+        self.owner_turn(True)
+        self.clear_opening()
+        line_id = brief['line_id']
+        self.revise_calls('거래 없어도 한 시간마다 보고해 줘', {'action': 'revise', 'line': line_id, 'expected_version': '1', 'rule': RULE_A})
+        self.revise_calls('20시 전까지만 해 줘', {'action': 'revise', 'line': line_id, 'expected_version': '2', 'rule': RULE_B})
+        self.deliver_all()
+        texts = [notice['text'] for notice in self.rule_notices()]
+        self.assertIn(msg('lines.rule_added', rule=RULE_A) + ' ' + msg('lines.your_words', words='거래 없어도 한 시간마다 보고해 줘'), '\n'.join(texts))
+        self.assertIn(msg('lines.rule_added', rule=RULE_B) + ' ' + msg('lines.your_words', words='20시 전까지만 해 줘'), '\n'.join(texts))
