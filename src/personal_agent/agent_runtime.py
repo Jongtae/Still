@@ -3612,6 +3612,14 @@ def recorded_evidence(detail):
  evidence=detail.get('evidence') if isinstance(detail.get('evidence'),dict) else {}
  return {**evidence,'needs_setup':True} if owner_wait(evidence) else evidence
 
+def refused_state_change(action, detail):
+ """Whether a recorded code run had a state-changing request Still refused before sending it (#1250).
+
+ ``refused_effects`` in its Evidence (``code_run.evidence``): the run itself may have succeeded,
+ but the change it meant to make was not sent, so the request it served is not done.
+ """
+ return action in CODE_ACTIONS and bool(recorded_evidence(detail).get('refused_effects'))
+
 def recorded_withheld(action, detail, completed=frozenset()):
  """The ``Withheld`` of a call recorded as returning normally, from its recorded Evidence, or None (#679, #690).
 
@@ -3916,6 +3924,13 @@ def state_change_short(steps, *, reconciled=None):
  """
  free=_state_free_actions()
  for index,(_tool,action,state,detail,_reason) in enumerate(steps):
+  if refused_state_change(action,detail):
+   # #1250: a code run is a read by declaration (``HOST_TOOLS``), as its sent ``effects`` are not (#1456);
+   # a state change Still refused unsent is short too, unless the same run later sent its changes.
+   if not any(other==action and result=='succeeded' and same_invocation(detail,done) and not refused_state_change(other,done)
+              and (recorded_evidence(done).get('effects')) for _t,other,result,done,_r in steps[index+1:]):
+    return True
+   continue
   if state not in ('failed','withheld','incomplete') or action=='delegate_agent':continue
   detail=detail if isinstance(detail,dict) else {}
   if reconciled is not None and dispatch_call_accounted(detail,reconciled):continue
