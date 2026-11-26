@@ -43,6 +43,10 @@ class SettingsError(ValueError):
     """A fail-closed settings request error safe to show to an owner."""
 
 
+class ChoiceUnavailable(SettingsError):
+    """#1240: the target, read now, no longer offers the value as a choice (a finished reservation, say)."""
+
+
 # Owner-visible words for the connection contract states.  An unknown value is
 # reported as needing a check rather than guessed as connected.
 STATE_LABELS = {
@@ -875,9 +879,9 @@ class SettingsOrchestrator:
                 names = {option["value"]: option["label"] for option in row[setting]["options"] or ()}
                 listed = "; ".join(dict.fromkeys(names[item] for item in allowed if item in names))
                 key = 'settings_orchestrator.choice_gone_listed' if listed else 'settings_orchestrator.choice_gone'
-                raise SettingsError(msg(key, label=_CHANGE_LABELS[category, setting], listed=listed))
+                raise ChoiceUnavailable(msg(key, label=_CHANGE_LABELS[category, setting], listed=listed))
             listed = ", ".join(allowed) or msg('settings_orchestrator.none_available_now')
-            raise SettingsError(msg('settings_orchestrator.invalid_choice', label=_CHANGE_LABELS[category, setting], listed=listed))
+            raise ChoiceUnavailable(msg('settings_orchestrator.invalid_choice', label=_CHANGE_LABELS[category, setting], listed=listed))
         return value, row
 
     def _trust_value(self, setting, value, row):
@@ -1610,6 +1614,15 @@ class SettingsOrchestrator:
             if self._work_cancelled(row):
                 self._settle(row["id"], "canceled", "canceled", "work-cancelled")
                 raise SettingsError(msg('settings_orchestrator.draft_no_longer_confirmable'))
+            if self.service is not None and 'setup_guard' not in row:
+                try:
+                    self._current_before(row)
+                except ChoiceUnavailable:
+                    # #1240: the target no longer takes this change; the draft is withdrawn, never applied.
+                    self._supersede(row, 'target-unavailable')
+                    raise SettingsError(STALE_MESSAGE) from None
+                except Exception:
+                    pass  # #675: other refusals are the apply's own compare-and-apply check
             if ((row.get('category'),row.get('setting'))==('ai_connections','connect')
                     and self.service.mcp_setup_attempts(row.get('work_id'))>=3):
                 self._settle(row['id'],'failed','failed','setup-attempt-budget')
@@ -1658,9 +1671,16 @@ class SettingsOrchestrator:
             pass  # #675: a concurrent settlement already withdrew this authority.
 
     def _supersede_stale(self):
+        """Withdraw stale-bound drafts; return the ids whose target no longer offers the change (#1240).
+
+        Those are left out of every offer here, read-only: this runs where drafts are gathered,
+        sometimes under a caller's write transaction, so their withdrawal is recorded where a
+        confirmation would admit them (``_admit``), before anything is applied.
+        """
+        unavailable = set()
         with self._confirming:
             if self.service is None or getattr(self, '_checking_stale', False):
-                return
+                return unavailable
             self._checking_stale = True
             try:
                 for row in self._drafts().values():
@@ -1671,12 +1691,18 @@ class SettingsOrchestrator:
                         continue
                     try:
                         self._check_current(row)
+                    except ChoiceUnavailable:
+                        # #1240: the target was read and no longer offers this value (its own option
+                        # list, the same check an apply makes), so the change can no longer be made;
+                        # the draft is never offered to an owner's answer.
+                        unavailable.add(row['id'])
                     except Exception as exc:
                         # #675: unavailable snapshots and operation refusals do not prove a stale binding.
                         if isinstance(exc, SettingsError) and str(exc) == STALE_MESSAGE:
                             self._supersede(row, 'stale')
             finally:
                 self._checking_stale = False
+        return unavailable
 
     def _checked_apply(self, row):
         """Compare-and-apply (#814 review): re-check ``before``, then the setter.  The caller holds the category lock."""
@@ -1760,11 +1786,11 @@ class SettingsOrchestrator:
 
     def pending_drafts(self):
         """Every draft still awaiting the owner (not expired, its Work not cancelled), oldest first."""
-        self._supersede_stale()
+        unavailable = self._supersede_stale()
         now = self.now()
         rows = [row for row in self._drafts().values() if isinstance(row, dict)
                 and row.get("state") == "awaiting-confirmation" and not self.expired(row, now)
-                and not self._work_cancelled(row)]
+                and row["id"] not in unavailable and not self._work_cancelled(row)]
         return sorted(rows, key=lambda row: (row.get("created_at") or 0, row["id"]))
 
     def pending_for_conversation(self, owner, channel):

@@ -702,6 +702,9 @@ class WorkExecutor:
         settled=service.owner_acts.settle(answer,job)
         if settled['source']:run.work_sources.add(settled['source'])
         run.act_focus=settled['focus']
+        # #1240: which Work's wait this turn answered, kept on this turn's own record, so the owner's
+        # next typed reply can still answer what that Work left open (``OwnerActs._within_cost_bound``).
+        if settled['focus']:service.record_turn_provenance(job['id'],answered_work=settled['focus'])
         if settled['note'] is not None:
             # A withdrawn saved notice: the worker acknowledges it (#996), with the rest of the message if any.
             run.act_note=settled['note']
