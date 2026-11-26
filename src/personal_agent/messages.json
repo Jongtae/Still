@@ -12202,6 +12202,18 @@
   "ja": "仕事の記録の形式が正しくありません。",
   "zh": "受托事项格式不正确。"
  },
+ "lines.rules_too_many": {
+  "ko": "규칙이 {count}개예요. 최대 {max}개까지라 합치거나 줄여서 다시 보내 주세요.",
+  "en": "There are {count} rules; at most {max} are allowed. Merge or drop some and send them again.",
+  "ja": "ルールが{count}個あります。最大{max}個までなので、まとめるか減らしてから送り直してください。",
+  "zh": "规则有 {count} 条，最多 {max} 条。请合并或删减后重新发送。"
+ },
+ "lines.rule_text_length": {
+  "ko": "{index}번째 규칙이 {length}자예요. 규칙 하나는 1~{max}자여야 하니 그 규칙만 고쳐서 다시 보내 주세요.",
+  "en": "Rule {index} is {length} characters; each rule must be 1 to {max} characters. Fix that rule and send again.",
+  "ja": "{index}番目のルールが{length}文字です。ルール1つは1〜{max}文字なので、そのルールだけ直して送り直してください。",
+  "zh": "第 {index} 条规则有 {length} 个字符，每条规则须为 1 到 {max} 个字符。请只修改这一条后重新发送。"
+ },
  "lines.refused_line_invalid_rules": {
   "ko": "규칙은 한 줄에 하나, 각 300자 이내, 최대 20개예요.",
   "en": "Rules are one a line, at most 300 characters each and 20 in all.",

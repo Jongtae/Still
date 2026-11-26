@@ -2918,6 +2918,8 @@ class PreparationsService:
             except el.LineConflict as exc:
                 raise refused('line_version_conflict',str(exc.current_version)) from None
             except el.LineRefusal as exc:
+                if getattr(exc,'message',None):
+                    raise not_run(ToolError(msg(exc.message,**exc.values),exc.code)) from None
                 raise refused(exc.code) from None
         return handle
 

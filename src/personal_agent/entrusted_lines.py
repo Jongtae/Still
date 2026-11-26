@@ -67,9 +67,11 @@ HELD_HEADING = (HELD_PREFIX + ' (continuing work the owner entrusted to you; whe
 class LineRefusal(ValueError):
     """A typed refusal the broker turns into a ``ToolError``."""
 
-    def __init__(self, code, detail=''):
+    def __init__(self, code, detail='', *, message=None, values=None):
         super().__init__(detail or code)
         self.code = code
+        #: #1239: a message naming exactly what was wrong, so the caller can fix it in one try.
+        self.message, self.values = message, values or {}
 
 
 class LineConflict(LineRefusal):
@@ -119,10 +121,13 @@ def validate(brief):
     if unknown:
         raise LineRefusal('line_unknown_field', ', '.join(sorted(unknown)))
     rules = brief.get('rules') or []
-    if not isinstance(rules, list) or len(rules) > MAX_RULES:
+    if not isinstance(rules, list):
         raise LineRefusal('line_invalid_rules')
+    if len(rules) > MAX_RULES:
+        raise LineRefusal('line_invalid_rules', message='lines.rules_too_many',
+                          values={'count': len(rules), 'max': MAX_RULES})
     clean = []
-    for rule in rules:
+    for index, rule in enumerate(rules, 1):
         if not isinstance(rule, dict) or set(rule) - set(RULE_FIELDS):
             raise LineRefusal('line_unknown_field', 'rules')
         source = rule.get('from')
@@ -132,8 +137,12 @@ def validate(brief):
             raise LineRefusal('line_invalid_rules')
         if rule.get('basis') not in (None, 'inferred'):
             raise LineRefusal('line_invalid_rules')
+        text = rule.get('text')
+        if isinstance(text, str) and (not text.strip() or len(' '.join(text.split())) > RULE_CHARS):
+            raise LineRefusal('line_invalid_rules', message='lines.rule_text_length',
+                              values={'index': index, 'length': len(' '.join(text.split())), 'max': RULE_CHARS})
         clean.append({'basis': rule.get('basis'),
-                      'text': _text(rule.get('text'), RULE_CHARS, 'line_invalid_rules', True), 'from': source, 'at': at})
+                      'text': _text(text, RULE_CHARS, 'line_invalid_rules', True), 'from': source, 'at': at})
     days = brief.get('account_every_days', ACCOUNT_DAYS)
     if account_rule(days) is None:
         raise LineRefusal('line_invalid_account')
