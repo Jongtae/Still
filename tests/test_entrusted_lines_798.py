@@ -124,7 +124,7 @@ class OpeningTests(_LineCase):
         self.assertEqual(self.service.lines.version(line_id, 1)['title'], title)
         self.assertEqual(self.service.lines.version(line_id, 2)['title'], revised_title)
         self.deliver_all()
-        self.assertIn(msg('lines.restated', title=revised_title, rule=RULE), self.texts())
+        self.assertIn(msg('lines.rules_changed', title=revised_title) + '\n' + msg('lines.rule_added', rule=RULE), self.texts())
         read = self.line_call('아침 요약에 대해 알려 줘', action='read', line=line_id)
         listing = self.line_call('맡은 일이 뭐야?', action='list')
         self.assertEqual(read['title'], revised_title)
@@ -375,7 +375,7 @@ class ContinuityTests(_LineCase):
         restated = [body for body in self.sends() if RULE in str(body.get('text'))]
         self.assertEqual(len(restated), 1)
         [body] = restated
-        self.assertEqual(body['text'], msg('lines.restated', title=TASK, rule=RULE))
+        self.assertEqual(body['text'], msg('lines.rules_changed', title=TASK) + '\n' + msg('lines.rule_added', rule=RULE))
         data = body['reply_markup']['inline_keyboard'][0][0]['callback_data']
         self.assertTrue(data.endswith(':undo'))
         message_id = 9000 + next(index for index, (method, item) in enumerate(self.telegram, 1) if item is body)
@@ -902,7 +902,7 @@ class MoneyTests(_LineCase):
         current = self.service.lines.current(brief['line_id'])
         self.assertEqual((current['version'], [rule['text'] for rule in current['rules']]), (1, ['하루 10만원까지만']))
 
-    def test_a_rule_change_the_owner_asked_for_shows_their_original_words_beside_the_full_rules(self):
+    def test_a_rule_change_the_owner_asked_for_shows_their_original_words_beside_the_changed_rule(self):
         brief, _work = self.open_line(rules=['하루 10만원까지만'])
         self.touch_money(brief)
         self.owner_turn(True)
@@ -913,11 +913,12 @@ class MoneyTests(_LineCase):
         self.assertEqual((result['version'], result['money_rules']), (2, True))
         self.deliver_all()
         [notice] = [body for body in self.sends() if '20시 전까지만 하기' in str(body.get('text'))]
-        self.assertIn(msg('lines.restated', title=TASK, rule='20시 전까지만 하기'), notice['text'])
-        self.assertIn(msg('lines.money_rules'), notice['text'])
-        self.assertIn('하루 10만원까지만', notice['text'])
-        self.assertIn('앞으로 매일 아침 관심 목록 확인해서 정리해 줘', notice['text'])
-        self.assertIn('앞으로는 20시 전까지만 해 줘', notice['text'])
+        # #1227: the changed rule beside the owner's words it came from; the unchanged rule is not restated.
+        self.assertEqual(notice['text'], msg('lines.rules_changed', title=TASK) + '\n'
+                         + msg('lines.rule_added', rule='20시 전까지만 하기') + ' '
+                         + msg('lines.your_words', words='앞으로는 20시 전까지만 해 줘'))
+        self.assertNotIn('하루 10만원까지만', notice['text'])
+        self.assertNotIn('앞으로 매일 아침 관심 목록 확인해서 정리해 줘', notice['text'])
 
 
 class ForgetTests(_LineCase):
