@@ -381,16 +381,76 @@ class ContinuityTests(_LineCase):
         self.tap(data, message_id)
         self.assertEqual(self.service.lines.current(brief['line_id'])['version'], 3)
 
+    def test_revise_with_rules_replaces_the_whole_rule_set_in_one_judged_change(self):
+        """#1249: replacing many rules is one change the judgment sees whole, not many fragments."""
+        old = [RULE, '20시까지만 하기', '11/25 오늘은 10시 전 진입 금지', '11/26 오늘만 매도 제한 해제']
+        brief, _work = self.open_line(rules=old)
+        line_id = brief['line_id']
+        seen = []
+
+        def judge(context, proposition):
+            if context.purpose == 'explicit-line-change':
+                seen.append(context.facts['proposed_change'])
+                return BinaryDecision(OUTCOME_DECIDED, True, fixture_confidence())
+            if context.purpose in ('goal-reached', 'explicit-preparation-request'):
+                return BinaryDecision(OUTCOME_DECIDED, True, fixture_confidence())
+            return None
+        self.judge = FixtureDecisionEngine(judge=judge)
+        self.service.use_decision_engine(self.judge)
+        self.service.preparations_service.line_touches_money = lambda line_id: True
+        new = [RULE, '예산은 10만 원 현금만']
+        result = self.line_call('규칙은 이 두 개만 남기고 나머지는 지워줘', action='revise', line=line_id,
+                                expected_version='1', rules='\n'.join(new))
+        self.assertEqual(result['version'], 2)
+        self.assertEqual(result['rules'], new)
+        [change] = seen
+        self.assertIn('replace all standing rules', change)
+        for text in old + new:
+            self.assertIn(text, change)
+        current = self.service.lines.current(line_id)
+        self.assertEqual(current['rules'][0], brief['rules'][0] if isinstance(brief['rules'][0], dict)
+                         else self.service.lines.version(line_id, 1)['rules'][0])
+        refused = self.line_call('규칙 하나 더 넣고 전부 바꿔줘', action='revise', line=line_id,
+                                 expected_version='2', rules=RULE, rule='추가 규칙')
+        self.assertIn('line_invalid_rules', str(refused))
+
+    def test_an_earlier_days_today_only_rule_stays_as_a_past_strategy(self):
+        """#1249: a today-only rule leaves force at midnight but stays readable with its date."""
+        brief, _work = self.open_line()
+        line_id = brief['line_id']
+        rule_today = '오늘은 10시 이후에만 진입'
+        self.line_call('오늘만 10시 이후 진입으로 해 줘', action='revise', line=line_id,
+                       expected_version='1', rule=rule_today, rule_scope='today')
+        day = self.service.preparations.budget_day(self.service.preparations.clock())
+        [row] = self.work_rows(line_id)
+        self.run_line(row)
+        following = self.service.preparations.get(row['id'])
+        seen = self.run_input(self.run_line(following))
+        past = msg('lines.past_day_rules', rules=f'- {day}: {rule_today}')
+        self.assertIn(past, seen)
+        self.assertNotIn(rule_today, seen.replace(past, ''))
+
     def test_a_today_only_correction_writes_no_version_and_is_absent_the_next_day(self):
         brief, _work = self.open_line()
-        # The AI judged the correction to be for today: no entrusted_line write.
-        self.script = [{'content': '오늘만 30분마다 볼게요.'}]
-        self.receive('오늘만 30분마다 봐 줘')
-        self.assertEqual(self.service.lines.current(brief['line_id'])['version'], 1)
-        self.now += 86400
-        [row] = self.work_rows(brief['line_id'])
-        seen = self.run_input(self.run_line(self.service.preparations.get(row['id'])))
-        self.assertNotIn('30분마다', seen)
+        line_id = brief['line_id']
+        rule_today = '30분마다 확인하기'
+        result = self.line_call('오늘만 30분마다 봐 줘', action='revise', line=line_id,
+                                expected_version='1', rule=rule_today, rule_scope='today')
+        self.assertEqual((result['version'], result['rules'], result['today_rules']), (1, [], [rule_today]))
+        self.assertIsNone(self.service.lines.version(line_id, 2))
+        self.store = QuickStore(self.root)
+        self.service = self.make_service()
+        [row] = self.work_rows(line_id)
+        self.assertIn(rule_today, self.run_input(self.run_line(row)))
+        following = self.service.preparations.get(row['id'])
+        self.assertNotEqual(self.service.preparations.budget_day(row['due_at']),
+                            self.service.preparations.budget_day(following['due_at']))
+        later = self.run_input(self.run_line(following))
+        # #1249: no longer in force the next day; kept only as a dated past strategy.
+        past = msg('lines.past_day_rules', rules=f'- {self.service.preparations.budget_day(row["due_at"])}: {rule_today}')
+        self.assertIn(past, later)
+        self.assertNotIn(rule_today, later.replace(past, ''))
+        self.assertEqual(self.service.lines.current(line_id), brief)
 
     def test_the_run_records_the_version_it_read_and_a_stale_write_keeps_the_newer_revision(self):
         brief, _work = self.open_line()
@@ -740,7 +800,8 @@ class AnswerTests(_LineCase):
 
 class FormatTests(_LineCase):
     def test_the_brief_has_no_authority_rung_amount_or_subject_field_and_an_unknown_field_is_refused(self):
-        self.assertEqual(el.FIELDS, ('title', 'task', 'rules', 'report_promise', 'open_matters', 'state', 'account_every_days'))
+        self.assertEqual(el.FIELDS, ('title', 'task', 'rules', 'report_promise', 'open_matters', 'open_matters_run_day',
+                                     'state', 'account_every_days'))
         self.assertEqual(el.RULE_FIELDS, ('text', 'from', 'at', 'basis'))
         legacy = el.validate({'task': TASK, 'report_promise': PROMISE,
                               'rules': [{'text': RULE, 'from': 'owner-work', 'at': self.now}]})

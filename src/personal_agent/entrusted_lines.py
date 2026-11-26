@@ -25,6 +25,7 @@ import sqlite3
 import time
 import uuid
 from contextlib import nullcontext
+from datetime import date
 
 from .procedures import CURRENT, KEPT, LINE_PREFIX, ProcedureLibrary
 
@@ -44,8 +45,12 @@ def line_id_of(ref):
 STATE_ACTIVE, STATE_STOPPED = 'active', 'stopped'
 STATES = (STATE_ACTIVE, STATE_STOPPED)
 #: The whole brief format.  Nothing here names a subject, an authority or an amount.
-FIELDS = ('title', 'task', 'rules', 'report_promise', 'open_matters', 'state', 'account_every_days')
+FIELDS = ('title', 'task', 'rules', 'report_promise', 'open_matters', 'open_matters_run_day', 'state',
+          'account_every_days')
 RULE_FIELDS = ('text', 'from', 'at', 'basis')
+DAY_RULE_EVENT = 'line_day_rule'
+#: #1249: how many earlier day rules a brief shows as past strategies.
+PAST_DAY_RULES = 20
 TASK_CHARS = RULE_CHARS = PROMISE_CHARS = 300
 TITLE_CHARS = 40
 OPEN_CHARS = 1000
@@ -120,7 +125,29 @@ def validate(brief):
     unknown = set(brief) - set(FIELDS)
     if unknown:
         raise LineRefusal('line_unknown_field', ', '.join(sorted(unknown)))
-    rules = brief.get('rules') or []
+    run_day = brief.get('open_matters_run_day')
+    if run_day is not None:
+        try:
+            if date.fromisoformat(run_day).isoformat() != run_day:
+                raise ValueError
+        except (ValueError, TypeError):
+            raise LineRefusal('line_invalid_open') from None
+    days = brief.get('account_every_days', ACCOUNT_DAYS)
+    if account_rule(days) is None:
+        raise LineRefusal('line_invalid_account')
+    state = brief.get('state', STATE_ACTIVE)
+    if state not in STATES:
+        raise LineRefusal('line_invalid')
+    return {'title': normalize_title(brief.get('title')),
+            'task': _text(brief.get('task'), TASK_CHARS, 'line_invalid_task', True),
+            'rules': validate_rules(brief.get('rules') or []),
+            'report_promise': _text(brief.get('report_promise'), PROMISE_CHARS, 'line_invalid_promise', True),
+            'open_matters': _text(brief.get('open_matters'), OPEN_CHARS, 'line_invalid_open'),
+            'open_matters_run_day': run_day,
+            'state': state, 'account_every_days': days}
+
+
+def validate_rules(rules):
     if not isinstance(rules, list):
         raise LineRefusal('line_invalid_rules')
     if len(rules) > MAX_RULES:
@@ -143,18 +170,7 @@ def validate(brief):
                               values={'index': index, 'length': len(' '.join(text.split())), 'max': RULE_CHARS})
         clean.append({'basis': rule.get('basis'),
                       'text': _text(text, RULE_CHARS, 'line_invalid_rules', True), 'from': source, 'at': at})
-    days = brief.get('account_every_days', ACCOUNT_DAYS)
-    if account_rule(days) is None:
-        raise LineRefusal('line_invalid_account')
-    state = brief.get('state', STATE_ACTIVE)
-    if state not in STATES:
-        raise LineRefusal('line_invalid')
-    return {'title': normalize_title(brief.get('title')),
-            'task': _text(brief.get('task'), TASK_CHARS, 'line_invalid_task', True),
-            'rules': clean,
-            'report_promise': _text(brief.get('report_promise'), PROMISE_CHARS, 'line_invalid_promise', True),
-            'open_matters': _text(brief.get('open_matters'), OPEN_CHARS, 'line_invalid_open'),
-            'state': state, 'account_every_days': days}
+    return clean
 
 
 def account_rule(days):
@@ -282,6 +298,40 @@ class EntrustedLines:
             return db.execute("SELECT 1 FROM tool_events WHERE tool='line_restarted' AND status='succeeded' "
                               "AND json_extract(detail,'$.line_id')=? LIMIT 1", (line_id,)).fetchone() is not None
 
+    def day_rules(self, line_id, day, db=None):
+        """Owner corrections recorded for this day, in the order received."""
+        with (self.store.db() if db is None else nullcontext(db)) as db:
+            rows = db.execute(
+                "SELECT detail FROM tool_events WHERE tool=? AND status='succeeded' "
+                "AND json_extract(detail,'$.line_id')=? AND json_extract(detail,'$.day')=? ORDER BY id",
+                (DAY_RULE_EVENT, line_id, day)).fetchall()
+        return [json.loads(row['detail'])['rule'] for row in rows]
+
+    def past_day_rules(self, line_id, before_day, *, limit=PAST_DAY_RULES, db=None):
+        """Day rules of earlier owner-local days, newest first, bounded; past strategies for reference."""
+        with (self.store.db() if db is None else nullcontext(db)) as db:
+            rows = db.execute(
+                "SELECT detail FROM tool_events WHERE tool=? AND status='succeeded' "
+                "AND json_extract(detail,'$.line_id')=? AND json_extract(detail,'$.day')<? ORDER BY id DESC LIMIT ?",
+                (DAY_RULE_EVENT, line_id, before_day, limit)).fetchall()
+        return [{'date': json.loads(row['detail'])['day'], 'text': json.loads(row['detail'])['rule']['text']} for row in rows]
+
+    def add_day_rule(self, line_id, work_id, expected_version, day, rule):
+        """Record a day rule without creating a brief version, under the same version fence as revise."""
+        with self.store.db() as db:
+            db.execute('BEGIN IMMEDIATE')
+            self.store.require_read_checkpoint_writer(db)
+            brief = self._current_for_write(line_id, expected_version, db)
+            if brief['state'] != STATE_ACTIVE:
+                raise LineRefusal('line_stopped')
+            rules = self.day_rules(line_id, day, db)
+            if not any((existing['from'], existing['text']) == (rule['from'], rule['text']) for existing in rules):
+                rules = validate_rules([*rules, rule])
+                detail = {'line_id': line_id, 'day': day, 'rule': rules[-1]}
+                db.execute('INSERT INTO tool_events(job_id,tool,status,detail,created) VALUES (?,?,?,?,?)',
+                           (work_id, DAY_RULE_EVENT, 'succeeded', json.dumps(detail), rule['at']))
+            return brief, [entry['text'] for entry in rules]
+
     def stand(self, work_id, brief, stats):
         """Commit an inferred opening once per stable look-back key, including across restart."""
         source = encode(brief)
@@ -310,11 +360,7 @@ class EntrustedLines:
         with (self.store.db() if owns_transaction else nullcontext(db)) as db:
             if owns_transaction:db.execute('BEGIN IMMEDIATE')
             self.store.require_read_checkpoint_writer(db)
-            before = self.current(line_id, db)
-            if before is None:
-                raise LineRefusal('line_not_found')
-            if expected_version is not None and int(expected_version) != before['version']:
-                raise LineConflict(before['version'])
+            before = self._current_for_write(line_id, expected_version, db)
             brief = {key: before[key] for key in FIELDS}
             brief['rules'] = [dict(rule) for rule in before['rules']]
             source = encode(update(brief))
@@ -322,6 +368,14 @@ class EntrustedLines:
                 return before, before
             row = self.library.commit(slot(line_id), source, work_id=work_id, stats={'change': change}, db=db)
             return before, decode(row)
+
+    def _current_for_write(self, line_id, expected_version, db):
+        brief = self.current(line_id, db)
+        if brief is None:
+            raise LineRefusal('line_not_found')
+        if expected_version is not None and int(expected_version) != brief['version']:
+            raise LineConflict(brief['version'])
+        return brief
 
     def restart(self, line_id, work_id, *, db=None):
         """Record the owner's restart, leaving an already-active brief intact."""
@@ -519,18 +573,36 @@ def outcome_label(status, delivered):
     return OUTCOME_FAILED if status else None
 
 
-def public_brief(brief):
+def open_matters_for_day(brief, day):
+    """A run-written hold applies on the recorded day. Later readers get a dated note."""
+    run_day = brief.get('open_matters_run_day')
+    if day and run_day and run_day < day and brief['open_matters']:
+        return {'open_matters': '', 'previous_run_notes': {'date': run_day, 'text': brief['open_matters']}}
+    return {'open_matters': brief['open_matters']}
+
+
+def public_brief(brief, *, day=None):
     """A brief as a tool result shows it: its id, version and fields (rule sources as Work ids)."""
     return {'line_id': brief['line_id'], 'version': brief['version'], 'state': brief['state'], 'title': line_name(brief),
-            'task': brief['task'], 'report_promise': brief['report_promise'], 'open_matters': brief['open_matters'],
+            'task': brief['task'], 'report_promise': brief['report_promise'], **open_matters_for_day(brief, day),
             'rules': [rule['text'] for rule in brief['rules']], 'account_every_days': brief['account_every_days']}
 
 
-def brief_text(brief, lang='ko'):
+def brief_text(brief, lang='ko', *, day=None, day_rules=(), past_day_rules=()):
     rules = '\n'.join(f'{number}. {rule["text"]}' for number, rule in enumerate(brief['rules'], 1)) or msg('lines.no_rules', lang)
-    return msg('lines.brief', lang, title=line_name(brief), task=brief['task'], promise=brief['report_promise'], rules=rules,
-               open=brief['open_matters'] or msg('label.none', lang), version=brief['version'],
+    if day_rules:
+        rules += '\n' + msg('lines.today_rules', lang, date=day, rules='\n'.join('- ' + rule for rule in day_rules))
+    if past_day_rules:
+        # #1249: earlier days' rules stay readable as past strategies, never as rules in force.
+        rules += '\n' + msg('lines.past_day_rules', lang, rules='\n'.join(
+            f'- {item["date"]}: {item["text"]}' for item in past_day_rules))
+    matters = open_matters_for_day(brief, day)
+    text = msg('lines.brief', lang, title=line_name(brief), task=brief['task'], promise=brief['report_promise'], rules=rules,
+               open=matters['open_matters'] or msg('label.none', lang), version=brief['version'],
                days=brief['account_every_days'])
+    if 'previous_run_notes' in matters:
+        text += '\n' + msg('lines.previous_run_notes', lang, **matters['previous_run_notes'])
+    return text
 
 
 def outcomes_text(outcomes, timezone_name=None, lang='ko'):
@@ -567,11 +639,15 @@ def entry_text(entry, lang='ko'):
                following=following) + checks
 
 
-def change_text(brief, *, rule='', drop=None, changes=None, days=None):
+def change_text(brief, *, rule='', drop=None, changes=None, days=None, today=False, replace=None):
     """A plain description of one proposed brief change, for the owner-turn judgment."""
     parts = []
+    if replace is not None:
+        before = '\n'.join(f'{n}. {item["text"]}' for n, item in enumerate(brief['rules'], 1)) or '(none)'
+        after = '\n'.join(f'{n}. {text}' for n, text in enumerate(replace, 1)) or '(none)'
+        parts.append('replace all standing rules.\nbefore:\n' + before + '\nafter:\n' + after)
     if rule:
-        parts.append('add rule: ' + rule)
+        parts.append(('add rule for today only: ' if today else 'add rule: ') + rule)
     if drop:
         parts.append('remove rule ' + str(drop) + ': ' + brief['rules'][drop - 1]['text'])
     for key, value in (changes or {}).items():

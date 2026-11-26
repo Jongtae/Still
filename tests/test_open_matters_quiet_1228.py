@@ -5,6 +5,7 @@ entrusted lines, settings tools, notification outbox and Telegram surface (trans
 existing fixture), a FixtureDecisionEngine and a fake clock. No live model or messenger is contacted.
 """
 import json
+from datetime import datetime
 from types import SimpleNamespace
 
 from personal_agent import agent_runtime as runtime, entrusted_lines as el
@@ -63,6 +64,52 @@ class OpenMattersQuiet(_RunCase):
             pass
         self.assertEqual(self.sent(), [])
 
+    def test_a_run_written_hold_becomes_a_dated_note_at_the_owners_midnight(self):
+        self.service.context_observations.set_controls({'timezone': 'Asia/Seoul'})
+        # The run's schedule uses UTC, and both checks fall on the same UTC date.
+        self.clock[0] = datetime.fromisoformat('2027-01-15T14:55:00+00:00').timestamp()
+        row, run = self.running(line=self.brief['line_id'])
+        hold = 'Wait for another instruction before the next check.'
+        self.line_call(run, action='revise', line=self.brief['line_id'], expected_version='1', open_matters=hold)
+        self.assertEqual(self.service.lines.current(self.brief['line_id'])['open_matters_run_day'], '2027-01-15')
+        self.assertIn(hold, self.service.preparations_service.line_run_input(run, row))
+        self.settle(row, run)
+
+        self.clock[0] += 600
+        next_row, next_run = self.running(line=self.brief['line_id'])
+        lines = self.service.preparations_service
+        seen = lines.line_run_input(next_run, next_row)
+        note = msg('lines.previous_run_notes', date='2027-01-15', text=hold)
+        self.assertIn(note, seen)
+        self.assertNotIn(hold, seen.replace(note, ''))
+        brief = lines.line_read(self.brief['line_id'])
+        self.assertEqual(brief['open_matters'], '')
+        self.assertEqual(brief['previous_run_notes'], {'date': '2027-01-15', 'text': hold})
+
+    def test_a_run_writing_after_midnight_keeps_its_start_day(self):
+        self.service.context_observations.set_controls({'timezone': 'Asia/Seoul'})
+        self.clock[0] = datetime.fromisoformat('2027-01-15T14:55:00+00:00').timestamp()
+        _row, run = self.running(line=self.brief['line_id'])
+        self.clock[0] += 600
+        hold = 'Wait for another instruction before the next check.'
+        result = self.line_call(run, action='revise', line=self.brief['line_id'], expected_version='1', open_matters=hold)
+        self.assertEqual(result['open_matters'], '')
+        self.assertEqual(result['previous_run_notes'], {'date': '2027-01-15', 'text': hold})
+
+    def test_an_owner_revise_keeps_open_matters_current_across_days(self):
+        self.revise_matters()
+        owner = self.store.job(self.store.enqueue('Keep this pending', 'owner-keep-1249', 'web', None, owner_typed=True))
+        # Explicitly keeping the same text also adopts it as the owner's open matter.
+        hold = 'second check pending'
+        result = self.line_call(owner, action='revise', line=self.brief['line_id'], expected_version='2', open_matters=hold)
+        self.assertEqual(result['version'], 3)
+        self.clock[0] += 86400
+        row, run = self.running(line=self.brief['line_id'])
+        lines = self.service.preparations_service
+        seen = lines.line_run_input(run, row)
+        self.assertIn(hold, seen)
+        self.assertEqual(lines.line_read(self.brief['line_id'])['open_matters'], hold)
+
     def test_the_owner_undoes_it_by_asking(self):
         self.revise_matters()
         owner = self.store.job(self.store.enqueue('Undo the last change to that line', 'owner-undo-1228', 'web', None,
@@ -117,7 +164,8 @@ class OpenMattersQuiet(_RunCase):
 
     def test_the_quiet_path_cannot_carry_an_owner_set_change(self):
         # Rules, task, promise, title and account schedule are refused on the run's own path, and leave nothing.
-        for change in ({'rule': 'Report every hour'}, {'drop_rule': '1'}, {'task': 'Watch another list'},
+        for change in ({'rule': 'Report every hour'}, {'rule': 'Report every hour', 'rule_scope': 'today'},
+                       {'drop_rule': '1'}, {'task': 'Watch another list'},
                        {'report_promise': 'no notes'}, {'title': 'Renamed'}, {'account_every_days': '30'},
                        {'open_matters': 'x', 'rule': 'Report every hour'}):
             with self.subTest(change=change):
