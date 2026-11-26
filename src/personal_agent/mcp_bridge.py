@@ -373,10 +373,10 @@ def tool_error_result(exc, action, secret_redactor=None):
     typed ``ToolError`` or #605 input request is Still's own text, verbatim.  #819: any other exception
     reaches the worker with its own message, after the stored-secret pass and bounded (``_error_text``).
     """
-    from .agent_runtime import dispatch_event_field
+    from .agent_runtime import dispatch_event_field, refused_field
     code, retry, effect = classify_failure(exc, action)
     text = str(exc) if code == 'input_required' or isinstance(exc, ToolError) else _error_text(exc, secret_redactor)
-    typed = {'code': code, 'retry': retry, 'effect': effect, **ran_field(exc), **executed_field(exc), **observed_field(exc), **dispatch_event_field(exc)}
+    typed = {'code': code, 'retry': retry, 'effect': effect, **ran_field(exc), **executed_field(exc), **observed_field(exc), **dispatch_event_field(exc), **refused_field(exc)}
     if getattr(exc, 'requires', None):
         typed['requires'] = exc.requires
     return {'content': [{'type': 'text', 'text': text}], 'structuredContent': typed, 'isError': True}, typed

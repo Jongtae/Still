@@ -525,6 +525,7 @@ class CodeRunner:
         self._owners, self._asked, self._claims = {}, [], []
         #: #1250: state-changing requests to a set's host that Still refused unsent and asked no one about.
         self._refused = []
+        self._refused_overflow = False
         self._claim_digests = {}
         #: #1489: the sets this Work's runs were already told how to keep their steps for.
         self._hinted = set()
@@ -581,6 +582,7 @@ class CodeRunner:
         masked, plain, set_hosts = [], {}, {}
         # #1456: each run starts with no set hosts, approval requests or dispatch claims of an earlier run.
         self._owners, self._asked, self._claims, self._refused, self._claim_digests = {}, [], [], [], {}
+        self._refused_overflow = False
         for name in names:
             slot = current.get(name)
             if slot is None or slot.get('kind') != CODE_KIND:
@@ -683,8 +685,13 @@ class CodeRunner:
             try:
                 outcome = self._session(node, runtime, workdir, command, policy, roots, timeout, requests, 'run',
                                         masked=masked, plain=plain, **download_options)
-            except Exception:
+            except Exception as exc:
                 self.scratch_secrets = self._scratch_values(states)
+                # #1250 review: a run cut off after Still refused a change still reports that refusal.  Its
+                # state values may not be known, so the records are withheld unless they are.
+                if self._refused or self._refused_overflow:
+                    exc.refused_effects = self._redacted_refusals(unknown=self.scratch_secrets is None)
+                    self._refused, self._refused_overflow = [], False
                 raise
             saved, scratch_secrets = self._save_states(states)
             self.scratch_secrets = None if self._state_unknown else scratch_secrets
@@ -937,9 +944,10 @@ class CodeRunner:
             self.approvals.self_set_write_finished(ticket, observed=observed)
         if self._asked:
             result['approval_requested'] = list(self._asked)
-        if self._refused:
+        if self._refused or self._refused_overflow:
             result['refused_effects'] = self._redacted_refusals()
         self._asked, self._claims, self._refused, self._claim_digests = [], [], [], {}
+        self._refused_overflow = False
 
     def _note_refused(self, message, reason):
         """#1250: keep a state-changing request to a secret set's host that Still refused before sending it.
@@ -954,6 +962,8 @@ class CodeRunner:
         if method in READ_METHODS or (host not in self._owners and _hostname(host) not in self._owners):
             return
         if len(self._refused) >= MAX_CHECKED_REQUESTS:
+            # #1250 review: more than are kept; one unkeyed marker stands for them, so no later send clears them all.
+            self._refused_overflow = True
             return
         # Held in memory as sent; redacted only once the run's own state values are known (``_redacted_refusals``).
         row = {'method': method[:10], 'host': host[:253], 'path': str(message.get('path') or '/'),
@@ -986,7 +996,7 @@ class CodeRunner:
             return None
         return identity if isinstance(identity, str) and identity else None
 
-    def _redacted_refusals(self):
+    def _redacted_refusals(self, *, unknown=None):
         """The refused requests with stored secrets and this run's own state values redacted (#1250 review).
 
         A run can obtain a token, keep it in its state file and put it in a refused path; that value is
@@ -995,12 +1005,17 @@ class CodeRunner:
         """
         from .current_context import redact_known_secrets
         scratch = self.scratch_secrets
-        unknown = scratch is None and getattr(self, '_state_unknown', False)
+        if unknown is None:
+            unknown = scratch is None and getattr(self, '_state_unknown', False)
         extra = {'extra_values': scratch} if scratch else {}
 
         def clean(text, limit):
             return '[withheld]' if unknown else redact_known_secrets(self.store, text, **extra)[:limit]
-        return [{**row, 'path': clean(row['path'], 300), 'reason': clean(row['reason'], 300)} for row in self._refused]
+        rows = [{**row, 'path': clean(row['path'], 300), 'reason': clean(row['reason'], 300)} for row in self._refused]
+        if self._refused_overflow:
+            rows.append({'method': '', 'host': '', 'path': '', 'layer': 'still', 'sent': False, 'overflow': True,
+                         'reason': f'more than {MAX_CHECKED_REQUESTS} refused requests; the rest are not listed'})
+        return rows
 
     def _load_states(self, names, workdir, env):
         """#1380: each named set's run state as ``<SET>_STATE_FILE`` in the run directory.
@@ -1391,8 +1406,8 @@ def evidence(result):
         kept['approval_requested'] = result['approval_requested']
     if result.get('refused_effects'):
         # #1250: refused unsent by Still, nobody asked; by method, host, path and Still's reason only.
-        kept['refused_effects'] = [{key: row.get(key) for key in ('method', 'host', 'path', 'layer', 'sent', 'reason', 'input_digest')
-                                    if key in row}
+        kept['refused_effects'] = [{key: row.get(key) for key in ('method', 'host', 'path', 'layer', 'sent', 'reason', 'input_digest',
+                                                         'overflow') if key in row}
                                    for row in result['refused_effects'][:MAX_CHECKED_REQUESTS] if isinstance(row, dict)]
     if isinstance(result.get('library'), dict):
         # #1486: what happened to each set's library, never its source.  #1489: and why a proposal was not
