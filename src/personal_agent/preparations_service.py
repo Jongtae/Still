@@ -211,12 +211,15 @@ class PreparationsService:
             window=prep.normalize_window(args.get('every_minutes'),args.get('until'),args.get('max_runs'),
                                          due_at,timezone,now,recurrence=recurrence)
             requested_until=prep.parse_due(args.get('until'),timezone,timezone,now)[0]
-        when_needed=args.get('delivery')==prep.DELIVERY_WHEN_NEEDED
+        delivery=args.get('delivery')
+        if kind==prep.KIND_PREPARE and window and not has_check and delivery=='send' and args.get('every_result') is not True:
+            delivery=prep.DELIVERY_WHEN_NEEDED
+        when_needed=delivery==prep.DELIVERY_WHEN_NEEDED
         if when_needed and kind!=prep.KIND_PREPARE:raise prep.PreparationRefusal('invalid_delivery')
         delivery_mode=prep.DELIVERY_WHEN_NEEDED if when_needed else None
         report_every_minutes=args.get('report_every_minutes')
         # Send already delivers each check, so an equal report interval adds nothing.
-        if args.get('delivery')=='send' and window and prep._whole_number(report_every_minutes)==window[0]//60:
+        if delivery=='send' and window and prep._whole_number(report_every_minutes)==window[0]//60:
             report_every_minutes=None
         terms=prep.window_terms(window,recurrence,due_at,timezone,report_every_minutes,delivery_mode,requested_until)
         return {'kind':kind,'goal':goal,'title':title,'offer':offer,'due_at':due_at,'timezone':timezone,
@@ -306,7 +309,7 @@ class PreparationsService:
             due_at,timezone,recurrence,window=fields['due_at'],fields['timezone'],fields['recurrence'],fields['window']
             delivery_mode=fields['delivery_mode']
             # #780: what a plan run wants the owner to hear goes where the owner last talked to Still.
-            channel=service.preparation_channel(self.owner_last_work() if planning else job,kind,args.get('delivery'))
+            channel=service.preparation_channel(self.owner_last_work() if planning else job,kind,delivery_mode or args.get('delivery'))
             if resume_offer:
                 return self.offer_line_resume(job,args.get('line'),fields,channel)
             summary=prep.proposal_summary({'kind':kind,'goal_text':goal,'due_at':due_at,'timezone':timezone,
