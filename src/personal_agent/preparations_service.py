@@ -2615,12 +2615,13 @@ class PreparationsService:
             suffix=row['kind'].removeprefix(prefix) if row else ''
             if suffix.isdecimal():
                 first=int(suffix)
-                # Each version of the set was written by this Work and changed the rules, so the set's
-                # one undo reverts nothing the notice does not show.
+                # Each version of the set was written by this Work and changed the rules and nothing else,
+                # so the set's one undo reverts nothing the notice does not show.
                 stored=[service.lines.version(line_id,number) for number in range(first-1,version+1)] if first<version else []
                 texts=lambda brief:[rule['text'] for rule in (brief or {}).get('rules') or []]
-                if stored and all(item and item['written_in']==job['id'] and texts(item)!=texts(prior)
-                                  for prior,item in zip(stored,stored[1:])):
+                others=lambda brief:[brief.get(field) for field in el.FIELDS if field!='rules']
+                if stored and all(prior and item and item['written_in']==job['id'] and texts(item)!=texts(prior)
+                                  and others(item)==others(prior) for prior,item in zip(stored,stored[1:])):
                     if service.store.rebind_notification(job['id'],row['kind'],f'{line_id}:{first}:{version}'):return ''
         return self.line_notice(job,el.NOTICE_RULE,line_id,version)
 

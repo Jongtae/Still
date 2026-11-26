@@ -112,6 +112,26 @@ class OneNoticeTests(_OnceCase):
         self.assertEqual((current['version'], current['title'], [rule['text'] for rule in current['rules']]),
                          (5, '아침 요약', [RULE_A]))
 
+    def test_a_rule_change_made_with_another_field_starts_its_own_set_so_undo_keeps_that_field(self):
+        brief, _work = self.open_line()
+        line_id = brief['line_id']
+        days = brief['account_every_days']
+        self.clear_opening()
+        self.revise_calls('규칙 넣고 정리 주기도 바꾸고 하나 더 넣어 줘',
+                          {'action': 'revise', 'line': line_id, 'expected_version': '1', 'rule': RULE_A,
+                           'account_every_days': str(days + 7)},
+                          {'action': 'revise', 'line': line_id, 'expected_version': '2', 'rule': RULE_B})
+        self.deliver_all()
+        notices = self.rule_notices()
+        self.assertEqual(len(notices), 2)
+        later = next(body for body in notices if RULE_B in body['text'])
+        self.assertNotIn(RULE_A, later['text'])
+        self.tap(self.undo_data(later), self.message_id_of(later))
+        current = self.service.lines.current(line_id)
+        # Only the later rule is undone; the interval changed alongside the first rule stays.
+        self.assertEqual((current['account_every_days'], [rule['text'] for rule in current['rules']]),
+                         (days + 7, [RULE_A]))
+
     def test_a_replacement_in_one_call_reads_before_and_after(self):
         brief, _work = self.open_line(rules=[RULE_A])
         line_id = brief['line_id']
