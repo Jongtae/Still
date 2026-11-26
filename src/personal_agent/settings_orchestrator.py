@@ -870,6 +870,12 @@ class SettingsOrchestrator:
         if category == 'preparations' and value not in allowed:
             value = self._preparation_named(value, allowed)
         if value not in allowed:
+            # #1241: reservation ids are internal; the owner reads what could not be changed and why.
+            if category == 'preparations':
+                names = {option["value"]: option["label"] for option in row[setting]["options"] or ()}
+                listed = "; ".join(dict.fromkeys(names[item] for item in allowed if item in names))
+                key = 'settings_orchestrator.choice_gone_listed' if listed else 'settings_orchestrator.choice_gone'
+                raise SettingsError(msg(key, label=_CHANGE_LABELS[category, setting], listed=listed))
             listed = ", ".join(allowed) or msg('settings_orchestrator.none_available_now')
             raise SettingsError(msg('settings_orchestrator.invalid_choice', label=_CHANGE_LABELS[category, setting], listed=listed))
         return value, row

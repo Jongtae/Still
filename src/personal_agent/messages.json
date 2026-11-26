@@ -4931,8 +4931,20 @@
   "ja": "現在なし",
   "zh": "当前没有"
  },
+ "settings_orchestrator.choice_gone": {
+  "ko": "{label}: 그 예약은 이미 끝났거나 더는 없어서 바꿀 수 없어요. 아무것도 바꾸지 않았어요.",
+  "en": "{label}: that scheduled work has already finished or is no longer there, so it could not be changed. Nothing was changed.",
+  "ja": "{label}: その予約はすでに終わったか、もう存在しないため変更できません。何も変更していません。",
+  "zh": "{label}：该预约已经结束或已不存在，无法更改。未作任何更改。"
+ },
+ "settings_orchestrator.choice_gone_listed": {
+  "ko": "{label}: 그 예약은 이미 끝났거나 더는 없어요. 지금 바꿀 수 있는 것: {listed}. 아무것도 바꾸지 않았어요.",
+  "en": "{label}: that scheduled work has already finished or is no longer there. What can be changed now: {listed}. Nothing was changed.",
+  "ja": "{label}: その予約はすでに終わったか、もう存在しません。今変更できるもの: {listed}。何も変更していません。",
+  "zh": "{label}：该预约已经结束或已不存在。现在可以更改的有：{listed}。未作任何更改。"
+ },
  "settings_orchestrator.invalid_choice": {
-  "ko": "{label}은(는) 다음 중 하나만 고를 수 있어요: {listed}. 아무것도 바꾸지 않았어요.",
+  "ko": "{label}에는 다음 중 하나만 쓸 수 있어요: {listed}. 아무것도 바꾸지 않았어요.",
   "en": "For {label}, choose one of: {listed}. Nothing was changed.",
   "ja": "{label} は次から選んでください: {listed}。何も変更していません。",
   "zh": "{label}只能选择以下值之一：{listed}。未作任何更改。"
