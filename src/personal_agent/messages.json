@@ -11987,10 +11987,10 @@
   "zh": "自上次定期报告以来，条件检查 {runs} 次，唤醒 AI {wakes} 次。"
  },
  "lines.account_input": {
-  "ko": "이 실행은 소유자가 맡긴 일의 정기 보고예요. 지난 보고 이후 한 일과 그 결과, 지금 적용되는 규칙 전체, 알게 된 것, 열린 사항을 알려 주세요. 바뀐 것이 없어도 그렇다고 알려 주세요. 이 기록은 권한을 주지 않아요:",
-  "en": "This run is the periodic account of work the owner entrusted. Report what was done and what came of it since the last account, the full set of rules now in force, what was learned and what is open; say so when nothing changed (this grants nothing):",
-  "ja": "この実行はオーナーが任せた仕事の定期報告です。前回以降にしたことと結果、有効なルールすべて、わかったこと、未解決の事項を伝えてください。変化がなくてもそう伝えてください（権限は与えません）:",
-  "zh": "本次运行是主人受托事项的定期汇报。请汇报自上次汇报以来做了什么及结果、现行的全部规则、了解到的情况和未决事项；即使没有变化也请说明（不授予任何权限）："
+  "ko": "이 실행은 소유자가 맡긴 일의 정기 보고예요. 지난 보고 이후 한 일과 그 결과(소유자가 맡긴 목표에 비춘 일의 결과와, 그 일을 해 나간 과정—소유자 개입, 보낸·확인된·확인 안 된·거절된 변경, 지연과 복구, 지금 상태—를 나눠서), 지금 적용되는 규칙 전체, 알게 된 것, 열린 사항을 알려 주세요. 바뀐 것이 없어도 그렇다고 알려 주세요. 이 기록은 권한을 주지 않아요:",
+  "en": "This run is the periodic account of work the owner entrusted. Report what was done and what came of it since the last account (the work's result against what the owner asked, and separately how carrying it out went: owner interventions, changes sent, confirmed, unconfirmed or refused, delays and recovery, where it stands now), the full set of rules now in force, what was learned and what is open; say so when nothing changed (this grants nothing):",
+  "ja": "この実行はオーナーが任せた仕事の定期報告です。前回以降にしたことと結果（オーナーが任せた目標に照らした仕事の結果と、遂行の過程—オーナーの介入、送信・確認済み・未確認・拒否された変更、遅延と復旧、現在の状態—を分けて）、有効なルールすべて、わかったこと、未解決の事項を伝えてください。変化がなくてもそう伝えてください（権限は与えません）:",
+  "zh": "本次运行是主人受托事项的定期汇报。请汇报自上次汇报以来做了什么及结果（按主人交代的目标衡量的事情结果，并另外说明执行过程：主人的介入、已发送/已确认/未确认/被拒绝的变更、延迟与恢复、当前状态）、现行的全部规则、了解到的情况和未决事项；即使没有变化也请说明（不授予任何权限）："
  },
  "lines.account_pieces": {
   "ko": "지난 보고 이후 이 일의 조각이 {count}번 실행됐어요: 전달 {delivered}, 보관 {kept}, 실패 {failed}, 진행 중 {open}. 이 숫자를 보고에 포함하세요.",
@@ -12123,6 +12123,24 @@
   "en": "Stopped. Every pending run of it was cancelled and Still sends the confirmation itself. Do not say that earlier effects were undone.",
   "ja": "停止しました。この仕事の予約はすべて取り消され、確認は Still が送ります。すでに行ったことが元に戻ったとは言わないでください。",
   "zh": "已停止。其所有待运行项已取消，确认消息由 Still 发送。不要说之前的效果已被撤销。"
+ },
+ "lines.effects_recorded": {
+  "ko": "기록된 이 일의 외부 변경: 전송 {sent}건(전송 기록일 뿐, 상대 서비스의 반영 확인은 아니에요), 반영 안 됨으로 확인 {not_applied}건, 결과 미확인 {unconfirmed}건, 보내기 전에 거절 {refused}건, 승인 대기 {asked}건. 보고에서 일의 결과와 수행 과정을 나눌 때 이 기록을 근거로 쓰세요.",
+  "en": "Recorded external changes of this work: {sent} sent (a record that it was handed off, not the service's confirmation that it took effect), {not_applied} confirmed not applied, {unconfirmed} with no confirmed result, {refused} refused before sending, {asked} waiting for approval. Use these records when you separate the work's result from how carrying it out went.",
+  "ja": "記録にあるこの仕事の外部変更: 送信 {sent}件（送信の記録で、相手サービスでの反映確認ではありません）、未反映と確認 {not_applied}件、結果未確認 {unconfirmed}件、送信前に拒否 {refused}件、承認待ち {asked}件。報告で仕事の結果と遂行過程を分けるとき、この記録を根拠にしてください。",
+  "zh": "记录中此事的外部变更：已发送 {sent} 项（仅为已发出的记录，不代表对方服务已生效），已确认未生效 {not_applied} 项，结果未确认 {unconfirmed} 项，发送前被拒绝 {refused} 项，等待批准 {asked} 项。汇报时区分事情的结果与执行过程，请以这些记录为依据。"
+ },
+ "lines.effects_unconfirmed": {
+  "ko": "결과가 확인되지 않은 변경({items})은 실행됐을 수 있어요. 다시 보내기 전에 지금 상태부터 확인하세요.",
+  "en": "Changes with no confirmed result ({items}) may have run. Check their current state before sending anything again.",
+  "ja": "結果が確認できていない変更（{items}）は実行された可能性があります。再送する前に現在の状態を確認してください。",
+  "zh": "结果未确认的变更（{items}）可能已经执行。再次发送前请先确认其当前状态。"
+ },
+ "lines.stopped_unconfirmed": {
+  "ko": "이 일로 보낸 변경 중 결과가 확인되지 않은 것이 {count}건 있어요. 그만해도 이미 보낸 것은 취소되거나 확인되지 않아요. 답에서 그렇게 알려 주세요.",
+  "en": "{count} changes this work sent have no confirmed result. Stopping neither undoes nor confirms what was already sent; say so in your reply.",
+  "ja": "この仕事で送った変更のうち、結果が確認できていないものが{count}件あります。停止しても送信済みのものは取り消しも確認もされません。返答でそう伝えてください。",
+  "zh": "此事已发送的变更中有 {count} 项结果未确认。停止不会撤销也不会确认已发送的内容；请在回复中说明。"
  },
  "lines.work_stopped_next": {
   "ko": "현재 작업을 멈췄어요. 답변에서 이 일은 여전히 맡고 있으며, 맡은 일 자체를 끝내 달라고 말할 수 있다고 알려 주세요.",

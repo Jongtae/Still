@@ -2817,8 +2817,23 @@ def external_effect_events(store, work_id, *, attributed_to=None, db=None):
  """
  with (store.db() if db is None else nullcontext(db)) as db:
   ids=list(effect_record_ids(db,work_id))
-  rows=db.execute("SELECT id,job_id,tool,status,detail FROM tool_events WHERE job_id IN ("+
-    ','.join('?' for _ in ids)+") AND tool IN ('connector_permission','connector_read','api_dispatch') ORDER BY id",ids).fetchall()
+  rows=effect_rows(db,ids)
+ return classify_effect_rows(rows,attributed_to=attributed_to)
+
+
+#: The tool events ``classify_effect_rows`` reads: Still's own effect ledger of API and connector changes.
+EFFECT_LEDGER_ROW_TOOLS=('connector_permission','connector_read','api_dispatch')
+
+def effect_rows(db, ids):
+ """The effect-ledger tool events of the Works or check records ``ids``, in order."""
+ ids=list(ids)
+ if not ids:return []
+ return db.execute("SELECT id,job_id,tool,status,detail FROM tool_events WHERE job_id IN ("+','.join('?' for _ in ids)+
+                   ") AND tool IN ("+','.join('?' for _ in EFFECT_LEDGER_ROW_TOOLS)+") ORDER BY id",
+                   [*ids,*EFFECT_LEDGER_ROW_TOOLS]).fetchall()
+
+def classify_effect_rows(rows, *, attributed_to=None):
+ """``(observed, claims)`` of effect-ledger rows (``effect_rows``): what ``external_effect_events`` returns."""
  claims={};observed=[]
  for row in rows:
   detail=json.loads(row['detail'])
