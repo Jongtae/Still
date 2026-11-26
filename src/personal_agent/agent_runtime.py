@@ -3620,6 +3620,11 @@ def refused_state_change(action, detail):
  """
  return action in CODE_ACTIONS and bool(recorded_evidence(detail).get('refused_effects'))
 
+def _code_effect_keys(rows):
+ """``{(method, host, path)}`` of a code run's recorded effect rows (#1250 review)."""
+ return {(str(row.get('method') or '').upper(),str(row.get('host') or ''),str(row.get('path') or ''))
+         for row in rows or () if isinstance(row,dict)}
+
 def recorded_withheld(action, detail, completed=frozenset()):
  """The ``Withheld`` of a call recorded as returning normally, from its recorded Evidence, or None (#679, #690).
 
@@ -3926,10 +3931,13 @@ def state_change_short(steps, *, reconciled=None):
  for index,(_tool,action,state,detail,_reason) in enumerate(steps):
   if refused_state_change(action,detail):
    # #1250: a code run is a read by declaration (``HOST_TOOLS``), as its sent ``effects`` are not (#1456);
-   # a state change Still refused unsent is short too, unless the same run later sent its changes.
-   if not any(other==action and result=='succeeded' and same_invocation(detail,done) and not refused_state_change(other,done)
-              and (recorded_evidence(done).get('effects')) for _t,other,result,done,_r in steps[index+1:]):
-    return True
+   # a state change Still refused unsent is short too, unless a later code run sent that same change.
+   # #1250 review: matched by the effect itself (method, host, path), since a retry is a new call whose
+   # recorded code is masked, so neither the call id nor ``same_invocation`` can match it.
+   later=set()
+   for _t,other,result,done,_r in steps[index+1:]:
+    if other in CODE_ACTIONS and result=='succeeded':later|=_code_effect_keys(recorded_evidence(done).get('effects'))
+   if not _code_effect_keys(recorded_evidence(detail).get('refused_effects'))<=later:return True
    continue
   if state not in ('failed','withheld','incomplete') or action=='delegate_agent':continue
   detail=detail if isinstance(detail,dict) else {}

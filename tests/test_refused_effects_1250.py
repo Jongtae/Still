@@ -117,14 +117,32 @@ def test_check_phase_refusals_are_not_recorded(case):
     assert runner._refused == [], 'only a secret set host is a state change Still refused'
 
 
-def test_a_later_sent_run_of_the_same_call_clears_the_hold():
+def test_refused_records_redact_run_local_values_or_withhold(case):
+    """A token the run obtained itself is known only after the run; a refused path never shows it."""
+    runner = code_run.CodeRunner(case.store, 'work', popen=lambda *a, **k: FakeProcess(requests=[POST]), **WIRE)
+    runner._owners = {HOST: [('fixture', {'revision': 1})]}
+    runner._note_refused(dict(POST, path='/orders/run-token-4711'), 'refused for run-token-4711')
+    runner.scratch_secrets, runner._state_unknown = ['run-token-4711'], False
+    row, = runner._redacted_refusals()
+    assert 'run-token-4711' not in json.dumps(row) and row['path'].startswith('/orders/')
+    runner.scratch_secrets, runner._state_unknown = None, True
+    row, = runner._redacted_refusals()
+    assert row['path'] == row['reason'] == '[withheld]', 'unknown state values: withheld, never shown as sent'
+
+
+def test_a_later_run_that_sent_the_same_change_clears_the_hold():
+    """A retry is a new call (new id, masked code); it clears the hold by the change it sent."""
+    change = {'method': 'POST', 'host': HOST, 'path': '/orders'}
     refused = {'scope': 'w', 'call_id': 'c1', 'host_action': 'code_run',
-               'evidence': {'refused_effects': [{'method': 'POST', 'host': HOST, 'path': '/orders'}]}}
-    sent = {'scope': 'w', 'call_id': 'c1', 'host_action': 'code_run',
-            'evidence': {'effects': [{'method': 'POST', 'host': HOST, 'path': '/orders'}]}}
-    other_read = {'scope': 'w', 'call_id': 'c2', 'host_action': 'code_run', 'evidence': {}}
+               'evidence': {'refused_effects': [{**change, 'layer': 'still', 'sent': False}]}}
+    retried = {'scope': 'w', 'call_id': 'c2', 'host_action': 'code_run', 'evidence': {'effects': [change]}}
+    elsewhere = {'scope': 'w', 'call_id': 'c3', 'host_action': 'code_run',
+                 'evidence': {'effects': [{**change, 'path': '/other'}]}}
+    other_read = {'scope': 'w', 'call_id': 'c4', 'host_action': 'code_run', 'evidence': {}}
     rows = lambda *details: [('code_run', 'succeeded', json.dumps(d)) for d in details]
     assert state_change_short(trail_steps(rows(refused)))
     assert state_change_short(trail_steps(rows(refused, other_read))), 'an unrelated read does not clear it'
-    assert not state_change_short(trail_steps(rows(refused, sent)))
+    assert state_change_short(trail_steps(rows(refused, elsewhere))), 'a different change does not clear it'
+    assert state_change_short(trail_steps(rows(retried, refused))), 'only a later send clears it'
+    assert not state_change_short(trail_steps(rows(refused, retried)))
     assert not state_change_short(trail_steps(rows(other_read)))

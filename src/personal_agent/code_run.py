@@ -933,7 +933,7 @@ class CodeRunner:
         if self._asked:
             result['approval_requested'] = list(self._asked)
         if self._refused:
-            result['refused_effects'] = list(self._refused)
+            result['refused_effects'] = self._redacted_refusals()
         self._asked, self._claims, self._refused = [], [], []
 
     def _note_refused(self, message, reason):
@@ -944,17 +944,31 @@ class CodeRunner:
         that meant to change state and could not read as done.  The record says where Still refused it
         (``layer: still``, before any transport), and why in Still's own words; never a body or a value.
         """
-        from .current_context import redact_known_secrets
         method = str(message.get('method') or '').upper()
         host = _host(message.get('host'))
         if method in READ_METHODS or (host not in self._owners and _hostname(host) not in self._owners):
             return
         if len(self._refused) >= MAX_CHECKED_REQUESTS:
             return
-        self._refused.append({'method': method[:10], 'host': host[:253],
-                              'path': redact_known_secrets(self.store, str(message.get('path') or '/'))[:300],
-                              'layer': 'still', 'sent': False,
-                              'reason': redact_known_secrets(self.store, str(reason or ''))[:300]})
+        # Held in memory as sent; redacted only once the run's own state values are known (``_redacted_refusals``).
+        self._refused.append({'method': method[:10], 'host': host[:253], 'path': str(message.get('path') or '/'),
+                              'layer': 'still', 'sent': False, 'reason': str(reason or '')})
+
+    def _redacted_refusals(self):
+        """The refused requests with stored secrets and this run's own state values redacted (#1250 review).
+
+        A run can obtain a token, keep it in its state file and put it in a refused path; that value is
+        known only after the run (``scratch_secrets``).  When it is not known (``_state_unknown``), the
+        path and reason are withheld rather than shown unredacted.
+        """
+        from .current_context import redact_known_secrets
+        scratch = self.scratch_secrets
+        unknown = scratch is None and getattr(self, '_state_unknown', False)
+        extra = {'extra_values': scratch} if scratch else {}
+
+        def clean(text, limit):
+            return '[withheld]' if unknown else redact_known_secrets(self.store, text, **extra)[:limit]
+        return [{**row, 'path': clean(row['path'], 300), 'reason': clean(row['reason'], 300)} for row in self._refused]
 
     def _load_states(self, names, workdir, env):
         """#1380: each named set's run state as ``<SET>_STATE_FILE`` in the run directory.
