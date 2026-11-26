@@ -797,15 +797,6 @@ class PreparationsService:
     def self_change_text(self, event):
         """One readable receipt, shared by messenger notices and the existing Settings result."""
         lang = owner_language(self.service.store) or 'ko'
-        if event['target'] == 'lines.open_matters':
-            brief = self.service.lines.readable(event['line_id'])
-            name = el.line_name(brief, self.service._redact_known_secrets) if brief else msg('label.not_recorded', lang)
-            text = msg('lines.self_change_notice', lang, line=name, version=event['version'],
-                       before=el.excerpt(event['before']['open_matters'], 1000),
-                       after=el.excerpt(event['after']['open_matters'], 1000))
-            if event.get('outside_content'):
-                text += '\n' + msg('preparations.self_change_outside', lang)
-            return self.service._redact_known_secrets(text)
         row = {**(self.service.preparations.get(event['preparation_id']) or {'goal_text': ''}),
                **event.get('snapshot', {})}
         operation = event['target'].split('.')[-1]
@@ -2963,7 +2954,7 @@ class PreparationsService:
     def _line_revise(self, job, args, authority='owner'):
         """``authority``: ``owner`` (a Work the owner typed), ``steer`` (#968: a scheduled run the owner
         steered, judged against those words when the line touches money or the run read outside
-        content) or ``self`` (#968: a line run's own open matters only, then sent as a separate notice)."""
+        content) or ``self`` (a line run's own open matters only, recorded with undo, not sent as a notice (#1228))."""
         service=self.service
         line_id=args.get('line')
         if args.get('expected_version') in (None,''):raise el.LineRefusal('line_version_required')
@@ -3011,11 +3002,10 @@ class PreparationsService:
             if rule:rules.append({'text':rule,'from':source,'at':now})
             return {**brief,**changes,'rules':rules,
                     **({'account_every_days':days} if days is not None else {})}
-        # The plan version, before/after receipt and notice commit together, even for withheld reports.
+        # The plan version and before/after receipt commit together, even for withheld reports.
         own_row=self.own_running_row(job) if authority!='owner' and not ruled else None
         if authority!='owner' and not ruled and own_row is None:
             raise not_run(ToolError(msg('lines.refused_unattended_run'),'unattended_run'))
-        destination=self.self_change_destination(own_row) if own_row else None
         with service.store.db() as db:
             db.execute('BEGIN IMMEDIATE')
             service.store.require_read_checkpoint_writer(db)
@@ -3023,7 +3013,6 @@ class PreparationsService:
             if authority!='self' and after['version']!=before['version']:
                 continuous.fence(db,line_id,now,work_id=job['id'])
             if own_row and after['version']!=before['version']:
-                fingerprint=f"{line_id}:{after['version']}"
                 event={'target':'lines.open_matters','line_id':line_id,'version':after['version'],
                        'before':{'open_matters':before['open_matters']},
                        'after':{'open_matters':after['open_matters']},
@@ -3031,9 +3020,6 @@ class PreparationsService:
                                                          (job['id'],)).fetchone())}
                 db.execute('INSERT INTO tool_events(job_id,tool,status,detail,created) VALUES (?,?,?,?,?)',
                            (job['id'],'line_self_change','succeeded',json.dumps(event),now))
-                if destination:
-                    service.store.telegram.queue_notification(job['id'],*destination[:2],
-                        el.NOTICE_PLAN+fingerprint,fingerprint,surface=destination[2],db=db,created=now)
         if days is not None and days!=before['account_every_days']:self.retime_line_account(before,after)
         changed=after['version']!=before['version']
         if authority!='owner' and changed and (self.line_version_read(job['id']) or (None,))[0]==line_id:
@@ -3045,7 +3031,7 @@ class PreparationsService:
         result={**el.public_brief(after),'restated':restated,'money_rules':money,
                 'next_step':self.told(msg('lines.revised_next' if restated else 'lines.revised_quiet_next'),untold)}
         if authority=='self' and changed:
-            # #984: the independent notice survives a withheld report; the worker sees the receipt too.
+            # #1228: the worker receives the receipt and undo version even when the report is withheld.
             result.update(open_matters_before=before['open_matters'], outside_content=event['outside_content'],
                           next_step=msg('lines.self_revised_next',version=after['version']))
         return result
@@ -3247,12 +3233,6 @@ class PreparationsService:
                 return service._redact_known_secrets(msg('lines.stood_announced',task=name,promise=brief['report_promise'],
                                                         days=provenance['evidence']['days']))
             return service._redact_known_secrets(msg('lines.announced',task=name,promise=brief['report_promise']))
-        if kind.startswith(el.NOTICE_PLAN):
-            with service.store.db() as db:
-                receipt=db.execute("SELECT detail FROM tool_events WHERE tool='line_self_change' "
-                                   "AND json_extract(detail,'$.line_id')=? AND json_extract(detail,'$.version')=?",
-                                   (line_id,int(version))).fetchone()
-            return self.self_change_text(json.loads(receipt['detail'])) if receipt else None
         if kind.startswith(el.NOTICE_RULE):
             # Told while its rule is still in force (a later change or an undo may have removed it).
             stored=service.lines.version(line_id,int(version))

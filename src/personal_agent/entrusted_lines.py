@@ -417,6 +417,7 @@ from .messages import msg  # noqa: E402 - the catalogue is only needed by the te
 
 #: Notification kinds, each followed by ``<line_id>:<version>`` (one notice per Work and kind).
 NOTICE_OPENED, NOTICE_RULE, NOTICE_STOPPED = 'line_opened:', 'line_rule:', 'line_stopped:'
+#1228: no longer queued; one queued before is not sent, a sent one keeps its undo.
 NOTICE_PLAN = 'line_plan:'
 NOTICE_WORK_STOPPED = 'line_work_stopped:'
 NOTICE_ENTRUSTED = 'line_entrusted:'

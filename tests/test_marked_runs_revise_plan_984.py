@@ -87,7 +87,7 @@ class MarkedPlan(_RunCase):
         with self.store.db() as db:
             return [dict(r) for r in db.execute('SELECT * FROM telegram_notifications')]
 
-    def test_withheld_report_still_delivers_both_plan_notices_and_line_undo(self):
+    def test_withheld_report_still_delivers_the_plan_notice_and_records_open_matters_quietly(self):
         with self.store.db() as db:
             db.execute('UPDATE preparations SET delivery_mode=? WHERE id=?', (prep.DELIVERY_WHEN_NEEDED, self.row['id']))
         self.assertTrue(self.rewrite(self.row, self.run)['applied'])
@@ -106,26 +106,16 @@ class MarkedPlan(_RunCase):
         with self.store.db() as db:
             event = json.loads(db.execute("SELECT detail FROM tool_events WHERE tool='line_self_change'").fetchone()['detail'])
         self.assertIs(event['outside_content'], True)
-        render = self.service.preparations_service.self_change_text
-        self.assertNotEqual(render(event), render({**event, 'outside_content': False}))
         self.assertEqual(event['before'], {'open_matters': self.brief['open_matters']})
         self.assertEqual(event['after'], {'open_matters': 'second check pending'})
-        self.assertTrue(self.service.deliver_notification())
-        self.assertTrue(self.service.deliver_notification())
+        # #1228: the owner-set goal change is told; the run's own open matters are not pushed.
+        while self.service.deliver_notification():
+            pass
         sent = [body for method, body in self.telegram if method == 'sendMessage']
-        self.assertEqual(len(sent), 2)
-        line_body = next(b for b in sent if el.line_name(self.brief) in b['text'])
-        self.assertIn(self.brief['open_matters'], line_body['text'])
-        self.assertIn('second check pending', line_body['text'])
-        data = line_body['reply_markup']['inline_keyboard'][0][0]['callback_data']
-        notice = next(n for n in self.notices() if n['kind'].startswith(el.NOTICE_PLAN))
-        self.service.ingest_callback({
-            'id': 'undo-plan', 'from': {'id': CHAT}, 'data': data,
-            'message': {'message_id': notice['message_id'], 'chat': {'id': CHAT, 'type': 'private'}}}, GENERATION)
-        current = self.service.lines.current(self.brief['line_id'])
-        self.assertEqual({k: current[k] for k in el.FIELDS}, {k: self.brief[k] for k in el.FIELDS})
-        self.service.deliver_notification()
-        self.assertEqual(len([b for method, b in self.telegram if method == 'sendMessage']), 2)
+        self.assertEqual(len(sent), 1)
+        self.assertIn('5 percent', sent[0]['text'])
+        self.assertNotIn('second check pending', sent[0]['text'])
+        self.assertFalse(any(n['kind'].startswith(el.NOTICE_PLAN) for n in self.notices()))
 
     def test_qualifying_marked_run_keeps_plan_authority_after_a_steer(self):
         self.steer(self.run)
@@ -142,8 +132,25 @@ class MarkedPlan(_RunCase):
         self.service.deliver_notification()
         self.assertFalse(any(method == 'sendMessage' for method, _ in self.telegram))
 
-    def test_line_outbox_failure_rolls_back_plan_and_receipt(self):
-        with mock.patch.object(self.store.telegram, 'queue_notification', side_effect=RuntimeError('disk full')):
+    def test_receipt_failure_rolls_back_the_open_matters_version(self):
+        real = self.store.db
+        def failing():
+            conn = real()
+            class Guard:
+                def __enter__(self_inner):
+                    db = conn.__enter__()
+                    class Wrapped:
+                        def execute(self_w, sql, *args):
+                            if 'INSERT INTO tool_events' in sql and args and 'line_self_change' in args[0]:
+                                raise RuntimeError('disk full')
+                            return db.execute(sql, *args)
+                        def __getattr__(self_w, name):
+                            return getattr(db, name)
+                    return Wrapped()
+                def __exit__(self_inner, *exc):
+                    return conn.__exit__(*exc)
+            return Guard()
+        with mock.patch.object(self.store, 'db', failing):
             with self.assertRaises(RuntimeError):
                 self.revise_matters()
         self.assertEqual(self.service.lines.current(self.brief['line_id']), self.brief)

@@ -12077,10 +12077,10 @@
   "zh": "已更新受托事项。"
  },
  "lines.self_revised_next": {
-  "en": "Updated the line's open matters (version {version}). A separate before/after notice with undo instructions is queued when paired, even if this run's report is withheld.",
-  "ko": "맡은 일의 남은 사항을 고쳤어요(버전 {version}). 연결된 대화에는 보고를 보내지 않더라도 변경 전후와 되돌리는 방법을 별도 알림으로 보내요.",
-  "ja": "未解決事項を更新しました（バージョン {version}）。接続済みの会話には、報告を送らなくても、変更前後と元に戻す方法を別途通知します。",
-  "zh": "已更新待办事项（版本 {version}）。有配对会话时，即使不发送运行报告，也会单独通知更改前后内容和撤销方法。"
+  "en": "Updated the line's open matters (version {version}). They stay in the line's records. The owner receives no separate notice and can ask to undo this version.",
+  "ko": "맡은 일의 남은 사항을 고쳤어요(버전 {version}). 남은 사항은 이 일의 기록에 남고, 주인에게 별도 알림을 보내지 않아요. 주인은 이 버전의 변경을 되돌려 달라고 할 수 있어요.",
+  "ja": "任された仕事の未解決事項を更新しました（バージョン {version}）。未解決事項はこの仕事の記録に残り、オーナーには個別に通知しません。オーナーはこのバージョンの変更を元に戻すよう依頼できます。",
+  "zh": "已更新受托事项的待办事项（版本 {version}）。这些待办事项保留在该事项的记录中，不会另行通知所有者。所有者可以要求撤销此版本的更改。"
  },
  "lines.undone_next": {
   "ko": "이전 버전으로 되돌렸어요.",
@@ -12777,12 +12777,6 @@
   "ko": "이 실행은 외부 내용을 읽은 뒤 계획을 바꿨어요.",
   "ja": "この実行は外部の内容を読んでから計画を変更しました。",
   "zh": "本次运行在阅读外部内容后更改了计划。"
- },
- "lines.self_change_notice": {
-  "en": "Line {line}: open matters changed. Before: {before}. After: {after}. To undo, ask Still to undo version {version} of this line, or use Undo. Long excerpts may be shortened; the full before and after remain in the line history.",
-  "ko": "맡긴 일 {line}의 남은 사항이 바뀌었어요. 변경 전: {before}. 변경 후: {after}. 되돌리려면 이 일의 {version}번 변경을 되돌려 달라고 하거나 되돌리기를 누르세요. 긴 내용은 줄여 표시하며 전체 내용은 이 일의 기록에 남아 있어요.",
-  "ja": "任せた仕事 {line} の未解決事項が変わりました。変更前：{before}。変更後：{after}。戻すには、この仕事のバージョン {version} を元に戻すよう頼むか、元に戻すを押してください。長い内容は省略されますが、全文は履歴に残っています。",
-  "zh": "委托事项 {line} 的待办事项已更改。更改前：{before}。更改后：{after}。要撤销，请让 Still 撤销此事项的版本 {version}，或点击撤销。较长内容可能缩略，完整内容保留在历史记录中。"
  },
  "lines.refused_line_invalid_end": {
   "ko": "오늘의 종료 시각을 시간대와 함께 정해 주세요.",
