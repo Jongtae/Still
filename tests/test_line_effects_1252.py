@@ -146,7 +146,7 @@ def test_failed_connector_change_counts_once(case):
     assert effects['unconfirmed_items'] == [{'operation': 'create_event', 'identity': 'cal', 'service': 'Calendar'}]
 
 
-def test_succeeded_browser_change_counts_as_sent_and_a_running_one_does_not(case):
+def test_succeeded_browser_change_counts_as_sent_and_a_running_one_as_unconfirmed(case):
     line, row = line_with_check(case)
     job = woken(case, row)
     url = {'url': 'https://shop.example/checkout'}
@@ -157,7 +157,12 @@ def test_succeeded_browser_change_counts_as_sent_and_a_running_one_does_not(case
     ])
     effects = case.service.preparations_service.line_effects(line)
     assert effects['sent'] == 1
+    assert effects['unconfirmed'] == 1, 'a change still in flight is unconfirmed, not sent'
+    assert effects['unconfirmed_items'] == [{'operation': 'browser_open', 'host': 'shop.example'}]
     assert case.service.preparations_service.line_effects_text(effects, account=True)
+    owner = case.store.job(case.owner)
+    stopped = case.service.preparations_service._line_stop(owner, {'line': line, 'scope': 'line'})
+    assert msg('lines.stopped_unconfirmed', count=1) in stopped['next_step']
 
 
 def test_a_code_run_send_counts_once_through_its_dispatch(case):
