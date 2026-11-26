@@ -1074,7 +1074,7 @@ class AgentService:
         if preparation_id is None:return None
         with (self.store.db() if db is None else nullcontext(db)) as db:
             row=db.execute('SELECT accepted_by,origin,standing_end FROM preparations WHERE id=?',(preparation_id,)).fetchone()
-        if (row is None or row['origin'] in (prep.ORIGIN_DREAM,prep.ORIGIN_DAY_PLAN,prep.ORIGIN_LINE_ACCOUNT)
+        if (row is None or row['origin'] in prep.STILL_SET_ORIGINS
                 or row['accepted_by'] not in prep.PAYMENT_STANDING):
             return 'payment_autonomy.changed'
         if row['standing_end'] is not None and self.preparations.clock() >= row['standing_end']:
