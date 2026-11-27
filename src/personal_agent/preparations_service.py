@@ -1189,10 +1189,20 @@ class PreparationsService:
 
     @staticmethod
     def check_following(row):
-        """The next condition check of a check row, or None when the run returns it to a pause."""
+        """The next condition check of a check row, or None when there is none.
+
+        None, as the scheduler's own settlement decides (``Preparations.settle``): the run returns the
+        row to a pause, it used the last permitted run (``run_count >= max_runs``), or the next check
+        would fall at or after the window's end (``until_at``).
+        """
         if row.get('run_return_state') and row['run_return_state']!=prep.STATE_SCHEDULED:
             return None
-        return row.get('check_next_at')
+        at,end,maximum=row.get('check_next_at'),row.get('until_at'),row.get('max_runs')
+        if at is None or (maximum is not None and int(row.get('run_count') or 0)>=int(maximum)):
+            return None
+        if end is not None and at>=end:
+            return None
+        return at
 
     def preparation_next_start(self, job):
         """#1269: when the next run of the schedule this run belongs to starts, for the plan's time.

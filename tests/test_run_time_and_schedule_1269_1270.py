@@ -140,3 +140,15 @@ def test_an_owners_run_now_keeps_the_upcoming_slot_as_its_next_start(case, retur
     else:
         assert start['at'] == row['due_at']
         assert prep.local_text(row['due_at'], 'UTC') in c.service.work_schedule_fact(run)
+
+
+def test_a_check_rows_last_permitted_run_has_no_next_check(case):
+    # Codex review on #1281: the scheduler ends a check row at max_runs or until_at, so no check follows.
+    from test_condition_checks_972 import prepared
+    c = case
+    row = prepared(c, max_runs=3)
+    base = {**row, 'run_return_state': None, 'check_next_at': row['until_at'] - 60, 'run_count': 1}
+    assert c.service.preparations_service.check_following(base) == row['until_at'] - 60
+    assert c.service.preparations_service.check_following({**base, 'run_count': 3}) is None
+    assert c.service.preparations_service.check_following({**base, 'check_next_at': row['until_at']}) is None
+    assert c.service.preparations_service.check_following({**base, 'run_return_state': prep.STATE_PAUSED}) is None
