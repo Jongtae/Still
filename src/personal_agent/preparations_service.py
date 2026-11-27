@@ -414,13 +414,14 @@ class PreparationsService:
                             if target['accepted_by']!=current['accepted_by']:
                                 raise not_run(prep.PreparationRefusal('replace_not_allowed'))
                             standing_end=target['standing_end']
-                            if target['accepted_by'] not in prep.PAYMENT_STANDING and not asked:
+                            if target['accepted_by'] in prep.PAYMENT_STANDING:
+                                if asked and line_id:
+                                    accepted_by=target['accepted_by']
+                                    accepted_from=target['accepted_from']
+                            elif not asked:
                                 # A replacement keeps a self-set row's standing unless the owner's own
                                 # words asked for this work, judged as a new schedule (#1259).
                                 accepted_by=target['accepted_by'] or prep.ACCEPTED_OWNER_WORK
-                            elif asked and line_id:
-                                accepted_by=target['accepted_by']
-                                accepted_from=target['accepted_from']
                         if line_id and prep.line_refusal(db,line_id):
                             raise not_run(prep.PreparationRefusal('line_inactive'))
                     row=service.preparations.create(kind=kind,goal=goal,due_at=due_at,timezone=timezone,recurrence=recurrence,

@@ -2039,9 +2039,14 @@ class Preparations:
                 if now + interval > row['until_at']:
                     raise PreparationRefusal('check_window')
                 updates = {'check_spec': json.dumps(spec, sort_keys=True)}
+                earlier = json.loads(row['self_change'] or '{}')
                 if old_spec is None:
                     # The receipt keeps the slot cadence so an undo returns the row to its timed runs.
                     self._check_admission(db, updates['check_spec'], row['id'])
+                    updates['every_seconds'] = interval
+                elif ('every_seconds' in earlier.get('after', {}) and not row['self_change_undone']
+                        and earlier.get('run_key') == job['request_key'].split('/', 1)[0]):
+                    # A later check change in the same run keeps the merged receipt's cadence current.
                     updates['every_seconds'] = interval
             elif operation == 'goal':
                 # #968: the run's own instruction for the next runs; the caller decided it may.

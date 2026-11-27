@@ -89,3 +89,18 @@ def test_a_first_check_needs_the_runs_own_window_row(case):
     assert not edit(c, other, work, CHECK).get('applied')
     assert current(c, other)['check_spec'] is None
 
+
+
+def test_a_first_check_changed_again_in_the_same_run_stays_undoable_to_the_timed_runs(case):
+    c = case
+    row, work = running(c, window_row(c))
+    proof_in(c, work, CHECK)
+    assert edit(c, row, work, CHECK)['applied']
+    again = {**CHECK, 'code': 'print("second")', 'every_seconds': 30}
+    proof_in(c, work, again)
+    assert edit(c, row, work, again)['applied']
+    assert current(c, row)['every_seconds'] == 30
+    finish(c, row)
+    c.preps.restore(row['id'])
+    restored = current(c, row)
+    assert (restored['check_spec'], restored['every_seconds'], restored['check_next_at']) == (None, 300, None)
