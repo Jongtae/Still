@@ -22,7 +22,7 @@ def store(tmp_path):
     return QuickStore(tmp_path / 'data')
 
 
-def add_work(store, work_id, blocker, *, created=1_700_000_000.0, tool='self_review'):
+def add_work(store, work_id, blocker, *, created=1_700_000_000.0, tool='self_review', kind=None):
     """A Work with owner text, and its event written the way ``Upkeep.finish`` stores it."""
     with store.db() as db:
         db.execute('INSERT INTO jobs(id,request_key,message,response,created) VALUES (?,?,?,?,?)',
@@ -30,6 +30,8 @@ def add_work(store, work_id, blocker, *, created=1_700_000_000.0, tool='self_rev
         db.execute('INSERT INTO messages(role,content,channel,created,job_id) VALUES (?,?,?,?,?)',
                    ('user', MESSAGE, 'web', created, work_id))
     detail = {'reason': 'correction', 'blocker': blocker}
+    if kind is not None:
+        detail['blocker_kind'] = kind
     if tool == 'self_review':
         Upkeep(store).finish(work_id, 'done', 1, 'recorded', detail, created, kind=KIND_SELF_REVIEW)
     else:
@@ -79,12 +81,31 @@ def test_groups_matching_wording_and_prints_no_owner_text(store):
     # The data folder works as well as the file.
     code, out = run_cli('--store', str(store.root))
     assert code == 0
-    assert '3 in 2 groups' in out and '2x the skill names a removed page' in out
+    assert '3 in 2 groups' in out and '2x [unknown] the skill names a removed page' in out
     assert '2023-11-1' in out and 'w1' in out and 'w2' in out
     assert 'not a self-review' not in out and 'w4' not in out
     for owner_text in (REQUEST, ANSWER, MESSAGE):
         assert owner_text not in out
-    assert all(set(row) == {'work_id', 'created', 'blocker'} for row in rows)
+    assert all(set(row) == {'work_id', 'created', 'kind', 'blocker'} for row in rows)
+
+
+def test_counts_by_kind_come_first_and_old_rows_are_unknown(store):
+    add_work(store, 'w1', 'Stored before kinds')
+    add_work(store, 'w2', 'Same note', kind='login')
+    add_work(store, 'w3', 'Same note', kind='routing')
+    add_work(store, 'w4', 'Another note', kind='routing')
+    add_work(store, 'w5', 'Same note', kind='routing')
+    add_work(store, 'w6', 'No kind fits', kind='')
+    add_work(store, 'w7', 'Not a shared kind', kind='made-up')
+    rows = blockers.read_blockers(store.path)
+    assert blockers.kind_counts(rows) == [('routing', 3), ('unknown', 3), ('login', 1)]
+    assert [(members[0]['kind'], [row['work_id'] for row in members]) for members in blockers.group(rows)] == [
+        ('routing', ['w5', 'w3']), ('routing', ['w4']),
+        ('unknown', ['w7']), ('unknown', ['w6']), ('unknown', ['w1']), ('login', ['w2'])]
+    code, out = run_cli('--store', str(store.path))
+    assert code == 0 and 'made-up' not in out
+    assert out.index('3  routing') < out.index('3  unknown') < out.index('1  login') < out.index('2x [routing] Same note')
+    assert '1x [login] Same note' in out and '1x [unknown] Stored before kinds' in out
 
 
 def test_forgotten_work_is_left_out(store):

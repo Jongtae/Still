@@ -5,11 +5,13 @@ Work's ``self_review`` tool event, already redacted when stored.  This reads the
 newest events of one named store with a single read-only query and prints that
 text, the Work id and the date.  Nothing else of the Work is read out: no
 request, answer or message.  Which blocker names a method in versioned text is
-the developer's choice; no wording rule decides it here.
+the developer's choice; no wording rule decides it here.  The cause kind is
+the one the self-review stored (#1290); a row without one is ``unknown``.
 """
 import json
 import sqlite3
 import sys
+from collections import Counter
 from contextlib import closing
 from datetime import datetime
 from pathlib import Path
@@ -18,10 +20,12 @@ from .paths import SRC
 
 if str(SRC) not in sys.path:
     sys.path.append(str(SRC))
-from personal_agent.owner_model import REVIEW_EVENT_TOOL, normalized  # noqa: E402
+from personal_agent.owner_model import BLOCKER_KINDS, REVIEW_EVENT_TOOL, normalized  # noqa: E402
 
 #: Newest tool events looked at: a rowid range, so the read never walks the whole table.
 SCAN_ROWS = 20000
+#: Listed for a row stored without a kind: older than #1290, or none the self-review could name.
+UNKNOWN_KIND = 'unknown'
 #: Seconds to wait for a writer's lock before giving up; the live store is never polled.
 BUSY_SECONDS = 1.0
 
@@ -50,7 +54,7 @@ def connect(path):
 
 
 def read_blockers(value, scan=SCAN_ROWS):
-    """``[{'work_id', 'created', 'blocker'}]``, newest first, from one query."""
+    """``[{'work_id', 'created', 'kind', 'blocker'}]``, newest first, from one query."""
     with closing(connect(store_path(value))) as db:
         rows = db.execute(QUERY, (int(scan), REVIEW_EVENT_TOOL)).fetchall()
     found = []
@@ -61,7 +65,9 @@ def read_blockers(value, scan=SCAN_ROWS):
             continue
         blocker = data.get('blocker') if isinstance(data, dict) else None
         if isinstance(blocker, str) and blocker.strip():
-            found.append({'work_id': work_id, 'created': created, 'blocker': _printable(blocker)})
+            kind = data.get('blocker_kind')
+            found.append({'work_id': work_id, 'created': created,
+                          'kind': kind if kind in BLOCKER_KINDS else UNKNOWN_KIND, 'blocker': _printable(blocker)})
     return found
 
 
@@ -71,20 +77,34 @@ def _printable(text):
 
 
 def group(rows):
-    """Rows with identical wording after case and spacing (and a final period), largest group first."""
+    """Rows of one kind with identical wording after case and spacing (and a final period).
+
+    Groups of the kind with the most rows come first, and within a kind the largest group.
+    """
     groups = {}
     for row in rows:
-        key = normalized(row['blocker']).rstrip('.。 ')
+        key = row['kind'], normalized(row['blocker']).rstrip('.。 ')
         groups.setdefault(key, []).append(row)
+    order = {kind: position for position, (kind, _count) in enumerate(kind_counts(rows))}
     # Stable sort: equal counts keep the newest-first order of ``rows``.
-    return sorted(groups.values(), key=len, reverse=True)
+    return sorted(groups.values(), key=lambda members: (order[members[0]['kind']], -len(members)))
+
+
+def kind_counts(rows):
+    """``[(kind, rows)]``, most rows first; ties keep the shared kinds' order, ``unknown`` last."""
+    counts = Counter(row['kind'] for row in rows)
+    return [(kind, counts[kind]) for kind in sorted((*BLOCKER_KINDS, UNKNOWN_KIND), key=lambda kind: -counts[kind])
+            if counts[kind]]
 
 
 def render(rows, scan=SCAN_ROWS):
     groups = group(rows)
     lines = [f'Self-review blockers: {len(rows)} in {len(groups)} groups (newest {scan} tool events)']
+    if rows:
+        lines.append('\nBy kind:')
+        lines.extend(f'    {count}  {kind}' for kind, count in kind_counts(rows))
     for members in groups:
-        lines.append(f"\n{len(members)}x {members[0]['blocker']}")
+        lines.append(f"\n{len(members)}x [{members[0]['kind']}] {members[0]['blocker']}")
         for row in members:
             created = row['created']
             day = 'undated' if created is None else datetime.fromtimestamp(created).date().isoformat()

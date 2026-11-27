@@ -1,0 +1,5 @@
+- tool-not-exposed: a capability the request needs was not offered to the assistant, and no offered tool covers it
+- login: sign-in friction of the software's own, not merely the owner being signed out
+- approval-boundary: an approval, accept or budget gate of the software stopped asked-for work, beyond the deliberate approval of each payment
+- routing: wrong routing, or an orchestration judgment of the software that stopped or discarded valid work, including a capability that was offered but not used and a promised later run or report that was lost
+- method-text: a method in a skill, tool guidance or the assistant's own instruction text was wrong or out of date

@@ -65,7 +65,9 @@ source checks above. The report retains its by-issue table.
 Reviewers establish that the task needs the blocked path, that the linked issue
 is open and current, and that the evidence shows the block. Static validation
 does not query GitHub, execute the cited code, or judge semantic relevance.
-The four kinds are:
+The kinds are shared with the self-review's `blocker_kind` (#1290):
+`src/personal_agent/prompts/blocker_kinds.md` defines them and a test keeps the
+row schema equal to it. As applied to this map:
 
 - `tool-not-exposed`: the AI needs a capability Still does not offer, and no
   offered tool covers it; for example the history capability requested in #31.
@@ -78,6 +80,10 @@ The four kinds are:
   decision model or completion/goal check) that stops or discards valid work,
   such as #767/#768. Scheduling defects that lose a promised watch report or
   end a watch early (#813/#814) also belong here.
+- `method-text`: a method in a skill, tool guidance or Still's own instruction
+  text is wrong or out of date and stops the realistic task (#202). The
+  `code_ref` and evidence rules above apply unchanged, for example the constant
+  that loads the text.
 
 The payment gate is a boundary note or `out-of-bounds-by-design`, never a
 blocker. Closed/merged fixes such as #761 are not current blockers. An open

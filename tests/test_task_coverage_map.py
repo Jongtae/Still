@@ -10,6 +10,7 @@ from unittest.mock import patch
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / 'evals'))
 from agentos_eval import coverage, cli, report  # noqa: E402
+from personal_agent.owner_model import BLOCKER_KINDS  # noqa: E402
 
 
 def write_json(path, data):
@@ -385,6 +386,13 @@ class CoverageTests(unittest.TestCase):
         self.assertNotIn('scenario:', cells[4])
         line = next(line for line in lines if line.startswith(f"| {untried['id']} |"))
         self.assertEqual(line.split('|')[4].strip(), 'none')
+
+    def test_row_schema_blocker_kinds_are_the_self_review_kinds(self):
+        row = json.loads((coverage.SCHEMA_ROOT / 'rows.schema.json').read_text(encoding='utf-8'))['properties']['rows']['items']
+        optional = row['properties']['blocker']['anyOf'][0]
+        blocked = row['allOf'][0]['then']['properties']['blocker']
+        for schema in (optional, blocked):
+            self.assertEqual(tuple(schema['properties']['kind']['enum']), BLOCKER_KINDS)
 
     def test_blocker_work_list_groups_kinds_and_issues_by_row_count(self):
         for code, kind, issue in [('4', 'login', '#900'), ('5', 'login', '#900'),

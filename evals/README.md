@@ -610,7 +610,7 @@ affected.
 
 ## Self-review blockers (#1277)
 
-`PYTHONPATH=src:evals python -m agentos_eval blockers --store <data folder or quickstart.db>` lists the blockers recent self-reviews recorded, as candidate targets for revising versioned method text (#1275). It opens the named store read-only and runs one bounded query (`--scan` newest tool events, default 20000). It prints only the stored blocker text, Work ids and dates, grouped when the wording matches apart from case, spacing and a final period; Works with a forgotten turn are left out; a stored blocker is not rechecked against facts forgotten from Memory. Run it once, not on a timer, and keep its output off the repository.
+`PYTHONPATH=src:evals python -m agentos_eval blockers --store <data folder or quickstart.db>` lists the blockers recent self-reviews recorded, as candidate targets for revising versioned method text (#1275). It opens the named store read-only and runs one bounded query (`--scan` newest tool events, default 20000). It prints the counts by cause kind first (the self-review's `blocker_kind`, one of the kinds in `src/personal_agent/prompts/blocker_kinds.md`; `unknown` for a row stored without one), then only the stored blocker text, Work ids and dates, grouped within a kind when the wording matches apart from case, spacing and a final period; Works with a forgotten turn are left out; a stored blocker is not rechecked against facts forgotten from Memory. Run it once, not on a timer, and keep its output off the repository.
 
 ## Task coverage map
 
@@ -625,9 +625,9 @@ judgment cases or docs), but cannot cite U/I/P/L execution evidence. The per-row
 table separates these links from execution evidence. The **Still-side blockers**
 section is the C16 work list: rows grouped by blocker kind and by issue, ordered
 by row count, with code references. Counts describe the map, not task success.
-The four blocker kinds are `tool-not-exposed`, `login`, `approval-boundary` and
-`routing`; routing includes Still orchestration judgments such as completion
-checks.
+The blocker kinds are `tool-not-exposed`, `login`, `approval-boundary`,
+`routing` and `method-text`, shared with the self-review (#1290); routing
+includes Still orchestration judgments such as completion checks.
 
 Adopted taxonomies require source pins and attribution. A taxonomy considered
 for later adoption needs only its id, name, status and a deferral reason

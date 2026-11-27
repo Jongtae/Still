@@ -46,7 +46,8 @@ observes (``enqueue_self_review``) - one row per Work.  The Judgment AI reads
 the owner's request, the answer excerpt, the orchestrator's evaluation
 verdicts and the owner's follow-up (or the observation), every fact redacted
 first, and returns at most one **blocker** (a cause only Still code can fix;
-kept as Evidence on the reviewed Work, redacted, and never filed anywhere)
+kept with its kind (#1290) as Evidence on the reviewed Work, redacted, and
+never filed anywhere)
 and, when it learned how to serve this owner better, explicit operations
 on working lessons. No text rule reads the owner's wording; nothing names a
 site, task or category.
@@ -87,6 +88,7 @@ import time
 import uuid
 from datetime import datetime
 
+from .decision import StructuredSchema
 from .memory_service import _PROFILE_ROWS_CAP, PROFILE_SECTION_CHARS, MemoryService
 from .owner_forget import FORGOTTEN, MEMORY_PREFIX, MIGRATE, OwnerForget
 from .prompt_files import prompt
@@ -386,7 +388,13 @@ DROP TABLE owner_model_upkeep_v1;
     return True
 
 
-REVIEW_QUESTION = prompt('owner_model_review').format(max_ops=MAX_LESSON_OPS, point_chars=POINT_CHARS)
+#: #1290: the kinds of a software blocker and what each means, one ``- <kind>: <definition>`` line each.  The
+#: self-review question and schema read it, and the development blocker schema is tested equal to it.
+BLOCKER_KIND_LINES = prompt('blocker_kinds').splitlines()
+BLOCKER_KINDS = tuple(line.removeprefix('- ').partition(':')[0] for line in BLOCKER_KIND_LINES)
+REVIEW_QUESTION = prompt('owner_model_review').format(
+    max_ops=MAX_LESSON_OPS, point_chars=POINT_CHARS,
+    blocker_kinds='; '.join(line.removeprefix('- ') for line in BLOCKER_KIND_LINES))
 REVIEW_QUESTION += ('\n\nThe shared Voice instructions below apply to change, which is shown to the owner. '
                     'The internal lessons and blocker keep their formats above.\n\n' + prompt('voice'))
 
@@ -396,14 +404,17 @@ LESSON_OP = {'type': 'object', 'additionalProperties': False,
              'required': list(_LESSON_FIELDS)}
 _LESSONS_SCHEMA = {'type': 'array', 'items': LESSON_OP}
 
-REVIEW_SCHEMA = {'type': 'object', 'additionalProperties': False,
-                 'properties': {'lessons': _LESSONS_SCHEMA, 'change': {'type': 'string'},
-                                'blocker': {'type': 'string'}},
-                 'required': ['lessons', 'change', 'blocker']}
+#: ``blocker_kind`` is only a label: an answer without it is still a review (#1290).
+REVIEW_SCHEMA = StructuredSchema(
+    {'type': 'object', 'additionalProperties': False,
+     'properties': {'lessons': _LESSONS_SCHEMA, 'change': {'type': 'string'}, 'blocker': {'type': 'string'},
+                    'blocker_kind': {'type': 'string', 'enum': [*BLOCKER_KINDS, '']}},
+     'required': ['lessons', 'change', 'blocker', 'blocker_kind']},
+    optional=('blocker_kind',))
 
 
 def review_shape(data):
-    """Types only; each operation's meaning is checked by ``validate_lessons``."""
+    """Types only; operations are checked by ``validate_lessons`` and the kind by ``validate_blocker_kind``."""
     return (isinstance(data.get('lessons'), list)
             and all(isinstance(data.get(name), str) for name in ('change', 'blocker')))
 
@@ -475,6 +486,18 @@ def _lesson_op_refusal(item, current, texts, seen_ids, seen_adds, known, request
     if text == request:
         return 'request'
     return 'profile-fact' if text in known else None
+
+
+def validate_blocker_kind(data, blocker):
+    """``(kind, dropped)`` of a review's ``blocker_kind`` (#1290): the judgment's own choice, never read from text.
+
+    An unknown kind is dropped and the blocker kept; without a kept blocker the kind is empty.
+    """
+    kind = data.get('blocker_kind', '') if isinstance(data, dict) else ''
+    if kind != '' and kind not in BLOCKER_KINDS:
+        # The value is arbitrary model text, so Evidence records only that it was refused.
+        return '', [{'note': 'blocker_kind', 'reason': 'kind'}]
+    return (kind if blocker else ''), []
 
 
 def validate_lessons(data, current, known=frozenset(), request=''):
@@ -1845,7 +1868,9 @@ class Upkeep:
         known, _pending = self.known_values(MEMORY_OWNER, job['id'])
         ops, change, blocker, dropped = validate_lessons(
             data, {ident: item['text'] for ident, item in current.items()}, known, request=request)
-        detail.update(lessons=None, blocker=None, dropped=self._lesson_evidence_drops(dropped), stopped=None)
+        kind, refused_kind = validate_blocker_kind(data, blocker)
+        detail.update(lessons=None, blocker=None, blocker_kind=kind,
+                      dropped=self._lesson_evidence_drops(dropped) + refused_kind, stopped=None)
         if blocker:
             # Evidence on the reviewed Work only: redacted like every fact, never filed anywhere.
             detail['blocker'] = judgments.redact(blocker)[:MAX_TEXT_CHARS]

@@ -127,7 +127,8 @@
                       "tool-not-exposed",
                       "login",
                       "approval-boundary",
-                      "routing"
+                      "routing",
+                      "method-text"
                     ]
                   },
                   "detail": {
@@ -305,7 +306,8 @@
                         "tool-not-exposed",
                         "login",
                         "approval-boundary",
-                        "routing"
+                        "routing",
+                        "method-text"
                       ]
                     },
                     "detail": {
