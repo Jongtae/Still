@@ -3204,7 +3204,22 @@ class PreparationsService:
         if effects['unconfirmed']:
             next_step+=' '+msg('lines.stopped_unconfirmed',count=effects['unconfirmed'])
         day=service.preparations.budget_day(service.preparations.clock())
-        return {**el.public_brief(after,day=day),'scope':scope,'changed':changed,'effects':effects,'next_step':next_step}
+        result={**el.public_brief(after,day=day),'scope':scope,'changed':changed,'effects':effects}
+        if scope=='line' and changed and not steered:
+            # #1272: the line promised a report at its end; the owner's AI that ended it gives that report in this
+            # reply, from what the periodic account reads (the brief, the line's outcomes, its recorded changes).
+            # No new run: a stopped line's rows stay stopped and nothing more is carried out.  A run of the line
+            # that stops it on the owner's steer is a run of a stopped line, whose reply is not delivered.
+            result['closing_account']=self.line_closing_account(after)
+            next_step+=' '+msg('lines.stopped_report')
+        return {**result,'next_step':next_step}
+
+    def line_closing_account(self, brief):
+        """#1272: the facts of a line's closing report: its brief, its outcomes and its recorded changes."""
+        outcomes=self.line_outcomes(brief['line_id'])
+        text=self.current_line_text(brief)+'\n'+el.outcomes_text(outcomes,self.service.home_zone())
+        effects=self.line_effects_text(self.line_effects(brief['line_id']),account=True)
+        return text+('\n'+effects if effects else '')
 
     def _line_restart(self, job, args):
         service=self.service
