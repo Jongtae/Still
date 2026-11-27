@@ -114,6 +114,8 @@ MAX_ACKNOWLEDGEMENT_CHARS = 300
 CONVERSATION_CHARS = GOAL_CONVERSATION_CHARS
 #: #240: the bound of the plan's and the goal judgment's ``awaiting_owner`` fact.
 AWAITING_OWNER_CHARS = 600
+#: #1270: the schedule fact the goal judgment reads (a run fact, or the schedules a Work set up).
+SCHEDULE_CHARS = 2000
 #: #980: the earlier exchange the follow-up judgment linked this message to.
 CONTINUES_CHARS = 1200
 #: #1084: what the plan is told when a turn of the followed-up topic is sent.
@@ -1022,8 +1024,14 @@ class Orchestration:
     def __init__(self, judgments, catalogue, *, request, conversation='', continues='', sections=None, budget=None,
                  record=None, state=None, work_id=None, policy=None, qualifying=None, can_ask_location=False,
                  can_preview=False, attachments='', awaiting_conversation='', awaiting_work=None, previous_route='',
-                 effort_timing='', linked_turns=()):
+                 effort_timing='', linked_turns=(), run_time=None, schedule=None):
         self.judgments, self.catalogue = judgments, catalogue
+        #: #1269: a reader of the seconds a scheduled run has before its next run is due (None: not a
+        #: scheduled run), read at each plan call so the plan weighs model and effort against it.
+        self.run_time = run_time
+        #: #1270: a reader of the schedule this Work runs or set up ('' for none), read at each goal
+        #: judgment so a later run's part is not counted as this Work's gap.
+        self.schedule = schedule
         # #1084: per ``conversation`` turn, whether it belongs to the followed-up topic.
         self.linked_turns = [bool(flag) for flag in linked_turns]
         self.previous_route = str(previous_route or '')
@@ -1225,6 +1233,18 @@ class Orchestration:
         except Exception:
             return ''
 
+    @staticmethod
+    def _read_optional(reader):
+        """A caller-supplied optional reader's value; None when absent or unreadable."""
+        try:
+            return reader() if callable(reader) else None
+        except Exception:
+            return None
+
+    def _schedule_text(self):
+        """#1270: the schedule this Work runs or set up, redacted and bounded; '' when none or unreadable."""
+        return self._redact(str(self._read_optional(self.schedule) or ''))[:SCHEDULE_CHARS]
+
     def _awaiting_text(self):
         """#240: the plan's ``awaiting_owner`` fact: what waits in this conversation and what this Work left."""
         parts = [f'in this conversation: {self.awaiting_conversation}' if self.awaiting_conversation else '',
@@ -1300,6 +1320,11 @@ class Orchestration:
                  'tool_descriptions': tools_text,
                  'budget': self._budget_text(),
                  'previous_attempts': self._redact(self._attempts_text())}
+        run_time = self._read_optional(self.run_time)
+        if run_time is not None:
+            # #1269: only for a scheduled run, so any other plan asks exactly as before.
+            facts['run_time_available'] = (f'{int(run_time)} seconds until the next scheduled run of this work '
+                                           'is due (or, for its last run, until its schedule ends)')
         if self._linked_turn_sent(facts['recent_conversation']):
             # #1084: only when a linked line was sent, so a plan without a recorded link asks exactly as before.
             facts['conversation_topics'] = LINKED_NOTE
@@ -1323,6 +1348,8 @@ class Orchestration:
             context = self._plan_context(candidates)
         facts = dict(context.facts)
         facts.pop('budget', None)
+        # #1269: it moves with the clock, like the budget's seconds.
+        facts.pop('run_time_available', None)
         if 'current_context' in facts:
             facts['current_context'] = without_moving_clock(facts['current_context'])
         return {'facts': facts, 'question': self._question(), 'schema': self._schema(candidates)}
@@ -1789,6 +1816,7 @@ class Orchestration:
                                      if self.turns is not None else {}),
                                   **({'attachments': self.attachments} if getattr(self, 'attachments', '') else {}),
                                   **({'awaiting_owner': awaiting} if (awaiting := self._work_awaiting()) else {}),
+                                  **({'schedule': schedule} if (schedule := self._schedule_text()) else {}),
                                   **({'recorded_effects': tuple(effects),
                                       'may_rejudge': lambda: second_judgment_allowed(self.judgments, self.budget)}
                                      if effects else {}))

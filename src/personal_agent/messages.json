@@ -1949,6 +1949,12 @@
   "ja": "次回予定: {due}",
   "zh": "下次运行时间：{due}"
  },
+ "preparations.run_finish_before": {
+  "ko": "; 이번 실행의 결과는 다음 실행이 시작되는 {due} 전에 나와야 쓸모가 있어요",
+  "en": "; this run's result is useful only if it is ready before the next run starts at {due}",
+  "ja": "；今回の結果は次回の実行が始まる{due}より前に出てこそ役に立ちます",
+  "zh": "；本次运行的结果须在下次运行开始的{due}之前得出才有用"
+ },
  "preparations.run_last": {
   "ko": "이번이 마지막 실행이에요",
   "en": "This is the last run",

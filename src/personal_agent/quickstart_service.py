@@ -5784,7 +5784,11 @@ class AgentService:
                              can_preview=self.can_preview(job) and 'read_checkpoint_resume' not in job,
                              # #240: what waits for the owner, for the plan call and this Work's goal judgment.
                              awaiting_conversation=self.awaiting_in_conversation(job),
-                             awaiting_work=lambda:om.awaiting_owner_text(om.work_awaiting_owner(self.store,job['id'])))
+                             awaiting_work=lambda:om.awaiting_owner_text(om.work_awaiting_owner(self.store,job['id'])),
+                             # #1269: a scheduled run's time until its next run, for the plan's model and effort.
+                             run_time=lambda:self.preparations_service.run_seconds_available(job),
+                             # #1270: the schedule this Work runs or set up, read when its goal is judged.
+                             schedule=lambda:self.preparations_service.schedule_fact(job))
         orchestration.read_snapshot = read_snapshot
         orchestration.read_progress = self.read_checkpoint_note(job)
         if orchestration.read_progress:

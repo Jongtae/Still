@@ -1139,12 +1139,12 @@ class PreparationsService:
             local=lambda slot:prep.local_text(slot,row['timezone'])
             recurrence=row.get('recurrence')
             until_at=row.get('until_at')
-            if recurrence==prep.RECURRENCE_WINDOW:
-                following=prep.next_window_slot(row,row['due_at'])
-            else:
-                following=prep.next_due(row['due_at'],row['timezone'],recurrence,row['due_at'],row.get('rule_start'),count)
+            following=self.following_run(row)
             schedule=(msg('preparations.run_next',due=local(following)) if following is not None
                       else msg('preparations.run_last'))
+            if following is not None and not row.get('check_spec'):
+                # #1269: the next run bounds this one; the plan reads it in seconds (``run_seconds_available``).
+                schedule+=msg('preparations.run_finish_before',due=local(following))
             if row.get('check_spec'):
                 schedule=msg('checks.scheduled')
             if until_at is not None:
@@ -1175,6 +1175,57 @@ class PreparationsService:
         except Exception:
             LOG.info('preparation run fact unavailable job=%s',job.get('id'))
             return msg('preparations.run_fact')+'\n'+msg('preparations.own_limits')
+
+    @staticmethod
+    def following_run(row):
+        """When the run after the current one of ``row`` is due, by the scheduler's own slot functions; None for the last."""
+        if row.get('recurrence')==prep.RECURRENCE_WINDOW:
+            return prep.next_window_slot(row,row['due_at'])
+        return prep.next_due(row['due_at'],row['timezone'],row.get('recurrence'),row['due_at'],row.get('rule_start'),
+                             int(row['run_count']))
+
+    def run_seconds_available(self, job):
+        """#1269: the seconds this run of a preparation has before the next run is due, or (the last
+        run) before its schedule ends; None for a Work no preparation started or a row with neither.
+
+        A fact for the plan's choice of worker, model and effort, never a limit Still enforces.
+        """
+        service=self.service
+        preparation_id=prep.preparation_of(job.get('request_key'))
+        if not preparation_id or job.get('model')=='preparation':return None
+        try:
+            row=service.preparations.get(preparation_id)
+            if not row:return None
+            bound=self.following_run(row)
+            if bound is None:bound=row.get('until_at')
+            if bound is None:return None
+            return max(0,int(bound-service.preparations.clock()))
+        except Exception:
+            LOG.info('preparation run time unavailable job=%s',job.get('id'))
+            return None
+
+    def schedule_fact(self, job):
+        """#1270: the schedule this Work is a run of, or the schedules it set up, for its outcome judgment.
+
+        A run: its run fact (``preparation_run_fact``).  Any other Work: each active preparation it
+        created (a new row, or one replacing an earlier row), as its owner-readable schedule line.
+        '' when there is none, so a Work that set up nothing is judged exactly as before.
+        """
+        service=self.service
+        if prep.preparation_of(job.get('request_key')):
+            return self.preparation_run_fact(job)
+        try:
+            with service.store.db() as db:
+                rows=[dict(row) for row in db.execute(
+                    'SELECT * FROM preparations WHERE created_from=? AND state IN (?,?,?,?) ORDER BY created_at',
+                    (job['id'],*prep.ACTIVE_STATES))]
+            home=service.home_zone()
+            lines=[f"preparation {row['id']} ({row['state']}): {prep.schedule_text(row,home,'en')}" for row in rows]
+        except Exception:
+            LOG.info('schedule fact unavailable job=%s',job.get('id'))
+            return ''
+        if not lines:return ''
+        return ('This Work set up these schedules; Still starts each later run at its time:\n'+'\n'.join(lines))
 
     def preparation_history(self, job):
         """The only conversation a preparation's Work is shown (#659).
