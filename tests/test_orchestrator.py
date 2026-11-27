@@ -419,7 +419,9 @@ class EarlyPlanContinuity(Harness):
         self.assertEqual(self.turns, 3, 'one plan, one worker turn and one goal judgment')
 
     def test_cancel_settles_charges_and_audits_without_using_or_delivering_the_plan(self):
-        job, row = self.followup('cancel', status='running')
+        # #1261: Still's cancel reply ends the turn only when a Work was withdrawn (here a waiting one).
+        with mock.patch.object(self.service, 'cancel_focused_work', return_value=(True, 'Cancelled the earlier request.')):
+            job, row = self.followup('cancel', status='running')
         self.assertEqual(row['model'], 'continuity')
         self.assertEqual(row['relation_kind'], 'cancel')
         self.assertEqual(self.turns, 1, 'only the speculative plan spent a turn')

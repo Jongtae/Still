@@ -593,17 +593,30 @@ class WorkExecutor:
                         # The owner still needs to check the earlier uncertain effect.
                         run.reply_notice=UNKNOWN_EFFECT_RAN_CURRENT_NOTICE+'\n\n'
             elif relation==FOLLOWUP_CANCEL:
-                cancelled,run.response=service.cancel_focused_work(previous,run.connector_owner)
+                # #1261: a run Still started for a scheduled preparation is not withdrawn
+                # here: its row would stay scheduled.  Stopping, replacing or restarting the
+                # preparation is the owner's AI's work, through its own tools.
+                scheduled=prep.preparation_of(previous.get('request_key')) is not None
+                if scheduled:
+                    cancelled,run.response=False,msg('service.the_previous_request_is_already_running')
+                else:
+                    cancelled,run.response=service.cancel_focused_work(previous,run.connector_owner)
                 service.record_continuity(job['id'],previous['id'],relation,
                                        executed=cancelled,
                                        reason=None if cancelled else run.response)
-                if cancelled or ws.is_active(previous.get('status')):
+                if cancelled:
                     service.settle_early_judgment(run.early_intent)
                     return service.complete_continuity_turn(job,run.response)
                 # #1506 (live 2026-10-14): "cancel the reserved order and buy at 25,800" was read
-                # as withdrawing a Work that had already finished, so nothing ran.  With nothing
-                # of Still's to withdraw, the message runs as the owner's request; any effect it
-                # asks for stays behind the usual approvals.
+                # as withdrawing a Work that had already finished, so nothing ran.  #1261 (live
+                # 2026-11-27): "cancel the running scheduled run and start it again" was answered
+                # "not cancelled" while the earlier Work ran, and the restart was dropped.  When
+                # Still withdrew nothing, its refusal is never the whole answer: the message runs
+                # as the owner's request, the worker told what was not stopped and why; any
+                # effect it asks for stays behind the usual approvals.
+                run.response=''
+                run.related_work_id=previous['id']
+                run.retry_note=service.cancel_not_done_note(previous,scheduled=scheduled)
             else:
                 # Reference/correction changes how this Work relates to
                 # the previous one but does not replay it. Existing
