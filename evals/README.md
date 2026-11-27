@@ -570,6 +570,10 @@ affected.
 
 `lessons/` measures whether a lesson Still learned for an owner is still carried by later Works (model-free) and followed by them (opt-in judge). It reads a read-only copy of one owner's store and reports counts only; real data stays outside the repository. See [lessons/README.md](lessons/README.md). The judge runs only with an explicitly named route (#885).
 
+## Self-review blockers (#1277)
+
+`PYTHONPATH=src:evals python -m agentos_eval blockers --store <data folder or quickstart.db>` lists the blockers recent self-reviews recorded, as candidate targets for revising versioned method text (#1275). It opens the named store read-only and runs one bounded query (`--scan` newest tool events, default 20000). It prints only the stored blocker text, Work ids and dates, grouped when the wording matches apart from case, spacing and a final period; Works with a forgotten turn are left out; a stored blocker is not rechecked against facts forgotten from Memory. Run it once, not on a timer, and keep its output off the repository.
+
 ## Task coverage map
 
 `task-coverage/` pins public taxonomies and records each row's evidence class,
