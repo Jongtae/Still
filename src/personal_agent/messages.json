@@ -12826,6 +12826,30 @@
   "ja": "「{title}」を {end} までお預かりします。支払いは現在の自律決済設定に従います。今日の作業を止めるには「{title}を止めて」と言ってください。",
   "zh": "我会负责“{title}”直到 {end}。付款会遵循当前的自主付款设置。要停止今天的工作，请说“停止{title}”。"
  },
+ "payment_autonomy.run_allowed": {
+  "ko": "결제: 사장님의 자율 결제 설정에 따라 이 일의 실행은 주문·결제를 바로 보낼 수 있어요.",
+  "en": "Payments: runs of this work may send orders and payments under the owner's payment autonomy.",
+  "ja": "決済: オーナーの自律決済設定により、この作業の実行は注文・決済をそのまま送れます。",
+  "zh": "付款：按照主人的自主付款设置，这项工作的运行可以直接发送订单和付款。"
+ },
+ "payment_autonomy.run_approval": {
+  "ko": "결제: 자율 결제가 꺼져 있어 주문·결제마다 사장님 승인이 필요해요. 예약 실행은 승인을 물을 수 없어요.",
+  "en": "Payments: payment autonomy is off, so each order or payment needs the owner's approval, which a scheduled run cannot ask for.",
+  "ja": "決済: 自律決済がオフのため、注文・決済ごとにオーナーの承認が必要です。予約実行は承認を求められません。",
+  "zh": "付款：自主付款已关闭，每笔订单或付款都需要主人批准，而定时运行无法请求批准。"
+ },
+ "payment_autonomy.run_self_set": {
+  "ko": "결제: Still이 스스로 잡은 일이라 실행은 주문·결제를 보낼 수 없어요. 사장님이 대화에서 이 일을 직접 맡기면 사장님 권한의 일로 다시 잡혀요.",
+  "en": "Payments: Still set this work up on its own, so its runs cannot send orders or payments. When the owner asks for this work in conversation, it is set up again under the owner's standing.",
+  "ja": "決済: Still が自ら設定した作業のため、実行は注文・決済を送れません。オーナーが会話でこの作業を直接任せると、オーナーの権限の作業として設定し直されます。",
+  "zh": "付款：这是 Still 自行安排的工作，运行无法发送订单或付款。主人在对话中直接委托这项工作后，会以主人的权限重新安排。"
+ },
+ "payment_autonomy.run_standing_ended": {
+  "ko": "결제: 사장님이 맡긴 기간이 끝나 실행은 주문·결제를 보낼 수 없어요. 사장님이 다시 맡기면 이어져요.",
+  "en": "Payments: the period the owner entrusted has ended, so runs cannot send orders or payments until the owner entrusts it again.",
+  "ja": "決済: オーナーが任せた期間が終わったため、実行は注文・決済を送れません。オーナーが再び任せると続けられます。",
+  "zh": "付款：主人委托的期限已结束，运行无法发送订单或付款，主人再次委托后即可继续。"
+ },
  "payment_autonomy.standing_required": {
   "ko": "자율 결제는 켜져 있어요. 이 예약 작업에서 사용하려면 직접 맡겨 주셔야 해요. 이 일을 오늘 맡아 달라고 말해 주세요.",
   "en": "Payment autonomy is on. This scheduled run needs your authorization to use it. You can ask me to take over this line for today.",
