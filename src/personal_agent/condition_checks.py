@@ -14,7 +14,7 @@ import time
 from urllib.parse import unquote
 
 from . import preparations as prep
-from .api_credentials import MAX_STATE_BYTES, ApiCredentials, CredentialError, secret_state_values
+from .api_credentials import MAX_STATE_BYTES, ApiCredentials, CredentialError, secret_state_values, work_plain_values
 from .api_requests import ApiError
 from .code_run import APPROVAL_EXACT_LABEL, MAX_HOSTS, CodeRunError, CodeRunner, _arguments, _hostname, check_arguments_digest, read_run_file
 from .current_context import redact_known_secrets
@@ -166,6 +166,12 @@ def _redact(store, value):
     return redact_provenance_values(value, lambda item: redact_known_secrets(store, item))
 
 
+def _redact_arguments(store, value):
+    """#1265: a check's own code and hosts are checked against credentials, not against state values."""
+    from .current_context import redact_credentials
+    return redact_provenance_values(value, lambda item: redact_credentials(store, item))
+
+
 def parse(value, declared):
     try:
         args = json.loads(value) if isinstance(value, str) else value
@@ -188,7 +194,7 @@ def parse_for_store(store, value):
 
 def prove(store, work_id, args, interval):
     """Bind the same Work's successful call and the libraries it actually loaded."""
-    if _redact(store, args) != args:
+    if _redact_arguments(store, args) != args:
         raise prep.PreparationRefusal('check_credential')
     expected = check_arguments_digest(args['code'], args['hosts'], args['secrets'], args['timeout_seconds'])
     for event in reversed(store.task_events(work_id)):
@@ -412,11 +418,15 @@ class CheckRunner(CodeRunner):
         self.check_state_change = None
         self._check_file = None
         self.plan = {}
+        #: #1265: the Work-written plan strings, which the run's output need not hide.
+        self.work_plain = set()
 
     def _load_states(self, names, workdir, env):
         states = super()._load_states(names, workdir, env)
         if self.check_state:
-            original = ApiCredentials(self.store).read_check_state(*self.check_state, strict=True) or '{}'
+            credentials = ApiCredentials(self.store)
+            original = credentials.read_check_state(*self.check_state, strict=True) or '{}'
+            self.work_plain = set(credentials.check_work_plain(self.check_state[0]))
             self.plan = check_plan(original)
             if isinstance(self.approvals, CheckApprovals):
                 self.approvals.plan = self.plan
@@ -434,6 +444,7 @@ class CheckRunner(CodeRunner):
             text = read_run_file(path, MAX_STATE_BYTES)
             # The values this run wrote are redacted from its own output; unknown values withhold it.
             self._state_secrets(text, hashlib.sha256(original.encode()).digest(), scratch_secrets)
+            scratch_secrets.difference_update(self.work_plain)
             if text != original:
                 # #1126 review: a report-once state must not outlive a hit that was never handed off, so the
                 # state is only checked here and saved after the result settles.
@@ -449,6 +460,7 @@ class CheckRunner(CodeRunner):
             return scratch
         path, original = self._check_file
         self._state_secrets(read_run_file(path, MAX_STATE_BYTES), hashlib.sha256(original.encode()).digest(), scratch)
+        scratch.difference_update(self.work_plain)
         return None if self._state_unknown else scratch
 
     def _libraries(self, names, proposed):
@@ -566,9 +578,11 @@ class ConditionChecks:
                 text = json.dumps(merged, ensure_ascii=False, separators=(',', ':'), allow_nan=False)
                 if not _state_acceptable(text):
                     raise ValueError
-                state_secrets = secret_state_values(text)
+                # #1265: what this Work writes is its own plan, not a secret it was kept from.
+                work_plain = work_plain_values(patch, text, credentials.check_work_plain(check_id))
+                state_secrets = secret_state_values(text, work_plain)
                 keys = [redact_known_secrets(self.store, key, extra_values=state_secrets) for key in sorted(patch)]
-                sealed = credentials.seal_check_state(check_id, digest, text)
+                sealed = credentials.seal_check_state(check_id, digest, text, work_plain)
             except CredentialError:
                 raise not_run(ToolError(msg('checks.update_unsaved'), 'check_state_unsaved')) from None
             except (ValueError, RecursionError):
@@ -735,7 +749,7 @@ class ConditionChecks:
         args = spec['arguments']
         if spec.get('scrubbed'):
             return {'pause': 'credential'}
-        cleaned = _redact(self.store, args)
+        cleaned = _redact_arguments(self.store, args)
         if cleaned != args:
             scrubbed = {**spec, 'arguments': cleaned, 'libraries': {}, 'scrubbed': True}
             return {'pause': 'credential', 'scrubbed_spec': scrubbed}

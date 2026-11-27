@@ -427,6 +427,21 @@ REDACTION_STATE = threading.local()
 _REDACTION_REVISIONS = 4
 
 
+def encrypted_credential_values(store):
+    """#1265: the encrypted API credentials' values alone, without any run or check state's."""
+    from .api_credentials import ApiCredentials, CredentialError, PREFIX
+    reader = getattr(store, 'secret_items', None)
+    records = reader(PREFIX) if callable(reader) else {}
+    if not records:
+        return ()
+    credentials = ApiCredentials(store)
+    try:
+        cipher = credentials._cipher()
+    except Exception:
+        raise CredentialError() from None
+    return tuple(credentials.values(records, cipher))
+
+
 def encrypted_secret_values(store, *, fresh=False):
     """Encrypted slot values for the existing secret redaction boundary.
 

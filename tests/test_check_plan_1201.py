@@ -263,13 +263,13 @@ def test_tool_result_and_work_evidence_keep_only_redacted_keys_and_size(keyed):
     runtime.run_agent(caps.adapter, CFG, '', [{'role': 'user', 'content': 'Update the check'}], '', caps, record)
     results = [json.loads(message['content']) for message in script.bodies[1]['messages'] if message['role'] == 'tool']
     result, = results
-    assert result['keys'].count('[redacted]') == 2 and 'plan' in result['keys']
+    # #1265: a stored secret used as a key stays redacted; the values the Work wrote are its own plan.
+    assert result['keys'].count('[redacted]') == 1 and 'plan' in result['keys'] and fresh in result['keys']
     assert result['bytes'] == len(saved(c, row).encode())
     assert json.loads(saved(c, row)) == patch
 
     events = c.store.task_events(work_id)
     event, = [event for event in events if event['tool'] == ACTION and event['status'] == 'succeeded']
     assert event['trace']['evidence'] == {'keys': result['keys'], 'bytes': result['bytes']}
-    for value in (SECRET, fresh, alternate):
-        assert value not in json.dumps(results)
-        assert value not in json.dumps(events)
+    assert SECRET not in json.dumps(results)
+    assert SECRET not in json.dumps(events)
