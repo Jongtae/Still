@@ -162,6 +162,27 @@ The adopt-or-not gate for a revision of versioned method text (a bundled skill, 
 - Noise, per split, is the larger of the two arms' max - min of the per-epoch split mean (the spread rule of `continuity.py`). It is a descriptive bound, not a significance test.
 - Cases with `source: local` are reported as `owner_store_check` and never decide.
 
+## Versioned-text revision candidates (`agentos_eval/revise.py`, #1283)
+
+Propose and compose for the #1275 loop (adapted from Harness², arXiv 2610.14224). It writes candidate revisions of one versioned text and records one experience entry per comparison. It never edits repository text: adopting a candidate is a reviewed PR.
+
+```
+PYTHONPATH=src:evals python -m agentos_eval revise propose --target <repo path under src/> [--lines A-B] \
+    --cause-kind blocker|regression --cause-source <Work id or scenario id> --cause-file <text file> \
+    --proposer <provider/model | subscription-cli:codex[:<model>[:<effort>]]> [--seed <seed>] [--compose] \
+    [--out <folder>] [--experience <folder>] [--prior 8]
+PYTHONPATH=src:evals python -m agentos_eval revise record --candidates <folder> --comparison <compare.json> [--experience <folder>]
+```
+
+- **Target**: one file under `src/` (a bundled skill, a module holding tool guidance or a prompt section), optionally a 1-based inclusive line range. Its digest is `arm_compare.text_digest` of exactly that text. Files under `evals/` or `tests/` (scenarios, judges, rubrics, the adoption rule, tolerances) are never a target.
+- **Cause**: a kind (`blocker`: the stored, already redacted text `agentos_eval blockers` printed; `regression`: a developer-written failure statement), a source id and the text. Only the text reaches the proposer; a cause that contains a scenario id (rubric or any world) is refused.
+- **Proposer input** is exactly `{target_path, lines, base_digest, text, cause, prior}`. `prior` is the earlier experience for the same target path, newest entry first, at most `--prior` entries, each candidate projected to `{candidate_digest, scope, summary, cause, verdict, adopted}`. `adopted` is true when that candidate's digest is the current text's digest. Scenario ids, settings, verdict reasons, measures and tolerances are left out.
+- **Reply**: JSON `{"candidates": [{"scope", "path", "text", "summary"}]}`, at most one `general` and one `scoped`. Refused and listed in `refused.json` (without text): a reply that is not that object or has other keys (the whole reply), and a candidate with other keys, a path other than the target, a repeated scope or a third candidate, empty or unchanged text, an empty summary, or text naming a scenario id.
+- **Compose** (`--compose`, only when both a general and a scoped candidate were accepted): one more call with the same input plus `candidates` (their scope, summary and text). The reply holds one candidate with scope `composed`, under the same refusals. It records its parents' digests and is a new arm: it is compared on its own and never takes its parents' verdicts.
+- **Output folder** (default `$AGENTOS_EVAL_HOME/revisions/<target slug>/<time>-<base digest 8>/`, refused inside the repository): `<label>.txt` (the revised text), `<label>.json` (`revision-candidate/1`: label, scope, target_path, lines, base_digest, candidate_digest, summary, cause, proposer, parents), `refused.json`, `manifest.json` (`revision-candidates/1`, including the proposer calls and their observed usage).
+- **Experience entry** (`revise record`; one JSON file per comparison under `$AGENTOS_EVAL_HOME/experience/<target slug>/`, never owner Memory; refused inside the repository): `revision-experience/1` with recorded_at, target_path, lines, base_digest, cause, proposer, settings, scenario_ids, measure target and tolerances, candidates (label, scope, candidate_digest, summary, parents, verdict, reasons) and cost (proposer calls and each compared arm's cost). The comparison is a `compare_versioned_text` result (`arm-compare/1`); its baseline must carry the base digest and every compared label must match a candidate's digest. A candidate the comparison did not include is `not_compared`.
+- Tests inject the transport; the command makes at most two model calls and none when a reply is refused.
+
 ## Action sandbox: world scenarios (`sweep --world`, #484)
 
 A world scenario lets a real AI finish outward actions: writing to the owner's own space, sending and paying. It acts against a **simulated world** with state-based tests, never a live service. The world is AppWorld: nine simulated everyday apps, with tests that check the final app databases. It reaches Still the way the owner's own tools do, as **one owner-confirmed stdio MCP server**. Every call is decided by Still (`owner_mcp`, `codex_permission_hook`).
