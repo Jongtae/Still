@@ -7,6 +7,7 @@
     python -m agentos_eval report --log <eval log>
     python -m agentos_eval budget
     python -m agentos_eval blockers --store <data folder or quickstart.db>
+    python -m agentos_eval revise propose --target <src file> --cause-kind <kind> --cause-source <id> --cause-file <file> --proposer <model>
 
 Run from the ``evals`` folder (or with it on ``PYTHONPATH``).  ``sweep`` and
 ``report`` need the eval extra (``evals/requirements.txt``); a ``--world``
@@ -14,6 +15,7 @@ sweep needs no Inspect or judge, only the world's own package. Coverage
 validation uses the optional schema-validation extra; the rest is standard library.
 """
 import argparse
+import asyncio
 import json
 import os
 import subprocess
@@ -21,7 +23,7 @@ import sys
 import threading
 import time
 from concurrent.futures import ThreadPoolExecutor
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 
 from . import scenarios as scenario_module
@@ -412,6 +414,45 @@ def cmd_blockers(args):
     print(blockers.render(rows, args.scan))
 
 
+def cmd_revise(args):
+    from . import revise
+
+    experience = args.experience if args.experience is not None else eval_home() / 'experience'
+    try:
+        if args.action == 'record':
+            comparison = json.loads(args.comparison.expanduser().read_text(encoding='utf-8'))
+            recorded_at = datetime.now(timezone.utc).strftime('%Y-%m-%dT%H:%M:%SZ')
+            entry = revise.experience_entry(args.candidates, comparison, recorded_at=recorded_at)
+            print(revise.record_experience(entry, experience))
+            return
+
+        target = revise.load_target(args.target, args.lines)
+        cause = {'kind': args.cause_kind, 'source': args.cause_source,
+                 'text': args.cause_file.expanduser().read_text(encoding='utf-8')}
+        out = revise.candidate_folder(target, args.out)
+        forbidden = {scenario['id'] for scenario in scenario_module.load()}
+        prior = revise.read_experience(experience, target['path'], limit=args.prior)
+        generate, settings, close = revise.make_generate(args.proposer, seed=args.seed)
+        try:
+            result = asyncio.run(revise.propose(target, cause, generate, experience=prior, forbidden=forbidden,
+                                                compose=args.compose, limit=args.prior))
+        finally:
+            close()
+        print(revise.write_candidates(result, target, cause, out, settings=settings))
+        for candidate in result['candidates']:
+            print(f"{candidate['label']} {candidate['candidate_digest']}")
+        print(f"Refused: {len(result['refused'])}")
+    except Exception as exc:
+        raise SystemExit(str(exc)) from None
+
+
+def _revision_lines(value):
+    first, separator, last = value.partition('-')
+    if not separator or not first.isdecimal() or not last.isdecimal():
+        raise argparse.ArgumentTypeError('--lines must be A-B (1-based, inclusive)')
+    return int(first), int(last)
+
+
 def cmd_judgments(args):
     from . import judgments
     if args.action == 'plan':
@@ -636,6 +677,24 @@ def main(argv=None):
     listed = sub.add_parser('blockers', help='list recent self-review blockers, read-only (#1277)')
     listed.add_argument('--store', required=True, help='Still data folder or its quickstart.db; no default')
     listed.add_argument('--scan', type=int, default=20000, help='newest tool events to look at (default 20000)')
+    revision = sub.add_parser('revise', help='propose versioned-text candidates or record a comparison (#1283)')
+    revision_actions = revision.add_subparsers(dest='action', required=True)
+    proposing = revision_actions.add_parser('propose')
+    proposing.add_argument('--target', type=Path, required=True)
+    proposing.add_argument('--lines', type=_revision_lines)
+    proposing.add_argument('--cause-kind', choices=('blocker', 'regression'), required=True)
+    proposing.add_argument('--cause-source', required=True)
+    proposing.add_argument('--cause-file', type=Path, required=True)
+    proposing.add_argument('--proposer', required=True)
+    proposing.add_argument('--seed')
+    proposing.add_argument('--compose', action='store_true')
+    proposing.add_argument('--out', type=Path)
+    proposing.add_argument('--experience', type=Path)
+    proposing.add_argument('--prior', type=int, default=8)
+    recording = revision_actions.add_parser('record')
+    recording.add_argument('--candidates', type=Path, required=True)
+    recording.add_argument('--comparison', type=Path, required=True)
+    recording.add_argument('--experience', type=Path)
     judgments = sub.add_parser('judgments', help='measure shipped judgments (#42)')
     actions = judgments.add_subparsers(dest='action', required=True)
     from .judgments import DEFAULT_CASES
@@ -694,7 +753,8 @@ def main(argv=None):
         return 0
     handler = {'snapshot': cmd_snapshot, 'scenarios': cmd_scenarios, 'sweep': cmd_sweep, 'report': cmd_report,
                'p1-report': cmd_p1_report, 'budget': cmd_budget, 'judgments': cmd_judgments, 'progress-forms': cmd_progress_forms, 'continuity': cmd_continuity,
-               'coverage': cmd_coverage, 'recall': cmd_recall, 'blockers': cmd_blockers}[args.command]
+               'coverage': cmd_coverage, 'recall': cmd_recall, 'blockers': cmd_blockers,
+               'revise': cmd_revise}[args.command]
     return handler(args) or 0
 
 

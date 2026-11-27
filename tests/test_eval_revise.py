@@ -154,6 +154,7 @@ def test_at_most_one_general_and_one_scoped_with_digests(target):
     (cand('general', 'line one\nline two\nline three\n'), 'text'),
     (cand('general', f'see {SCENARIO}\n'), 'scenario'),
     (cand('general', 'x\n', summary=''), 'summary'),
+    (cand('general', 'x\n', summary=f'fixes {SCENARIO}'), 'scenario'),
     (cand('composed', 'x\n'), 'scope'),
 ])
 def test_a_candidate_touching_anything_but_the_target_text_is_refused(target, bad, reason):
