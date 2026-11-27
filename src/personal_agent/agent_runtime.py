@@ -492,7 +492,7 @@ SCHEDULE_PREPARATION_ARGUMENTS={
   'judge in the Work and let the check carry out the plan\'s conditions between runs.'),
  'replaces':('The id (from settings_read preparations) of an active preparation this one takes the place of, when the owner changes what an existing watch or schedule does (another target, a new plan, a different time) (#766). '
   'In a Work the owner started, Still stops it once this one is scheduled, so the two never run side by side and the new one need not wait for the old to end; say in your answer what was stopped. '
-  'A scheduled run the owner steered may replace its own preparation this way. Omit it for an additional preparation.'),
+  'A scheduled run the owner steered may replace its own preparation this way. When the owner asks for work Still set up on its own (its payment line in settings_read says so), replace it: the replacement takes the owner\'s standing. Omit it for an additional preparation.'),
  'line':('The id of the entrusted line (entrusted_line) this preparation does the work of (#798): the line you opened for a '
   'continuing responsibility, or an existing one when the owner starts the same work again; continue it instead of opening '
   'another. A replacement keeps its line by itself. After you read a line in this Work, say here whether the preparation continues it (its id) or is separate work (none).'),

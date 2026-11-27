@@ -1048,12 +1048,25 @@ class AgentService:
         if preparation_id is None:return None
         with (self.store.db() if db is None else nullcontext(db)) as db:
             row=db.execute('SELECT accepted_by,origin,standing_end FROM preparations WHERE id=?',(preparation_id,)).fetchone()
-        if (row is None or row['origin'] in prep.STILL_SET_ORIGINS
-                or row['accepted_by'] not in prep.PAYMENT_STANDING):
+        return self._row_standing_refusal(row)
+
+    def _row_standing_refusal(self, row):
+        """#1262: the one standing rule, shared by the payment gate and what runs and Settings are told."""
+        row=dict(row) if row is not None else None
+        if (row is None or row.get('origin') in prep.STILL_SET_ORIGINS
+                or row.get('accepted_by') not in prep.PAYMENT_STANDING):
             return 'payment_autonomy.changed'
-        if row['standing_end'] is not None and self.preparations.clock() >= row['standing_end']:
+        if row.get('standing_end') is not None and self.preparations.clock() >= row['standing_end']:
             return 'payment_autonomy.standing_required'
         return None
+
+    def row_payment_standing(self, row, *, db=None):
+        """#1262: whether a run of ``row`` may pay now, as the message key that says so and why."""
+        refusal=self._row_standing_refusal(row)
+        if refusal=='payment_autonomy.changed':return 'payment_autonomy.run_self_set'
+        if refusal:return 'payment_autonomy.run_standing_ended'
+        return ('payment_autonomy.run_allowed' if self.payment_autonomy_settings(db=db)['enabled']
+                else 'payment_autonomy.run_approval')
 
     def owner_accepted_run(self, job):
         """#821 (owner decision 2026-11-14): ``job`` is the current run of a preparation the owner accepted.

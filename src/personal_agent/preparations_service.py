@@ -1168,9 +1168,10 @@ class PreparationsService:
                              else 'preparations.run_delivery',channel=row['channel'])
             targets=service.condition_checks.state_targets(preparation_id)
             check_state=('\n'+msg('checks.update_targets', targets=json.dumps(targets))) if targets else ''
+            # #1262: whether this run may pay, by the payment gate's own rule.
             return msg('preparations.run_record', id=preparation_id,
                        position=msg('preparations.run_bounded',run=count,maximum=maximum) if maximum else str(count),
-                       schedule=schedule,delivery=delivery)+'\n'+msg('preparations.own_limits')+check_state
+                       schedule=schedule,delivery=delivery)+'\n'+msg(service.row_payment_standing(row))+'\n'+msg('preparations.own_limits')+check_state
         except Exception:
             LOG.info('preparation run fact unavailable job=%s',job.get('id'))
             return msg('preparations.run_fact')+'\n'+msg('preparations.own_limits')

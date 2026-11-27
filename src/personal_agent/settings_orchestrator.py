@@ -622,7 +622,11 @@ class SettingsOrchestrator:
         home_zone = self.service.home_zone()
         text = (prep.proposal_summary(row, home_zone) if full
                 else ' · '.join((prep.owner_title(row), prep.schedule_text(row, home_zone))))
-        return f"{redact_known_secrets(self.store, text)} ({self._preparation_states().get(row['state'], row['state'])})"
+        label = f"{redact_known_secrets(self.store, text)} ({self._preparation_states().get(row['state'], row['state'])})"
+        if full and row.get('state') in prep.ACTIVE_STATES and row.get('kind') == prep.KIND_PREPARE:
+            # #1262: whether its runs may pay, by the same rule the payment gate applies.
+            label += ' ' + msg(self.service.row_payment_standing(row))
+        return label
 
     def _preparation_named(self, value, allowed):
         """#1097: a reservation the owner names as its notice does, resolved to the one id it fits.
