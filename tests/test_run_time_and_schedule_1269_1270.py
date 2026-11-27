@@ -119,3 +119,24 @@ def test_the_direct_route_reads_the_schedule_bound_to_its_work():
 
     assert work_schedule_text(Bound()) == 'This Work is run 2 of preparation p.'
     assert work_schedule_text(Failing()) == '' and work_schedule_text(object()) == ''
+
+
+@pytest.mark.parametrize('returns_to, expected', [(prep.STATE_SCHEDULED, 'due'), (prep.STATE_PAUSED, None)])
+def test_an_owners_run_now_keeps_the_upcoming_slot_as_its_next_start(case, returns_to, expected):
+    # Codex review on #1281: an extra run settles back to the preserved slot (#575), not the one after it.
+    c = case
+    row = window_row(c, owner(c, 'Every five minutes until the close, plan and order', 'setup'))
+    if returns_to == prep.STATE_PAUSED:
+        with c.store.db() as db:
+            db.execute('UPDATE preparations SET state=? WHERE id=?', (prep.STATE_PAUSED, row['id']))
+        row = current(c, row)
+    c.clock[0] = row['due_at'] - 30
+    assert c.preps.start(row, channel='web', chat_id=None, now=c.clock[0], immediate=True)
+    run = c.store.job(current(c, row)['last_run_job_id'])
+    assert current(c, row)['run_return_state'] == returns_to
+    start = c.service.preparation_next_start(run)
+    if expected is None:
+        assert start is None
+    else:
+        assert start['at'] == row['due_at']
+        assert prep.local_text(row['due_at'], 'UTC') in c.service.work_schedule_fact(run)

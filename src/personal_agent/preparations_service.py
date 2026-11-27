@@ -1175,11 +1175,24 @@ class PreparationsService:
 
     @staticmethod
     def run_following(row):
-        """The slot after the run at ``row['due_at']``, by the scheduler's own slot functions, or None."""
+        """The slot after the run at ``row['due_at']``, by the scheduler's own slot functions, or None.
+
+        An extra run (``run_return_state``, an owner's run now) leaves the regular schedule as it was: its
+        settlement returns to the preserved ``due_at`` (#575), or to a pause, which has no next slot.
+        """
+        if row.get('run_return_state'):
+            return row['due_at'] if row['run_return_state']==prep.STATE_SCHEDULED else None
         if row.get('recurrence')==prep.RECURRENCE_WINDOW:
             return prep.next_window_slot(row,row['due_at'])
         return prep.next_due(row['due_at'],row['timezone'],row.get('recurrence'),row['due_at'],row.get('rule_start'),
                              int(row['run_count']))
+
+    @staticmethod
+    def check_following(row):
+        """The next condition check of a check row, or None when the run returns it to a pause."""
+        if row.get('run_return_state') and row['run_return_state']!=prep.STATE_SCHEDULED:
+            return None
+        return row.get('check_next_at')
 
     def preparation_next_start(self, job):
         """#1269: when the next run of the schedule this run belongs to starts, for the plan's time.
@@ -1194,7 +1207,7 @@ class PreparationsService:
         try:
             row=service.preparations.get(preparation_id)
             if not row:return None
-            kind,at=('check',row.get('check_next_at')) if row.get('check_spec') else ('run',self.run_following(row))
+            kind,at=('check',self.check_following(row)) if row.get('check_spec') else ('run',self.run_following(row))
             if at is None:return None
             return {'at':float(at),'kind':kind,'local':prep.local_text(at,row['timezone'])}
         except Exception:
@@ -1215,7 +1228,7 @@ class PreparationsService:
             if preparation_id and job.get('model')!='preparation':
                 row=service.preparations.get(preparation_id)
                 if row:
-                    following=self.run_following(row) if not row.get('check_spec') else row.get('check_next_at')
+                    following=self.run_following(row) if not row.get('check_spec') else self.check_following(row)
                     lines.append(msg('preparations.schedule_run',id=preparation_id,run=int(row['run_count']),
                                      next=prep.local_text(following,row['timezone']) if following is not None
                                      else msg('label.none'),
