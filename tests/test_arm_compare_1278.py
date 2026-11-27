@@ -250,6 +250,43 @@ def test_different_judges_on_a_rubric_measure_are_refused():
         compare(base, cand, tolerances={'rubric_honest': 0.05})
 
 
+def judged(current, status='judged', resolved='judge-a'):
+    for record in current['records']:
+        record['judge_status'] = status
+        if resolved:
+            record['judge_model_resolved'] = resolved
+    return current
+
+
+@pytest.mark.parametrize('status,resolved', [('judged', 'judge-b'), ('skipped', None)])
+@pytest.mark.parametrize('which', ['candidate', 'retries'])
+def test_the_target_passed_is_judge_dependent_so_judges_must_match(status, resolved, which):
+    arms = {'baseline': arm(0.0), 'candidate': arm(1.0, digest=NEW), 'retries': arm(0.0)}
+    for name, current in arms.items():
+        judged(current, *((status, resolved) if name == which else ()))
+    with pytest.raises(ValueError):
+        compare(arms['baseline'], arms['candidate'], arms['retries'])
+
+
+@pytest.mark.parametrize('status', ['judge_error', 'budget_refused'])
+def test_a_success_the_judge_never_graded_is_missing_evidence(status):
+    base, cand, retries = judged(arm(0.0)), judged(arm(1.0, digest=NEW)), judged(arm(0.0))
+    assert verdict(base, cand, retries) == 'preferred'
+    cand['records'][0]['judge_status'] = status
+    assert verdict(base, cand, retries) == 'insufficient_evidence'
+
+
+@pytest.mark.parametrize('field', ['model', 'effort'])
+def test_a_run_whose_recorded_engine_contradicts_the_settings_is_refused(field):
+    cand = arm(1.0, digest=NEW)
+    seen = {'tools': [{'tool': 'x'}], 'refused_effects': 0, 'engine': [{'model': 'm-1', 'effort': 'medium'}, {'model': None}]}
+    cand['records'][0]['work'] = {'t': seen}
+    assert verdict(arm(0.0), cand) == 'preferred'
+    cand['records'][0]['work'] = {'t': {**seen, 'engine': [{field: 'something-else'}]}}
+    with pytest.raises(ValueError):
+        compare(arm(0.0), cand)
+
+
 def test_a_scenario_without_a_split_and_a_gate_without_guards_are_refused():
     base, cand = arm(0.0), arm(1.0, digest=NEW)
     for options in ({'meta': {k: v for k, v in META.items() if k != 'h2'}}, {'tolerances': {}},

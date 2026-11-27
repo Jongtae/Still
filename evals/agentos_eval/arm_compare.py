@@ -119,6 +119,20 @@ def _reported_cost(cost):
     return cost
 
 
+def _validate_recorded_engine(record, settings):
+    work = record.get('work')
+    if not isinstance(work, dict):
+        return
+    fields = ('model', 'effort') if 'effort' in settings else ('model',)
+    for measurement in work.values():
+        engines = measurement.get('engine') if isinstance(measurement, dict) else None
+        for engine in engines or []:
+            for field in fields:
+                value = engine.get(field)
+                if value and value != settings[field]:
+                    raise ValueError(f'Recorded engine {field} for {record["scenario"]!r} differs from arm settings')
+
+
 def _validate_arm(arm, baseline, meta, *, same_text):
     if not isinstance(arm, dict):
         raise ValueError('Each arm must be a mapping of arm fields')
@@ -155,13 +169,15 @@ def _validate_arm(arm, baseline, meta, *, same_text):
         if key in seen:
             raise ValueError(f'Duplicate (scenario, epoch) {key!r}')
         seen.add(key)
+        _validate_recorded_engine(record, settings)
 
 
 def _run_scores(record, measures, target, refused):
     values = {measure: score(record, measure, finite=True) for measure in measures}
     if refused is True:
         values[target] = 0.0
-    elif refused is None and values[target] is not None and values[target] > 0:
+    elif (values[target] is not None and values[target] > 0 and
+          (refused is None or record.get('judge_status') in ('judge_error', 'budget_refused'))):
         values[target] = None
     return values
 
@@ -292,15 +308,17 @@ def compare_versioned_text(baseline, candidates, *, meta, target, tolerances, eq
     if equal_retries is not None:
         _validate_arm(equal_retries, baseline, meta, same_text=True)
 
-    measures = tuple(dict.fromkeys((target, *tolerances)))
-    if any(measure.startswith('rubric_') for measure in measures):
-        arms = [baseline, *candidates.values()]
-        if equal_retries is not None:
-            arms.append(equal_retries)
-        judges = [judge_provenance(arm['records'], {'judge': arm['settings'].get('judge')}) for arm in arms]
-        for first, second in combinations(judges, 2):
-            require_same_judge(first, second)
+    arms = [baseline, *candidates.values()]
+    if equal_retries is not None:
+        arms.append(equal_retries)
+    judges = [judge_provenance(arm['records'], {'judge': arm['settings'].get('judge')}) for arm in arms]
+    for first, second in combinations(judges, 2):
+        require_same_judge(first, second)
+    statuses = {record.get('judge_status') for arm in arms for record in arm['records']}
+    if {'judged', 'skipped'} <= statuses:
+        raise ValueError('Cannot compare judged and checks-only runs')
 
+    measures = tuple(dict.fromkeys((target, *tolerances)))
     ids = sorted(baseline['scenario_ids'])
     parts = partition_ids(ids, meta)
     base = _TextArm(baseline, parts, measures, target, min_trials)
