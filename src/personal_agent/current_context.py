@@ -287,7 +287,31 @@ def is_redacted_secret_key(key):
 MIN_REDACTED_CHARS = 8
 
 
-def stored_secret_values(store, names=None):
+def redact_credentials(store, text):
+    """#1265: ``text`` with the stored credentials and credential shapes replaced, but not state values.
+
+    For a condition check's own arguments (its code and hosts): a run or check state holds the Work's
+    plan and the check's own data, which are not a credential leaving to anyone.  A real credential, a
+    retired credential (a mark a state alone did not set) and a credential shape are still found.
+    """
+    from .bounded_execution import SECRET_PATTERN
+    text = str(text or '')
+    if callable(getattr(store, 'relayed_secret_redaction', None)):
+        return redact_known_secrets(store, text)
+    values = stored_secret_values(store, states=False)
+    for value in _literal_redaction_values(values, text):
+        text = text.replace(value, '[redacted]')
+    read = getattr(store, 'retired_secret_ledger', None)
+    ledger = read() if callable(read) else None
+    if ledger and ledger.get('marks'):
+        from .quickstart_store import QuickStore
+        state_only = set(ledger.get(QuickStore.STATE_MARKS) or ())
+        ledger = {**ledger, 'marks': [mark for mark in ledger['marks'] if mark[1] not in state_only]}
+        text = QuickStore.redact_secret_spans(text, (), ledger)
+    return SECRET_PATTERN.sub('[redacted]', text)
+
+
+def stored_secret_values(store, names=None, *, states=True):
     """The stored secrets' literal values that ``redact_known_secrets`` replaces (8 characters or more).
 
     #1489: a function library is checked for these values only.  Credential shapes
@@ -295,7 +319,7 @@ def stored_secret_values(store, names=None):
     built from the environment), so they are a redaction rule, not a sign that a
     secret was written into code.
     """
-    from .api_requests import secret_names, encrypted_secret_values
+    from .api_requests import secret_names, encrypted_secret_values, encrypted_credential_values
     values = []
     # #1216: every registered API slot's secret too.
     read = getattr(store, 'secret', None)
@@ -312,7 +336,8 @@ def stored_secret_values(store, names=None):
             values.append(value)
     # #1380: a short code-run value (an account product code such as "01") identifies nothing
     # alone and would garble every number it occurs in; the same floor as above.
-    values.extend(value for value in encrypted_secret_values(store) if len(value) >= MIN_REDACTED_CHARS)
+    encrypted = encrypted_secret_values(store) if states else encrypted_credential_values(store)
+    values.extend(value for value in encrypted if len(value) >= MIN_REDACTED_CHARS)
     # #211: the owner's cloud provider credentials.
     from .cloud_engines import CloudEngines
     values.extend(CloudEngines(store).secret_values())

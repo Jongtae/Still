@@ -54,12 +54,24 @@ def plain_state_values(text):
     return _strings(state.get(STATE_PLAIN_KEY), 1) if isinstance(state, dict) else []
 
 
-def secret_state_values(text):
-    """The same secret strings from either scratch state or decrypted saved state."""
+def secret_state_values(text, plain=()):
+    """The same secret strings from either scratch state or decrypted saved state.
+
+    #1265: ``plain`` are the strings a Work itself wrote into a check's plan (``update_check_state``).
+    The Work's AI already holds them, so they are not secrets; a token the check code saved is not
+    among them and stays redacted.
+    """
     state = json.loads(text or '{}')
     if isinstance(state, dict):
         state = {key: value for key, value in state.items() if key != STATE_PLAIN_KEY}
-    return _strings(state, STATE_REDACT_CHARS)
+    plain = set(plain or ())
+    return [value for value in _strings(state, STATE_REDACT_CHARS) if value not in plain]
+
+
+def work_plain_values(patch, text, earlier=()):
+    """#1265: the Work-written strings still in ``text``: this patch's and those an earlier patch wrote."""
+    present = set(_strings(json.loads(text or '{}'), 1))
+    return sorted((set(_strings(patch, 1)) | set(earlier or ())) & present)
 
 
 REFERENCE = re.compile(r'api_credential:[a-f0-9]{48}\Z')
@@ -228,6 +240,14 @@ class ApiCredentials:
         """The set's saved run state text, or '' when none, unreadable or saved for other metadata."""
         return self._read_bound(STATE_PREFIX + name, fingerprint(name, slot))
 
+    def check_work_plain(self, check_id):
+        """#1265: the Work-written plan strings recorded with the check's saved state."""
+        token = self.store.secret(CHECK_STATE_PREFIX + check_id)
+        if not token:
+            return []
+        payload = json.loads(self._cipher().decrypt(token.encode()))
+        return list(payload.get('work_plain') or ()) if isinstance(payload, dict) else []
+
     def _read_bound(self, key, binding, *, strict=False):
         token = self.store.secret(key)
         if not token:
@@ -254,7 +274,8 @@ class ApiCredentials:
         elsewhere in the state is still redacted.
         """
         cipher = cipher if cipher is not None else self._cipher()
-        return secret_state_values(json.loads(cipher.decrypt(token.encode())).get('state'))
+        payload = json.loads(cipher.decrypt(token.encode()))
+        return secret_state_values(payload.get('state'), payload.get('work_plain'))
 
     def discard_state(self, name):
         """Remove the set's run state after retiring its values, in one locked step (#258).
@@ -277,7 +298,7 @@ class ApiCredentials:
         except Exception:
             return False
 
-    def _seal(self, key, binding, text, current=lambda: None):
+    def _seal(self, key, binding, text, current=lambda: None, work_plain=None):
         """#1126 review: everything a state save needs from the key, done before the save itself.
 
         Checks the state (empty discards it; otherwise a JSON object of at most ``MAX_STATE_BYTES``, else
@@ -298,9 +319,21 @@ class ApiCredentials:
             raise ValueError('run state must be a JSON object of at most 16 KB')
         current()
         payload = {'version': 1, 'binding': binding(), 'state': text}
-        encoded = json.dumps(payload, separators=(',', ':')).encode()
         cipher = self._cipher(create=True)
-        return {'key': key, 'value': cipher.encrypt(encoded).decode(), 'plain': sorted(set(plain_state_values(text))),
+        if key.startswith(CHECK_STATE_PREFIX):
+            # #1265: a check's own save keeps the Work-written strings it still holds as plain.
+            if work_plain is None:
+                old = self.store.secret(key)
+                try:
+                    earlier = json.loads(cipher.decrypt(old.encode())).get('work_plain') if old else ()
+                except Exception:
+                    earlier = ()
+                work_plain = work_plain_values({}, text, earlier)
+            if work_plain:
+                payload['work_plain'] = sorted(work_plain)
+        encoded = json.dumps(payload, separators=(',', ':')).encode()
+        return {'key': key, 'value': cipher.encrypt(encoded).decode(),
+                'plain': sorted(set(plain_state_values(text)) | set(payload.get('work_plain') or ())),
                 'cipher': cipher}
 
     def store_sealed(self, sealed):
@@ -335,9 +368,10 @@ class ApiCredentials:
         """Save the check's state under the same rules as a set's run state; False when refused."""
         return self._write_bound(CHECK_STATE_PREFIX + check_id, lambda: {'check': check_id, 'digest': digest}, text)
 
-    def seal_check_state(self, check_id, digest, text):
+    def seal_check_state(self, check_id, digest, text, work_plain=None):
         """The check's state, checked and encrypted for ``store_sealed``; raises like ``_seal``."""
-        return self._seal(CHECK_STATE_PREFIX + check_id, lambda: {'check': check_id, 'digest': digest}, text)
+        return self._seal(CHECK_STATE_PREFIX + check_id, lambda: {'check': check_id, 'digest': digest}, text,
+                          work_plain=work_plain)
 
     def discard_check_state(self, check_id, *, keep_digest=None):
         """Remove the check's state after retiring its values; raises when it cannot be read."""
@@ -352,7 +386,7 @@ class ApiCredentials:
             payload = json.loads(self._cipher().decrypt(token.encode()))
             if payload.get('binding') == {'check': check_id, 'digest': keep_digest}:
                 raise CurrentState
-            return secret_state_values(payload.get('state'))
+            return secret_state_values(payload.get('state'), payload.get('work_plain'))
 
         # Check the binding under the same lock that retires and removes the state.
         # Undo can restore a digest after its state has been swept. It then starts from {}.

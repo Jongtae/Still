@@ -2010,7 +2010,7 @@ class Preparations:
                 raise PreparationRefusal('self_change_refused')
             old_spec = json.loads(previous_row['check_spec']) if previous_row['check_spec'] else None
             # A saved argument might only have become a known secret since setup.
-            if old_spec and checks._redact(self.store, old_spec['arguments']) != old_spec['arguments']:
+            if old_spec and checks._redact_arguments(self.store, old_spec['arguments']) != old_spec['arguments']:
                 raise PreparationRefusal('check_credential')
             arguments, interval = checks.parse_for_store(self.store, changes['check'])
             spec = checks.prove(self.store, work_id, arguments, interval)
