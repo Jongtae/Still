@@ -20,10 +20,10 @@ from test_condition_checks_972 import case, current  # noqa: F401
 from test_continuous_line_1218 import at, owner
 
 
-def window_row(c, job):
+def window_row(c, job, **extra):
     result = c.service.preparation_scheduler(job, '')({
         'kind': 'prepare', 'goal': 'Check the flow and plan the next five minutes', 'offer': 'Trade the session',
-        'due': at(c.clock[0] + 60), 'every_minutes': 5, 'until': at(c.clock[0] + 60 + 3600), 'timezone': 'UTC',
+        'due': at(c.clock[0] + 60), 'every_minutes': 5, 'until': at(c.clock[0] + 60 + 3600), 'timezone': 'UTC', **extra,
     })
     return c.preps.get(result['preparation_id'])
 
@@ -69,7 +69,7 @@ def test_the_goal_judgment_reads_the_run_and_the_schedule_a_work_set_up(case):
                        next=prep.local_text(row['due_at'], 'UTC'), end=prep.local_text(row['until_at'], 'UTC'))
     run = run_of(c, row)
     fact = c.service.work_schedule_fact(run)
-    assert fact == msg('preparations.schedule_run', id=row['id'], run=1,
+    assert fact == msg('preparations.schedule_run', id=row['id'], run=1, state=prep.STATE_RUNNING,
                        next=prep.local_text(row['due_at'] + 300, 'UTC'), end=prep.local_text(row['until_at'], 'UTC'))
     # A Work with no schedule gets no fact.
     assert c.service.work_schedule_fact(c.store.job(c.owner)) == ''
@@ -152,3 +152,27 @@ def test_a_check_rows_last_permitted_run_has_no_next_check(case):
     assert c.service.preparations_service.check_following({**base, 'run_count': 3}) is None
     assert c.service.preparations_service.check_following({**base, 'check_next_at': row['until_at']}) is None
     assert c.service.preparations_service.check_following({**base, 'run_return_state': prep.STATE_PAUSED}) is None
+
+
+def test_a_cancelled_run_reports_no_later_start(case):
+    # Codex review on #1281: a run that cancelled its own row has no later runs to excuse.
+    c = case
+    row = window_row(c, owner(c, 'Every five minutes until the close, plan and order', 'setup'))
+    run = run_of(c, row)
+    with c.store.db() as db:
+        db.execute('UPDATE preparations SET state=? WHERE id=?', (prep.STATE_CANCELLED, row['id']))
+    assert c.service.preparation_next_start(run) is None
+    fact = c.service.work_schedule_fact(run)
+    assert prep.STATE_CANCELLED in fact and msg('label.none') in fact
+    assert prep.local_text(row['due_at'] + 300, 'UTC') not in fact
+
+
+def test_a_daily_windows_last_slot_is_followed_by_the_next_days_opening(case):
+    # Codex review on #1281: settle() schedules the next day's window after the day's last slot.
+    c = case
+    row = window_row(c, owner(c, 'Every weekday session, plan every five minutes', 'setup'), recurrence='daily')
+    last = {**row, 'state': prep.STATE_RUNNING, 'due_at': row['until_at'], 'run_count': row['max_runs']}
+    assert prep.next_window_slot(last, last['due_at']) is None
+    following = c.service.preparations_service.run_following(last)
+    assert following == prep.next_day_window(last, last['due_at'])['due_at']
+    assert following > row['until_at']

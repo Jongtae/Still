@@ -2004,10 +2004,10 @@
   "zh": "此 Work 是 Still 按计划执行主人已接受的准备事项。继续执行计划并把结果交给主人由 Still 负责，因此此 Work 的回答是本次执行的结果。"
  },
  "preparations.schedule_run": {
-  "ko": "이 Work는 준비 {id}의 {run}번째 실행이에요. 다음 시작: {next}; 일정 종료: {end}. 이후 실행과 검사는 이 일정이 Still과 함께 맡아요.",
-  "en": "This Work is run {run} of preparation {id}. Next start: {next}; schedule ends: {end}. The later runs and checks are this schedule's, kept by Still.",
-  "ja": "このWorkは準備 {id} の{run}回目の実行です。次の開始: {next}；予定終了: {end}。以降の実行と検査はこの予定がStillとともに担います。",
-  "zh": "此 Work 是准备事项 {id} 的第{run}次运行。下次开始：{next}；计划结束：{end}。之后的运行和检查属于此计划，由 Still 维持。"
+  "ko": "이 Work는 준비 {id}의 {run}번째 실행이에요 (상태 {state}). 다음 시작: {next}; 일정 종료: {end}. 이후 실행과 검사는 이 일정이 Still과 함께 맡아요.",
+  "en": "This Work is run {run} of preparation {id} (state {state}). Next start: {next}; schedule ends: {end}. The later runs and checks are this schedule's, kept by Still.",
+  "ja": "このWorkは準備 {id} の{run}回目の実行です（状態 {state}）。次の開始: {next}；予定終了: {end}。以降の実行と検査はこの予定がStillとともに担います。",
+  "zh": "此 Work 是准备事项 {id} 的第{run}次运行（状态 {state}）。下次开始：{next}；计划结束：{end}。之后的运行和检查属于此计划，由 Still 维持。"
  },
  "preparations.schedule_set_up": {
   "ko": "이 Work가 준비 {id}를 만들었어요 (상태 {state}). 다음 시작: {next}; 일정 종료: {end}. 그 실행과 검사는 이 일정이 Still과 함께 맡아요.",

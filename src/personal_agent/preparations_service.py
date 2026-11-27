@@ -44,6 +44,9 @@ BUNDLE_SETTLE_SECONDS = 1800
 BUNDLE_CHARS = el.BUNDLE_CHARS
 
 
+#: #1270 review: the states whose row the scheduler still runs (a run's own row is running).
+LIVE_SCHEDULE_STATES=(prep.STATE_RUNNING,prep.STATE_SCHEDULED)
+
 class PreparationsService:
     """Preparation operations over one owning service's existing state."""
 
@@ -1177,13 +1180,18 @@ class PreparationsService:
     def run_following(row):
         """The slot after the run at ``row['due_at']``, by the scheduler's own slot functions, or None.
 
-        An extra run (``run_return_state``, an owner's run now) leaves the regular schedule as it was: its
+        A row no longer running or scheduled (cancelled, paused, done) has none: the scheduler admits only
+        a scheduled row.  An extra run (``run_return_state``, an owner's run now) leaves the regular schedule as it was: its
         settlement returns to the preserved ``due_at`` (#575), or to a pause, which has no next slot.
         """
+        if row.get('state') not in LIVE_SCHEDULE_STATES:
+            return None
         if row.get('run_return_state'):
             return row['due_at'] if row['run_return_state']==prep.STATE_SCHEDULED else None
         if row.get('recurrence')==prep.RECURRENCE_WINDOW:
-            return prep.next_window_slot(row,row['due_at'])
+            # A recurring window's last slot of the day is followed by the next day's opening (``settle``).
+            following=prep.next_window_slot(row,row['due_at'])
+            return following if following is not None else prep.next_day_window(row,row['due_at']).get('due_at')
         return prep.next_due(row['due_at'],row['timezone'],row.get('recurrence'),row['due_at'],row.get('rule_start'),
                              int(row['run_count']))
 
@@ -1195,6 +1203,8 @@ class PreparationsService:
         row to a pause, it used the last permitted run (``run_count >= max_runs``), or the next check
         would fall at or after the window's end (``until_at``).
         """
+        if row.get('state') not in LIVE_SCHEDULE_STATES:
+            return None
         if row.get('run_return_state') and row['run_return_state']!=prep.STATE_SCHEDULED:
             return None
         at,end,maximum=row.get('check_next_at'),row.get('until_at'),row.get('max_runs')
@@ -1239,7 +1249,7 @@ class PreparationsService:
                 row=service.preparations.get(preparation_id)
                 if row:
                     following=self.run_following(row) if not row.get('check_spec') else self.check_following(row)
-                    lines.append(msg('preparations.schedule_run',id=preparation_id,run=int(row['run_count']),
+                    lines.append(msg('preparations.schedule_run',id=preparation_id,run=int(row['run_count']),state=row['state'],
                                      next=prep.local_text(following,row['timezone']) if following is not None
                                      else msg('label.none'),
                                      end=prep.local_text(row['until_at'],row['timezone']) if row.get('until_at') is not None
