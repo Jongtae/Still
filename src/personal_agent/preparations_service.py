@@ -2930,12 +2930,8 @@ class PreparationsService:
                                     refused_rows, refused_state_change)
         store=self.service.store
         with store.db() as db:
-            works=[item['id'] for item in db.execute(
-                f"SELECT id FROM jobs WHERE {prep.line_works_sql('request_key',include_deleted=True)}",(line_id,line_id))]
-            rows=[item['id'] for item in db.execute(
-                "SELECT id FROM preparations WHERE line_id=? UNION SELECT job_id FROM tool_events "
-                "WHERE tool='preparation_lineage' AND status='deleted' AND json_extract(detail,'$.line_id')=?",(line_id,line_id))]
-            ids=[*works,*(prep.CHECK_RECORD_PREFIX+item for item in rows)]
+            works,checks=prep.line_effect_record_ids(db,line_id)
+            ids=[*works,*checks]
             ledger=effect_rows(db,ids)
             # #1252 review: calls whose own record is unknown (a browser step, a connector or API call with no
             # ledger claim), classified by the one rule (``record_effect``) as ``unknown_effect_targets`` reads them.

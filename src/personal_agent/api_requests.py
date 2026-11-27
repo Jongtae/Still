@@ -1246,6 +1246,25 @@ class ApiRequests:
         except Exception:
             raise ApiError(UNKNOWN_EFFECT_TEXT, 'effect_unknown', effect='unknown') from None
 
+    def _line_sent_receipt(self, receipt):
+        """#1273: a sent receipt of another row of this Work's line, as the line's account names it, or None.
+
+        Only for a read-back: it settles nothing and releases nothing, and the slot, host, request-reference
+        and current-run checks below apply to it the same way.
+        """
+        from .agent_runtime import WorkLedger, classify_effect_rows, effect_rows
+        from .preparations import line_effect_record_ids, line_of_works
+        with self.store.db() as db:
+            try:
+                line_id = line_of_works(db, WorkLedger.request_chain(db, self.work_id))
+            except ValueError:
+                return None
+            if not line_id:
+                return None
+            works, checks = line_effect_record_ids(db, line_id)
+            observed, _ = classify_effect_rows(effect_rows(db, [*works, *checks]))
+        return dict(observed).get(receipt)
+
     def _reconcile_dispatch(self, slot, receipt, ref_field, data, record, text):
         """Settle only the claim the authoritative response identifies, under the current epoch."""
         from .agent_runtime import external_effect_events
@@ -1259,7 +1278,7 @@ class ApiRequests:
         # #1273: a dispatch already observed sent may have an outcome the service settles later (accepted,
         # pending, under review).  The same status read records what it read back on that receipt, beside
         # its status; it never changes the receipt's resolution, so it never releases a replay hold.
-        sent = claim is None and dict(observed).get(receipt)
+        sent = claim is None and (dict(observed).get(receipt) or self._line_sent_receipt(receipt))
         if sent and not sent.get('resolution'):
             claim = sent
         else:

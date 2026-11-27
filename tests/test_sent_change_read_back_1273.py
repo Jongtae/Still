@@ -12,6 +12,7 @@ from personal_agent.agent_runtime import external_effect_events
 from personal_agent.api_requests import ApiError, ApiRequests
 from personal_agent.conversation_handoff import ConversationJudgments
 from personal_agent.decision import FixtureDecisionEngine, OUTCOME_DECIDED, SelectionDecision, fixture_confidence
+from personal_agent import preparations as prep
 from personal_agent.messages import msg
 
 from test_condition_checks_972 import case, wake_job  # noqa: F401 - fixture
@@ -120,3 +121,31 @@ def test_a_read_back_of_not_applied_is_told_in_the_account_only(case):
     account = lines.line_effects_text(effects, account=True)
     assert msg('lines.effects_read_back_not_applied',
                items=' '.join([msg('lines.effects_receipt', receipt=receipt), 'POST', 'receipt.example', 'fixture'])) in account
+
+
+def other_row_work(c, row_id, line=None):
+    """A Work of another row: of the same line when ``line`` is given, else of a row on no line."""
+    other = row_id + 'b'
+    with c.store.db() as db:
+        columns = [item['name'] for item in db.execute('PRAGMA table_info(preparations)')]
+        values = ','.join('?' if name in ('id', 'line_id') else name for name in columns)
+        db.execute(f"INSERT INTO preparations({','.join(columns)}) SELECT {values} FROM preparations WHERE id=?",
+                   [*(other if name == 'id' else line for name in columns if name in ('id', 'line_id')), row_id])
+    return c.store.enqueue('Read back the line\'s sent change', f'{prep.REQUEST_KEY_PREFIX}{other}:slot-1')
+
+
+def test_a_sent_receipt_of_another_row_of_the_line_can_be_read_back(case):
+    """The account and another row of the line are told the line's receipts, so they can read them back (#1273 review)."""
+    line, receipt = sent_on_line(case)
+    row = case.service.preparations_service.line_rows(line)[0]
+    work = other_row_work(case, row['id'], line)
+    found = ApiRequests(case.store, work)._line_sent_receipt(receipt)
+    assert found and found['request_ref'] == 'ref-1'
+
+
+def test_a_receipt_of_another_line_is_not_found(case):
+    line, receipt = sent_on_line(case)
+    row = case.service.preparations_service.line_rows(line)[0]
+    work = other_row_work(case, row['id'], None)
+    assert ApiRequests(case.store, work)._line_sent_receipt(receipt) is None
+    assert ApiRequests(case.store, case.store.enqueue('Unrelated', 'plain-work'))._line_sent_receipt(receipt) is None
