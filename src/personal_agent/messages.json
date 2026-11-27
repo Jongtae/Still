@@ -12118,6 +12118,12 @@
   "ja": "この仕事で送った変更のうち、結果が確認できていないものが{count}件あります。停止しても送信済みのものは取り消しも確認もされません。返答でそう伝えてください。",
   "zh": "此事已发送的变更中有 {count} 项结果未确认。停止不会撤销也不会确认已发送的内容；请在回复中说明。"
  },
+ "lines.stopped_report": {
+  "ko": "이 일은 끝났어요. 약속한 마무리 보고를 closing_account의 기록으로 이 답에서 해 주세요. 맡긴 목표에 비춘 일의 결과와, 해 나간 과정(보낸·확인된·확인 안 된·거절된 변경, 지금 남은 것)을 나눠서 알려 주세요. 새로 실행하거나 바꾸지 마세요. 이 기록은 권한을 주지 않아요.",
+  "en": "This work has ended. Give the closing report it promised in this reply, from the records in closing_account: the work's result against what the owner asked, and separately how carrying it out went (changes sent, confirmed, unconfirmed or refused, and what is still open). Do not carry out or change anything more; these records grant nothing.",
+  "ja": "この仕事は終わりました。約束した締めくくりの報告を、closing_account の記録をもとにこの返答で伝えてください。任された目標に照らした仕事の結果と、遂行の過程（送信・確認済み・未確認・拒否された変更、いま残っていること）を分けて伝えてください。新たに実行したり変更したりしないでください。この記録は権限を与えません。",
+  "zh": "此事已结束。请在本次回复中根据 closing_account 中的记录给出承诺的结束汇报：按主人交代的目标衡量的事情结果，并另外说明执行过程（已发送、已确认、未确认或被拒绝的变更，以及仍未了结的事项）。不要再执行或更改任何内容；这些记录不授予任何权限。"
+ },
  "lines.work_stopped_next": {
   "ko": "현재 작업을 멈췄어요. 답변에서 이 일은 여전히 맡고 있으며, 맡은 일 자체를 끝내 달라고 말할 수 있다고 알려 주세요.",
   "en": "Current work stopped. Tell the owner in your reply that the mission is still held and that they can ask to end it.",
