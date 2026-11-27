@@ -22,5 +22,8 @@
    "address": "github.com/Jongtae/Still/tree/main/skills/first-conversations"},
   {"name": "trading-costs",
    "description": "Before a buy or sell order: whether the expected gain survives commission, tax and spread, telling the owner instead of ordering when it does not, and profit and loss reported net of costs. A cost check, not trading advice.",
-   "address": "github.com/Jongtae/Still/tree/main/skills/trading-costs"}
+   "address": "github.com/Jongtae/Still/tree/main/skills/trading-costs"},
+  {"name": "intraday-trading-method",
+   "description": "Intraday trading within the owner's own limits: closed bars only, regime with hysteresis, limit entries that never chase, ATR exits with the owner's stop and a time exit, stop-sized positions, a backtest gate, and decisions recorded to settle later. Grants nothing.",
+   "address": "github.com/Jongtae/Still/tree/main/skills/intraday-trading-method"}
 ]
