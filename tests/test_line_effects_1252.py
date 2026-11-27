@@ -25,7 +25,8 @@ def run_input(c, row, job):
 def test_nothing_recorded_adds_nothing(case):
     line, row = line_with_check(case)
     effects = case.service.preparations_service.line_effects(line)
-    assert effects == {'sent': 0, 'not_applied': 0, 'unconfirmed': 0, 'refused': 0, 'asked': 0, 'unconfirmed_items': []}
+    assert effects == {'sent': 0, 'not_applied': 0, 'unconfirmed': 0, 'refused': 0, 'asked': 0, 'unconfirmed_items': [],
+                       'awaiting_read_back': 0, 'awaiting_read_back_items': [], 'read_back_not_applied': []}
     text = case.service.preparations_service.line_effects_text(effects, account=True)
     assert text == ''
 

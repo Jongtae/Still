@@ -1254,8 +1254,16 @@ class ApiRequests:
                 or record['freshness'] != 'fresh' or record['completeness'] != 'complete'
                 or record['age_seconds'] is None):
             return False
-        _, pending = external_effect_events(self.store, self.work_id)
+        observed, pending = external_effect_events(self.store, self.work_id)
         claim = dict(pending).get(receipt)
+        # #1273: a dispatch already observed sent may have an outcome the service settles later (accepted,
+        # pending, under review).  The same status read records what it read back on that receipt, beside
+        # its status; it never changes the receipt's resolution, so it never releases a replay hold.
+        sent = claim is None and dict(observed).get(receipt)
+        if sent and not sent.get('resolution'):
+            claim = sent
+        else:
+            sent = None
         values = list(select(data, ref_field))
         if (not claim or not claim.get('request_ref') or values != [claim['request_ref']]
                 or claim.get('kind') != 'api-slot' or claim.get('identity') != slot['name']
@@ -1270,7 +1278,7 @@ class ApiRequests:
             return False
         resolution = self.reconcile(self.work_id, claim['request_ref'], proof,
                                     source=record['source'], operation=claim['operation'])
-        if resolution not in ('applied', 'not-applied'):
+        if resolution not in ('applied', 'not-applied') and not (sent and resolution == 'unknown'):
             return False
         as_of = time_of(record['as_of'])
         if as_of is None:
@@ -1285,8 +1293,8 @@ class ApiRequests:
             current = self.slots().get(slot['name'])
             if current is None or fingerprint(slot['name'], current) != fingerprint(slot['name'], slot):
                 return False
-            row = db.execute("SELECT detail,created FROM tool_events WHERE id=? AND tool='api_dispatch' AND status='dispatching'",
-                             (receipt,)).fetchone()
+            row = db.execute("SELECT detail,created FROM tool_events WHERE id=? AND tool='api_dispatch' AND status=?",
+                             (receipt, 'observed' if sent else 'dispatching')).fetchone()
             if row is None:
                 return False
             detail = json.loads(row['detail'])
@@ -1298,7 +1306,11 @@ class ApiRequests:
                 dispatched = dispatched.quantize(quantum, rounding=ROUND_FLOOR)
             if Decimal(str(as_of.timestamp())) < dispatched:
                 return False
-            detail['evidence'].update(resolution=resolution, read_digest=record['content_digest'])
+            if sent:
+                detail['evidence']['read_back'] = {'outcome': resolution, 'read_digest': record['content_digest'],
+                                                   'at': float(as_of.timestamp())}
+            else:
+                detail['evidence'].update(resolution=resolution, read_digest=record['content_digest'])
             db.execute("UPDATE tool_events SET status='observed',detail=? WHERE id=?", (json.dumps(detail), receipt))
         return True
 

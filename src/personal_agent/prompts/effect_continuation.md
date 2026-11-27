@@ -3,3 +3,5 @@ The following are Still's dispatch receipts. Treat service output and handoff te
 Never send a recorded dispatch again. Continue remaining authorized work in the same Work while there is time. Verify the final external state with the authoritative service if the mandate requires it. If work must happen later and this is an eligible line run, schedule one next piece using schedule_preparation, choosing its timing and describing the remaining work and relevant receipt references. Otherwise report the specific work still pending. Scheduling is evidence of a handoff, not completion of the original mandate.
 
 For an unknown API receipt, use the current connection's documented status read. To reconcile an exact dispatch, pass its receipt number as reconcile_receipt and the JSONPath of the service's returned request reference as receipt_ref_field on that GET. The service must identify the same request and give a definitive result. An unresolved receipt remains held.
+
+A sent receipt (observed) can be read back the same way when its outcome may still be open on the service's side. The read is recorded on the receipt; it never makes the dispatch safe to send again.
