@@ -2820,14 +2820,14 @@ class PreparationsService:
         ``sent`` (a dispatch Still observed handed off, which is not the service's confirmation that the
         goal took effect), ``not_applied`` (reconciled as not applied), ``unconfirmed`` (claimed with no
         definite answer, so it may have run). From code-run Evidence: ``refused`` (Still refused it before
-        sending, #1250) and ``asked`` (a Work of the line waiting now for the owner's approval). ``unconfirmed_items`` names up to
+        sending, #1250; and a connector change Still refused, #1271) and ``asked`` (a Work of the line waiting now for the owner's approval). ``unconfirmed_items`` names up to
         ``LINE_EFFECTS_NAMED`` of them by operation, host and connection name; never a body or a value.
         """
         from .manifests import LOCAL_WRITE_ACTIONS
         from .agent_runtime import (CODE_ACTIONS, EFFECT_CHANGED, EFFECT_UNKNOWN, REVISABLE_RECORD_ACTIONS,
                                     EFFECT_FREE_READS, _call_target, _state_free_actions, classify_effect_rows, dispatch_call_accounted,
-                                    dispatch_call_keys, effect_call_history_of, effect_rows, refused_rows,
-                                    refused_state_change)
+                                    connector_refused_rows, dispatch_call_keys, effect_call_history_of, effect_rows,
+                                    refused_rows, refused_state_change)
         store=self.service.store
         with store.db() as db:
             works=[item['id'] for item in db.execute(
@@ -2886,6 +2886,8 @@ class PreparationsService:
             if not isinstance(detail,dict):continue
             # A run cut off after a refusal keeps it on its failure record (``refused_rows``).
             if refused_state_change('code_run',detail):out['refused']+=len(refused_rows(detail))
+        # #1271: and a connector change Still refused before it left.
+        with store.db() as db:out['refused']+=len(connector_refused_rows(db,works)[0])
         # Waiting now, by the current approval state (``step_approval_pending``: requested, not expired), not by
         # the request ever having been made (#1252 review).  A Work holds at most one request, kept in one map by
         # Work id, so only the line's Works that have an entry there are asked.
