@@ -403,7 +403,7 @@ def cmd_progress_forms(args):
 
 def cmd_blockers(args):
     from . import blockers
-    if args.scan < 1:
+    if not 0 < args.scan < 2**63:
         raise SystemExit('--scan must be a positive integer')
     try:
         rows = blockers.read_blockers(args.store, args.scan)

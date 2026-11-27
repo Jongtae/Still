@@ -86,6 +86,7 @@ def render(rows, scan=SCAN_ROWS):
     for members in groups:
         lines.append(f"\n{len(members)}x {members[0]['blocker']}")
         for row in members:
-            day = datetime.fromtimestamp(row['created']).date().isoformat()
+            created = row['created']
+            day = 'undated' if created is None else datetime.fromtimestamp(created).date().isoformat()
             lines.append(f"    {day}  {row['work_id']}")
     return '\n'.join(lines)

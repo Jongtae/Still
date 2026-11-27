@@ -572,7 +572,7 @@ affected.
 
 ## Self-review blockers (#1277)
 
-`PYTHONPATH=src:evals python -m agentos_eval blockers --store <data folder or quickstart.db>` lists the blockers recent self-reviews recorded, as candidate targets for revising versioned method text (#1275). It opens the named store read-only and runs one bounded query (`--scan` newest tool events, default 20000). It prints only the stored blocker text, Work ids and dates, grouped when the wording matches apart from case, spacing and a final period; Works with a forgotten turn are left out. Run it once, not on a timer, and keep its output off the repository.
+`PYTHONPATH=src:evals python -m agentos_eval blockers --store <data folder or quickstart.db>` lists the blockers recent self-reviews recorded, as candidate targets for revising versioned method text (#1275). It opens the named store read-only and runs one bounded query (`--scan` newest tool events, default 20000). It prints only the stored blocker text, Work ids and dates, grouped when the wording matches apart from case, spacing and a final period; Works with a forgotten turn are left out; a stored blocker is not rechecked against facts forgotten from Memory. Run it once, not on a timer, and keep its output off the repository.
 
 ## Task coverage map
 

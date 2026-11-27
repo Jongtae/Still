@@ -102,6 +102,16 @@ def test_scan_bounds_the_events_read(store):
     assert [row['work_id'] for row in blockers.read_blockers(store.path, scan=1)] == ['w2']
 
 
+def test_undated_row_and_out_of_range_scan(store):
+    add_work(store, 'w1', 'no date')
+    with store.db() as db:
+        db.execute("UPDATE tool_events SET created=NULL WHERE tool='self_review'")
+    code, out = run_cli('--store', str(store.path))
+    assert code == 0 and 'undated  w1' in out
+    with pytest.raises(SystemExit, match='positive'):
+        run_cli('--store', str(store.path), '--scan', str(2**63))
+
+
 def test_store_argument_has_no_default():
     with pytest.raises(SystemExit):
         run_cli()
