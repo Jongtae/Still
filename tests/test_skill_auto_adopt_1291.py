@@ -121,6 +121,20 @@ class AutoAdopt(_Case):
         self.assertFalse(self.library.enabled())
         self.assertEqual(self.manifests(), [])
 
+    def test_an_owner_install_that_lands_first_is_never_replaced(self):
+        """Codex P2 on #1294: eligibility is rechecked under the install lock."""
+        [entry] = self.library.adoptable()   # what the adoption saw before the owner's add landed
+        self.github.archives[FORKED] = tarball(UPSTREAM, FORKED, upstream_files())
+        self.library.install(f'https://github.com/{UPSTREAM}/tree/{FORKED}/skills/internal-comms')
+        real = self.library.adoptable
+        views = iter([[entry]])   # the pre-lock check still sees the stale eligibility
+        with mock.patch.object(self.library, 'adoptable', side_effect=lambda: next(views, None) or real()):
+            with self.assertRaises(Exception) as refused:
+                self.library.adopt(entry)
+        self.assertEqual(refused.exception.code, 'skill_unavailable')
+        manifest = json.loads((self.library.root / 'internal-comms.json').read_text())
+        self.assertEqual(manifest['source']['revision'], FORKED, 'the owner-installed revision stays')
+
     def test_an_unpinned_reference_is_not_offered(self):
         self.references(tree_digest(PINNED), address=ADDRESS.replace(COMMIT, 'main').removeprefix('https://'))
         self.assertEqual(self.library.adoptable(), [])

@@ -679,11 +679,13 @@ class SkillLibrary:
         finally:
             shutil.rmtree(staging, ignore_errors=True)
 
-    def install(self, value, *, expected_digest=None, owner=True):
+    def install(self, value, *, expected_digest=None, owner=True, still_adoptable=None):
         """Fetch, stage, inspect and install one external skill; returns its declaration.
 
         ``expected_digest`` (#1291, C7): the content must match this pin, or nothing is installed.
         ``owner``: the owner asked for this add, so a reference they removed earlier is no longer declined.
+        ``still_adoptable`` (#1291, Codex P2 on #1294): checked while holding the install lock, so an
+        automatic adoption never replaces a declaration the owner installed meanwhile.
         """
         # #208: nothing is fetched from GitHub while work mode is on.
         from . import work_mode
@@ -691,6 +693,8 @@ class SkillLibrary:
         if refused:
             raise SkillError(refused, 'work_mode')
         with self._install_lock():
+            if still_adoptable is not None and not still_adoptable():
+                raise SkillError(OUTDATED_TEXT.format(skill=value), 'skill_unavailable')
             manifest = self._install(value, expected_digest)
         if owner and manifest['id'] in self.declined():
             self._set_declined(manifest['id'], False)
@@ -788,7 +792,9 @@ class SkillLibrary:
                         if row['skill'] == entry.get('skill') and row['digest'] == entry.get('digest')), None)
         if current is None:
             raise SkillError(OUTDATED_TEXT.format(skill=entry.get('skill')), 'skill_unavailable')
-        manifest = self.install(current['reference'], expected_digest=current['digest'], owner=False)
+        manifest = self.install(current['reference'], expected_digest=current['digest'], owner=False,
+                                still_adoptable=lambda: any(row['skill'] == current['skill'] and row['digest'] == current['digest']
+                                                            for row in self.adoptable()))
         # Codex P2 on #1294: the owner may switch skills off or remove this skill while it downloads.
         # Their choice wins: the adoption is withdrawn rather than overriding it.
         settings = self._settings()
