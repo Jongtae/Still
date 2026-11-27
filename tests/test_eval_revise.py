@@ -324,6 +324,12 @@ def test_cli_propose_then_record_without_touching_the_repository(tmp_path, monke
     assert skill.read_bytes() == before
 
 
+def test_forbidden_ids_include_world_scenarios(tmp_path):
+    ids = revise.forbidden_ids(include_local=False)
+    assert SCENARIO in ids and 'world-appworld-note-update' in ids
+    assert any(i.startswith('world-') and 'appworld' not in i for i in ids)
+
+
 def test_make_generate_refuses_no_proposer():
     with pytest.raises(ValueError):
         revise.make_generate('none')

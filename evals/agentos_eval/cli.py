@@ -430,7 +430,7 @@ def cmd_revise(args):
         cause = {'kind': args.cause_kind, 'source': args.cause_source,
                  'text': args.cause_file.expanduser().read_text(encoding='utf-8')}
         out = revise.candidate_folder(target, args.out)
-        forbidden = {scenario['id'] for scenario in scenario_module.load()}
+        forbidden = revise.forbidden_ids()
         prior = revise.read_experience(experience, target['path'], limit=args.prior)
         generate, settings, close = revise.make_generate(args.proposer, seed=args.seed)
         try:

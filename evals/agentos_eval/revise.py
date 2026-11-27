@@ -25,6 +25,22 @@ _CANDIDATE_KEYS = {'scope', 'path', 'text', 'summary'}
 _BUNDLE_FIELDS = ('target_path', 'lines', 'base_digest', 'cause', 'proposer')
 
 
+def forbidden_ids(dirs=None, include_local=True, environ=None):
+    """Every scenario id the proposer must not name: rubric and every world's scenarios."""
+    from . import scenarios
+    rubric = scenarios.load(dirs, include_local=include_local, environ=environ)
+    folders = [scenarios.BUNDLED_SCENARIOS] if dirs is None else [Path(item) for item in dirs]
+    if include_local:
+        folders.extend(scenarios.local_scenario_dirs(environ))
+    worlds = {(item.get('world') or {}).get('name') for folder in folders if folder.is_dir()
+              for path in sorted(folder.glob('*.json')) for item in scenarios.load_file(path)} - {None}
+    ids = {item['id'] for item in rubric}
+    for world in sorted(worlds):
+        ids.update(item['id'] for item in scenarios.load(dirs, include_local=include_local, environ=environ,
+                                                          world=world))
+    return ids
+
+
 def load_target(path, lines=None, *, repo=REPO):
     """Read an exact UTF-8 text or inclusive line range under src/."""
     root = Path(repo).resolve()
