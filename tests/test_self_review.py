@@ -35,8 +35,8 @@ def add_lesson(text, why='the owner corrected the answer'):
     return {'op': 'add', 'id': '', 'text': text, 'why': why, 'reason': ''}
 
 
-def review(lessons=(), change='', blocker=''):
-    return {'lessons': list(lessons), 'change': change, 'blocker': blocker}
+def review(lessons=(), change='', blocker='', blocker_kind=''):
+    return {'lessons': list(lessons), 'change': change, 'blocker': blocker, 'blocker_kind': blocker_kind}
 
 
 class SelfReview(Harness):
@@ -218,7 +218,7 @@ class Run(SelfReview):
         self.assertEqual(context.facts['working_lessons'], 'none', 'no lessons yet')
         self.assertEqual(question, om.REVIEW_QUESTION)
         self.assertEqual(schema, om.REVIEW_SCHEMA)
-        self.assertEqual(sorted(schema['properties']), ['blocker', 'change', 'lessons'])
+        self.assertEqual(sorted(schema['properties']), ['blocker', 'blocker_kind', 'change', 'lessons'])
         self.assertEqual(self.rows()[job]['state'], om.STATE_DONE)
         self.service.run_owner_model_upkeep()  # eligible profile rows may now run the terms pass
         self.assertEqual(len(self.facts), 1, 'a done review never runs again')
@@ -277,6 +277,38 @@ class Run(SelfReview):
         self.assertIn('blocker=True', line)
         for raw in ('brief lacked', SECRET, '그거 찾아줘'):
             self.assertNotIn(raw, line, 'the log line is content-free')
+
+    def test_each_blocker_kind_is_stored_next_to_its_blocker(self):
+        self.assertEqual(om.REVIEW_SCHEMA['properties']['blocker_kind']['enum'], [*om.BLOCKER_KINDS, ''])
+        cases = [('the note', kind, kind) for kind in om.BLOCKER_KINDS]
+        cases += [('the note', '', ''), ('', '', ''), ('', 'routing', ''), ('x' * 201, 'login', '')]
+        for note, sent, stored in cases:
+            with self.subTest(note=note[:20], sent=sent):
+                job = self.missed('그거 찾아줘')
+                self.answers = [review(blocker=note, blocker_kind=sent)]
+                self.service.run_owner_model_upkeep()
+                [(_status, detail)] = self.evidence(job)
+                self.assertEqual(detail['blocker_kind'], stored)
+                self.assertNotIn('blocker_kind', [item.get('note') for item in detail['dropped']])
+
+    def test_an_unknown_blocker_kind_is_dropped_and_the_blocker_kept(self):
+        for sent in ('capability-missing', 'Routing', 7, None):
+            with self.subTest(sent=sent):
+                job = self.missed('그거 찾아줘')
+                self.answers = [review(blocker='the note', blocker_kind=sent)]
+                self.service.run_owner_model_upkeep()
+                [(_status, detail)] = self.evidence(job)
+                self.assertEqual((detail['blocker'], detail['blocker_kind']), ('the note', ''))
+                self.assertEqual(detail['dropped'], [{'note': 'blocker_kind', 'reason': 'kind'}])
+                self.assertNotIn('capability-missing', json.dumps(detail))
+
+    def test_an_answer_without_a_blocker_kind_is_still_a_review(self):
+        job = self.missed('그거 찾아줘')
+        self.answers = [{'lessons': [], 'change': '', 'blocker': 'the note'}]
+        self.service.run_owner_model_upkeep()
+        [(status, detail)] = self.evidence(job)
+        self.assertEqual((status, detail['blocker'], detail['blocker_kind'], detail['dropped']),
+                         (om.EVENT_RECORDED, 'the note', '', []))
 
     def test_invalid_or_blocked_lesson_operations_are_dropped(self):
         self.store.save_memory('profile.preference.lunch', '김밥', work_id='w0')
@@ -496,6 +528,9 @@ class Unit(unittest.TestCase):
         for word in ('photo', 'book', 'cart', 'calendar', 'lunch', 'map', 'coupang', 'naver', 'direction'):
             self.assertNotIn(word, om.REVIEW_QUESTION.lower(), word)
         self.assertIn('This judgment writes nothing', om.REVIEW_QUESTION)
+        self.assertEqual(om.BLOCKER_KINDS, ('tool-not-exposed', 'login', 'approval-boundary', 'routing', 'method-text'))
+        for line in om.BLOCKER_KIND_LINES:
+            self.assertIn(line.removeprefix('- '), om.REVIEW_QUESTION)
         for rule in ("language of the owner's own words", 'even in other words', 'give the blocker and no lessons',
                      'Lessons you do not name stay exactly as they are', 'An empty list changes nothing',
                      f'at most {om.MAX_LESSON_OPS} operations', f'at most {om.POINT_CHARS} characters'):

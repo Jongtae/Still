@@ -499,7 +499,7 @@ class ReviewPath(SelfReview):
         lesson = before['요약은 세 줄로']
         self.assertIn(lesson['id'], context.facts['working_lessons'])
         self.assertIn('요약은 세 줄로', context.facts['working_lessons'])
-        self.assertEqual(sorted(schema['properties']), ['blocker', 'change', 'lessons'])
+        self.assertEqual(sorted(schema['properties']), ['blocker', 'blocker_kind', 'change', 'lessons'])
         ops = schema['properties']['lessons']['items']
         self.assertEqual(sorted(ops['properties']['op']['enum']), ['add', 'remove', 'update'])
         self.assertEqual(sorted(ops['required']), ['id', 'op', 'reason', 'text', 'why'])
