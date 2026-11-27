@@ -14,6 +14,7 @@ from datetime import datetime
 
 from . import entrusted_lines as el
 from . import condition_checks as checks
+from .line_decisions import LineDecisions
 from . import preparations as prep
 from . import owner_model as om
 from . import work_status as ws
@@ -2919,14 +2920,14 @@ class PreparationsService:
         ``sent`` (a dispatch Still observed handed off, which is not the service's confirmation that the
         goal took effect), ``not_applied`` (reconciled as not applied), ``unconfirmed`` (claimed with no
         definite answer, so it may have run). From code-run Evidence: ``refused`` (Still refused it before
-        sending, #1250) and ``asked`` (a Work of the line waiting now for the owner's approval). ``unconfirmed_items`` names up to
+        sending, #1250; and a connector change Still refused, #1271) and ``asked`` (a Work of the line waiting now for the owner's approval). ``unconfirmed_items`` names up to
         ``LINE_EFFECTS_NAMED`` of them by operation, host and connection name; never a body or a value.
         """
         from .manifests import LOCAL_WRITE_ACTIONS
         from .agent_runtime import (CODE_ACTIONS, EFFECT_CHANGED, EFFECT_UNKNOWN, REVISABLE_RECORD_ACTIONS,
                                     EFFECT_FREE_READS, _call_target, _state_free_actions, classify_effect_rows, dispatch_call_accounted,
-                                    dispatch_call_keys, effect_call_history_of, effect_rows, refused_rows,
-                                    refused_state_change)
+                                    connector_refused_rows, dispatch_call_keys, effect_call_history_of, effect_rows,
+                                    refused_rows, refused_state_change)
         store=self.service.store
         with store.db() as db:
             works=[item['id'] for item in db.execute(
@@ -2985,6 +2986,8 @@ class PreparationsService:
             if not isinstance(detail,dict):continue
             # A run cut off after a refusal keeps it on its failure record (``refused_rows``).
             if refused_state_change('code_run',detail):out['refused']+=len(refused_rows(detail))
+        # #1271: and a connector change Still refused before it left.
+        with store.db() as db:out['refused']+=len(connector_refused_rows(db,works)[0])
         # Waiting now, by the current approval state (``step_approval_pending``: requested, not expired), not by
         # the request ever having been made (#1252 review).  A Work holds at most one request, kept in one map by
         # Work id, so only the line's Works that have an entry there are asked.
@@ -3132,6 +3135,16 @@ class PreparationsService:
                     result=self.line_read(args.get('line'))
                     self._record_line_read(job['id'],result,held=True)
                     return result
+                if action in ('decide','settle','learn'):
+                    line=args.get('line')
+                    if not service.owner_typed_work(job):
+                        own=self.own_running_row(job)
+                        if not own or not own.get('line_id') or own['line_id']!=line:raise refused('unattended_run')
+                    if not isinstance(line,str) or not line or service.lines.current(line) is None:
+                        raise refused('line_not_found')
+                    decisions=LineDecisions(service.store,service.preparations.clock)
+                    if action=='learn':return decisions.learn(line,job['id'],args)
+                    return getattr(decisions,action)(line,job['id'],args,service._redact_known_secrets)
                 if action not in ('open','revise','undo','stop','restart'):raise refused('line_invalid_action')
                 if service.owner_typed_work(job):return getattr(self,'_line_'+action)(job,args)
                 # #968: a scheduled run writes only its own line: as the owner's steer asks, or its open matters.
@@ -3301,7 +3314,22 @@ class PreparationsService:
         if effects['unconfirmed']:
             next_step+=' '+msg('lines.stopped_unconfirmed',count=effects['unconfirmed'])
         day=service.preparations.budget_day(service.preparations.clock())
-        return {**el.public_brief(after,day=day),'scope':scope,'changed':changed,'effects':effects,'next_step':next_step}
+        result={**el.public_brief(after,day=day),'scope':scope,'changed':changed,'effects':effects}
+        if scope=='line' and changed and not steered:
+            # #1272: the line promised a report at its end; the owner's AI that ended it gives that report in this
+            # reply, from what the periodic account reads (the brief, the line's outcomes, its recorded changes).
+            # No new run: a stopped line's rows stay stopped and nothing more is carried out.  A run of the line
+            # that stops it on the owner's steer is a run of a stopped line, whose reply is not delivered.
+            result['closing_account']=self.line_closing_account(after)
+            next_step+=' '+msg('lines.stopped_report')
+        return {**result,'next_step':next_step}
+
+    def line_closing_account(self, brief):
+        """#1272: the facts of a line's closing report: its brief, its outcomes and its recorded changes."""
+        outcomes=self.line_outcomes(brief['line_id'])
+        text=self.current_line_text(brief)+'\n'+el.outcomes_text(outcomes,self.service.home_zone())
+        effects=self.line_effects_text(self.line_effects(brief['line_id']),account=True)
+        return text+('\n'+effects if effects else '')
 
     def _line_restart(self, job, args):
         service=self.service
@@ -3360,7 +3388,9 @@ class PreparationsService:
             # #1252: a run that continues the line reconciles an open change before acting again.
             effects=self.line_effects_text(self.line_effects(row['line_id']))
             if effects:lead+='\n'+effects
-        return lead+'\n'+self.current_line_text(brief)+'\n'+el.outcomes_text(outcomes,row.get('timezone'))
+        clock=service.preparations.clock
+        recall=LineDecisions(service.store,clock).recall_text(row['line_id'],as_of=clock())
+        return lead+'\n'+self.current_line_text(brief)+'\n'+el.outcomes_text(outcomes,row.get('timezone'))+'\n'+recall
 
     def plan_execute_note(self, row):
         """#1253: a line that acts on time between runs is told the plan-then-execute split, whatever the owner's words.

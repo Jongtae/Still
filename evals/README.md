@@ -145,6 +145,44 @@ These measure the form of one update in a recurring series (a watch, a line's ru
 - `python3 -m agentos_eval progress-forms --baseline current --arm current=<records.json> --arm bluf=<records.json>` compares arms (one run per reporting-rule set) from recorded runs. It calls no model. A candidate is `preferred` only when dev and held-out `progress_update` both improve, neither reader profile gets worse, and `honest_unverified` stays within 0.05.
 - Producing the records needs a judged sweep. `--judge subscription-cli:codex[:<model>]` judges through Still's shipped Codex judgment route on a sandbox copy of the seed (`cli_judge.py`): no API key, no USD, `--max-judge-calls` (default 400) caps it. `--arm current|bluf|exception` adds that candidate form (`progress-update-arms.json`) to the owner turn of progress-update scenarios as instruction text; no form lives in product code. The judge sees that turn, so an arm result measures how well the form is carried out, a proxy for it being the default. `progress-forms` reads the sweeps' `.eval` logs.
 
+## Versioned-text arm comparison (`agentos_eval/arm_compare.py`, #1278)
+
+The adopt-or-not gate for a revision of versioned method text (a bundled skill, tool guidance, a prompt section), for the #1275 loop. It reads recorded runs and calls no model. `progress-forms` is built on the same aggregation and gate pieces and keeps its own rules above.
+
+`compare_versioned_text(baseline, candidates, *, meta, target, tolerances, equal_retries=None, min_trials=3)`
+
+- An arm is `{"text_digest": text_digest(text), "settings": {"worker", "model", ...}, "scenario_ids": [...], "records": [...], "cost": {...}}`. `records` are `report.records_from_samples` rows. `settings` holds everything that must be matched (worker, model, effort, judge). `cost` is a mapping of numbers the caller measured (calls, tokens, USD).
+- `meta` maps scenario id to `{"split": "dev" | "heldout", "source"}` and comes from the scenario set, never from an arm.
+- `target` and every key of `tolerances` (the safety and honesty dimensions, at least one) are keys of a record's `value`. Higher is better for all of them.
+- Refused with an error: different scenario sets or settings, runs outside the declared scenarios or from another worker, a repeated (scenario, epoch), a run whose recorded engine model or effort contradicts `settings`, different judges or a mix of judged and checks-only runs (`passed` depends on the judge), a candidate with the current digest, an `equal_retries` arm with another digest.
+- A run with a request Still refused (`refused_effects`) scores 0 on the target. A run above 0 whose refusals were not observed is missing evidence. Records written before #1278, and world-run records, carry no refusal observation.
+- A run the judge failed or refused to grade (`judge_error`, `budget_refused`) and scored above 0 is missing evidence.
+- `equal_retries` is the current text run at least as many times, per scenario, as all candidate arms together. Pass every candidate arm that was run, including dropped ones and a composition.
+- Verdict per candidate, in this order. `insufficient_evidence`: fewer than `min_trials` (at least 2) graded runs of a scenario, unbalanced epochs, a dev or held-out split with no scenario, or a missing grade. `rejected`: a dimension falls beyond its tolerance on dev or held-out, or the target does not improve, by more than the noise, against the baseline or `equal_retries`. `insufficient_evidence`: a difference within the noise, no or too small `equal_retries`, or no cost. Otherwise `preferred`.
+- Noise, per split, is the larger of the two arms' max - min of the per-epoch split mean (the spread rule of `continuity.py`). It is a descriptive bound, not a significance test.
+- Cases with `source: local` are reported as `owner_store_check` and never decide.
+
+## Versioned-text revision candidates (`agentos_eval/revise.py`, #1283)
+
+Propose and compose for the #1275 loop (adapted from Harness², arXiv 2610.14224). It writes candidate revisions of one versioned text and records one experience entry per comparison. It never edits repository text: adopting a candidate is a reviewed PR.
+
+```
+PYTHONPATH=src:evals python -m agentos_eval revise propose --target <repo path under src/> [--lines A-B] \
+    --cause-kind blocker|regression --cause-source <Work id or scenario id> --cause-file <text file> \
+    --proposer <provider/model | subscription-cli:codex[:<model>[:<effort>]]> [--seed <seed>] [--compose] \
+    [--out <folder>] [--experience <folder>] [--prior 8]
+PYTHONPATH=src:evals python -m agentos_eval revise record --candidates <folder> --comparison <compare.json> [--experience <folder>]
+```
+
+- **Target**: one file under `src/` (a bundled skill, a module holding tool guidance or a prompt section), optionally a 1-based inclusive line range. Its digest is `arm_compare.text_digest` of exactly that text. Files under `evals/` or `tests/` (scenarios, judges, rubrics, the adoption rule, tolerances) are never a target.
+- **Cause**: a kind (`blocker`: the stored, already redacted text `agentos_eval blockers` printed; `regression`: a developer-written failure statement), a source id and the text. Only the text reaches the proposer; a cause that contains a scenario id (rubric or any world) is refused.
+- **Proposer input** is exactly `{target_path, lines, base_digest, text, cause, prior}`. `prior` is the earlier experience for the same target path, newest entry first, at most `--prior` entries, each candidate projected to `{candidate_digest, scope, summary, cause, verdict, adopted}`. `adopted` is true when that candidate's digest is the current text's digest. Scenario ids, settings, verdict reasons, measures and tolerances are left out.
+- **Reply**: JSON `{"candidates": [{"scope", "path", "text", "summary"}]}`, at most one `general` and one `scoped`. Refused and listed in `refused.json` (without text): a reply that is not that object or has other keys (the whole reply), and a candidate with other keys, a path other than the target, a repeated scope or a third candidate, empty or unchanged text, an empty summary, or text naming a scenario id.
+- **Compose** (`--compose`, only when both a general and a scoped candidate were accepted): one more call with the same input plus `candidates` (their scope, summary and text). The reply holds one candidate with scope `composed`, under the same refusals. It records its parents' digests and is a new arm: it is compared on its own and never takes its parents' verdicts.
+- **Output folder** (default `$AGENTOS_EVAL_HOME/revisions/<target slug>/<time>-<base digest 8>/`, refused inside the repository): `<label>.txt` (the revised text), `<label>.json` (`revision-candidate/1`: label, scope, target_path, lines, base_digest, candidate_digest, summary, cause, proposer, parents), `refused.json`, `manifest.json` (`revision-candidates/1`, including the proposer calls and their observed usage).
+- **Experience entry** (`revise record`; one JSON file per comparison under `$AGENTOS_EVAL_HOME/experience/<target slug>/`, never owner Memory; refused inside the repository): `revision-experience/1` with recorded_at, target_path, lines, base_digest, cause, proposer, settings, scenario_ids, measure target and tolerances, candidates (label, scope, candidate_digest, summary, parents, verdict, reasons) and cost (proposer calls and each compared arm's cost). The comparison is a `compare_versioned_text` result (`arm-compare/1`); its baseline must carry the base digest and every compared label must match a candidate's digest. A candidate the comparison did not include is `not_compared`.
+- Tests inject the transport; the command makes at most two model calls and none when a reply is refused.
+
 ## Action sandbox: world scenarios (`sweep --world`, #484)
 
 A world scenario lets a real AI finish outward actions: writing to the owner's own space, sending and paying. It acts against a **simulated world** with state-based tests, never a live service. The world is AppWorld: nine simulated everyday apps, with tests that check the final app databases. It reaches Still the way the owner's own tools do, as **one owner-confirmed stdio MCP server**. Every call is decided by Still (`owner_mcp`, `codex_permission_hook`).
@@ -569,6 +607,10 @@ affected.
 ## Lesson retention (#1031)
 
 `lessons/` measures whether a lesson Still learned for an owner is still carried by later Works (model-free) and followed by them (opt-in judge). It reads a read-only copy of one owner's store and reports counts only; real data stays outside the repository. See [lessons/README.md](lessons/README.md). The judge runs only with an explicitly named route (#885).
+
+## Self-review blockers (#1277)
+
+`PYTHONPATH=src:evals python -m agentos_eval blockers --store <data folder or quickstart.db>` lists the blockers recent self-reviews recorded, as candidate targets for revising versioned method text (#1275). It opens the named store read-only and runs one bounded query (`--scan` newest tool events, default 20000). It prints only the stored blocker text, Work ids and dates, grouped when the wording matches apart from case, spacing and a final period; Works with a forgotten turn are left out; a stored blocker is not rechecked against facts forgotten from Memory. Run it once, not on a timer, and keep its output off the repository.
 
 ## Task coverage map
 

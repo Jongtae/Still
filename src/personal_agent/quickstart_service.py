@@ -8811,14 +8811,28 @@ class AgentService:
         input_digest=None
         autonomy=None
         exact_step_ready=False
+        def refused(message):
+            # #1271: a change Still refused before it left is recorded as refused, unsent - as a code run's are
+            # (#1250) - so the Work it served is not done and the line's account counts it.  Never its input.
+            evidence={'engine':engine,'service':service_name,'identity':identity,'operation':operation,'kind':kind,
+                      'decision':'deny','effect':'none','refused':effect}
+            if input_digest:evidence['input_digest']=input_digest
+            with self.store.db() as db:
+                self.store.require_read_checkpoint_writer(db)
+                db.execute('INSERT INTO tool_events(job_id,tool,status,detail,created) VALUES (?,?,?,?,?)',
+                           (job['id'],'connector_permission','denied',json.dumps(
+                               {'scope':'ai-connection','host_action':'connector_permission','evidence':evidence},
+                               ensure_ascii=False),time.time()))
+            return {'behavior':'deny','message':message}
         if effect in ('mutate','payment') and record['state']=='active':
             if not isinstance(values,dict):
-                return {'behavior':'deny','message':'실행할 정확한 입력을 확인할 수 없어 실행하지 않았습니다.'}
+                return refused('실행할 정확한 입력을 확인할 수 없어 실행하지 않았습니다.')
             try:
                 input_digest=self.connector_input_digest(tool,values)
                 binding=self._connector_action_binding(job,tool,values,target,effect)
             except (TypeError,ValueError):
-                return {'behavior':'deny','message':'실행할 정확한 입력을 확인할 수 없어 실행하지 않았습니다.'}
+                input_digest=None
+                return refused('실행할 정확한 입력을 확인할 수 없어 실행하지 않았습니다.')
             from .agent_runtime import _claim_target, effect_mutation_refusal
             from .self_set_writes import scoped_binding
             exact_step_ready=self._exact_effect_step_ready(job,binding if effect=='payment' else scoped_binding(binding))
@@ -8828,9 +8842,9 @@ class AgentService:
                 refusal=effect_mutation_refusal(db,self.store,job['id'],_claim_target(target),replay_keys={input_digest},
                                                 approved_next=exact_step_ready)
             if refusal=='effect_unknown':
-                return {'behavior':'deny','message':'이 요청의 앞선 동작이 실제로 반영됐는지 아직 확인되지 않았습니다. 결과를 확인하기 전에는 다른 변경이나 반복 실행을 하지 않습니다.'}
+                return refused('이 요청의 앞선 동작이 실제로 반영됐는지 아직 확인되지 않았습니다. 결과를 확인하기 전에는 다른 변경이나 반복 실행을 하지 않습니다.')
             if refusal:
-                return {'behavior':'deny','message':'현재 권한이나 기존 실행 기록이 달라져 실행하지 않았습니다. 권한과 기존 결과를 확인하고 남은 일만 진행하세요.'}
+                return refused('현재 권한이나 기존 실행 기록이 달라져 실행하지 않았습니다. 권한과 기존 결과를 확인하고 남은 일만 진행하세요.')
             from .code_run import APPROVAL_EXACT_LABEL, APPROVAL_NOTE_REQUIRED, CONNECTOR_APPROVAL_NOTE_SUFFIX
             note=self._connector_approval_note(job['id'],input_digest)
             note_required=f'approval_note_required: {APPROVAL_NOTE_REQUIRED}{CONNECTOR_APPROVAL_NOTE_SUFFIX}'
@@ -8841,7 +8855,11 @@ class AgentService:
                     write_ticket=self.self_set_write(job,binding,f'connector:{engine}|{kind}|{identity}',operation,
                         value_lines(values),(),effect=reversibility or 'irreversible',values=values,note=note,require_note=True)
                 except ToolError as exc:
-                    return {'behavior':'deny','message':note_required if exc.code=='approval_note_required' else str(exc)}
+                    # Asked, not refused: a change whose owner approval is now pending waits (#1271 review), as a
+                    # payment's does; ``line_effects`` counts it as asked.
+                    if exc.code=='approval_required' and self.step_approval_pending(job['id']):
+                        return {'behavior':'deny','message':str(exc)}
+                    return refused(note_required if exc.code=='approval_note_required' else str(exc))
             if effect=='payment':
                 label=f'{service_name} / {operation}\n'+value_lines(values)  # #945: readable, every value kept
                 autonomy=self._authorize_payment_autonomy(job,binding,label)
@@ -8849,8 +8867,8 @@ class AgentService:
                 allow=bool(autonomy) or pending.get('state')=='issued' and pending.get('digest')==self._browser_step_keys(binding)['digest']
                 if not allow:
                     if self.unattended_work(job):
-                        return {'behavior':'deny','message':self.scheduled_payment_refusal(job) or UNATTENDED_APPROVAL_TEXT}
-                    if not note:return {'behavior':'deny','message':note_required}
+                        return refused(self.scheduled_payment_refusal(job) or UNATTENDED_APPROVAL_TEXT)
+                    if not note:return refused(note_required)
                     approval_label=f'{note}\n\n{APPROVAL_EXACT_LABEL} {label}'
                     if len(approval_label)>8000 or self._redact_known_secrets(approval_label)!=approval_label:
                         return {'behavior':'deny','message':'실행 내용을 비밀값 없이 온전히 확인할 수 없어 승인을 요청하지 않았습니다.'}
@@ -8871,10 +8889,10 @@ class AgentService:
                                                   approved_next=exact_payment or exact_write)
             if event_id is None:
                 self.self_set_write_release(job,write_ticket)
-                return {'behavior':'deny','message':'현재 권한이나 기존 실행 기록이 달라져 실행하지 않았습니다. 권한과 기존 결과를 확인하고 남은 일만 진행하세요.'}
+                return refused('현재 권한이나 기존 실행 기록이 달라져 실행하지 않았습니다. 권한과 기존 결과를 확인하고 남은 일만 진행하세요.')
             if effect=='payment' and not autonomy and not self._consume_browser_step(job,binding):
                 allow=False
-                detail['evidence'].update(decision='deny',effect='none')
+                detail['evidence'].update(decision='deny',effect='none',refused=effect)
             with self.store.db() as db:
                 db.execute('BEGIN IMMEDIATE')
                 self.store.require_read_checkpoint_writer(db)
@@ -8882,7 +8900,7 @@ class AgentService:
                 if allow and autonomy:
                     try:allow=bool(self._authorize_payment_autonomy(job,binding,label,ticket=autonomy,dispatch=True,db=db))
                     except ToolError:allow=False
-                if not allow:detail['evidence'].update(decision='deny',effect='none')
+                if not allow:detail['evidence'].update(decision='deny',effect='none',refused=effect)
                 db.execute('UPDATE tool_events SET status=?,detail=? WHERE id=?',
                            ('allowed' if allow else 'denied',json.dumps(detail,ensure_ascii=False),event_id))
         else:
@@ -8901,7 +8919,7 @@ class AgentService:
                 except ToolError:allow=False
                 allow=allow and self._connector_authority_current(job,target,binding,effect,operation)
                 if not allow:
-                    detail['evidence'].update(decision='deny',effect='none')
+                    detail['evidence'].update(decision='deny',effect='none',refused=effect)
                     db.execute('UPDATE tool_events SET status=?,detail=? WHERE id=?',
                                ('denied',json.dumps(detail,ensure_ascii=False),event_id))
         if allow and write_ticket:
@@ -8911,7 +8929,7 @@ class AgentService:
                 try:self.self_set_write_check(job,write_ticket,db=db)
                 except ToolError:
                     allow=False
-                    detail['evidence'].update(decision='deny',effect='none')
+                    detail['evidence'].update(decision='deny',effect='none',refused=effect)
                     db.execute('UPDATE tool_events SET status=?,detail=? WHERE id=?',
                                ('denied',json.dumps(detail,ensure_ascii=False),event_id))
         if not allow:self.self_set_write_release(job,write_ticket)

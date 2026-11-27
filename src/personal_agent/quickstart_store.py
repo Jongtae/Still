@@ -1303,7 +1303,8 @@ class QuickStore:
 
     def _save_memory(self, db, memory_key, content, owner_key, work_key=None, candidate_id=None,
                      preserve_correction_token=None, corrected=False, invalidates=(), valid_until=None, origin=None, source_works=None,
-                     basis=None, evidence=None, evidence_message=None, retrieval_terms=None, retrieval_terms_meta=None):
+                     basis=None, evidence=None, evidence_message=None, retrieval_terms=None, retrieval_terms_meta=None,
+                     saved_at=None):
         if basis is not None and basis not in MEMORY_BASES:
             raise ValueError('기억의 근거를 확인하세요.')
         if evidence is not None and (not isinstance(evidence, str) or len(evidence) > MEMORY_EVIDENCE_CHARS):
@@ -1354,7 +1355,7 @@ class QuickStore:
                       WHERE owner_key=? AND memory_key=? AND state='issued'
                         AND (? IS NULL OR token_hash<>?)""",
                    (owner_key,memory_key,preserve_correction_token,preserve_correction_token))
-        now=time.time()
+        now=time.time() if saved_at is None else saved_at
         for row,reason in ended:
             db.execute("""UPDATE memories SET state='superseded',invalidated_by=?,invalidation_reason=?,invalidated_at=?
                           WHERE id=? AND owner_key=?""",(memory_id,reason,now,row['id'],owner_key))
