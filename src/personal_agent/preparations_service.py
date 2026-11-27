@@ -1142,7 +1142,7 @@ class PreparationsService:
             local=lambda slot:prep.local_text(slot,row['timezone'])
             recurrence=row.get('recurrence')
             until_at=row.get('until_at')
-            following=self.run_following(row)
+            following=self.run_following(row,service.preparations.clock())
             schedule=(msg('preparations.run_next',due=local(following)) if following is not None
                       else msg('preparations.run_last'))
             if row.get('check_spec'):
@@ -1177,8 +1177,11 @@ class PreparationsService:
             return msg('preparations.run_fact')+'\n'+msg('preparations.own_limits')
 
     @staticmethod
-    def run_following(row):
+    def run_following(row, now=None):
         """The slot after the run at ``row['due_at']``, by the scheduler's own slot functions, or None.
+
+        ``now`` (the scheduler's clock) skips slots that already passed, as ``Preparations.settle``
+        does, so a run that started late is told the next live slot.
 
         A row no longer running or scheduled (cancelled, paused, done) has none: the scheduler admits only
         a scheduled row.  An extra run (``run_return_state``, an owner's run now) leaves the regular schedule as it was: its
@@ -1190,9 +1193,11 @@ class PreparationsService:
             return row['due_at'] if row['run_return_state']==prep.STATE_SCHEDULED else None
         if row.get('recurrence')==prep.RECURRENCE_WINDOW:
             # A recurring window's last slot of the day is followed by the next day's opening (``settle``).
-            following=prep.next_window_slot(row,row['due_at'])
-            return following if following is not None else prep.next_day_window(row,row['due_at']).get('due_at')
-        return prep.next_due(row['due_at'],row['timezone'],row.get('recurrence'),row['due_at'],row.get('rule_start'),
+            after=max(row['due_at'],now if now is not None else row['due_at'])
+            following=prep.next_window_slot(row,after)
+            return following if following is not None else prep.next_day_window(row,after).get('due_at')
+        after=max(row['due_at'],now if now is not None else row['due_at'])
+        return prep.next_due(row['due_at'],row['timezone'],row.get('recurrence'),after,row.get('rule_start'),
                              int(row['run_count']))
 
     @staticmethod
@@ -1227,7 +1232,7 @@ class PreparationsService:
         try:
             row=service.preparations.get(preparation_id)
             if not row:return None
-            kind,at=('check',self.check_following(row)) if row.get('check_spec') else ('run',self.run_following(row))
+            kind,at=('check',self.check_following(row)) if row.get('check_spec') else ('run',self.run_following(row,service.preparations.clock()))
             if at is None:return None
             return {'at':float(at),'kind':kind,'local':prep.local_text(at,row['timezone'])}
         except Exception:
@@ -1248,7 +1253,7 @@ class PreparationsService:
             if preparation_id and job.get('model')!='preparation':
                 row=service.preparations.get(preparation_id)
                 if row:
-                    following=self.run_following(row) if not row.get('check_spec') else self.check_following(row)
+                    following=self.run_following(row,service.preparations.clock()) if not row.get('check_spec') else self.check_following(row)
                     lines.append(msg('preparations.schedule_run',id=preparation_id,run=int(row['run_count']),state=row['state'],
                                      next=prep.local_text(following,row['timezone']) if following is not None
                                      else msg('label.none'),

@@ -176,3 +176,14 @@ def test_a_daily_windows_last_slot_is_followed_by_the_next_days_opening(case):
     following = c.service.preparations_service.run_following(last)
     assert following == prep.next_day_window(last, last['due_at'])['due_at']
     assert following > row['until_at']
+
+
+def test_a_run_that_started_late_is_told_the_next_live_slot(case):
+    # Codex review on #1281: settle() skips elapsed slots, so a run due 09:00 that starts 09:06 has 09:10 next.
+    c = case
+    row = window_row(c, owner(c, 'Every five minutes until the close, plan and order', 'setup'))
+    c.clock[0] = row['due_at'] + 360
+    assert c.preps.start(row, channel='web', chat_id=None, now=c.clock[0])
+    run = c.store.job(current(c, row)['last_run_job_id'])
+    start = c.service.preparation_next_start(run)
+    assert start['at'] == row['due_at'] + 600 == prep.next_window_slot(current(c, row), c.clock[0])
