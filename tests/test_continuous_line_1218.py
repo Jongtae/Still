@@ -281,7 +281,10 @@ def test_correction_keeps_exact_row_standing(case, steered, standing):
     else:
         job = owner(c, 'Use the revised limits', 'correction')
     replacement = schedule(c, job, line_id, replaces=original['id'], goal='Use the revised limits')
-    assert replacement['accepted_by'] == standing
+    # The judgment here says the owner asked: accepted work keeps its exact standing, and a self-set
+    # row replaced on the owner's own request takes the owner's standing (#1259).
+    assert replacement['accepted_by'] == (standing if standing in prep.PAYMENT_STANDING
+                                           else prep.ACCEPTED_OWNER_REQUEST)
     assert current(c, original)['state'] == prep.STATE_CANCELLED
 
 

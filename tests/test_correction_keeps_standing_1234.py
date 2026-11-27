@@ -36,16 +36,16 @@ def judged(c, *, change_yes=True):
     return seen
 
 
-def schedule(c, job, goal, replaces=None):
+def schedule(c, job, goal, replaces=None, line='none'):
     result = c.service.preparation_scheduler(job, '')({
         'kind': 'prepare', 'goal': goal, 'offer': 'Keep the day trading going', 'due': at(c.clock[0] + 60),
-        'line': 'none', **({'replaces': replaces} if replaces else {}),
+        'line': line, **({'replaces': replaces} if replaces else {}),
     })
     return c.preps.get(result['preparation_id'])
 
 
-def accepted_row(c, accepted_by):
-    row = schedule(c, owner(c, 'Trade today, sell before 15:20 only on a stop loss', 'first'), ORIGINAL)
+def accepted_row(c, accepted_by, line='none'):
+    row = schedule(c, owner(c, 'Trade today, sell before 15:20 only on a stop loss', 'first'), ORIGINAL, line=line)
     assert row['accepted_by'] == prep.ACCEPTED_OWNER_REQUEST
     if accepted_by != row['accepted_by']:
         with c.store.db() as db:
@@ -109,3 +109,24 @@ def test_a_long_correction_reaches_the_judgment_whole(case):
                    CORRECTED + ' ' + 'b' * 3000, replaces=row['id'])
     assert len(seen[-1]) > 6000
     assert new['accepted_by'] == prep.ACCEPTED_OWNER_REQUEST
+
+
+@pytest.mark.parametrize('on_line', [False, True])
+def test_replacing_self_set_work_the_owner_now_asks_for_takes_the_owners_standing(case, on_line):
+    """#1259: the owner's own request for the work, judged as a new schedule, is the owner's standing."""
+    c = case
+    seen = judged(c)
+    line = (c.service.lines.open(c.owner, task='Trade the day', report_promise='Report each run')['line_id']
+            if on_line else 'none')
+    old = accepted_row(c, prep.ACCEPTED_OWNER_WORK, line=line)
+    asked = owner(c, 'Keep trading today and sell before 15:20 only on a stop loss, ordering as the rule says',
+                  'request')
+    new = schedule(c, asked, ORIGINAL, replaces=old['id'], line=line)
+    assert new['line_id'] == (line if on_line else None)
+    assert 'Accepted work:' not in seen[-1]
+    assert new['accepted_by'] == prep.ACCEPTED_OWNER_REQUEST
+    assert c.preps.get(old['id'])['state'] == prep.STATE_CANCELLED
+    run = run_of(c, new)
+    switch(c, True)
+    assert not c.service.self_set_run(run)
+    assert c.service._authorize_payment_autonomy(run, None, 'sell') is not None
