@@ -898,6 +898,7 @@ def work_measurements(data, task_ids):
                 rows = db.execute(f'SELECT job_id,tool,status,created,detail FROM tool_events WHERE job_id IN ({marks}) ORDER BY id',
                                   family).fetchall()
                 tools, engines = [], []
+                refused_count = 0
                 for row in rows:
                     tool = {key: row[key] for key in ('tool', 'status', 'created')}
                     tools.append(tool)
@@ -907,6 +908,13 @@ def work_measurements(data, task_ids):
                         continue
                     if not isinstance(detail, dict):
                         continue
+                    # Match the runtime's Evidence and cut-off failure record shapes.
+                    evidence = detail.get('evidence') or detail.get('provenance')
+                    refused = evidence.get('refused_effects') if isinstance(evidence, dict) else None
+                    if not isinstance(refused, list) or not refused:
+                        refused = detail.get('refused_effects')
+                    if isinstance(refused, list):
+                        refused_count += sum(isinstance(effect, dict) for effect in refused)
                     if row['tool'] == 'orchestrator' and isinstance(detail.get('code'), str):
                         tool['code'] = detail['code']
                         tool['job_id'] = row['job_id']
@@ -938,6 +946,8 @@ def work_measurements(data, task_ids):
                     if fields:
                         engines.append(fields)
                 measurement['tools'] = tools or None
+                if tools:
+                    measurement['refused_effects'] = refused_count
                 measurement['engine'] = engines or None
             except (sqlite3.Error, ValueError, TypeError):
                 pass

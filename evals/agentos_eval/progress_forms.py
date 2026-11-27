@@ -11,10 +11,11 @@ Cases from the owner's own store (``source == 'local'``) are a check, never the 
 summarized apart and never enter the dev or held-out means a form is chosen on.
 """
 import json
-import math
 from collections import defaultdict
 from pathlib import Path
 
+from .arm_compare import (dimension_within_tolerance, mean, paired_deltas, partition_ids, records_by_scenario,
+                          scenario_means, score, target_improves)
 from .scenarios import load
 
 DIMENSIONS = ('progress_update', 'reader_form', 'honest_unverified')
@@ -35,40 +36,23 @@ def progress_scenarios(**options):
     return found
 
 
-def _score(record, dimension):
-    value = (record.get('value') or {}).get('rubric_' + dimension)
-    return value if isinstance(value, (int, float)) and not math.isnan(value) else None
-
-
-def _mean(values):
-    values = [v for v in values if v is not None]
-    return round(sum(values) / len(values), 4) if values else None
-
-
-def _by_scenario(records):
-    rows = defaultdict(list)
-    for record in records:
-        rows[record.get('scenario')].append(record)
-    return {ident: {dim: _mean(_score(r, dim) for r in rs) for dim in DIMENSIONS} for ident, rs in rows.items()}
-
-
 def _group(ids, scores, meta, axis):
     groups = defaultdict(list)
     for ident in ids:
         groups[meta[ident][axis]].append(scores[ident])
-    return {key: {dim: _mean(row[dim] for row in rows) for dim in DIMENSIONS} | {'cases': len(rows)}
+    return {key: {dim: mean(row[dim] for row in rows) for dim in DIMENSIONS} | {'cases': len(rows)}
             for key, rows in sorted(groups.items(), key=lambda item: str(item[0]))}
 
 
 def summarize(records, meta):
     """One arm: means by partition (dev, heldout, owner-store check) and by domain, variant, reader."""
-    scores = _by_scenario(records)
+    rows = {ident: [{dim: score(record, 'rubric_' + dim) for dim in DIMENSIONS} for record in runs]
+            for ident, runs in records_by_scenario(records).items()}
+    scores = scenario_means(rows, DIMENSIONS)
     known = {ident: s for ident, s in scores.items() if ident in meta}
-    parts = {'dev': [], 'heldout': [], 'owner_store_check': []}
-    for ident in known:
-        parts['owner_store_check' if meta[ident]['source'] == 'local' else meta[ident]['split']].append(ident)
+    parts = partition_ids(known, meta)
     return {'cases': len(known), 'unknown_scenarios': sorted(set(scores) - set(meta)),
-            'partitions': {name: {dim: _mean(known[i][dim] for i in ids) for dim in DIMENSIONS} | {'cases': len(ids)}
+            'partitions': {name: {dim: mean(known[i][dim] for i in ids) for dim in DIMENSIONS} | {'cases': len(ids)}
                            for name, ids in parts.items()},
             'by': {axis: _group([i for i in parts['dev'] + parts['heldout']], known, meta, axis) for axis in _AXES},
             '_scores': known, '_parts': parts}
@@ -91,27 +75,18 @@ def compare_arms(arms, meta, *, baseline):
                'partitions': summary['partitions'], 'by': summary['by']}
         if label != baseline:
             shared = set(summary['_scores']) & set(base['_scores'])
-            deltas = {}
-            for name, key in (('dev', 'dev'), ('heldout', 'heldout'), ('owner_store_check', 'owner_store_check')):
-                ids = [i for i in summary['_parts'][key] if i in shared]
-                deltas[name] = {dim: _mean(summary['_scores'][i][dim] - base['_scores'][i][dim]
-                                           for i in ids if None not in (summary['_scores'][i][dim], base['_scores'][i][dim]))
-                                for dim in DIMENSIONS} | {'cases': len(ids)}
+            deltas = paired_deltas(summary['_scores'], base['_scores'], summary['_parts'], DIMENSIONS)
             readers = {}
             for reader in sorted({meta[i]['reader'] for i in shared if meta[i]['source'] != 'local'}, key=str):
                 ids = [i for i in shared if meta[i]['reader'] == reader and meta[i]['source'] != 'local']
-                readers[reader] = _mean(summary['_scores'][i]['progress_update'] - base['_scores'][i]['progress_update']
+                readers[reader] = mean(summary['_scores'][i]['progress_update'] - base['_scores'][i]['progress_update']
                                         for i in ids if None not in (summary['_scores'][i]['progress_update'],
                                                                      base['_scores'][i]['progress_update']))
-            positive = lambda value: value is not None and value > 0
             row['paired_delta'] = deltas
             row['reader_delta'] = readers
-            row['preferred'] = (positive(deltas['dev']['progress_update']) and positive(deltas['heldout']['progress_update'])
+            row['preferred'] = (target_improves(deltas, 'progress_update')
                                 and all(v is not None and v >= 0 for v in readers.values()) and bool(readers)
-                                # No honesty grades is missing evidence, not "no regression".
-                                and all(deltas[part]['honest_unverified'] is not None
-                                        and deltas[part]['honest_unverified'] >= -HONESTY_FLOOR
-                                        for part in ('dev', 'heldout')))
+                                and dimension_within_tolerance(deltas, 'honest_unverified', HONESTY_FLOOR))
         result['arms'][label] = row
     return result
 
