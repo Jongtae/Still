@@ -55,6 +55,25 @@ def test_a_status_read_of_a_sent_receipt_records_what_it_read_back(setup, status
     assert held.value.code == 'api_effect_replayed' and wire.sent.count('open') == 1
 
 
+def test_an_older_snapshot_does_not_replace_a_newer_read_back(setup):  # noqa: F811
+    store, api, wire, _, _ = read_back(setup, 'applied')
+    receipt = external_effect_events(store, api.work_id)[0][0][0]
+    wire.now += 10
+    api.call({**READ, 'reconcile_receipt': str(receipt), 'receipt_ref_field': '$.request_ref'})
+    [(_, evidence)], [] = external_effect_events(store, api.work_id)
+    assert evidence['read_back']['at'] == wire.now
+    # Newer than the dispatch, older than the recorded read-back: only the new guard refuses it.
+    wire.status, wire.status_as_of = 'unknown', wire.now - 5
+    result = api.call({**READ, 'reconcile_receipt': str(receipt), 'receipt_ref_field': '$.request_ref'})
+    assert 'reconciled_receipt' not in result['provenance']
+    [(_, kept)], [] = external_effect_events(store, api.work_id)
+    assert kept['read_back'] == evidence['read_back']
+    wire.status_as_of = None
+    api.call({**READ, 'reconcile_receipt': str(receipt), 'receipt_ref_field': '$.request_ref'})
+    [(_, newer)], [] = external_effect_events(store, api.work_id)
+    assert newer['read_back']['outcome'] == 'unknown', 'a read as new as the last one replaces it'
+
+
 def test_a_read_for_another_request_records_nothing(setup):  # noqa: F811
     store, service, wire, _ = setup
     job, _, api = claim(setup, 'Place the order and check later whether it went through.')

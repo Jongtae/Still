@@ -1326,6 +1326,10 @@ class ApiRequests:
             if Decimal(str(as_of.timestamp())) < dispatched:
                 return False
             if sent:
+                # A snapshot older than the read-back already recorded never replaces it (#1273 review).
+                previous = detail['evidence'].get('read_back')
+                if isinstance(previous, dict) and as_of.timestamp() < float(previous.get('at') or 0):
+                    return False
                 detail['evidence']['read_back'] = {'outcome': resolution, 'read_digest': record['content_digest'],
                                                    'at': float(as_of.timestamp())}
             else:
