@@ -45,6 +45,7 @@ import copy
 import hashlib
 import json
 import math
+import time
 from statistics import median
 
 # #804/#833: the owner-model fact bounds and renderer shared with the direct route's outcome judgment.
@@ -114,6 +115,8 @@ MAX_ACKNOWLEDGEMENT_CHARS = 300
 CONVERSATION_CHARS = GOAL_CONVERSATION_CHARS
 #: #240: the bound of the plan's and the goal judgment's ``awaiting_owner`` fact.
 AWAITING_OWNER_CHARS = 600
+#: #1270: the bound on the schedule fact the outcome judgment reads.
+SCHEDULE_CHARS = 900
 #: #980: the earlier exchange the follow-up judgment linked this message to.
 CONTINUES_CHARS = 1200
 #: #1084: what the plan is told when a turn of the followed-up topic is sent.
@@ -1022,8 +1025,15 @@ class Orchestration:
     def __init__(self, judgments, catalogue, *, request, conversation='', continues='', sections=None, budget=None,
                  record=None, state=None, work_id=None, policy=None, qualifying=None, can_ask_location=False,
                  can_preview=False, attachments='', awaiting_conversation='', awaiting_work=None, previous_route='',
-                 effort_timing='', linked_turns=()):
+                 effort_timing='', linked_turns=(), next_start=None, schedule=None):
         self.judgments, self.catalogue = judgments, catalogue
+        #: #1269: when the next run or condition check of the schedule this Work is a run of starts
+        #: (``{'at': epoch, 'kind': 'run'|'check', 'local': text}``), or None.  The plan reads it as
+        #: this run's time, beside the Work's own budget.
+        self.next_start = next_start if isinstance(next_start, dict) and next_start.get('at') else None
+        #: #1270: a reader of Still's record of the schedule this Work is a run of or set up, read at each
+        #: outcome judgment ('' when none), so a later run's part is not judged as this Work's gap.
+        self.schedule = schedule
         # #1084: per ``conversation`` turn, whether it belongs to the followed-up topic.
         self.linked_turns = [bool(flag) for flag in linked_turns]
         self.previous_route = str(previous_route or '')
@@ -1178,14 +1188,36 @@ class Orchestration:
     def _budget_text(self):
         budget = self.budget
         if budget is None:
-            return f'at most {MAX_REDELEGATIONS} re-delegations'
+            return f'at most {MAX_REDELEGATIONS} re-delegations' + self._next_start_text()
         try:
             left = max(0, int(budget.remaining()))
             turns = max(0, self._turn_limit() - getattr(budget, 'turns_used', 0))
         except Exception:
             left, turns = 0, 0
         return (f'{left} seconds and {turns} model turns left in this Work; at most {MAX_REDELEGATIONS} '
-                f're-delegations after the first attempt')
+                f're-delegations after the first attempt') + self._next_start_text()
+
+    def _next_start_text(self):
+        """#1269: when the next run or condition check of this run's schedule starts, as part of ``budget``."""
+        start = self.next_start
+        if not start:
+            return ''
+        try:
+            left = int(float(start['at']) - time.time())
+        except (TypeError, ValueError):
+            return ''
+        if left <= 0:
+            return ''
+        what = 'condition check' if start.get('kind') == 'check' else 'run'
+        at = f' (at {start["local"]})' if start.get('local') else ''
+        return f'; the next {what} of the schedule this Work is a run of starts in {left} seconds{at}'
+
+    def _schedule_text(self):
+        """#1270: Still's record of the schedule this Work is a run of or set up; '' when none or unreadable."""
+        try:
+            return str(self.schedule() or '')[:SCHEDULE_CHARS] if callable(self.schedule) else ''
+        except Exception:
+            return ''
 
     def _sections_text(self):
         prepared = self.sections.get('prepared')
@@ -1789,6 +1821,7 @@ class Orchestration:
                                      if self.turns is not None else {}),
                                   **({'attachments': self.attachments} if getattr(self, 'attachments', '') else {}),
                                   **({'awaiting_owner': awaiting} if (awaiting := self._work_awaiting()) else {}),
+                                  **({'schedule': scheduled} if (scheduled := self._schedule_text()) else {}),
                                   **({'recorded_effects': tuple(effects),
                                       'may_rejudge': lambda: second_judgment_allowed(self.judgments, self.budget)}
                                      if effects else {}))

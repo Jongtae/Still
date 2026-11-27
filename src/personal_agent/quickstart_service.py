@@ -1952,6 +1952,14 @@ class AgentService:
         """
         return self.preparations_service.preparation_run_fact(job)
 
+    def preparation_next_start(self, job):
+        """#1269: when the next run or check of the schedule this run belongs to starts, or None."""
+        return self.preparations_service.preparation_next_start(job)
+
+    def work_schedule_fact(self, job):
+        """#1270: the schedule ``job`` is a run of or set up, for its outcome judgment ('' when none)."""
+        return self.preparations_service.work_schedule_fact(job)
+
     def day_plan_run(self, job):
         """Whether ``job`` is a run of the daily plan itself (#780)."""
         return self.preparations_service.day_plan_run(job)
@@ -5780,6 +5788,10 @@ class AgentService:
                              work_id=job['id'],qualifying=self.decision_routes.qualifying,
                              can_ask_location=can_ask_location,attachments=attachments,previous_route=previous_route,
                              effort_timing=self.effort_timing_text(),
+                             # #1269: this run's time before its schedule starts the next one.
+                             next_start=self.preparation_next_start(job),
+                             # #1270: the schedule this Work is a run of or set up, for its outcome judgment.
+                             schedule=lambda:self.work_schedule_fact(job),
                              # #407: computed here so the early plan and the Work's own plan ask the same question.
                              can_preview=self.can_preview(job) and 'read_checkpoint_resume' not in job,
                              # #240: what waits for the owner, for the plan call and this Work's goal judgment.

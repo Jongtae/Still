@@ -6835,6 +6835,15 @@ def steps_read_state(steps):
  return read_state_text([(tool,evidence_summary(action,detail)) for tool,action,state,detail,_reason in steps or ()
                          if state in ('succeeded','incomplete') and isinstance(detail,dict)])
 
+def work_schedule_text(capabilities):
+ """#1270: Still's record of the schedule this Work is a run of or set up, as its goal judgment reads it.
+
+ Read at judgment time from the reader the service bound to this Work (``work_schedule``), so a schedule
+ the Work set up during this attempt is named; '' when none is bound, none exists or it is unreadable."""
+ reader=getattr(capabilities,'work_schedule',None)
+ try:return str(reader() or '') if callable(reader) else ''
+ except Exception:return ''
+
 def work_awaiting_owner_text(capabilities):
  """#240: this Work's typed "awaiting the owner" items as its goal judgment reads them; '' when none or unreadable.
 
@@ -6844,7 +6853,7 @@ def work_awaiting_owner_text(capabilities):
  try:return awaiting_owner_text(work_awaiting_owner(capabilities.store,capabilities.job_id))[:AWAITING_OWNER_CHARS]
  except Exception:return ''
 
-def goal_judgment(judgments,goal,claim,observations,failures,work_id=None,redact=None,conversation='',owner_context=None,*,budget=None,attachments='',read_state='',awaiting='',conversation_turns=None,effects=(),reply_source='worker',reply_delivery='to_owner',plan_reading='',continues='',read_snapshot=None,retry_on_read_change=False,effect_facts='',earlier_reads=()):
+def goal_judgment(judgments,goal,claim,observations,failures,work_id=None,redact=None,conversation='',owner_context=None,*,budget=None,attachments='',read_state='',awaiting='',conversation_turns=None,effects=(),reply_source='worker',reply_delivery='to_owner',plan_reading='',continues='',read_snapshot=None,retry_on_read_change=False,effect_facts='',earlier_reads=(),schedule=''):
  """``yes`` / ``no`` / ``unavailable``: did the reply serve the owner's message ``goal``?
 
  The one outcome judgment (#657, #820): one ``ConversationJudgments.goal_reached``
@@ -6920,6 +6929,7 @@ def goal_judgment(judgments,goal,claim,observations,failures,work_id=None,redact
                                    **({'retry_on_read_change':True} if continuation and retry_on_read_change else {}),
                                    **({'attachments':attachments} if attachments else {}),
                                    **({'awaiting_owner':clean(awaiting)} if awaiting else {}),
+                                   **({'schedule':clean(schedule)} if schedule else {}),
                                    **({'recorded_effects':tuple(effects),
                                        'may_rejudge':lambda:second_judgment_allowed(judgments,budget)} if effects else {}))
  except Exception as exc:return goal_verdict('unavailable',reason='error:'+type(exc).__name__)
@@ -7190,6 +7200,7 @@ def run_agent(adapter,config,key,history,system,capabilities,record,scope='main'
                         capabilities.job_id,getattr(capabilities,'judgment_text',None),conversation,owner_context,budget=budget,
                         attachments=attachment_facts(images=len(images)) if images else '',read_state=steps_read_state(steps),
                         awaiting=work_awaiting_owner_text(capabilities),conversation_turns=conversation_turns,
+                        schedule=work_schedule_text(capabilities),
                         effect_facts=receipt_note,effects=recorded_effects(steps),reply_source=reply_source,reply_delivery=reply_delivery,
                         plan_reading=capabilities.plan_reading,continues=note,read_snapshot=read_snapshot,
                         retry_on_read_change=bool(note),earlier_reads=getattr(capabilities,'earlier_reads',()))

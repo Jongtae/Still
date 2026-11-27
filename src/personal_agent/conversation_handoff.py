@@ -1074,7 +1074,7 @@ class ConversationJudgments:
     def goal_reached(self, request, observations, failed_steps='', work_id=None, answer='', conversation='',
                      owner_context='', continues='', attachments='', awaiting_owner='', conversation_messages=None,
                      recorded_effects=(), may_rejudge=None, reply_source='worker', reply_delivery='to_owner',
-                     plan_reading='', read_snapshot=..., retry_on_read_change=False, admit=None):
+                     plan_reading='', read_snapshot=..., retry_on_read_change=False, admit=None, schedule=''):
         """Did the reply serve the owner's ``request`` (#657, #820)?  The one outcome judgment.
 
         One ``judge`` call over the owner's message (never cut), the recent
@@ -1090,6 +1090,8 @@ class ConversationJudgments:
         "awaiting the owner" items (``owner_model.awaiting_owner_text``), names and counts only.
         #202: ``plan_reading``, when given, is the plan's rejectable reading of what the request
         needs, not the owner's words; absent content adds no fact.
+        #1270: ``schedule``, when given, is Still's record of the schedule this Work is a run of or set
+        up, so the later runs and checks it holds are not judged as this Work's gap; absent, no fact.
         #674: ``recorded_effects`` (``agent_runtime.recorded_effects``) are the calls of this Work whose
         own record shows them completed.  When the judgment's ``not_done`` names one of them, the same
         judgment is asked once more with Still's record stated as a fact (``record_contradiction``),
@@ -1117,6 +1119,8 @@ class ConversationJudgments:
                  'recorded_effects': recorded_effects_text(recorded_effects) or 'none'}
         if plan_reading:
             facts['plan_reading'] = plan_reading
+        if schedule:
+            facts['schedule'] = str(schedule)
 
         def evaluate():
             # Unrouted callers charge their own turn only once a dispatch is needed.
