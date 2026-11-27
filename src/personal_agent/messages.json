@@ -13005,5 +13005,35 @@
   "en": "Schedule this follow-up within today’s agreed run window.",
   "ja": "再開する作業は、今日の実行時間内で予約してください。",
   "zh": "请在今天约定的运行时段内安排后续工作。"
+ },
+ "skills.pin_mismatch": {
+  "ko": "참고 스킬 내용이 고정된 버전과 달라서 추가하지 않았어요. 스킬 없이 진행하세요.",
+  "en": "The reference skill's content differs from its pinned revision, so it was not added. Go on without it.",
+  "ja": "参考スキルの内容が固定されたバージョンと異なるため、追加しませんでした。スキルなしで進めてください。",
+  "zh": "参考技能的内容与固定版本不一致，因此未添加。请在不使用该技能的情况下继续。"
+ },
+ "skills.adopted_note": {
+  "ko": "Still 참고 스킬 {skill}을(를) 고정된 버전으로 이번에 추가해 읽었어요. 답에서 어떤 방법을 썼는지 소유자의 말로 지나가듯 한 번 말하고, 원하지 않으면 빼 달라고 하면 된다는 것도 알려 주세요. 별도 알림 줄이나 설치 과정 설명은 하지 마세요.",
+  "en": "Still added its reference skill {skill} at its pinned revision and loaded it now. In your answer, say once in passing and in the owner's terms which method you used, and that they can ask you to remove it. No separate notice line and no description of the install.",
+  "ja": "Still の参考スキル {skill} を固定バージョンで今回追加して読み込みました。回答の中で、どの方法を使ったかを所有者の言葉でさりげなく一度伝え、不要なら外すよう頼めることも伝えてください。別の通知行やインストールの説明はしないでください。",
+  "zh": "Still 已按固定版本添加并读取了参考技能 {skill}。请在回答中顺带用所有者的话说明一次用了什么方法，并告诉对方不需要时可以请你移除。不要另写通知行，也不要描述安装过程。"
+ },
+ "skills.adopted_switched_note": {
+  "ko": "스킬 사용도 함께 켜졌다는 것을 같은 문장에서 말해 주세요.",
+  "en": "Say in the same sentence that skills are now switched on.",
+  "ja": "スキルの利用もオンになったことを同じ文で伝えてください。",
+  "zh": "请在同一句中说明技能功能也已开启。"
+ },
+ "skills.reference_header_note": {
+  "ko": "아직 추가되지 않은 Still 참고 스킬이라 머리말은 따로 없어요. 설명이 요청에 맞으면 skill_load로 읽으세요(그때 고정된 버전으로 추가돼요). 맞지 않으면 스킬 없이 답하세요.",
+  "en": "This Still reference skill is not added yet, so it has no separate header. If its description fits the request, load it with skill_load (it is added at its pinned revision then); otherwise answer without it.",
+  "ja": "まだ追加されていない Still の参考スキルなので、別の冒頭部分はありません。説明が依頼に合えば skill_load で読み込んでください（その時に固定バージョンで追加されます）。合わなければスキルなしで答えてください。",
+  "zh": "这是尚未添加的 Still 参考技能，没有单独的开头部分。如果描述符合请求，请用 skill_load 读取（届时按固定版本添加）；否则不使用技能直接回答。"
+ },
+ "quickstart_service.skill_candidate_adoptable": {
+  "ko": "Still이 고정해 둔 참고 스킬이에요. 요청에 맞으면 skill_load로 바로 읽으세요(그때 고정된 버전으로 추가돼요). 소유자 확인은 필요 없고, 답에서 어떤 방법을 썼는지 지나가듯 말하면 돼요.",
+  "en": "This is a Still reference skill pinned to an exact revision. If it fits the request, load it with skill_load now (it is added at that revision then). No owner confirmation is needed; say in passing in your answer which method you used.",
+  "ja": "Still が固定した参考スキルです。依頼に合えば skill_load ですぐ読み込んでください（その時に固定バージョンで追加されます）。所有者の確認は不要で、回答の中でどの方法を使ったかをさりげなく伝えれば十分です。",
+  "zh": "这是 Still 固定到确切版本的参考技能。如果符合请求，请直接用 skill_load 读取（届时按该版本添加）。无需所有者确认，只需在回答中顺带说明用了什么方法。"
  }
 }

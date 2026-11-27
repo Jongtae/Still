@@ -25,7 +25,9 @@ class FirstConversationsContent(unittest.TestCase):
         record = inspect_skill(FOLDER)
         self.assertEqual((record['status'], record['licence']), (['supported_as_is'], 'AGPL-3.0-only'))
         listed = {row['name']: row for row in reference_skills()}
-        self.assertEqual(listed[NAME]['address'], f'github.com/Jongtae/Still/tree/main/skills/{NAME}')
+        # #1291: pinned to one exact commit and its content digest.
+        self.assertRegex(listed[NAME]['address'], rf'^github\.com/Jongtae/Still/tree/[0-9a-f]{{40}}/skills/{NAME}$')
+        self.assertTrue(listed[NAME]['pinned'])
         self.assertIn(f'`{NAME}`', (ROOT / 'skills' / 'README.md').read_text())
 
     def test_it_opens_with_a_bounded_usage_header(self):

@@ -950,7 +950,7 @@ class AgentService:
             for key in ('description','header','licence'):
                 found[key]=self._redact_known_secrets(found[key])
             return {**result,'results':[found],'result_count':1,'contacted':True,'sources':[found['address']],'sent':{'query':query},
-                    'note':msg('quickstart_service.skill_candidate_inspected')}
+                    'note':msg('quickstart_service.skill_candidate_adoptable' if found.get('adoptable') else 'quickstart_service.skill_candidate_inspected')}
         if source!='registry':raise ValueError(msg('quickstart_service.capability_source'))
         result=self.capability_search.registry(arguments.get('query'),self._redact_known_secrets)
         return {**result,'sent':{'query':result['query']} if result['contacted'] else {},

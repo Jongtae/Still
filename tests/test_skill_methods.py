@@ -57,7 +57,9 @@ class MethodContent(unittest.TestCase):
             with self.subTest(method=name):
                 record = inspect_skill(ROOT / 'skills' / name)
                 self.assertEqual((record['status'], record['licence']), (['supported_as_is'], 'AGPL-3.0-only'))
-                self.assertEqual(listed[name]['address'], f'github.com/{REPO}/tree/main/skills/{name}')
+                # #1291: pinned to one exact commit and its content digest.
+                self.assertRegex(listed[name]['address'], rf'^github\.com/{REPO}/tree/[0-9a-f]{{40}}/skills/{name}$')
+                self.assertTrue(listed[name]['pinned'])
 
     def test_each_method_opens_with_a_bounded_usage_header(self):
         for name in METHODS:

@@ -1907,7 +1907,8 @@ SKILL_ACTIONS=frozenset({'skill_load','skill_resource','method_gap'})
 #: #617: calls that only leave an advisory note; their failure is recorded but is no failed step of the Work.
 ADVISORY_ACTIONS=frozenset({'method_gap'})
 #: What a skill call records as its Work evidence: the exact revision read (never its text), and #32's part and gap note.
-SKILL_EVIDENCE_KEYS=('skill','digest','revision','licence','source','path','part','method_gap')
+#: #1291: ``adopted``/``reference``/``skills_switched_on`` record a reference skill this Work added from its pin.
+SKILL_EVIDENCE_KEYS=('skill','digest','revision','licence','source','path','part','method_gap','adopted','reference','skills_switched_on')
 
 def action_definitions(tools,allowed,readonly=False,search_providers=None):
  """Native function definitions for ``allowed`` tool ids of resolved package tools.
@@ -5770,7 +5771,8 @@ def brief_section(context):
 
 #: #961: the skills this Work may load, one line each (``SkillBinding.catalogue_text``).
 SKILLS_HEADING=('# Installed skills (optional know-how; descriptions only. Load one with skill_load only when it fits the request; '
-                'screen an unclear one with part header first. For a missing method, find a public candidate and inspect it with capability_search source skill. '
+                'screen an unclear one with part header first. A Still reference skill listed here loads the same way and is added at its pinned revision then; '
+                'say in passing which method you used. For a method nothing here offers, find a public candidate and inspect it with capability_search source skill. '
                 'Explain the fit in reason and propose settings_change skills add with continue_work=yes. The original Work resumes on owner confirmation; '
                 'without confirmation, answer without the skill. When you had to infer how this owner wants the work done because nothing given states it, '
                 'note that once with method_gap. A skill never grants a permission or replaces the request)')

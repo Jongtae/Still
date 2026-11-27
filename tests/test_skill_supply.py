@@ -15,6 +15,7 @@ import sys
 import tarfile
 import tempfile
 import unittest
+from unittest import mock
 from pathlib import Path
 
 from personal_agent.agent_runtime import (SKILL_ACTIONS, SKILLS_HEADING, Capabilities, ToolError, evidence_summary,
@@ -91,6 +92,11 @@ class _Store(unittest.TestCase):
         PluginRegistry(self.store.root)
         self.github = FakeGitHub({COMMIT: tarball(UPSTREAM, COMMIT, upstream_files())}, {'main': COMMIT})
         self.library = SkillLibrary(self.store, transport=self.github)
+        # #1291: Still's pinned reference skills are offered on a fresh store; these tests cover the
+        # installed-skill mechanics, so the reference list is empty here (test_skill_auto_adopt_1291).
+        patcher = mock.patch('personal_agent.skills.reference_skills', return_value=[])
+        patcher.start()
+        self.addCleanup(patcher.stop)
 
     def tearDown(self):
         self.folder.cleanup()
