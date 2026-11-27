@@ -2000,12 +2000,17 @@ class Preparations:
         if operation == 'check':
             from . import condition_checks as checks
             previous_row = self.get(preparation_id)
-            if (not self.owns_running(previous_row, self.store.job(work_id)) or not previous_row['check_spec']
+            if (not self.owns_running(previous_row, self.store.job(work_id))
                     or not isinstance(changes, dict) or set(changes) != {'check'}):
                 raise PreparationRefusal('self_change_refused')
-            old_spec = json.loads(previous_row['check_spec'])
+            # #1259: a run of a window prepare row may add its first check, proven in this Work.
+            if not previous_row['check_spec'] and not (
+                    previous_row['kind'] == KIND_PREPARE and previous_row['recurrence'] == RECURRENCE_WINDOW
+                    and previous_row['until_at'] is not None):
+                raise PreparationRefusal('self_change_refused')
+            old_spec = json.loads(previous_row['check_spec']) if previous_row['check_spec'] else None
             # A saved argument might only have become a known secret since setup.
-            if checks._redact(self.store, old_spec['arguments']) != old_spec['arguments']:
+            if old_spec and checks._redact(self.store, old_spec['arguments']) != old_spec['arguments']:
                 raise PreparationRefusal('check_credential')
             arguments, interval = checks.parse_for_store(self.store, changes['check'])
             spec = checks.prove(self.store, work_id, arguments, interval)
@@ -2029,11 +2034,15 @@ class Preparations:
             elif operation == 'check':
                 if row['check_spec'] != previous_row['check_spec'] or spec == old_spec:
                     raise PreparationRefusal('self_change_refused')
-                if any(set(arguments[key]) - set(old_spec['arguments'][key]) for key in ('hosts', 'secrets')):
+                if old_spec and any(set(arguments[key]) - set(old_spec['arguments'][key]) for key in ('hosts', 'secrets')):
                     raise PreparationRefusal('check_widened')
                 if now + interval > row['until_at']:
                     raise PreparationRefusal('check_window')
                 updates = {'check_spec': json.dumps(spec, sort_keys=True)}
+                if old_spec is None:
+                    # The receipt keeps the slot cadence so an undo returns the row to its timed runs.
+                    self._check_admission(db, updates['check_spec'], row['id'])
+                    updates['every_seconds'] = interval
             elif operation == 'goal':
                 # #968: the run's own instruction for the next runs; the caller decided it may.
                 goal = (changes or {}).get('goal') if isinstance(changes, dict) else None
@@ -2139,7 +2148,10 @@ class Preparations:
         event = json.loads(row['self_change'])
         updates = self._self_change_values(row, event['before'])
         now = self.clock()
-        if 'check_spec' in updates:
+        if 'check_spec' in updates and updates['check_spec'] is None:
+            # #1259: undoing a first check returns the row to its timed runs at the receipt's cadence.
+            updates['check_next_at'] = None
+        elif 'check_spec' in updates:
             # The spec is the receipt value. Derive the cadence and leave the counters alone.
             interval = json.loads(updates['check_spec'])['every_seconds']
             updates.update(every_seconds=interval,
@@ -2161,7 +2173,7 @@ class Preparations:
             following = row['due_at']
             return_state = updates.get('run_return_state', row.get('run_return_state') or
                 (STATE_PAUSED if row['state'] == STATE_PAUSED else STATE_SCHEDULED)) or STATE_SCHEDULED
-            if return_state == STATE_SCHEDULED and row.get('check_spec'):
+            if return_state == STATE_SCHEDULED and restored.get('check_spec'):
                 if now >= restored['until_at'] or row['run_count'] >= restored['max_runs']:
                     raise PreparationRefusal('resume_expired')
                 updates.setdefault('check_next_at', min(restored['until_at'], max(now, row['check_next_at'])))

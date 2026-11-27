@@ -479,18 +479,18 @@ class ContinuityTests(_LineCase):
 
     def test_a_frequent_line_run_is_told_to_plan_here_and_let_the_check_execute(self):
         """#1253: the plan-then-execute split reaches a run of time-bound work whatever the owner's words."""
-        guidance = msg('lines.plan_execute_guidance', minutes=5)
         for words in ('앞으로 매일 아침 관심 목록 확인해서 정리해 줘', '오늘 계속 돌려', 'keep it going every five minutes'):
             with self.subTest(words=words):
                 brief, _ = self.open_line(recurrence=None, extra={'every_minutes': '5', 'until': self.due_iso(3900)}, words=words)
                 [row] = self.work_rows(brief['line_id'])
+                guidance = msg('lines.plan_execute_guidance', minutes=5, edit=json.dumps({'id': row['id'], 'check': '...'}))
                 self.assertIn(guidance, self.run_input(self.run_line(row)))
 
     def test_a_daily_line_run_is_not_told_the_split(self):
         brief, _ = self.open_line()
         [row] = self.work_rows(brief['line_id'])
         text = self.run_input(self.run_line(row))
-        self.assertNotIn(msg('lines.plan_execute_guidance', minutes=1440), text)
+        self.assertNotIn(msg('lines.plan_execute_guidance', minutes=1440, edit=json.dumps({'id': row['id'], 'check': '...'})), text)
         self.assertNotIn('update_check_state', text)
 
     def test_a_line_with_a_check_is_shown_its_check_target(self):

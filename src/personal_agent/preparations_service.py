@@ -414,7 +414,9 @@ class PreparationsService:
                             if target['accepted_by']!=current['accepted_by']:
                                 raise not_run(prep.PreparationRefusal('replace_not_allowed'))
                             standing_end=target['standing_end']
-                            if target['accepted_by'] not in prep.PAYMENT_STANDING:
+                            if target['accepted_by'] not in prep.PAYMENT_STANDING and not asked:
+                                # A replacement keeps a self-set row's standing unless the owner's own
+                                # words asked for this work, judged as a new schedule (#1259).
                                 accepted_by=target['accepted_by'] or prep.ACCEPTED_OWNER_WORK
                             elif asked and line_id:
                                 accepted_by=target['accepted_by']
@@ -3158,7 +3160,7 @@ class PreparationsService:
                         if target['preparation_id']==item['id']] if line_id else []
         frequent=bool(row.get('every_seconds')) and row['every_seconds']<=prep.PLAN_EXECUTE_SECONDS
         if not (frequent or checks_on_line):return ''
-        text='\n'+msg('lines.plan_execute_guidance',minutes=max(1,(row.get('every_seconds') or 300)//60))
+        text='\n'+msg('lines.plan_execute_guidance',minutes=max(1,(row.get('every_seconds') or 300)//60),edit=json.dumps({'id':row['id'],'check':'...'}))
         if checks_on_line:text+='\n'+msg('lines.plan_execute_checks',targets=json.dumps(checks_on_line))
         return text
 

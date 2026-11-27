@@ -109,3 +109,20 @@ def test_a_long_correction_reaches_the_judgment_whole(case):
                    CORRECTED + ' ' + 'b' * 3000, replaces=row['id'])
     assert len(seen[-1]) > 6000
     assert new['accepted_by'] == prep.ACCEPTED_OWNER_REQUEST
+
+
+def test_replacing_self_set_work_the_owner_now_asks_for_takes_the_owners_standing(case):
+    """#1259: the owner's own request for the work, judged as a new schedule, is the owner's standing."""
+    c = case
+    seen = judged(c)
+    old = accepted_row(c, prep.ACCEPTED_OWNER_WORK)
+    asked = owner(c, 'Keep trading today and sell before 15:20 only on a stop loss, ordering as the rule says',
+                  'request')
+    new = schedule(c, asked, ORIGINAL, replaces=old['id'])
+    assert 'Accepted work:' not in seen[-1]
+    assert new['accepted_by'] == prep.ACCEPTED_OWNER_REQUEST
+    assert c.preps.get(old['id'])['state'] == prep.STATE_CANCELLED
+    run = run_of(c, new)
+    switch(c, True)
+    assert not c.service.self_set_run(run)
+    assert c.service._authorize_payment_autonomy(run, None, 'sell') is not None
