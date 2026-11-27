@@ -108,6 +108,19 @@ class AutoAdopt(_Case):
         self.assertFalse(self.library.content.exists() and any(self.library.content.iterdir()))
         self.assertFalse(self.library.enabled())
 
+    def test_an_owner_switch_off_during_the_download_cancels_the_adoption(self):
+        """Codex P2 on #1294: an explicit off made while the skill downloads is never overwritten."""
+        fetch = self.library.transport
+        def switch_off(url, *args, **kwargs):
+            self.library.set_enabled(False)
+            return fetch(url, *args, **kwargs)
+        self.library.transport = switch_off
+        with self.assertRaises(ToolError) as cancelled:
+            self.caps().execute('skill_load', {'skill': SKILL})
+        self.assertEqual(cancelled.exception.code, 'skill_unavailable')
+        self.assertFalse(self.library.enabled())
+        self.assertEqual(self.manifests(), [])
+
     def test_an_unpinned_reference_is_not_offered(self):
         self.references(tree_digest(PINNED), address=ADDRESS.replace(COMMIT, 'main').removeprefix('https://'))
         self.assertEqual(self.library.adoptable(), [])

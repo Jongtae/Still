@@ -789,8 +789,14 @@ class SkillLibrary:
         if current is None:
             raise SkillError(OUTDATED_TEXT.format(skill=entry.get('skill')), 'skill_unavailable')
         manifest = self.install(current['reference'], expected_digest=current['digest'], owner=False)
-        switched = not self.enabled()
-        if switched:
+        # Codex P2 on #1294: the owner may switch skills off or remove this skill while it downloads.
+        # Their choice wins: the adoption is withdrawn rather than overriding it.
+        settings = self._settings()
+        if settings is None or settings.get('enabled', True) is not True or manifest['id'] in self.declined():
+            self._manifest_path(manifest['id']).unlink(missing_ok=True)
+            raise SkillError(OUTDATED_TEXT.format(skill=entry.get('skill')), 'skill_unavailable')
+        switched = 'enabled' not in settings
+        if switched:   # never switched: adopting is asking to use it, as a confirmed add is
             self.set_enabled(True)
         return manifest, switched
 
