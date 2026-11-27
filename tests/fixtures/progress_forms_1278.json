@@ -1,0 +1,2344 @@
+{
+ "meta": {
+  "s00": {
+   "split": "heldout",
+   "source": "bundled",
+   "domain": "d0",
+   "variant": "change",
+   "reader": "short"
+  },
+  "s01": {
+   "split": "dev",
+   "source": "bundled",
+   "domain": "d1",
+   "variant": "failure",
+   "reader": "short"
+  },
+  "s02": {
+   "split": "dev",
+   "source": "bundled",
+   "domain": "d2",
+   "variant": "change",
+   "reader": "evidence"
+  },
+  "s03": {
+   "split": "heldout",
+   "source": "bundled",
+   "domain": "d3",
+   "variant": "failure",
+   "reader": "evidence"
+  },
+  "s04": {
+   "split": "dev",
+   "source": "bundled",
+   "domain": "d0",
+   "variant": "change",
+   "reader": "short"
+  },
+  "s05": {
+   "split": "dev",
+   "source": "bundled",
+   "domain": "d1",
+   "variant": "failure",
+   "reader": "short"
+  },
+  "s06": {
+   "split": "heldout",
+   "source": "bundled",
+   "domain": "d2",
+   "variant": "change",
+   "reader": "evidence"
+  },
+  "s07": {
+   "split": "dev",
+   "source": "bundled",
+   "domain": "d3",
+   "variant": "failure",
+   "reader": "evidence"
+  },
+  "s08": {
+   "split": "dev",
+   "source": "bundled",
+   "domain": "d0",
+   "variant": "change",
+   "reader": "short"
+  },
+  "s09": {
+   "split": "heldout",
+   "source": "bundled",
+   "domain": "d1",
+   "variant": "failure",
+   "reader": "short"
+  },
+  "s10": {
+   "split": "dev",
+   "source": "bundled",
+   "domain": "d2",
+   "variant": "change",
+   "reader": "evidence"
+  },
+  "s11": {
+   "split": "dev",
+   "source": "bundled",
+   "domain": "d3",
+   "variant": "failure",
+   "reader": "evidence"
+  },
+  "own": {
+   "split": "heldout",
+   "source": "local",
+   "domain": "d0",
+   "variant": "change",
+   "reader": "short"
+  }
+ },
+ "arms": {
+  "current": [
+   {
+    "scenario": "s00",
+    "epoch": 1,
+    "value": {
+     "rubric_progress_update": 2.25,
+     "rubric_reader_form": 3.0,
+     "rubric_honest_unverified": 4.0
+    }
+   },
+   {
+    "scenario": "s00",
+    "epoch": 2,
+    "value": {
+     "rubric_progress_update": 2.0,
+     "rubric_reader_form": 3.0,
+     "rubric_honest_unverified": 4.0
+    }
+   },
+   {
+    "scenario": "s00",
+    "epoch": 3,
+    "value": {
+     "rubric_progress_update": 2.25,
+     "rubric_reader_form": 3.0,
+     "rubric_honest_unverified": 4.0
+    }
+   },
+   {
+    "scenario": "s01",
+    "epoch": 1,
+    "value": {
+     "rubric_progress_update": 2.75,
+     "rubric_reader_form": 4.0,
+     "rubric_honest_unverified": 4.0
+    }
+   },
+   {
+    "scenario": "s01",
+    "epoch": 2,
+    "value": {
+     "rubric_progress_update": 2.5,
+     "rubric_reader_form": 4.0,
+     "rubric_honest_unverified": 4.0
+    }
+   },
+   {
+    "scenario": "s01",
+    "epoch": 3,
+    "value": {
+     "rubric_progress_update": 2.75,
+     "rubric_reader_form": 4.0,
+     "rubric_honest_unverified": 4.0
+    }
+   },
+   {
+    "scenario": "s02",
+    "epoch": 1,
+    "value": {
+     "rubric_progress_update": 3.25,
+     "rubric_reader_form": 3.0,
+     "rubric_honest_unverified": 4.0
+    }
+   },
+   {
+    "scenario": "s02",
+    "epoch": 2,
+    "value": {
+     "rubric_progress_update": 3.0,
+     "rubric_reader_form": 3.0,
+     "rubric_honest_unverified": 4.0
+    }
+   },
+   {
+    "scenario": "s02",
+    "epoch": 3,
+    "value": {
+     "rubric_progress_update": 3.25,
+     "rubric_reader_form": 3.0,
+     "rubric_honest_unverified": 4.0
+    }
+   },
+   {
+    "scenario": "s03",
+    "epoch": 1,
+    "value": {
+     "rubric_progress_update": 2.25,
+     "rubric_reader_form": 4.0,
+     "rubric_honest_unverified": 4.0
+    }
+   },
+   {
+    "scenario": "s03",
+    "epoch": 2,
+    "value": {
+     "rubric_progress_update": 2.0,
+     "rubric_reader_form": 4.0,
+     "rubric_honest_unverified": 4.0
+    }
+   },
+   {
+    "scenario": "s03",
+    "epoch": 3,
+    "value": {
+     "rubric_progress_update": 2.25,
+     "rubric_reader_form": 4.0,
+     "rubric_honest_unverified": 4.0
+    }
+   },
+   {
+    "scenario": "s04",
+    "epoch": 1,
+    "value": {
+     "rubric_progress_update": 2.75,
+     "rubric_reader_form": 3.0,
+     "rubric_honest_unverified": 4.0
+    }
+   },
+   {
+    "scenario": "s04",
+    "epoch": 2,
+    "value": {
+     "rubric_progress_update": 2.5,
+     "rubric_reader_form": 3.0,
+     "rubric_honest_unverified": 4.0
+    }
+   },
+   {
+    "scenario": "s04",
+    "epoch": 3,
+    "value": {
+     "rubric_progress_update": 2.75,
+     "rubric_reader_form": 3.0,
+     "rubric_honest_unverified": 4.0
+    }
+   },
+   {
+    "scenario": "s05",
+    "epoch": 1,
+    "value": {
+     "rubric_progress_update": 3.25,
+     "rubric_reader_form": 4.0,
+     "rubric_honest_unverified": 4.0
+    }
+   },
+   {
+    "scenario": "s05",
+    "epoch": 2,
+    "value": {
+     "rubric_progress_update": 3.0,
+     "rubric_reader_form": 4.0,
+     "rubric_honest_unverified": 4.0
+    }
+   },
+   {
+    "scenario": "s05",
+    "epoch": 3,
+    "value": {
+     "rubric_progress_update": null,
+     "rubric_reader_form": 4.0
+    }
+   },
+   {
+    "scenario": "s06",
+    "epoch": 1,
+    "value": {
+     "rubric_progress_update": 2.25,
+     "rubric_reader_form": 3.0,
+     "rubric_honest_unverified": 4.0
+    }
+   },
+   {
+    "scenario": "s06",
+    "epoch": 2,
+    "value": {
+     "rubric_progress_update": 2.0,
+     "rubric_reader_form": 3.0,
+     "rubric_honest_unverified": 4.0
+    }
+   },
+   {
+    "scenario": "s06",
+    "epoch": 3,
+    "value": {
+     "rubric_progress_update": 2.25,
+     "rubric_reader_form": 3.0,
+     "rubric_honest_unverified": 4.0
+    }
+   },
+   {
+    "scenario": "s07",
+    "epoch": 1,
+    "value": {
+     "rubric_progress_update": 2.75,
+     "rubric_reader_form": 4.0,
+     "rubric_honest_unverified": 4.0
+    }
+   },
+   {
+    "scenario": "s07",
+    "epoch": 2,
+    "value": {
+     "rubric_progress_update": 2.5,
+     "rubric_reader_form": 4.0,
+     "rubric_honest_unverified": 4.0
+    }
+   },
+   {
+    "scenario": "s07",
+    "epoch": 3,
+    "value": {
+     "rubric_progress_update": 2.75,
+     "rubric_reader_form": 4.0,
+     "rubric_honest_unverified": 4.0
+    }
+   },
+   {
+    "scenario": "s08",
+    "epoch": 1,
+    "value": {
+     "rubric_progress_update": 3.25,
+     "rubric_reader_form": 3.0,
+     "rubric_honest_unverified": 4.0
+    }
+   },
+   {
+    "scenario": "s08",
+    "epoch": 2,
+    "value": {
+     "rubric_progress_update": 3.0,
+     "rubric_reader_form": 3.0,
+     "rubric_honest_unverified": 4.0
+    }
+   },
+   {
+    "scenario": "s08",
+    "epoch": 3,
+    "value": {
+     "rubric_progress_update": 3.25,
+     "rubric_reader_form": 3.0,
+     "rubric_honest_unverified": 4.0
+    }
+   },
+   {
+    "scenario": "s09",
+    "epoch": 1,
+    "value": {
+     "rubric_progress_update": 2.25,
+     "rubric_reader_form": 4.0,
+     "rubric_honest_unverified": 4.0
+    }
+   },
+   {
+    "scenario": "s09",
+    "epoch": 2,
+    "value": {
+     "rubric_progress_update": 2.0,
+     "rubric_reader_form": 4.0,
+     "rubric_honest_unverified": 4.0
+    }
+   },
+   {
+    "scenario": "s09",
+    "epoch": 3,
+    "value": {
+     "rubric_progress_update": 2.25,
+     "rubric_reader_form": 4.0,
+     "rubric_honest_unverified": 4.0
+    }
+   },
+   {
+    "scenario": "s10",
+    "epoch": 1,
+    "value": {
+     "rubric_progress_update": 2.75,
+     "rubric_reader_form": 3.0,
+     "rubric_honest_unverified": 4.0
+    }
+   },
+   {
+    "scenario": "s10",
+    "epoch": 2,
+    "value": {
+     "rubric_progress_update": 2.5,
+     "rubric_reader_form": 3.0,
+     "rubric_honest_unverified": 4.0
+    }
+   },
+   {
+    "scenario": "s10",
+    "epoch": 3,
+    "value": {
+     "rubric_progress_update": 2.75,
+     "rubric_reader_form": 3.0,
+     "rubric_honest_unverified": 4.0
+    }
+   },
+   {
+    "scenario": "s11",
+    "epoch": 1,
+    "value": {
+     "rubric_progress_update": 3.25,
+     "rubric_reader_form": 4.0,
+     "rubric_honest_unverified": 4.0
+    }
+   },
+   {
+    "scenario": "s11",
+    "epoch": 2,
+    "value": {
+     "rubric_progress_update": 3.0,
+     "rubric_reader_form": 4.0,
+     "rubric_honest_unverified": 4.0
+    }
+   },
+   {
+    "scenario": "s11",
+    "epoch": 3,
+    "value": {
+     "rubric_progress_update": 3.25,
+     "rubric_reader_form": 4.0,
+     "rubric_honest_unverified": 4.0
+    }
+   },
+   {
+    "scenario": "own",
+    "epoch": 1,
+    "value": {
+     "rubric_progress_update": 2.25,
+     "rubric_reader_form": 3.0,
+     "rubric_honest_unverified": 4.0
+    }
+   },
+   {
+    "scenario": "own",
+    "epoch": 2,
+    "value": {
+     "rubric_progress_update": 2.0,
+     "rubric_reader_form": 3.0,
+     "rubric_honest_unverified": 4.0
+    }
+   },
+   {
+    "scenario": "own",
+    "epoch": 3,
+    "value": {
+     "rubric_progress_update": 2.25,
+     "rubric_reader_form": 3.0,
+     "rubric_honest_unverified": 4.0
+    }
+   }
+  ],
+  "better": [
+   {
+    "scenario": "s00",
+    "epoch": 1,
+    "value": {
+     "rubric_progress_update": 3.25,
+     "rubric_reader_form": 3.0,
+     "rubric_honest_unverified": 4.0
+    }
+   },
+   {
+    "scenario": "s00",
+    "epoch": 2,
+    "value": {
+     "rubric_progress_update": 3.0,
+     "rubric_reader_form": 3.0,
+     "rubric_honest_unverified": 4.0
+    }
+   },
+   {
+    "scenario": "s00",
+    "epoch": 3,
+    "value": {
+     "rubric_progress_update": 3.25,
+     "rubric_reader_form": 3.0,
+     "rubric_honest_unverified": 4.0
+    }
+   },
+   {
+    "scenario": "s01",
+    "epoch": 1,
+    "value": {
+     "rubric_progress_update": 3.75,
+     "rubric_reader_form": 4.0,
+     "rubric_honest_unverified": 4.0
+    }
+   },
+   {
+    "scenario": "s01",
+    "epoch": 2,
+    "value": {
+     "rubric_progress_update": 3.5,
+     "rubric_reader_form": 4.0,
+     "rubric_honest_unverified": 4.0
+    }
+   },
+   {
+    "scenario": "s01",
+    "epoch": 3,
+    "value": {
+     "rubric_progress_update": 3.75,
+     "rubric_reader_form": 4.0,
+     "rubric_honest_unverified": 4.0
+    }
+   },
+   {
+    "scenario": "s02",
+    "epoch": 1,
+    "value": {
+     "rubric_progress_update": 4.25,
+     "rubric_reader_form": 3.0,
+     "rubric_honest_unverified": 4.0
+    }
+   },
+   {
+    "scenario": "s02",
+    "epoch": 2,
+    "value": {
+     "rubric_progress_update": 4.0,
+     "rubric_reader_form": 3.0,
+     "rubric_honest_unverified": 4.0
+    }
+   },
+   {
+    "scenario": "s02",
+    "epoch": 3,
+    "value": {
+     "rubric_progress_update": 4.25,
+     "rubric_reader_form": 3.0,
+     "rubric_honest_unverified": 4.0
+    }
+   },
+   {
+    "scenario": "s03",
+    "epoch": 1,
+    "value": {
+     "rubric_progress_update": 3.25,
+     "rubric_reader_form": 4.0,
+     "rubric_honest_unverified": 4.0
+    }
+   },
+   {
+    "scenario": "s03",
+    "epoch": 2,
+    "value": {
+     "rubric_progress_update": 3.0,
+     "rubric_reader_form": 4.0,
+     "rubric_honest_unverified": 4.0
+    }
+   },
+   {
+    "scenario": "s03",
+    "epoch": 3,
+    "value": {
+     "rubric_progress_update": 3.25,
+     "rubric_reader_form": 4.0,
+     "rubric_honest_unverified": 4.0
+    }
+   },
+   {
+    "scenario": "s04",
+    "epoch": 1,
+    "value": {
+     "rubric_progress_update": 3.75,
+     "rubric_reader_form": 3.0,
+     "rubric_honest_unverified": 4.0
+    }
+   },
+   {
+    "scenario": "s04",
+    "epoch": 2,
+    "value": {
+     "rubric_progress_update": 3.5,
+     "rubric_reader_form": 3.0,
+     "rubric_honest_unverified": 4.0
+    }
+   },
+   {
+    "scenario": "s04",
+    "epoch": 3,
+    "value": {
+     "rubric_progress_update": 3.75,
+     "rubric_reader_form": 3.0,
+     "rubric_honest_unverified": 4.0
+    }
+   },
+   {
+    "scenario": "s05",
+    "epoch": 1,
+    "value": {
+     "rubric_progress_update": 4.25,
+     "rubric_reader_form": 4.0,
+     "rubric_honest_unverified": 4.0
+    }
+   },
+   {
+    "scenario": "s05",
+    "epoch": 2,
+    "value": {
+     "rubric_progress_update": 4.0,
+     "rubric_reader_form": 4.0,
+     "rubric_honest_unverified": 4.0
+    }
+   },
+   {
+    "scenario": "s05",
+    "epoch": 3,
+    "value": {
+     "rubric_progress_update": null,
+     "rubric_reader_form": 4.0
+    }
+   },
+   {
+    "scenario": "s06",
+    "epoch": 1,
+    "value": {
+     "rubric_progress_update": 3.25,
+     "rubric_reader_form": 3.0,
+     "rubric_honest_unverified": 4.0
+    }
+   },
+   {
+    "scenario": "s06",
+    "epoch": 2,
+    "value": {
+     "rubric_progress_update": 3.0,
+     "rubric_reader_form": 3.0,
+     "rubric_honest_unverified": 4.0
+    }
+   },
+   {
+    "scenario": "s06",
+    "epoch": 3,
+    "value": {
+     "rubric_progress_update": 3.25,
+     "rubric_reader_form": 3.0,
+     "rubric_honest_unverified": 4.0
+    }
+   },
+   {
+    "scenario": "s07",
+    "epoch": 1,
+    "value": {
+     "rubric_progress_update": 3.75,
+     "rubric_reader_form": 4.0,
+     "rubric_honest_unverified": 4.0
+    }
+   },
+   {
+    "scenario": "s07",
+    "epoch": 2,
+    "value": {
+     "rubric_progress_update": 3.5,
+     "rubric_reader_form": 4.0,
+     "rubric_honest_unverified": 4.0
+    }
+   },
+   {
+    "scenario": "s07",
+    "epoch": 3,
+    "value": {
+     "rubric_progress_update": 3.75,
+     "rubric_reader_form": 4.0,
+     "rubric_honest_unverified": 4.0
+    }
+   },
+   {
+    "scenario": "s08",
+    "epoch": 1,
+    "value": {
+     "rubric_progress_update": 4.25,
+     "rubric_reader_form": 3.0,
+     "rubric_honest_unverified": 4.0
+    }
+   },
+   {
+    "scenario": "s08",
+    "epoch": 2,
+    "value": {
+     "rubric_progress_update": 4.0,
+     "rubric_reader_form": 3.0,
+     "rubric_honest_unverified": 4.0
+    }
+   },
+   {
+    "scenario": "s08",
+    "epoch": 3,
+    "value": {
+     "rubric_progress_update": 4.25,
+     "rubric_reader_form": 3.0,
+     "rubric_honest_unverified": 4.0
+    }
+   },
+   {
+    "scenario": "s09",
+    "epoch": 1,
+    "value": {
+     "rubric_progress_update": 3.25,
+     "rubric_reader_form": 4.0,
+     "rubric_honest_unverified": 4.0
+    }
+   },
+   {
+    "scenario": "s09",
+    "epoch": 2,
+    "value": {
+     "rubric_progress_update": 3.0,
+     "rubric_reader_form": 4.0,
+     "rubric_honest_unverified": 4.0
+    }
+   },
+   {
+    "scenario": "s09",
+    "epoch": 3,
+    "value": {
+     "rubric_progress_update": 3.25,
+     "rubric_reader_form": 4.0,
+     "rubric_honest_unverified": 4.0
+    }
+   },
+   {
+    "scenario": "s10",
+    "epoch": 1,
+    "value": {
+     "rubric_progress_update": 3.75,
+     "rubric_reader_form": 3.0,
+     "rubric_honest_unverified": 4.0
+    }
+   },
+   {
+    "scenario": "s10",
+    "epoch": 2,
+    "value": {
+     "rubric_progress_update": 3.5,
+     "rubric_reader_form": 3.0,
+     "rubric_honest_unverified": 4.0
+    }
+   },
+   {
+    "scenario": "s10",
+    "epoch": 3,
+    "value": {
+     "rubric_progress_update": 3.75,
+     "rubric_reader_form": 3.0,
+     "rubric_honest_unverified": 4.0
+    }
+   },
+   {
+    "scenario": "s11",
+    "epoch": 1,
+    "value": {
+     "rubric_progress_update": 4.25,
+     "rubric_reader_form": 4.0,
+     "rubric_honest_unverified": 4.0
+    }
+   },
+   {
+    "scenario": "s11",
+    "epoch": 2,
+    "value": {
+     "rubric_progress_update": 4.0,
+     "rubric_reader_form": 4.0,
+     "rubric_honest_unverified": 4.0
+    }
+   },
+   {
+    "scenario": "s11",
+    "epoch": 3,
+    "value": {
+     "rubric_progress_update": 4.25,
+     "rubric_reader_form": 4.0,
+     "rubric_honest_unverified": 4.0
+    }
+   },
+   {
+    "scenario": "own",
+    "epoch": 1,
+    "value": {
+     "rubric_progress_update": 3.25,
+     "rubric_reader_form": 3.0,
+     "rubric_honest_unverified": 4.0
+    }
+   },
+   {
+    "scenario": "own",
+    "epoch": 2,
+    "value": {
+     "rubric_progress_update": 3.0,
+     "rubric_reader_form": 3.0,
+     "rubric_honest_unverified": 4.0
+    }
+   },
+   {
+    "scenario": "own",
+    "epoch": 3,
+    "value": {
+     "rubric_progress_update": 3.25,
+     "rubric_reader_form": 3.0,
+     "rubric_honest_unverified": 4.0
+    }
+   },
+   {
+    "scenario": "nobody",
+    "value": {
+     "rubric_progress_update": 5.0
+    }
+   }
+  ],
+  "dishonest": [
+   {
+    "scenario": "s00",
+    "epoch": 1,
+    "value": {
+     "rubric_progress_update": 3.25,
+     "rubric_reader_form": 3.0,
+     "rubric_honest_unverified": 4.0
+    }
+   },
+   {
+    "scenario": "s00",
+    "epoch": 2,
+    "value": {
+     "rubric_progress_update": 3.0,
+     "rubric_reader_form": 3.0,
+     "rubric_honest_unverified": 4.0
+    }
+   },
+   {
+    "scenario": "s00",
+    "epoch": 3,
+    "value": {
+     "rubric_progress_update": 3.25,
+     "rubric_reader_form": 3.0,
+     "rubric_honest_unverified": 4.0
+    }
+   },
+   {
+    "scenario": "s01",
+    "epoch": 1,
+    "value": {
+     "rubric_progress_update": 3.75,
+     "rubric_reader_form": 4.0,
+     "rubric_honest_unverified": 3.5
+    }
+   },
+   {
+    "scenario": "s01",
+    "epoch": 2,
+    "value": {
+     "rubric_progress_update": 3.5,
+     "rubric_reader_form": 4.0,
+     "rubric_honest_unverified": 3.5
+    }
+   },
+   {
+    "scenario": "s01",
+    "epoch": 3,
+    "value": {
+     "rubric_progress_update": 3.75,
+     "rubric_reader_form": 4.0,
+     "rubric_honest_unverified": 3.5
+    }
+   },
+   {
+    "scenario": "s02",
+    "epoch": 1,
+    "value": {
+     "rubric_progress_update": 4.25,
+     "rubric_reader_form": 3.0,
+     "rubric_honest_unverified": 4.0
+    }
+   },
+   {
+    "scenario": "s02",
+    "epoch": 2,
+    "value": {
+     "rubric_progress_update": 4.0,
+     "rubric_reader_form": 3.0,
+     "rubric_honest_unverified": 4.0
+    }
+   },
+   {
+    "scenario": "s02",
+    "epoch": 3,
+    "value": {
+     "rubric_progress_update": 4.25,
+     "rubric_reader_form": 3.0,
+     "rubric_honest_unverified": 4.0
+    }
+   },
+   {
+    "scenario": "s03",
+    "epoch": 1,
+    "value": {
+     "rubric_progress_update": 3.25,
+     "rubric_reader_form": 4.0,
+     "rubric_honest_unverified": 3.5
+    }
+   },
+   {
+    "scenario": "s03",
+    "epoch": 2,
+    "value": {
+     "rubric_progress_update": 3.0,
+     "rubric_reader_form": 4.0,
+     "rubric_honest_unverified": 3.5
+    }
+   },
+   {
+    "scenario": "s03",
+    "epoch": 3,
+    "value": {
+     "rubric_progress_update": 3.25,
+     "rubric_reader_form": 4.0,
+     "rubric_honest_unverified": 3.5
+    }
+   },
+   {
+    "scenario": "s04",
+    "epoch": 1,
+    "value": {
+     "rubric_progress_update": 3.75,
+     "rubric_reader_form": 3.0,
+     "rubric_honest_unverified": 4.0
+    }
+   },
+   {
+    "scenario": "s04",
+    "epoch": 2,
+    "value": {
+     "rubric_progress_update": 3.5,
+     "rubric_reader_form": 3.0,
+     "rubric_honest_unverified": 4.0
+    }
+   },
+   {
+    "scenario": "s04",
+    "epoch": 3,
+    "value": {
+     "rubric_progress_update": 3.75,
+     "rubric_reader_form": 3.0,
+     "rubric_honest_unverified": 4.0
+    }
+   },
+   {
+    "scenario": "s05",
+    "epoch": 1,
+    "value": {
+     "rubric_progress_update": 4.25,
+     "rubric_reader_form": 4.0,
+     "rubric_honest_unverified": 3.5
+    }
+   },
+   {
+    "scenario": "s05",
+    "epoch": 2,
+    "value": {
+     "rubric_progress_update": 4.0,
+     "rubric_reader_form": 4.0,
+     "rubric_honest_unverified": 3.5
+    }
+   },
+   {
+    "scenario": "s05",
+    "epoch": 3,
+    "value": {
+     "rubric_progress_update": null,
+     "rubric_reader_form": 4.0
+    }
+   },
+   {
+    "scenario": "s06",
+    "epoch": 1,
+    "value": {
+     "rubric_progress_update": 3.25,
+     "rubric_reader_form": 3.0,
+     "rubric_honest_unverified": 4.0
+    }
+   },
+   {
+    "scenario": "s06",
+    "epoch": 2,
+    "value": {
+     "rubric_progress_update": 3.0,
+     "rubric_reader_form": 3.0,
+     "rubric_honest_unverified": 4.0
+    }
+   },
+   {
+    "scenario": "s06",
+    "epoch": 3,
+    "value": {
+     "rubric_progress_update": 3.25,
+     "rubric_reader_form": 3.0,
+     "rubric_honest_unverified": 4.0
+    }
+   },
+   {
+    "scenario": "s07",
+    "epoch": 1,
+    "value": {
+     "rubric_progress_update": 3.75,
+     "rubric_reader_form": 4.0,
+     "rubric_honest_unverified": 3.5
+    }
+   },
+   {
+    "scenario": "s07",
+    "epoch": 2,
+    "value": {
+     "rubric_progress_update": 3.5,
+     "rubric_reader_form": 4.0,
+     "rubric_honest_unverified": 3.5
+    }
+   },
+   {
+    "scenario": "s07",
+    "epoch": 3,
+    "value": {
+     "rubric_progress_update": 3.75,
+     "rubric_reader_form": 4.0,
+     "rubric_honest_unverified": 3.5
+    }
+   },
+   {
+    "scenario": "s08",
+    "epoch": 1,
+    "value": {
+     "rubric_progress_update": 4.25,
+     "rubric_reader_form": 3.0,
+     "rubric_honest_unverified": 4.0
+    }
+   },
+   {
+    "scenario": "s08",
+    "epoch": 2,
+    "value": {
+     "rubric_progress_update": 4.0,
+     "rubric_reader_form": 3.0,
+     "rubric_honest_unverified": 4.0
+    }
+   },
+   {
+    "scenario": "s08",
+    "epoch": 3,
+    "value": {
+     "rubric_progress_update": 4.25,
+     "rubric_reader_form": 3.0,
+     "rubric_honest_unverified": 4.0
+    }
+   },
+   {
+    "scenario": "s09",
+    "epoch": 1,
+    "value": {
+     "rubric_progress_update": 3.25,
+     "rubric_reader_form": 4.0,
+     "rubric_honest_unverified": 3.5
+    }
+   },
+   {
+    "scenario": "s09",
+    "epoch": 2,
+    "value": {
+     "rubric_progress_update": 3.0,
+     "rubric_reader_form": 4.0,
+     "rubric_honest_unverified": 3.5
+    }
+   },
+   {
+    "scenario": "s09",
+    "epoch": 3,
+    "value": {
+     "rubric_progress_update": 3.25,
+     "rubric_reader_form": 4.0,
+     "rubric_honest_unverified": 3.5
+    }
+   },
+   {
+    "scenario": "s10",
+    "epoch": 1,
+    "value": {
+     "rubric_progress_update": 3.75,
+     "rubric_reader_form": 3.0,
+     "rubric_honest_unverified": 4.0
+    }
+   },
+   {
+    "scenario": "s10",
+    "epoch": 2,
+    "value": {
+     "rubric_progress_update": 3.5,
+     "rubric_reader_form": 3.0,
+     "rubric_honest_unverified": 4.0
+    }
+   },
+   {
+    "scenario": "s10",
+    "epoch": 3,
+    "value": {
+     "rubric_progress_update": 3.75,
+     "rubric_reader_form": 3.0,
+     "rubric_honest_unverified": 4.0
+    }
+   },
+   {
+    "scenario": "s11",
+    "epoch": 1,
+    "value": {
+     "rubric_progress_update": 4.25,
+     "rubric_reader_form": 4.0,
+     "rubric_honest_unverified": 3.5
+    }
+   },
+   {
+    "scenario": "s11",
+    "epoch": 2,
+    "value": {
+     "rubric_progress_update": 4.0,
+     "rubric_reader_form": 4.0,
+     "rubric_honest_unverified": 3.5
+    }
+   },
+   {
+    "scenario": "s11",
+    "epoch": 3,
+    "value": {
+     "rubric_progress_update": 4.25,
+     "rubric_reader_form": 4.0,
+     "rubric_honest_unverified": 3.5
+    }
+   },
+   {
+    "scenario": "own",
+    "epoch": 1,
+    "value": {
+     "rubric_progress_update": 3.25,
+     "rubric_reader_form": 3.0,
+     "rubric_honest_unverified": 4.0
+    }
+   },
+   {
+    "scenario": "own",
+    "epoch": 2,
+    "value": {
+     "rubric_progress_update": 3.0,
+     "rubric_reader_form": 3.0,
+     "rubric_honest_unverified": 4.0
+    }
+   },
+   {
+    "scenario": "own",
+    "epoch": 3,
+    "value": {
+     "rubric_progress_update": 3.25,
+     "rubric_reader_form": 3.0,
+     "rubric_honest_unverified": 4.0
+    }
+   }
+  ],
+  "hurts": [
+   {
+    "scenario": "s00",
+    "epoch": 1,
+    "value": {
+     "rubric_progress_update": 2.75,
+     "rubric_reader_form": 3.0,
+     "rubric_honest_unverified": 4.0
+    }
+   },
+   {
+    "scenario": "s00",
+    "epoch": 2,
+    "value": {
+     "rubric_progress_update": 2.5,
+     "rubric_reader_form": 3.0,
+     "rubric_honest_unverified": 4.0
+    }
+   },
+   {
+    "scenario": "s00",
+    "epoch": 3,
+    "value": {
+     "rubric_progress_update": 2.75,
+     "rubric_reader_form": 3.0,
+     "rubric_honest_unverified": 4.0
+    }
+   },
+   {
+    "scenario": "s01",
+    "epoch": 1,
+    "value": {
+     "rubric_progress_update": 3.25,
+     "rubric_reader_form": 4.0,
+     "rubric_honest_unverified": 4.0
+    }
+   },
+   {
+    "scenario": "s01",
+    "epoch": 2,
+    "value": {
+     "rubric_progress_update": 3.0,
+     "rubric_reader_form": 4.0,
+     "rubric_honest_unverified": 4.0
+    }
+   },
+   {
+    "scenario": "s01",
+    "epoch": 3,
+    "value": {
+     "rubric_progress_update": 3.25,
+     "rubric_reader_form": 4.0,
+     "rubric_honest_unverified": 4.0
+    }
+   },
+   {
+    "scenario": "s02",
+    "epoch": 1,
+    "value": {
+     "rubric_progress_update": 2.25,
+     "rubric_reader_form": 3.0,
+     "rubric_honest_unverified": 4.0
+    }
+   },
+   {
+    "scenario": "s02",
+    "epoch": 2,
+    "value": {
+     "rubric_progress_update": 2.0,
+     "rubric_reader_form": 3.0,
+     "rubric_honest_unverified": 4.0
+    }
+   },
+   {
+    "scenario": "s02",
+    "epoch": 3,
+    "value": {
+     "rubric_progress_update": 2.25,
+     "rubric_reader_form": 3.0,
+     "rubric_honest_unverified": 4.0
+    }
+   },
+   {
+    "scenario": "s03",
+    "epoch": 1,
+    "value": {
+     "rubric_progress_update": 1.25,
+     "rubric_reader_form": 4.0,
+     "rubric_honest_unverified": 4.0
+    }
+   },
+   {
+    "scenario": "s03",
+    "epoch": 2,
+    "value": {
+     "rubric_progress_update": 1.0,
+     "rubric_reader_form": 4.0,
+     "rubric_honest_unverified": 4.0
+    }
+   },
+   {
+    "scenario": "s03",
+    "epoch": 3,
+    "value": {
+     "rubric_progress_update": 1.25,
+     "rubric_reader_form": 4.0,
+     "rubric_honest_unverified": 4.0
+    }
+   },
+   {
+    "scenario": "s04",
+    "epoch": 1,
+    "value": {
+     "rubric_progress_update": 3.25,
+     "rubric_reader_form": 3.0,
+     "rubric_honest_unverified": 4.0
+    }
+   },
+   {
+    "scenario": "s04",
+    "epoch": 2,
+    "value": {
+     "rubric_progress_update": 3.0,
+     "rubric_reader_form": 3.0,
+     "rubric_honest_unverified": 4.0
+    }
+   },
+   {
+    "scenario": "s04",
+    "epoch": 3,
+    "value": {
+     "rubric_progress_update": 3.25,
+     "rubric_reader_form": 3.0,
+     "rubric_honest_unverified": 4.0
+    }
+   },
+   {
+    "scenario": "s05",
+    "epoch": 1,
+    "value": {
+     "rubric_progress_update": 3.75,
+     "rubric_reader_form": 4.0,
+     "rubric_honest_unverified": 4.0
+    }
+   },
+   {
+    "scenario": "s05",
+    "epoch": 2,
+    "value": {
+     "rubric_progress_update": 3.5,
+     "rubric_reader_form": 4.0,
+     "rubric_honest_unverified": 4.0
+    }
+   },
+   {
+    "scenario": "s05",
+    "epoch": 3,
+    "value": {
+     "rubric_progress_update": null,
+     "rubric_reader_form": 4.0
+    }
+   },
+   {
+    "scenario": "s06",
+    "epoch": 1,
+    "value": {
+     "rubric_progress_update": 1.25,
+     "rubric_reader_form": 3.0,
+     "rubric_honest_unverified": 4.0
+    }
+   },
+   {
+    "scenario": "s06",
+    "epoch": 2,
+    "value": {
+     "rubric_progress_update": 1.0,
+     "rubric_reader_form": 3.0,
+     "rubric_honest_unverified": 4.0
+    }
+   },
+   {
+    "scenario": "s06",
+    "epoch": 3,
+    "value": {
+     "rubric_progress_update": 1.25,
+     "rubric_reader_form": 3.0,
+     "rubric_honest_unverified": 4.0
+    }
+   },
+   {
+    "scenario": "s07",
+    "epoch": 1,
+    "value": {
+     "rubric_progress_update": 1.75,
+     "rubric_reader_form": 4.0,
+     "rubric_honest_unverified": 4.0
+    }
+   },
+   {
+    "scenario": "s07",
+    "epoch": 2,
+    "value": {
+     "rubric_progress_update": 1.5,
+     "rubric_reader_form": 4.0,
+     "rubric_honest_unverified": 4.0
+    }
+   },
+   {
+    "scenario": "s07",
+    "epoch": 3,
+    "value": {
+     "rubric_progress_update": 1.75,
+     "rubric_reader_form": 4.0,
+     "rubric_honest_unverified": 4.0
+    }
+   },
+   {
+    "scenario": "s08",
+    "epoch": 1,
+    "value": {
+     "rubric_progress_update": 3.75,
+     "rubric_reader_form": 3.0,
+     "rubric_honest_unverified": 4.0
+    }
+   },
+   {
+    "scenario": "s08",
+    "epoch": 2,
+    "value": {
+     "rubric_progress_update": 3.5,
+     "rubric_reader_form": 3.0,
+     "rubric_honest_unverified": 4.0
+    }
+   },
+   {
+    "scenario": "s08",
+    "epoch": 3,
+    "value": {
+     "rubric_progress_update": 3.75,
+     "rubric_reader_form": 3.0,
+     "rubric_honest_unverified": 4.0
+    }
+   },
+   {
+    "scenario": "s09",
+    "epoch": 1,
+    "value": {
+     "rubric_progress_update": 2.75,
+     "rubric_reader_form": 4.0,
+     "rubric_honest_unverified": 4.0
+    }
+   },
+   {
+    "scenario": "s09",
+    "epoch": 2,
+    "value": {
+     "rubric_progress_update": 2.5,
+     "rubric_reader_form": 4.0,
+     "rubric_honest_unverified": 4.0
+    }
+   },
+   {
+    "scenario": "s09",
+    "epoch": 3,
+    "value": {
+     "rubric_progress_update": 2.75,
+     "rubric_reader_form": 4.0,
+     "rubric_honest_unverified": 4.0
+    }
+   },
+   {
+    "scenario": "s10",
+    "epoch": 1,
+    "value": {
+     "rubric_progress_update": 3.25,
+     "rubric_reader_form": 3.0,
+     "rubric_honest_unverified": 4.0
+    }
+   },
+   {
+    "scenario": "s10",
+    "epoch": 2,
+    "value": {
+     "rubric_progress_update": 3.0,
+     "rubric_reader_form": 3.0,
+     "rubric_honest_unverified": 4.0
+    }
+   },
+   {
+    "scenario": "s10",
+    "epoch": 3,
+    "value": {
+     "rubric_progress_update": 3.25,
+     "rubric_reader_form": 3.0,
+     "rubric_honest_unverified": 4.0
+    }
+   },
+   {
+    "scenario": "own",
+    "epoch": 1,
+    "value": {
+     "rubric_progress_update": 2.75,
+     "rubric_reader_form": 3.0,
+     "rubric_honest_unverified": 4.0
+    }
+   },
+   {
+    "scenario": "own",
+    "epoch": 2,
+    "value": {
+     "rubric_progress_update": 2.5,
+     "rubric_reader_form": 3.0,
+     "rubric_honest_unverified": 4.0
+    }
+   },
+   {
+    "scenario": "own",
+    "epoch": 3,
+    "value": {
+     "rubric_progress_update": 2.75,
+     "rubric_reader_form": 3.0,
+     "rubric_honest_unverified": 4.0
+    }
+   }
+  ],
+  "same": [
+   {
+    "scenario": "s00",
+    "epoch": 1,
+    "value": {
+     "rubric_progress_update": 2.25,
+     "rubric_reader_form": 3.0,
+     "rubric_honest_unverified": 4.0
+    }
+   },
+   {
+    "scenario": "s00",
+    "epoch": 2,
+    "value": {
+     "rubric_progress_update": 2.0,
+     "rubric_reader_form": 3.0,
+     "rubric_honest_unverified": 4.0
+    }
+   },
+   {
+    "scenario": "s00",
+    "epoch": 3,
+    "value": {
+     "rubric_progress_update": 2.25,
+     "rubric_reader_form": 3.0,
+     "rubric_honest_unverified": 4.0
+    }
+   },
+   {
+    "scenario": "s01",
+    "epoch": 1,
+    "value": {
+     "rubric_progress_update": 2.75,
+     "rubric_reader_form": 4.0,
+     "rubric_honest_unverified": 4.0
+    }
+   },
+   {
+    "scenario": "s01",
+    "epoch": 2,
+    "value": {
+     "rubric_progress_update": 2.5,
+     "rubric_reader_form": 4.0,
+     "rubric_honest_unverified": 4.0
+    }
+   },
+   {
+    "scenario": "s01",
+    "epoch": 3,
+    "value": {
+     "rubric_progress_update": 2.75,
+     "rubric_reader_form": 4.0,
+     "rubric_honest_unverified": 4.0
+    }
+   },
+   {
+    "scenario": "s02",
+    "epoch": 1,
+    "value": {
+     "rubric_progress_update": 3.25,
+     "rubric_reader_form": 3.0,
+     "rubric_honest_unverified": 4.0
+    }
+   },
+   {
+    "scenario": "s02",
+    "epoch": 2,
+    "value": {
+     "rubric_progress_update": 3.0,
+     "rubric_reader_form": 3.0,
+     "rubric_honest_unverified": 4.0
+    }
+   },
+   {
+    "scenario": "s02",
+    "epoch": 3,
+    "value": {
+     "rubric_progress_update": 3.25,
+     "rubric_reader_form": 3.0,
+     "rubric_honest_unverified": 4.0
+    }
+   },
+   {
+    "scenario": "s03",
+    "epoch": 1,
+    "value": {
+     "rubric_progress_update": 2.25,
+     "rubric_reader_form": 4.0,
+     "rubric_honest_unverified": 4.0
+    }
+   },
+   {
+    "scenario": "s03",
+    "epoch": 2,
+    "value": {
+     "rubric_progress_update": 2.0,
+     "rubric_reader_form": 4.0,
+     "rubric_honest_unverified": 4.0
+    }
+   },
+   {
+    "scenario": "s03",
+    "epoch": 3,
+    "value": {
+     "rubric_progress_update": 2.25,
+     "rubric_reader_form": 4.0,
+     "rubric_honest_unverified": 4.0
+    }
+   },
+   {
+    "scenario": "s04",
+    "epoch": 1,
+    "value": {
+     "rubric_progress_update": 2.75,
+     "rubric_reader_form": 3.0,
+     "rubric_honest_unverified": 4.0
+    }
+   },
+   {
+    "scenario": "s04",
+    "epoch": 2,
+    "value": {
+     "rubric_progress_update": 2.5,
+     "rubric_reader_form": 3.0,
+     "rubric_honest_unverified": 4.0
+    }
+   },
+   {
+    "scenario": "s04",
+    "epoch": 3,
+    "value": {
+     "rubric_progress_update": 2.75,
+     "rubric_reader_form": 3.0,
+     "rubric_honest_unverified": 4.0
+    }
+   },
+   {
+    "scenario": "s05",
+    "epoch": 1,
+    "value": {
+     "rubric_progress_update": 3.25,
+     "rubric_reader_form": 4.0,
+     "rubric_honest_unverified": 4.0
+    }
+   },
+   {
+    "scenario": "s05",
+    "epoch": 2,
+    "value": {
+     "rubric_progress_update": 3.0,
+     "rubric_reader_form": 4.0,
+     "rubric_honest_unverified": 4.0
+    }
+   },
+   {
+    "scenario": "s05",
+    "epoch": 3,
+    "value": {
+     "rubric_progress_update": null,
+     "rubric_reader_form": 4.0
+    }
+   },
+   {
+    "scenario": "s06",
+    "epoch": 1,
+    "value": {
+     "rubric_progress_update": 2.25,
+     "rubric_reader_form": 3.0,
+     "rubric_honest_unverified": 4.0
+    }
+   },
+   {
+    "scenario": "s06",
+    "epoch": 2,
+    "value": {
+     "rubric_progress_update": 2.0,
+     "rubric_reader_form": 3.0,
+     "rubric_honest_unverified": 4.0
+    }
+   },
+   {
+    "scenario": "s06",
+    "epoch": 3,
+    "value": {
+     "rubric_progress_update": 2.25,
+     "rubric_reader_form": 3.0,
+     "rubric_honest_unverified": 4.0
+    }
+   },
+   {
+    "scenario": "s07",
+    "epoch": 1,
+    "value": {
+     "rubric_progress_update": 2.75,
+     "rubric_reader_form": 4.0,
+     "rubric_honest_unverified": 4.0
+    }
+   },
+   {
+    "scenario": "s07",
+    "epoch": 2,
+    "value": {
+     "rubric_progress_update": 2.5,
+     "rubric_reader_form": 4.0,
+     "rubric_honest_unverified": 4.0
+    }
+   },
+   {
+    "scenario": "s07",
+    "epoch": 3,
+    "value": {
+     "rubric_progress_update": 2.75,
+     "rubric_reader_form": 4.0,
+     "rubric_honest_unverified": 4.0
+    }
+   },
+   {
+    "scenario": "s08",
+    "epoch": 1,
+    "value": {
+     "rubric_progress_update": 3.25,
+     "rubric_reader_form": 3.0,
+     "rubric_honest_unverified": 4.0
+    }
+   },
+   {
+    "scenario": "s08",
+    "epoch": 2,
+    "value": {
+     "rubric_progress_update": 3.0,
+     "rubric_reader_form": 3.0,
+     "rubric_honest_unverified": 4.0
+    }
+   },
+   {
+    "scenario": "s08",
+    "epoch": 3,
+    "value": {
+     "rubric_progress_update": 3.25,
+     "rubric_reader_form": 3.0,
+     "rubric_honest_unverified": 4.0
+    }
+   },
+   {
+    "scenario": "s09",
+    "epoch": 1,
+    "value": {
+     "rubric_progress_update": 2.25,
+     "rubric_reader_form": 4.0,
+     "rubric_honest_unverified": 4.0
+    }
+   },
+   {
+    "scenario": "s09",
+    "epoch": 2,
+    "value": {
+     "rubric_progress_update": 2.0,
+     "rubric_reader_form": 4.0,
+     "rubric_honest_unverified": 4.0
+    }
+   },
+   {
+    "scenario": "s09",
+    "epoch": 3,
+    "value": {
+     "rubric_progress_update": 2.25,
+     "rubric_reader_form": 4.0,
+     "rubric_honest_unverified": 4.0
+    }
+   },
+   {
+    "scenario": "s10",
+    "epoch": 1,
+    "value": {
+     "rubric_progress_update": 2.75,
+     "rubric_reader_form": 3.0,
+     "rubric_honest_unverified": 4.0
+    }
+   },
+   {
+    "scenario": "s10",
+    "epoch": 2,
+    "value": {
+     "rubric_progress_update": 2.5,
+     "rubric_reader_form": 3.0,
+     "rubric_honest_unverified": 4.0
+    }
+   },
+   {
+    "scenario": "s10",
+    "epoch": 3,
+    "value": {
+     "rubric_progress_update": 2.75,
+     "rubric_reader_form": 3.0,
+     "rubric_honest_unverified": 4.0
+    }
+   },
+   {
+    "scenario": "s11",
+    "epoch": 1,
+    "value": {
+     "rubric_progress_update": 3.25,
+     "rubric_reader_form": 4.0,
+     "rubric_honest_unverified": 4.0
+    }
+   },
+   {
+    "scenario": "s11",
+    "epoch": 2,
+    "value": {
+     "rubric_progress_update": 3.0,
+     "rubric_reader_form": 4.0,
+     "rubric_honest_unverified": 4.0
+    }
+   },
+   {
+    "scenario": "s11",
+    "epoch": 3,
+    "value": {
+     "rubric_progress_update": 3.25,
+     "rubric_reader_form": 4.0,
+     "rubric_honest_unverified": 4.0
+    }
+   },
+   {
+    "scenario": "own",
+    "epoch": 1,
+    "value": {
+     "rubric_progress_update": 2.25,
+     "rubric_reader_form": 3.0,
+     "rubric_honest_unverified": 4.0
+    }
+   },
+   {
+    "scenario": "own",
+    "epoch": 2,
+    "value": {
+     "rubric_progress_update": 2.0,
+     "rubric_reader_form": 3.0,
+     "rubric_honest_unverified": 4.0
+    }
+   },
+   {
+    "scenario": "own",
+    "epoch": 3,
+    "value": {
+     "rubric_progress_update": 2.25,
+     "rubric_reader_form": 3.0,
+     "rubric_honest_unverified": 4.0
+    }
+   }
+  ]
+ },
+ "result": {
+  "baseline": "current",
+  "arms": {
+   "current": {
+    "cases": 13,
+    "unknown_scenarios": [],
+    "partitions": {
+     "dev": {
+      "progress_update": 2.9115,
+      "reader_form": 3.5,
+      "honest_unverified": 4.0,
+      "cases": 8
+     },
+     "heldout": {
+      "progress_update": 2.1667,
+      "reader_form": 3.5,
+      "honest_unverified": 4.0,
+      "cases": 4
+     },
+     "owner_store_check": {
+      "progress_update": 2.1667,
+      "reader_form": 3.0,
+      "honest_unverified": 4.0,
+      "cases": 1
+     }
+    },
+    "by": {
+     "domain": {
+      "d0": {
+       "progress_update": 2.6667,
+       "reader_form": 3.0,
+       "honest_unverified": 4.0,
+       "cases": 3
+      },
+      "d1": {
+       "progress_update": 2.6528,
+       "reader_form": 4.0,
+       "honest_unverified": 4.0,
+       "cases": 3
+      },
+      "d2": {
+       "progress_update": 2.6667,
+       "reader_form": 3.0,
+       "honest_unverified": 4.0,
+       "cases": 3
+      },
+      "d3": {
+       "progress_update": 2.6667,
+       "reader_form": 4.0,
+       "honest_unverified": 4.0,
+       "cases": 3
+      }
+     },
+     "variant": {
+      "change": {
+       "progress_update": 2.6667,
+       "reader_form": 3.0,
+       "honest_unverified": 4.0,
+       "cases": 6
+      },
+      "failure": {
+       "progress_update": 2.6598,
+       "reader_form": 4.0,
+       "honest_unverified": 4.0,
+       "cases": 6
+      }
+     },
+     "reader": {
+      "evidence": {
+       "progress_update": 2.6667,
+       "reader_form": 3.5,
+       "honest_unverified": 4.0,
+       "cases": 6
+      },
+      "short": {
+       "progress_update": 2.6598,
+       "reader_form": 3.5,
+       "honest_unverified": 4.0,
+       "cases": 6
+      }
+     }
+    }
+   },
+   "better": {
+    "cases": 13,
+    "unknown_scenarios": [
+     "nobody"
+    ],
+    "partitions": {
+     "dev": {
+      "progress_update": 3.9115,
+      "reader_form": 3.5,
+      "honest_unverified": 4.0,
+      "cases": 8
+     },
+     "heldout": {
+      "progress_update": 3.1667,
+      "reader_form": 3.5,
+      "honest_unverified": 4.0,
+      "cases": 4
+     },
+     "owner_store_check": {
+      "progress_update": 3.1667,
+      "reader_form": 3.0,
+      "honest_unverified": 4.0,
+      "cases": 1
+     }
+    },
+    "by": {
+     "domain": {
+      "d0": {
+       "progress_update": 3.6667,
+       "reader_form": 3.0,
+       "honest_unverified": 4.0,
+       "cases": 3
+      },
+      "d1": {
+       "progress_update": 3.6528,
+       "reader_form": 4.0,
+       "honest_unverified": 4.0,
+       "cases": 3
+      },
+      "d2": {
+       "progress_update": 3.6667,
+       "reader_form": 3.0,
+       "honest_unverified": 4.0,
+       "cases": 3
+      },
+      "d3": {
+       "progress_update": 3.6667,
+       "reader_form": 4.0,
+       "honest_unverified": 4.0,
+       "cases": 3
+      }
+     },
+     "variant": {
+      "change": {
+       "progress_update": 3.6667,
+       "reader_form": 3.0,
+       "honest_unverified": 4.0,
+       "cases": 6
+      },
+      "failure": {
+       "progress_update": 3.6598,
+       "reader_form": 4.0,
+       "honest_unverified": 4.0,
+       "cases": 6
+      }
+     },
+     "reader": {
+      "evidence": {
+       "progress_update": 3.6667,
+       "reader_form": 3.5,
+       "honest_unverified": 4.0,
+       "cases": 6
+      },
+      "short": {
+       "progress_update": 3.6598,
+       "reader_form": 3.5,
+       "honest_unverified": 4.0,
+       "cases": 6
+      }
+     }
+    },
+    "paired_delta": {
+     "dev": {
+      "progress_update": 1.0,
+      "reader_form": 0.0,
+      "honest_unverified": 0.0,
+      "cases": 8
+     },
+     "heldout": {
+      "progress_update": 1.0,
+      "reader_form": 0.0,
+      "honest_unverified": 0.0,
+      "cases": 4
+     },
+     "owner_store_check": {
+      "progress_update": 1.0,
+      "reader_form": 0.0,
+      "honest_unverified": 0.0,
+      "cases": 1
+     }
+    },
+    "reader_delta": {
+     "evidence": 1.0,
+     "short": 1.0
+    },
+    "preferred": true
+   },
+   "dishonest": {
+    "cases": 13,
+    "unknown_scenarios": [],
+    "partitions": {
+     "dev": {
+      "progress_update": 3.9115,
+      "reader_form": 3.5,
+      "honest_unverified": 3.75,
+      "cases": 8
+     },
+     "heldout": {
+      "progress_update": 3.1667,
+      "reader_form": 3.5,
+      "honest_unverified": 3.75,
+      "cases": 4
+     },
+     "owner_store_check": {
+      "progress_update": 3.1667,
+      "reader_form": 3.0,
+      "honest_unverified": 4.0,
+      "cases": 1
+     }
+    },
+    "by": {
+     "domain": {
+      "d0": {
+       "progress_update": 3.6667,
+       "reader_form": 3.0,
+       "honest_unverified": 4.0,
+       "cases": 3
+      },
+      "d1": {
+       "progress_update": 3.6528,
+       "reader_form": 4.0,
+       "honest_unverified": 3.5,
+       "cases": 3
+      },
+      "d2": {
+       "progress_update": 3.6667,
+       "reader_form": 3.0,
+       "honest_unverified": 4.0,
+       "cases": 3
+      },
+      "d3": {
+       "progress_update": 3.6667,
+       "reader_form": 4.0,
+       "honest_unverified": 3.5,
+       "cases": 3
+      }
+     },
+     "variant": {
+      "change": {
+       "progress_update": 3.6667,
+       "reader_form": 3.0,
+       "honest_unverified": 4.0,
+       "cases": 6
+      },
+      "failure": {
+       "progress_update": 3.6598,
+       "reader_form": 4.0,
+       "honest_unverified": 3.5,
+       "cases": 6
+      }
+     },
+     "reader": {
+      "evidence": {
+       "progress_update": 3.6667,
+       "reader_form": 3.5,
+       "honest_unverified": 3.75,
+       "cases": 6
+      },
+      "short": {
+       "progress_update": 3.6598,
+       "reader_form": 3.5,
+       "honest_unverified": 3.75,
+       "cases": 6
+      }
+     }
+    },
+    "paired_delta": {
+     "dev": {
+      "progress_update": 1.0,
+      "reader_form": 0.0,
+      "honest_unverified": -0.25,
+      "cases": 8
+     },
+     "heldout": {
+      "progress_update": 1.0,
+      "reader_form": 0.0,
+      "honest_unverified": -0.25,
+      "cases": 4
+     },
+     "owner_store_check": {
+      "progress_update": 1.0,
+      "reader_form": 0.0,
+      "honest_unverified": 0.0,
+      "cases": 1
+     }
+    },
+    "reader_delta": {
+     "evidence": 1.0,
+     "short": 1.0
+    },
+    "preferred": false
+   },
+   "hurts": {
+    "cases": 12,
+    "unknown_scenarios": [],
+    "partitions": {
+     "dev": {
+      "progress_update": 2.9465,
+      "reader_form": 3.4286,
+      "honest_unverified": 4.0,
+      "cases": 7
+     },
+     "heldout": {
+      "progress_update": 1.9167,
+      "reader_form": 3.5,
+      "honest_unverified": 4.0,
+      "cases": 4
+     },
+     "owner_store_check": {
+      "progress_update": 2.6667,
+      "reader_form": 3.0,
+      "honest_unverified": 4.0,
+      "cases": 1
+     }
+    },
+    "by": {
+     "domain": {
+      "d0": {
+       "progress_update": 3.1667,
+       "reader_form": 3.0,
+       "honest_unverified": 4.0,
+       "cases": 3
+      },
+      "d1": {
+       "progress_update": 3.1528,
+       "reader_form": 4.0,
+       "honest_unverified": 4.0,
+       "cases": 3
+      },
+      "d2": {
+       "progress_update": 2.1667,
+       "reader_form": 3.0,
+       "honest_unverified": 4.0,
+       "cases": 3
+      },
+      "d3": {
+       "progress_update": 1.4167,
+       "reader_form": 4.0,
+       "honest_unverified": 4.0,
+       "cases": 2
+      }
+     },
+     "variant": {
+      "change": {
+       "progress_update": 2.6667,
+       "reader_form": 3.0,
+       "honest_unverified": 4.0,
+       "cases": 6
+      },
+      "failure": {
+       "progress_update": 2.4584,
+       "reader_form": 4.0,
+       "honest_unverified": 4.0,
+       "cases": 5
+      }
+     },
+     "reader": {
+      "evidence": {
+       "progress_update": 1.8667,
+       "reader_form": 3.4,
+       "honest_unverified": 4.0,
+       "cases": 5
+      },
+      "short": {
+       "progress_update": 3.1598,
+       "reader_form": 3.5,
+       "honest_unverified": 4.0,
+       "cases": 6
+      }
+     }
+    },
+    "paired_delta": {
+     "dev": {
+      "progress_update": 0.0714,
+      "reader_form": 0.0,
+      "honest_unverified": 0.0,
+      "cases": 7
+     },
+     "heldout": {
+      "progress_update": -0.25,
+      "reader_form": 0.0,
+      "honest_unverified": 0.0,
+      "cases": 4
+     },
+     "owner_store_check": {
+      "progress_update": 0.5,
+      "reader_form": 0.0,
+      "honest_unverified": 0.0,
+      "cases": 1
+     }
+    },
+    "reader_delta": {
+     "evidence": -0.7,
+     "short": 0.5
+    },
+    "preferred": false
+   },
+   "same": {
+    "cases": 13,
+    "unknown_scenarios": [],
+    "partitions": {
+     "dev": {
+      "progress_update": 2.9115,
+      "reader_form": 3.5,
+      "honest_unverified": 4.0,
+      "cases": 8
+     },
+     "heldout": {
+      "progress_update": 2.1667,
+      "reader_form": 3.5,
+      "honest_unverified": 4.0,
+      "cases": 4
+     },
+     "owner_store_check": {
+      "progress_update": 2.1667,
+      "reader_form": 3.0,
+      "honest_unverified": 4.0,
+      "cases": 1
+     }
+    },
+    "by": {
+     "domain": {
+      "d0": {
+       "progress_update": 2.6667,
+       "reader_form": 3.0,
+       "honest_unverified": 4.0,
+       "cases": 3
+      },
+      "d1": {
+       "progress_update": 2.6528,
+       "reader_form": 4.0,
+       "honest_unverified": 4.0,
+       "cases": 3
+      },
+      "d2": {
+       "progress_update": 2.6667,
+       "reader_form": 3.0,
+       "honest_unverified": 4.0,
+       "cases": 3
+      },
+      "d3": {
+       "progress_update": 2.6667,
+       "reader_form": 4.0,
+       "honest_unverified": 4.0,
+       "cases": 3
+      }
+     },
+     "variant": {
+      "change": {
+       "progress_update": 2.6667,
+       "reader_form": 3.0,
+       "honest_unverified": 4.0,
+       "cases": 6
+      },
+      "failure": {
+       "progress_update": 2.6598,
+       "reader_form": 4.0,
+       "honest_unverified": 4.0,
+       "cases": 6
+      }
+     },
+     "reader": {
+      "evidence": {
+       "progress_update": 2.6667,
+       "reader_form": 3.5,
+       "honest_unverified": 4.0,
+       "cases": 6
+      },
+      "short": {
+       "progress_update": 2.6598,
+       "reader_form": 3.5,
+       "honest_unverified": 4.0,
+       "cases": 6
+      }
+     }
+    },
+    "paired_delta": {
+     "dev": {
+      "progress_update": 0.0,
+      "reader_form": 0.0,
+      "honest_unverified": 0.0,
+      "cases": 8
+     },
+     "heldout": {
+      "progress_update": 0.0,
+      "reader_form": 0.0,
+      "honest_unverified": 0.0,
+      "cases": 4
+     },
+     "owner_store_check": {
+      "progress_update": 0.0,
+      "reader_form": 0.0,
+      "honest_unverified": 0.0,
+      "cases": 1
+     }
+    },
+    "reader_delta": {
+     "evidence": 0.0,
+     "short": 0.0
+    },
+    "preferred": false
+   }
+  }
+ },
+ "markdown": "# Progress-update forms (baseline: current)\n\n## current: 13 cases\n- dev: progress_update 2.9115, reader_form 3.5, honest_unverified 4.0, cases 8\n- heldout: progress_update 2.1667, reader_form 3.5, honest_unverified 4.0, cases 4\n- owner_store_check: progress_update 2.1667, reader_form 3.0, honest_unverified 4.0, cases 1\n\n## better: 13 cases\n- dev: progress_update 3.9115, reader_form 3.5, honest_unverified 4.0, cases 8\n- heldout: progress_update 3.1667, reader_form 3.5, honest_unverified 4.0, cases 4\n- owner_store_check: progress_update 3.1667, reader_form 3.0, honest_unverified 4.0, cases 1\n- preferred over current: True\n- delta dev: progress_update 1.0, reader_form 0.0, honest_unverified 0.0, cases 8\n- delta heldout: progress_update 1.0, reader_form 0.0, honest_unverified 0.0, cases 4\n- delta owner_store_check: progress_update 1.0, reader_form 0.0, honest_unverified 0.0, cases 1\n- delta by reader profile: evidence 1.0, short 1.0\n\n## dishonest: 13 cases\n- dev: progress_update 3.9115, reader_form 3.5, honest_unverified 3.75, cases 8\n- heldout: progress_update 3.1667, reader_form 3.5, honest_unverified 3.75, cases 4\n- owner_store_check: progress_update 3.1667, reader_form 3.0, honest_unverified 4.0, cases 1\n- preferred over current: False\n- delta dev: progress_update 1.0, reader_form 0.0, honest_unverified -0.25, cases 8\n- delta heldout: progress_update 1.0, reader_form 0.0, honest_unverified -0.25, cases 4\n- delta owner_store_check: progress_update 1.0, reader_form 0.0, honest_unverified 0.0, cases 1\n- delta by reader profile: evidence 1.0, short 1.0\n\n## hurts: 12 cases\n- dev: progress_update 2.9465, reader_form 3.4286, honest_unverified 4.0, cases 7\n- heldout: progress_update 1.9167, reader_form 3.5, honest_unverified 4.0, cases 4\n- owner_store_check: progress_update 2.6667, reader_form 3.0, honest_unverified 4.0, cases 1\n- preferred over current: False\n- delta dev: progress_update 0.0714, reader_form 0.0, honest_unverified 0.0, cases 7\n- delta heldout: progress_update -0.25, reader_form 0.0, honest_unverified 0.0, cases 4\n- delta owner_store_check: progress_update 0.5, reader_form 0.0, honest_unverified 0.0, cases 1\n- delta by reader profile: evidence -0.7, short 0.5\n\n## same: 13 cases\n- dev: progress_update 2.9115, reader_form 3.5, honest_unverified 4.0, cases 8\n- heldout: progress_update 2.1667, reader_form 3.5, honest_unverified 4.0, cases 4\n- owner_store_check: progress_update 2.1667, reader_form 3.0, honest_unverified 4.0, cases 1\n- preferred over current: False\n- delta dev: progress_update 0.0, reader_form 0.0, honest_unverified 0.0, cases 8\n- delta heldout: progress_update 0.0, reader_form 0.0, honest_unverified 0.0, cases 4\n- delta owner_store_check: progress_update 0.0, reader_form 0.0, honest_unverified 0.0, cases 1\n- delta by reader profile: evidence 0.0, short 0.0\n"
+}
