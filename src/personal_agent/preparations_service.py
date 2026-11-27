@@ -2810,6 +2810,107 @@ class PreparationsService:
             text+=' '+msg('lines.account_piece_paused')
         return text
 
+    #: #1252: at most this many unconfirmed changes are named one by one; the count is always whole.
+    LINE_EFFECTS_NAMED=8
+
+    def line_effects(self, line_id):
+        """#1252: what Still's own records show of the line's external changes, across every Work and check of it.
+
+        From the effect ledger (``classify_effect_rows``, as ``external_effect_events`` reads one Work):
+        ``sent`` (a dispatch Still observed handed off, which is not the service's confirmation that the
+        goal took effect), ``not_applied`` (reconciled as not applied), ``unconfirmed`` (claimed with no
+        definite answer, so it may have run). From code-run Evidence: ``refused`` (Still refused it before
+        sending, #1250) and ``asked`` (a Work of the line waiting now for the owner's approval). ``unconfirmed_items`` names up to
+        ``LINE_EFFECTS_NAMED`` of them by operation, host and connection name; never a body or a value.
+        """
+        from .manifests import LOCAL_WRITE_ACTIONS
+        from .agent_runtime import (CODE_ACTIONS, EFFECT_CHANGED, EFFECT_UNKNOWN, REVISABLE_RECORD_ACTIONS,
+                                    EFFECT_FREE_READS, _call_target, _state_free_actions, classify_effect_rows, dispatch_call_accounted,
+                                    dispatch_call_keys, effect_call_history_of, effect_rows, refused_rows,
+                                    refused_state_change)
+        store=self.service.store
+        with store.db() as db:
+            works=[item['id'] for item in db.execute(
+                f"SELECT id FROM jobs WHERE {prep.line_works_sql('request_key',include_deleted=True)}",(line_id,line_id))]
+            rows=[item['id'] for item in db.execute(
+                "SELECT id FROM preparations WHERE line_id=? UNION SELECT job_id FROM tool_events "
+                "WHERE tool='preparation_lineage' AND status='deleted' AND json_extract(detail,'$.line_id')=?",(line_id,line_id))]
+            ids=[*works,*(prep.CHECK_RECORD_PREFIX+item for item in rows)]
+            ledger=effect_rows(db,ids)
+            # #1252 review: calls whose own record is unknown (a browser step, a connector or API call with no
+            # ledger claim), classified by the one rule (``record_effect``) as ``unknown_effect_targets`` reads them.
+            calls,unscoped=effect_call_history_of(db,ids)
+            runs=db.execute("SELECT tool,detail FROM tool_events WHERE job_id IN ("+','.join('?' for _ in works)+") "
+                            "AND status IN ('succeeded','failed') AND (tool='code_run' OR json_extract(detail,'$.host_action')='code_run')",
+                            works).fetchall() if works else []
+        observed,claims=classify_effect_rows(ledger)
+        out={'sent':0,'not_applied':0,'unconfirmed':len(claims),'refused':0,'asked':0,'unconfirmed_items':[]}
+        for _event,evidence in observed:
+            out['not_applied' if evidence.get('resolution')=='not-applied' else 'sent']+=1
+        for _event,evidence in claims[:self.LINE_EFFECTS_NAMED]:
+            out['unconfirmed_items'].append({key:str(evidence[key])[:120] for key in ('operation','host','identity','service')
+                                             if isinstance(evidence.get(key),str) and evidence[key]})
+        # Not counted twice: a call its ledger row already accounts for (an API dispatch by its call reference, a
+        # connector call by its permission event) is read through that row (#1252 review).
+        accounted=dispatch_call_keys(observed,claims)
+        ledger_ids={item['id'] for item in ledger}
+        # Nor a code run (its state changes are its dispatch claims, #1456), nor a host action declared to write
+        # only locally (``LOCAL_WRITE_ACTIONS``: no open world, such as a check's state or a setting), Still's own
+        # records (``REVISABLE_RECORD_ACTIONS``), nor what the effect floor holds changes no outside state by its kind
+        # (``_state_free_actions``: internal bookkeeping, a delegation, whose own calls are recorded as their own).
+        # Its reads stay decided by their own record: a browser step that declared a change counts.
+        local=CODE_ACTIONS|LOCAL_WRITE_ACTIONS|REVISABLE_RECORD_ACTIONS|(_state_free_actions()-EFFECT_FREE_READS)
+        def own(action,detail):
+            return (action not in local and not dispatch_call_accounted(detail,accounted)
+                    and detail.get('permission_event') not in ledger_ids)
+        # Unconfirmed: a call whose effect is unknown, and a change that did not end succeeded - one still in flight
+        # (a stop does not wait for the running step) or one that failed after it reached the outside (a submission
+        # that then timed out).  Only a succeeded change is a send.
+        unknown=[(action,detail) for _work,action,effect,status,detail in calls
+                 if (effect==EFFECT_UNKNOWN or (effect==EFFECT_CHANGED and status!='succeeded')) and own(action,detail)]
+        out['unconfirmed']+=len(unknown)+len(unscoped)
+        # A change a call's own record shows it made (a browser step, a package tool), once it ended: never one still running.
+        out['sent']+=sum(1 for _work,action,effect,status,detail in calls if effect==EFFECT_CHANGED and status=='succeeded'
+                         and own(action,detail))
+        for action,detail in unknown:
+            if len(out['unconfirmed_items'])>=self.LINE_EFFECTS_NAMED:break
+            target=_call_target(action,detail)
+            host=next(iter(sorted(target[2])),'') if target else ''
+            item={'operation':str(action)[:120]}
+            if host:item['host']=host[:120]
+            if target and target[1] and target[1]!=host:item['identity']=str(target[1])[:120]
+            out['unconfirmed_items'].append(item)
+        for run in runs:
+            try:detail=json.loads(run['detail'] or '{}')
+            except (TypeError,ValueError):continue
+            if not isinstance(detail,dict):continue
+            # A run cut off after a refusal keeps it on its failure record (``refused_rows``).
+            if refused_state_change('code_run',detail):out['refused']+=len(refused_rows(detail))
+        # Waiting now, by the current approval state (``step_approval_pending``: requested, not expired), not by
+        # the request ever having been made (#1252 review).  A Work holds at most one request, kept in one map by
+        # Work id, so only the line's Works that have an entry there are asked.
+        from .quickstart_service import BROWSER_REQUESTS_KEY
+        requests=store.config(BROWSER_REQUESTS_KEY,{})
+        requests=requests if isinstance(requests,dict) else {}
+        out['asked']=sum(1 for work in works if work in requests and self.service.step_approval_pending(work))
+        return out
+
+    def line_effects_text(self, effects, *, account=False):
+        """The run's fact lines from ``line_effects``, or ``''``.
+
+        An account is told whenever the line recorded any change; another run of the line only while
+        one is open (unconfirmed, refused or waiting for approval), so it reconciles before acting again.
+        """
+        counts=('sent','not_applied','unconfirmed','refused','asked')
+        if not effects or not any(effects[key] for key in counts):return ''
+        if not account and not (effects['unconfirmed'] or effects['refused'] or effects['asked']):return ''
+        text=msg('lines.effects_recorded',**{key:effects[key] for key in counts})
+        if effects['unconfirmed']:
+            named='; '.join(' '.join(item[key] for key in ('operation','host','identity','service') if key in item)
+                            for item in effects['unconfirmed_items'])
+            text+='\n'+msg('lines.effects_unconfirmed',items=named or '-')
+        return text
+
     def line_checks_account(self, row, job):
         """Pin the cumulative counts and their delta to the slot whose account first reads them."""
         store=self.service.store
@@ -3094,8 +3195,14 @@ class PreparationsService:
         kind,next_key=(el.NOTICE_STOPPED,'lines.stopped_next') if scope=='line' else (
             el.NOTICE_WORK_STOPPED,'lines.work_stopped_next' if after['state']==el.STATE_ACTIVE else 'lines.refused_line_stopped')
         untold=self.line_notice(job,kind,line_id,after['version']) if changed else ''
+        # #1252: stopping cancels what has not started; it neither undoes nor confirms a change already sent.
+        # Said after ``told``, which replaces the next step when Still could not send the notice itself.
+        effects=self.line_effects(line_id)
+        next_step=self.told(msg(next_key),untold)
+        if effects['unconfirmed']:
+            next_step+=' '+msg('lines.stopped_unconfirmed',count=effects['unconfirmed'])
         day=service.preparations.budget_day(service.preparations.clock())
-        return {**el.public_brief(after,day=day),'scope':scope,'changed':changed,'next_step':self.told(msg(next_key),untold)}
+        return {**el.public_brief(after,day=day),'scope':scope,'changed':changed,'effects':effects,'next_step':next_step}
 
     def _line_restart(self, job, args):
         service=self.service
@@ -3140,6 +3247,8 @@ class PreparationsService:
             if pieces:lead+='\n'+pieces
             check_counts=self.line_checks_account(row,job)
             if check_counts:lead+='\n'+check_counts
+            effects=self.line_effects_text(self.line_effects(row['line_id']),account=True)
+            if effects:lead+='\n'+effects
         else:
             lead=msg('lines.run_input')
             # #938 (D2): a run that may continue its line in pieces is told how, in one general sentence.
@@ -3149,6 +3258,9 @@ class PreparationsService:
                 note=self.line_schedule_note(brief,row)
                 if note:lead+='\n'+note
                 lead+=self.plan_execute_note(row)
+            # #1252: a run that continues the line reconciles an open change before acting again.
+            effects=self.line_effects_text(self.line_effects(row['line_id']))
+            if effects:lead+='\n'+effects
         return lead+'\n'+self.current_line_text(brief)+'\n'+el.outcomes_text(outcomes,row.get('timezone'))
 
     def plan_execute_note(self, row):
