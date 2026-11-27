@@ -195,9 +195,6 @@ FORGET_RECORD_ARGUMENTS={
 #: owner may have phrased around a secret before the host redacts it.
 #: #1216 review: an API request body; #1380: code, whose digest is in the run's Evidence (``HOST_TOOLS``).
 REDACTED_ARGUMENTS={name:tool.recorded_by_length for name,tool in HOST_TOOLS.items() if tool.recorded_by_length}
-# Lesson operations contain JSON-escaped text. Record only their length and let
-# WorkingLessons check the decoded values before accepting any Memory write.
-REDACTED_ARGUMENTS['entrusted_line']=('lessons',)
 #: #659: the argument recorded with only stored secrets and credential shapes
 #: removed (``Capabilities.judgment_text``): a
 #: preparation goal is owner text the owner reads back, not a secret.
