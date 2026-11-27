@@ -10433,6 +10433,23 @@ class AgentService:
         run('run_owner_model_upkeep')
         return next_purge_check,next_unknown_check
 
+    LOOP_FAILURE_BACKOFF_SECONDS=2.0
+
+    def _keep_looping(self, name, step, interval):
+        """Run ``step`` every ``interval`` seconds until stop; an error ends one tick, never the loop (#1264).
+
+        A store briefly locked by another reader raised out of the Telegram poll and the thread died,
+        so owner messages went unread while everything else ran. As in the condition-check tick,
+        the error kind is logged and the next tick runs after a short back-off.
+        """
+        while not self.stop.is_set():
+            wait=interval
+            try:step()
+            except Exception as exc:
+                LOG.warning('%s tick failed kind=%s',name,type(exc).__name__)
+                wait=max(interval,self.LOOP_FAILURE_BACKOFF_SECONDS)
+            self.stop.wait(wait)
+
     def start(self):
         try:
             chrome_history.sweep_snapshots(self.store)
@@ -10479,25 +10496,21 @@ class AgentService:
             finally:
                 self.shutdown_work_lanes()
         def poll():
-            while not self.stop.is_set():
-                self.receive_telegram()
-                self.stop.wait(.5)
+            self._keep_looping('telegram poll',self.receive_telegram,.5)
+        def acknowledge_once():
+            try:
+                self.acknowledge_long_work()
+            except (ProviderError,ValueError):
+                self.store.put('telegram_status',{'state':'error','message':msg('service.check_the_telegram_connection_receiving_will')})
         def acknowledge():
             # Keep the owner-facing presence (👀, typing…, draft) independent
             # of Telegram's long poll and any network delay in receiving updates.
-            while not self.stop.is_set():
-                try:
-                    self.acknowledge_long_work()
-                except (ProviderError,ValueError):
-                    self.store.put('telegram_status',{'state':'error','message':msg('service.check_the_telegram_connection_receiving_will')})
-                self.stop.wait(.25)
+            self._keep_looping('acknowledge',acknowledge_once,.25)
         def poll_surfaces():
             # #213: surfaces without a long poll of their own (Mattermost; Slack's connection check, #214) are polled here.
             try:
                 interval=min((surface.poll_seconds for surface in self.surfaces if surface.poll_seconds),default=3)
-                while not self.stop.is_set():
-                    self.receive_polled_surfaces()
-                    self.stop.wait(interval)
+                self._keep_looping('surface poll',self.receive_polled_surfaces,interval)
             finally:
                 self.stop_surfaces()
         self.threads=[threading.Thread(target=work,daemon=True),threading.Thread(target=poll,daemon=True),

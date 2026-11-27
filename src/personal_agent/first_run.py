@@ -11,6 +11,7 @@ plain lines. Either way the libraries only draw and read lines: a secret goes
 from the hidden prompt straight to the service.
 """
 import getpass
+import logging
 import os
 import re
 import secrets
@@ -25,6 +26,8 @@ from .decision_routes import MODE_FOLLOW
 from .providers import ProviderError
 from .subscription_engines import ENGINES
 from .telegram_locale import language, translate
+
+LOG = logging.getLogger(__name__)
 
 SETUP_KEY = 'console_setup'
 #: The owner's answer to the start-at-login offer (#105), kept in the setup state so it is asked once.
@@ -274,8 +277,15 @@ class RichTerminal(Terminal):
             if woken:
                 # A request arrived between two lines: this one ends at once so it is served now.
                 self._line.exit(result='')
+        shown = {'line': ''}
         def toolbar():
-            line = status()
+            # #1264: prompt_toolkit draws this inside its event loop, where an uncaught error stops the
+            # line on "Press ENTER to continue..."; a failed read (a locked store) keeps the last line.
+            try:
+                shown['line'] = status()
+            except Exception as exc:
+                LOG.warning('terminal working line failed kind=%s', type(exc).__name__)
+            line = shown['line']
             # #512: the frame follows the clock, so the line keeps turning while Still works.
             return f'{SPINNER[int(time.monotonic() / SPIN_SECONDS) % len(SPINNER)]} {self.local(line)}' if line else None
         return self.reader(ANSI('\x1b[1;36m› \x1b[0m'), bottom_toolbar=toolbar, refresh_interval=SPIN_SECONDS,
