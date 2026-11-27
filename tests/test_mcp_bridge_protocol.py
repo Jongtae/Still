@@ -302,8 +302,8 @@ class ExposedToolWireBoundary(unittest.TestCase):
         # #814: and the owner settings tools.
         # #826: and the connected-folder documents, public pages and the information-use audit.
         self.assertEqual(names, ["browser_history_search", "calendar_query", "capability_search", *CODE_RUN, "drive_read", "drive_search", "entrusted_line", "find_files", "forget_record", "information_use",
-                                 "list_memory", "list_notes", "list_roots", "mail_read", "mail_search", "public_download", "public_page_read", "read_file", "save_memory",
-                                 "save_note", "save_result", "schedule_preparation", "search_conversation", "search_memory", "settings_change", "settings_read", "update_check_state", "weather",
+                                 "list_memory", "list_notes", "list_roots", "mail_read", "mail_search", "method_gap", "public_download", "public_page_read", "read_file", "save_memory",
+                                 "save_note", "save_result", "schedule_preparation", "search_conversation", "search_memory", "settings_change", "settings_read", "skill_load", "skill_resource", "update_check_state", "weather",
                                  "web_search"])
         replies = self._wire(
             {"jsonrpc": "2.0", "id": 2, "method": "tools/call",
@@ -361,9 +361,9 @@ class ExposedToolWireBoundary(unittest.TestCase):
         self.assertIn("--native-search", self.server["args"])
         self.assertEqual([tool["name"] for tool in replies[2]["result"]["tools"]],
                          ["browser_history_search", "calendar_query",
-                          "capability_search", *CODE_RUN, "drive_read", "drive_search", "entrusted_line", "find_files", "forget_record", "information_use", "list_memory", "list_notes", "list_roots", "mail_read", "mail_search", "public_download", "public_page_read",
+                          "capability_search", *CODE_RUN, "drive_read", "drive_search", "entrusted_line", "find_files", "forget_record", "information_use", "list_memory", "list_notes", "list_roots", "mail_read", "mail_search", "method_gap", "public_download", "public_page_read",
                           "read_file", "save_memory", "save_note", "save_result", "schedule_preparation", "search_conversation", "search_memory", "settings_change",
-                          "settings_read", "update_check_state", "weather"])
+                          "settings_read", "skill_load", "skill_resource", "update_check_state", "weather"])
         self.assertFalse(_refused(replies[3]))
         self.assertIn("notes", json.loads(replies[3]["result"]["content"][0]["text"]))
 

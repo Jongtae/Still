@@ -51,7 +51,9 @@ class IntradayMethodContent(unittest.TestCase):
         frontmatter, _body = parse_frontmatter(self.text)
         self.assertEqual(frontmatter['metadata']['version'], '1')
         listed = {row['name']: row for row in reference_skills()}
-        self.assertEqual(listed[NAME]['address'], f'github.com/{REPO}/tree/main/skills/{NAME}')
+        # #1291: pinned to one exact commit and its content digest.
+        self.assertRegex(listed[NAME]['address'], rf'^github\.com/{REPO}/tree/[0-9a-f]{{40}}/skills/{NAME}$')
+        self.assertTrue(listed[NAME]['pinned'])
         self.assertIn(f'`{NAME}`', (ROOT / 'skills' / 'README.md').read_text())
 
     def test_its_usage_header_leaves_limits_to_the_owner_and_grants_nothing(self):

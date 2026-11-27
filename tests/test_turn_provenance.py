@@ -417,9 +417,7 @@ class ServiceProvenance(unittest.TestCase):
         hidden |= {'ask_location'}
         # #407: tell_owner is offered only after a plan preview was shown.
         hidden |= {'tell_owner'}
-        # #961: skills are off by default, so the skill tools are not offered.
-        from personal_agent.agent_runtime import SKILL_ACTIONS
-        hidden |= SKILL_ACTIONS
+        # #1291: a fresh store offers Still's pinned reference skills, so the skill tools are offered.
         # #1216: no API slot is registered, so api_request is not offered.
         hidden |= {'api_request'}
         self.assertEqual(record['exposed_tools'], [tool['name'] for tool in profile_mcp_tools('trusted-local')

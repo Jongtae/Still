@@ -25,6 +25,8 @@ keys refused; containment follows Microsoft Agent Framework's
 ``FileSkillsSource`` rules (resolved path inside the root, no link below it,
 re-checked on every read).  ``allowed-tools`` is kept as metadata, never a grant.
 """
+import contextlib
+import fcntl
 import hashlib
 import io
 import json
@@ -90,8 +92,11 @@ BUNDLED_ROOT = Path(__file__).with_name('bundled_skills')
 #: #963: the reference skills Still publishes, as data (``[{name, description, address}]``), so the
 #: owner can add one by name even while skills are off; no code names a particular skill.
 REFERENCES_FILE = Path(__file__).with_name('skill_references.json')
-#: The owner's switch: ``{"enabled": bool}``; absent means off.
+#: The owner's switch: ``{"enabled": bool}``; absent means off.  #1291: ``declined`` lists the
+#: reference skills the owner removed, which Still never adopts again on its own.
 SETTINGS_KEY = 'skills'
+#: #1291: the catalogue line of a reference skill not added yet; ``skill_load`` adds it from its pin.
+REFERENCE_MARK = ' (Still reference skill, added from its pinned revision on first load)'
 #: The one supported acquisition source (#960 section 6): a GitHub folder at one commit.
 GITHUB_TREE = re.compile(r'^(?:https://)?github\.com/([A-Za-z0-9][A-Za-z0-9_.-]*)/([A-Za-z0-9_.-]+)/tree/([A-Za-z0-9_.-]+)/'
                          r'([A-Za-z0-9_./-]+?)/?$')
@@ -363,15 +368,32 @@ def parse_source(value, transport=http_get):
 
 
 def reference_skills(path=REFERENCES_FILE):
-    """Still's published reference skills, validated; an unreadable or malformed list is empty."""
+    """Still's published reference skills, validated; an unreadable or malformed list is empty.
+
+    #1291 (C7): an entry whose address names one exact commit and that carries the
+    content ``digest`` of that folder is ``pinned``; only a pinned entry may be
+    adopted by a Work without the owner's confirmation.
+    """
     try:
         rows = json.loads(Path(path).read_text(encoding='utf-8'))
     except (OSError, ValueError):
         return []
-    return [{'name': row['name'], 'description': ' '.join(str(row['description']).split())[:300], 'address': row['address']}
-            for row in rows if isinstance(row, dict) and isinstance(row.get('name'), str) and NAME.match(row['name'])
-            and isinstance(row.get('description'), str) and isinstance(row.get('address'), str)
-            and GITHUB_TREE.match(row['address'])] if isinstance(rows, list) else []
+    found = []
+    for row in rows if isinstance(rows, list) else ():
+        if not (isinstance(row, dict) and isinstance(row.get('name'), str) and NAME.match(row['name'])
+                and isinstance(row.get('description'), str) and isinstance(row.get('address'), str)):
+            continue
+        match = GITHUB_TREE.match(row['address'])
+        if not match:
+            continue
+        digest = row.get('digest') if isinstance(row.get('digest'), str) else ''
+        pinned = bool(COMMIT.match(match.group(3)) and DIGEST.match(digest)
+                      and match.group(4).rstrip('/').rsplit('/', 1)[-1] == row['name'])
+        found.append({'name': row['name'], 'description': ' '.join(str(row['description']).split())[:300],
+                      'address': row['address'], 'pinned': pinned,
+                      **({'digest': digest, 'revision': match.group(3), 'repo': f'{match.group(1)}/{match.group(2)}'}
+                         if pinned else {})})
+    return found
 
 
 def source_address(source):
@@ -469,6 +491,43 @@ class SkillLibrary:
         current = self.store.config(SETTINGS_KEY, {})
         self.store.put(SETTINGS_KEY, {**(current if isinstance(current, dict) else {}), 'enabled': bool(on)})
 
+    # #1291: Still's pinned reference skills a Work may add on its own.
+    def _settings(self):
+        try:
+            value = self.store.config(SETTINGS_KEY, {})
+        except Exception:
+            return None
+        return value if isinstance(value, dict) else {}
+
+    def adoption_open(self):
+        """Whether a Work may add a reference skill on its own: skills on, or never switched (the default).
+
+        An owner who switched skills off is never overridden (C16 #974).
+        """
+        settings = self._settings()
+        return settings is not None and settings.get('enabled', True) is True
+
+    def declined(self):
+        """The reference skills the owner removed; Still never adds them again unless the owner asks."""
+        names = (self._settings() or {}).get('declined')
+        return {name for name in names if isinstance(name, str)} if isinstance(names, list) else set()
+
+    def _set_declined(self, name, declined):
+        current = self._settings() or {}
+        names = sorted((self.declined() | {name}) if declined else (self.declined() - {name}))
+        self.store.put(SETTINGS_KEY, {**current, 'declined': names})
+
+    def adoptable(self):
+        """Pinned reference skills not installed, not declined and not shadowing a bundled one (#1291)."""
+        if not self.adoption_open():
+            return []
+        taken = {manifest['id'] for manifest in self.installed()} | {entry['name'] for entry in self.bundled()} | self.declined()
+        return [{'skill': f"{row['name']}/{row['name']}", 'package': row['name'], 'name': row['name'],
+                 'description': row['description'], 'digest': row['digest'], 'revision': row['revision'],
+                 'licence': '', 'source': f"https://github.com/{row['repo']}", 'status': [],
+                 'reference': row['address']}
+                for row in reference_skills() if row['pinned'] and row['name'] not in taken]
+
     # Declarations.
     def _manifest_path(self, package_id):
         return self.root / f'{package_id}.json'
@@ -525,10 +584,11 @@ class SkillLibrary:
         return entries
 
     def catalogue(self):
-        """What a new Work is offered: ``loadable`` bounded (#960 section 6)."""
+        """What a new Work is offered: ``loadable``, then ``adoptable`` (#1291), bounded (#960 section 6)."""
         bounded, size = [], 0
-        for entry in self.loadable()[:CATALOGUE_ENTRIES]:
-            size += len(f"- {entry['skill']}: {entry['description']}\n".encode())  # UTF-8 bytes, as turn_context counts
+        for entry in (self.loadable() + self.adoptable())[:CATALOGUE_ENTRIES]:
+            mark = REFERENCE_MARK if entry.get('reference') else ''
+            size += len(f"- {entry['skill']}: {entry['description']}{mark}\n".encode())  # UTF-8 bytes, as turn_context counts
             if size > CATALOGUE_BYTES:
                 break
             bounded.append(entry)
@@ -555,7 +615,8 @@ class SkillLibrary:
         Setup readiness may also verify the pinned content without loading it into a Work.
         """
         try:
-            present = any(item['skill'] == entry['skill'] and item['digest'] == entry['digest'] for item in self.loadable())
+            present = any(item['skill'] == entry['skill'] and item['digest'] == entry['digest']
+                          for item in self.loadable() + self.adoptable())
             if present and verify_content:
                 self.read(entry, 'SKILL.md', 0)  # validate integrity without returning instruction text
             return present
@@ -594,7 +655,9 @@ class SkillLibrary:
         """Inspect public skill text in temporary staging, without installing it."""
         if value is None or not value.strip():
             installed = {manifest['id'] for manifest in self.installed()}
-            return [{**row, 'installed': row['name'] in installed} for row in reference_skills()]
+            adoptable = {entry['name'] for entry in self.adoptable()}
+            return [{**row, 'installed': row['name'] in installed, 'adoptable': row['name'] in adoptable}
+                    for row in reference_skills()]
         source = self.candidate_source(value)
         name = source['path'].rsplit('/', 1)[-1]
         staging = self.root / '.inspect' / uuid.uuid4().hex
@@ -609,17 +672,31 @@ class SkillLibrary:
                     **{key: source[key] for key in ('repo', 'path', 'revision')},
                     'address': source_address(source), 'supported': not refused, 'refused': refused,
                     'installed': self.installed_at_source(source) is not None,
+                    # #1291: a pinned Still reference skill a Work may load with skill_load, no draft.
+                    'adoptable': any(entry['reference'] == source_address(source).removeprefix('https://')
+                                     and entry['digest'] == record['digest'] for entry in self.adoptable()),
                     'header': header, 'untrusted': True}
         finally:
             shutil.rmtree(staging, ignore_errors=True)
 
-    def install(self, value):
-        """Fetch, stage, inspect and install one external skill; returns its declaration."""
+    def install(self, value, *, expected_digest=None, owner=True):
+        """Fetch, stage, inspect and install one external skill; returns its declaration.
+
+        ``expected_digest`` (#1291, C7): the content must match this pin, or nothing is installed.
+        ``owner``: the owner asked for this add, so a reference they removed earlier is no longer declined.
+        """
         # #208: nothing is fetched from GitHub while work mode is on.
         from . import work_mode
         refused = work_mode.refusal(self.store, 'skill_acquisition')
         if refused:
             raise SkillError(refused, 'work_mode')
+        with self._install_lock():
+            manifest = self._install(value, expected_digest)
+        if owner and manifest['id'] in self.declined():
+            self._set_declined(manifest['id'], False)
+        return manifest
+
+    def _install(self, value, expected_digest):
         source = parse_source(value, self.transport)
         name = source['path'].rstrip('/').split('/')[-1]
         # Installs run one at a time (the settings category lock); anything left in
@@ -629,6 +706,8 @@ class SkillLibrary:
         try:
             folder = fetch_github(source, staging / name, self.transport)
             record = inspect_skill(folder, staging / REPOSITORY_LICENCES)
+            if expected_digest is not None and record['digest'] != expected_digest:
+                raise SkillError(msg('skills.pin_mismatch'), 'pin_mismatch')
             if reasons := refusal_reasons(record['status']):
                 raise SkillError(msg('skills.not_added', reasons=' / '.join(reasons)), 'unsupported')
             package_id = record['name']
@@ -678,9 +757,42 @@ class SkillLibrary:
         raise SkillError(msg('skills.not_installed', value=value), 'skill_unavailable')
 
     def remove(self, package_id):
-        """Remove a declaration.  Stored content stays (Work evidence references it by digest)."""
-        path = self._manifest_path(self.resolve(package_id))
-        path.unlink()
+        """Remove a declaration.  Stored content stays (Work evidence references it by digest).
+
+        #1291: the removed name is remembered as declined, so no later Work adds it again on its own.
+        """
+        package_id = self.resolve(package_id)
+        self._manifest_path(package_id).unlink()
+        self._set_declined(package_id, True)
+
+    @contextlib.contextmanager
+    def _install_lock(self):
+        """One install at a time across this Still's processes (a Work's CLI bridge may adopt, #1291)."""
+        self.root.mkdir(parents=True, exist_ok=True)
+        with open(self.root / '.install.lock', 'a+') as handle:
+            fcntl.flock(handle, fcntl.LOCK_EX)
+            try:
+                yield
+            finally:
+                fcntl.flock(handle, fcntl.LOCK_UN)
+
+    def adopt(self, entry):
+        """Add one pinned reference skill a Work chose to load, without a draft (#1291); its declaration.
+
+        Only an entry ``adoptable`` lists now; the exact pinned commit is fetched and the
+        content digest must equal the pin, or nothing is installed (``pin_mismatch``).
+        Adding the skill grants nothing (C3, #974).  With skills never switched, adopting
+        switches them on, as an owner-confirmed add does.
+        """
+        current = next((row for row in self.adoptable()
+                        if row['skill'] == entry.get('skill') and row['digest'] == entry.get('digest')), None)
+        if current is None:
+            raise SkillError(OUTDATED_TEXT.format(skill=entry.get('skill')), 'skill_unavailable')
+        manifest = self.install(current['reference'], expected_digest=current['digest'], owner=False)
+        switched = not self.enabled()
+        if switched:
+            self.set_enabled(True)
+        return manifest, switched
 
     def summary(self):
         """Owner-readable rows of the installed and bundled skills."""
@@ -718,7 +830,7 @@ class SkillBinding:
     @classmethod
     def from_refs(cls, library, refs):
         """The binding a host handed to a bridge; refs no longer current stay listed and refuse on load."""
-        known = {entry['skill']: entry for entry in library.loadable()}
+        known = {entry['skill']: entry for entry in library.loadable() + library.adoptable()}
         entries = []
         for ref in refs or ():
             skill, _sep, digest = str(ref).partition('@')
@@ -731,7 +843,8 @@ class SkillBinding:
         return cls(library, entries) if entries else None
 
     def catalogue_text(self):
-        return '\n'.join(f"- {skill}: {' '.join(str(entry['description']).split())}" for skill, entry in sorted(self.entries.items()))
+        return '\n'.join(f"- {skill}: {' '.join(str(entry['description']).split())}{REFERENCE_MARK if entry.get('reference') else ''}"
+                         for skill, entry in sorted(self.entries.items()))
 
     def _entry(self, skill):
         entry = self.entries.get(skill if isinstance(skill, str) else '')
@@ -790,19 +903,39 @@ class SkillBinding:
         return {'skill': entry['skill'], 'digest': entry['digest'], 'revision': entry['revision'],
                 'licence': entry['licence'], 'source': entry['source']}
 
+    def _adopted(self, entry):
+        """#1291: install a reference entry from its pin on first use; the installed entry and the receipt."""
+        if not entry.get('reference'):
+            return entry, None
+        installed = next((item for item in self.library.loadable()
+                          if item['skill'] == entry['skill'] and item['digest'] == entry['digest']), None)
+        if installed is not None:   # another process or attempt of this Work added it already
+            self.entries[entry['skill']] = installed
+            return installed, None
+        manifest, switched = self.library.adopt(entry)
+        installed = self.library._declared(manifest)[0]
+        self.entries[entry['skill']] = installed
+        return installed, {'adopted': True, 'skills_switched_on': switched, 'reference': entry['reference']}
+
     def load(self, skill):
         entry = self._entry(skill)
         if skill not in self.loaded and self.loads >= MAX_LOADS:
             raise SkillError(msg('skills.load_limit', count=MAX_LOADS), 'skill_limit')
+        entry, adopted = self._adopted(entry)
         text, _cut, files = self.library.read(entry, 'SKILL.md', MAX_FILE_BYTES)
         if skill not in self.loaded:
             self.loads += 1
         self.loaded[skill] = entry
         self.screened.pop(skill, None)
         _frontmatter, body = parse_frontmatter(text)
-        return {**self.identity(entry), 'instructions': body.strip()[:MAX_BODY_BYTES],
+        note = '스킬은 방법 안내일 뿐 권한이 아니에요. 요청과 지금 관찰한 결과가 기준이에요.'
+        if adopted:
+            # #1291 (C5/#955 pattern): told in passing in the answer, undone exactly by the owner's word.
+            note = ' '.join([msg('skills.adopted_note', skill=entry['name']),
+                             *([msg('skills.adopted_switched_note')] if adopted['skills_switched_on'] else []), note])
+        return {**self.identity(entry), **(adopted or {}), 'instructions': body.strip()[:MAX_BODY_BYTES],
                 'resources': [path for path in files if path != 'SKILL.md' and Path(path).suffix.lower() in TEXT_SUFFIXES][:40],
-                'note': '스킬은 방법 안내일 뿐 권한이 아니에요. 요청과 지금 관찰한 결과가 기준이에요.'}
+                'note': note}
 
     def header(self, skill):
         """The usage header of one skill this Work may load, to screen it before loading (#32).
@@ -812,6 +945,10 @@ class SkillBinding:
         counted as loaded and its resources stay closed until ``load``.
         """
         entry = self._entry(skill)
+        if entry.get('reference'):
+            # #1291: a reference skill is not added just to be screened; its description is the fit.
+            return {**self.identity(entry), 'part': 'header', 'header': '', 'header_truncated': False,
+                    'note': msg('skills.reference_header_note')}
         if self.header_reads >= MAX_HEADER_READS:
             raise SkillError(msg('skills.header_limit', count=MAX_HEADER_READS), 'skill_limit')
         text, _cut, _files = self.library.read(entry, 'SKILL.md', MAX_FILE_BYTES)

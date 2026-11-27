@@ -750,8 +750,8 @@ class SubscriptionServiceTests(unittest.TestCase):
             # tools, which the CLI's search replaces, are not offered (#701).  #826: every
             # private-read bridge tool (notes, Memory, calendar, connected-folder documents)
             # is offered beside it.  The browser tools stay (served through the relay).
-            # #961: skills are off by default, so no skill tool is offered (the pre-skill surface).
-            self.assertEqual(adapter.call[2], [name for name in BOUNDED_NAMES if name not in
+            # #1291: a fresh store offers Still's pinned reference skills, so the skill tools are offered.
+            self.assertEqual(adapter.call[2], sorted(['method_gap', 'skill_load', 'skill_resource'] + [name for name in BOUNDED_NAMES if name not in
                                                ('propose_current_state', 'web_search',
                                                 # #774: a non-Telegram Work could never be answered.
                                                 'ask_location',
@@ -760,7 +760,7 @@ class SubscriptionServiceTests(unittest.TestCase):
                                                 # #1216: no API slot is registered.
                                                 'api_request')
                                                # #1380: offered only where Node.js can start the sandbox.
-                                               and (name != 'code_run' or NODE_AVAILABLE)])
+                                               and (name != 'code_run' or NODE_AVAILABLE)]))
             self.assertEqual(store.job(job)['response'], 'engine answer')
 
     def test_summary_regression_sends_approved_notes_to_subscription_engine(self):

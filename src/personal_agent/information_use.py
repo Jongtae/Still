@@ -65,6 +65,8 @@ READ_CATEGORIES = {
     'connector_read': 'ai_connection',
     # ATTN-WAIT-01 (#839): an item Still reminded the owner of on the waiting draft.
     'attention_surface': 'attention',
+    # #1291: the skill (method) a Work read, and a Still reference skill it added from its pin.
+    'skill_load': 'skills',
 }
 #: Public destinations Still or the CLI sent a lookup to.
 LOOKUP_ACTIONS = frozenset(name for name, tool in HOST_TOOLS.items() if tool.lookup)
@@ -76,6 +78,7 @@ CATEGORY_NAMES = {
     'conversation': '이전 대화', 'records': msg('information_use.an_earlier_answer_s_information_use'), 'attention': '기다리는 동안 알린 것',
     # #798: an entrusted line's brief and its runs' outcomes.
     'lines': '맡은 일',
+    'skills': '쓴 방법(스킬)',
 }
 #: Turn-provenance events that are not tools the worker called.
 _NOT_TOOLS = frozenset({'model', 'subscription_engine', 'orchestrator'})
@@ -428,6 +431,14 @@ def _event_items(action, evidence):
         return [f"결과 저장: {_text(evidence.get('path'))}" + (f" (원본: {cited})" if cited else '')]
     if action == 'propose_current_state':
         return [f"상태 제안: {_text(evidence.get('predicate'), 60)}"]
+    if action == 'skill_load':
+        # #1291: which method the Work read, and a reference skill it added from its pin.
+        if not evidence.get('skill'):
+            return []
+        label = f"스킬 {_text(evidence.get('skill'), 80)}" + (' 머리말' if evidence.get('part') == 'header' else '')
+        if evidence.get('adopted'):
+            label += f" (이번 작업에서 추가: {_text(evidence.get('reference'), 160)}, 내용 {_text(evidence.get('digest'), 12)})"
+        return [label]
     if action == 'capability_search':
         return [f"연결 탐색: {_text(evidence.get('source'), 100)}"]
     if action == 'settings_read':
@@ -804,7 +815,7 @@ def _work_information_use(store, job_id, redact=None, *, compare_held_values=Tru
         # #918: an undo is recorded on the Work after it settled (status ``recorded``, never a step).
         if (status == 'succeeded' or (action == MEMORY_UNDO_ACTION and status == 'recorded')) and action in READ_CATEGORIES:
             add(READ_CATEGORIES[action], _event_items(action, evidence),
-                limit=400 if action == 'browser_history_search' else LABEL_CHARS)
+                limit=400 if action in ('browser_history_search', 'skill_load') else LABEL_CHARS)
         if status == 'succeeded' and action == 'public_page_read' and evidence.get('read_page_refs'):
             add('conversation', _event_items(action, evidence))
         if action in LOOKUP_ACTIONS and status in ('succeeded', 'failed') and (action not in ('capability_search','public_download') or evidence.get('contacted') is True):

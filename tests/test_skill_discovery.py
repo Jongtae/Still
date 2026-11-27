@@ -65,7 +65,7 @@ class SkillDiscovery(_Case):
     def test_reference_list_is_local_and_the_name_resolves_from_data(self):
         published = reference_skills()
         self.assertTrue(published)
-        expected = [{**row, 'installed': False} for row in published]
+        expected = [{**row, 'installed': False, 'adoptable': row['pinned']} for row in published]
         self.assertEqual(self.library.inspect_candidate(None), expected)
         listed = self.search('')
         self.assertEqual(listed['results'], expected)

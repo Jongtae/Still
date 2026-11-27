@@ -24,7 +24,7 @@ from personal_agent.agent_runtime import BROWSER_ACTIONS, SKILL_ACTIONS, Capabil
 from personal_agent.plugins import PluginRegistry
 from personal_agent.providers import ModelAdapter
 from personal_agent.quickstart_store import QuickStore
-from personal_agent.skills import SkillLibrary, inspect_skill
+from personal_agent.skills import SkillLibrary, inspect_skill, reference_skills
 from test_agency_loop import judgments
 from test_browser_session import CFG, ORIGIN, FakeDriver, Script, call
 
@@ -133,6 +133,11 @@ class _Shop(unittest.TestCase):
         self.library = SkillLibrary(self.store, transport=GitHub())
         self.events = []
 
+    @staticmethod
+    def installed(binding):
+        """#1291: the bound skills that are installed or bundled (not pinned references yet to be added)."""
+        return sorted(skill for skill, entry in binding.entries.items() if not entry.get('reference'))
+
     def record(self, tool, status, detail):
         self.events.append((tool, status, detail))
 
@@ -200,7 +205,7 @@ class FirstUseOnAFreshStore(_Shop):
 
     def test_the_same_method_works_with_the_published_site_package_without_core_edits(self):
         binding = self.install(f'skills/{SHOPPING}', f'skills/{SITE}')
-        self.assertEqual(sorted(binding.entries), ['agentos/agentos-management', 'agentos/agentos-skills',
+        self.assertEqual(self.installed(binding), ['agentos/agentos-management', 'agentos/agentos-skills',
                                                    f'{SITE}/{SITE}', f'{SHOPPING}/{SHOPPING}'])
         loaded = self.caps(Script(), FakeDriver(), skills=binding).execute('skill_load', {'skill': f'{SITE}/{SITE}'})
         self.assertIn('pay.ssg.com/cart/dmsShpp.ssg', loaded['instructions'])
@@ -228,8 +233,9 @@ class BrowserPortIsPreserved(_Shop):
     def test_each_reference_package_is_removable_on_its_own(self):
         self.install(f'skills/{SHOPPING}', f'skills/{SITE}')
         self.library.remove(SITE)
-        self.assertEqual(sorted(self.library.binding().entries),
+        self.assertEqual(self.installed(self.library.binding()),
                          ['agentos/agentos-management', 'agentos/agentos-skills', f'{SHOPPING}/{SHOPPING}'])
+        self.assertNotIn(f'{SITE}/{SITE}', self.library.binding().entries, '#1291: a removed reference is not offered again')
 
     def test_withdrawing_the_method_mid_flow_refuses_the_method_not_the_page(self):
         """#617: a skill grants no authority; withdrawing it refuses reading it again, and the page is
@@ -267,7 +273,9 @@ class OwnerAddsAReferenceSkillByName(_Shop):
         self.settings = SettingsOrchestrator(self.store, service=self.service)
 
     def test_the_reference_skills_are_listed_while_skills_are_off(self):
-        self.assertIsNone(self.service.skill_binding(), 'fresh install: skills off')
+        # #1291: a fresh install offers only the pinned references, nothing installed or fetched.
+        self.assertTrue(all(entry.get('reference') for entry in self.service.skill_binding().entries.values()))
+        self.assertFalse(self.service.skill_library().enabled())
         read = self.settings.read('owner', 'skills')
         available = read['settings']['skills']['add']['available']
         self.assertEqual([(row['name'], row['installed']) for row in available], [(SHOPPING, False), (SITE, False), ('map-directions', False),
@@ -277,9 +285,10 @@ class OwnerAddsAReferenceSkillByName(_Shop):
 
     def test_adding_by_name_pins_the_commit_and_switches_skills_on_once_confirmed(self):
         draft = self.settings.propose('owner', 'web', 'skills', 'add', SHOPPING)
-        self.assertEqual(draft['after'], f'https://github.com/{REPO}/tree/{COMMIT}/skills/{SHOPPING}')
+        pinned = next(row for row in reference_skills() if row['name'] == SHOPPING)
+        self.assertEqual(draft['after'], 'https://' + pinned['address'])
         self.assertIn('함께 켜요', draft['summary'])
-        self.assertIsNone(self.service.skill_binding(), 'nothing changes before the owner confirms')
+        self.assertEqual(self.service.skill_library().installed(), [], 'nothing changes before the owner confirms')
         applied = self.settings.confirm('owner', 'web', draft['draft_id'], draft['digest'])
         self.assertIn('스킬 사용도 켰어요', applied['response'])
         self.assertIn(f'{SHOPPING}/{SHOPPING}', self.service.skill_binding().entries)
