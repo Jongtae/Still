@@ -49,6 +49,15 @@ def test_a_run_adds_its_first_check_and_the_row_becomes_a_check_until_undone(cas
     assert (added['accepted_by'], added['until_at'], added['max_runs']) == (row['accepted_by'], row['until_at'], row['max_runs'])
     [receipt] = [event['trace'] for event in c.store.task_events(work['id']) if event['tool'] == 'preparation_self_change']
     assert receipt['before'] == {'check_spec': None, 'every_seconds': 300}
+    # The owner's receipt, Settings row and activity read the first check without a previous one.
+    text = c.service.preparations_service.self_change_text(receipt)
+    assert spec['digest'][:12] in text and HOST in text
+    view = next(item for item in c.service.preparations_status()['preparations'] if item['id'] == row['id'])
+    assert spec['digest'][:12] in view['last_result']
+    [activity] = [item for item in c.service.settings_orchestrator.read('local-owner')['activity']
+                  if item.get('target') == 'preparations.check']
+    assert activity['before'] == {'check': None, 'every_seconds': 300}
+    assert activity['after']['check']['digest'] == spec['digest'][:12]
     # After the run settles, the check carries the row: it runs on its own cadence, not the slots.
     settled = finish(c, row)
     assert settled['state'] == prep.STATE_SCHEDULED and settled['check_next_at'] == c.clock[0] + 20

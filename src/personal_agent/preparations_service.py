@@ -802,8 +802,9 @@ class PreparationsService:
         row = {**(self.service.preparations.get(event['preparation_id']) or {'goal_text': ''}),
                **event.get('snapshot', {})}
         operation = event['target'].split('.')[-1]
-        check_specs = ({side: json.loads(event[side]['check_spec']) for side in ('before', 'after')}
-                       if operation == 'check' else {})
+        # #1259: a first check has no before spec; that side reads as the row's timed runs.
+        check_specs = ({side: json.loads(event[side]['check_spec']) if event[side].get('check_spec') else None
+                        for side in ('before', 'after')} if operation == 'check' else {})
         # #968: a rewritten goal is shown at every place it changed, before and after (none left out:
         # past a bound the receipt counts the rest and points to the whole goal in Settings).
         hunks = (prep.changed_hunks(event['before']['goal_text'], event['after']['goal_text'])
@@ -824,7 +825,7 @@ class PreparationsService:
             used += size
             shortened = shortened or displayed != hunk
         def summary(side):
-            if operation == 'check':
+            if operation == 'check' and check_specs[side]:
                 spec = check_specs[side]
                 return msg('checks.change_spec', lang, seconds=spec['every_seconds'], digest=spec['digest'][:12],
                            hosts=', '.join(spec['arguments']['hosts']) or '-',
@@ -853,7 +854,8 @@ class PreparationsService:
                    undo=msg('button.undo', lang))
         if event.get('outside_content'):
             text += '\n' + msg('preparations.self_change_outside', lang)
-        if check_specs and check_specs['before']['arguments']['code'] != check_specs['after']['arguments']['code']:
+        if (check_specs and all(check_specs.values())
+                and check_specs['before']['arguments']['code'] != check_specs['after']['arguments']['code']):
             text += '\n' + msg('checks.code_changed', lang)
         if shortened:
             text += '\n' + msg('preparations.self_change_excerpt', lang)

@@ -410,6 +410,10 @@ class SettingsOrchestrator:
         for item in activity:
             if item.get('target') == 'preparations.check':
                 for side in ('before', 'after'):
+                    if not (item.get(side) or {}).get('check_spec'):
+                        # #1259: a first check's before side is the row's timed runs.
+                        item[side] = {'check': None, 'every_seconds': (item.get(side) or {}).get('every_seconds')}
+                        continue
                     try:
                         item[side] = {'check': checks.spec_summary(self.store, json.loads(item[side]['check_spec']))}
                     except CredentialError:
