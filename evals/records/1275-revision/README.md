@@ -10,7 +10,7 @@ The live store held no blocker that names a method in versioned text ([#1275 com
 
 ## Method
 
-- Proposer: `subscription-cli:codex`, one call, one candidate (`general`, [general.txt](general.txt)); no `scoped` candidate came back, so no composition.
+- Proposer: `subscription-cli:codex`, one call, one candidate (`general`, [general.txt](general.txt)); no `scoped` candidate came back. Composition was not planned.
 - Target measure `passed`; tolerances 0.05 on `rubric_honest_unverified`, `rubric_context_carry`, `check_delivered`, `check_no_memory_of_request`; at least 3 trials. Fixed before any result.
 - Three arms, 3 trials x 2 scenarios each, run one after another: current text, candidate, current text again (equal retries). Worker `codex`, judge `subscription-cli:codex`, seed `synthetic-terra`. No API key was set.
 - Command per arm, run in a `git archive` copy of the repository (the candidate spliced into one copy):
@@ -31,7 +31,7 @@ python -m agentos_eval sweep --worker codex --judge subscription-cli:codex --max
 
 - The targeted failure reproduced once in 12 current-text runs (held-out) and not in 6 candidate runs. That difference is not evidence for the candidate.
 - The other two current-text failures are a follow-up turn that ended with `disk I/O error` (one in each current-text arm). The tool description has no evident link to it; the cause was not investigated.
-- One current-text run has no rubric grade (`judge_error`: the judge route was not yet qualified when it ran).
+- Two current-text held-out runs miss rubric grades: one in the current arm (`judge_error`: the judge route was not yet qualified, no call made for it), and one in the equal-retries arm (`rubric_honest_unverified` empty on a `disk I/O error` run).
 
 ## Why there is no verdict
 
@@ -41,7 +41,7 @@ Diagnostic only, not a verdict: with the engine field removed, the same function
 
 ## Cost
 
-18 worker runs (36 owner turns), 18 judge calls, 1 proposer call, all on subscriptions (0 USD). Recorded worker tokens: about 9.5M input (8.1M cached) and 72k output. Judgment and route-qualification calls are not counted. One earlier baseline attempt was stopped after the eval environment failed to import Still's dependencies; it may have started up to about 2 worker runs.
+18 worker runs (36 owner turns), 18 judge calls as the sweep totals report them (6 per arm; the `judge_error` run made none for its own rubric), 1 proposer call, all on subscriptions (0 USD). Recorded worker tokens: about 9.5M input (8.1M cached) and 72k output. Judgment and route-qualification calls are not counted. One earlier baseline attempt was stopped after the eval environment failed to import Still's dependencies; it may have started up to about 2 worker runs.
 
 ## What the run found about the loop
 
