@@ -8,7 +8,8 @@ Inputs you supply in the code:
 
 - `bars`: a pandas DataFrame of closed bars indexed by timestamp in the exchange
   timezone, with columns `Open`, `High`, `Low`, `Close`, `Volume`, covering at least
-  20 sessions, fetched from the owner's broker or data tool;
+  20 sessions for the full gate (fewer in data-limited mode), from the owner's
+  broker or data tool joined with the closed bars earlier runs saved;
 - `cash`: the owner's budget;
 - `commission`: the broker's real commission as a fraction of the order value
   (add taxes that apply to every fill, or pass a function of size and price);
@@ -87,9 +88,18 @@ bt = Backtest(bars, Pullback, cash=cash, commission=commission, spread=tick / ba
 stats = bt.run()
 trades = stats['# Trades']
 expectancy = stats['_trades']['PnL'].mean() if trades else float('nan')
-passed = trades >= 30 and expectancy > 0 and -stats['Max. Drawdown [%]'] / 100 * cash <= 3 * daily_loss_stop
-print({'trades': int(trades), 'win_rate_pct': stats['Win Rate [%]'], 'expectancy': expectancy,
-       'max_drawdown_pct': stats['Max. Drawdown [%]'], 'return_pct': stats['Return [%]'], 'passed': passed})
+sessions = len(set(bars.index.date))
+if sessions >= 20:  # full gate: normal size or observe-only
+    mode = 'full'
+    passed = trades >= 30 and expectancy > 0 and -stats['Max. Drawdown [%]'] / 100 * cash <= 3 * daily_loss_stop
+    decision = 'normal size' if passed else 'observe-only'
+else:  # data-limited: observe-only only when clearly negative, otherwise reduced risk
+    mode = 'data-limited'
+    clearly_negative = trades >= 10 and expectancy < 0
+    decision = 'observe-only' if clearly_negative else 'reduced risk'
+print({'mode': mode, 'sessions': sessions, 'bars': len(bars), 'trades': int(trades),
+       'win_rate_pct': stats['Win Rate [%]'], 'expectancy': expectancy,
+       'max_drawdown_pct': stats['Max. Drawdown [%]'], 'return_pct': stats['Return [%]'], 'decision': decision})
 ```
 
 Notes:
@@ -101,4 +111,6 @@ Notes:
 - Do not tune parameters on the same sessions you report. If you try several
   values (`bt.optimize`), hold back the most recent sessions and report the gate
   on those.
+- With no trades at all (too little history), `expectancy` is NaN and the
+  data-limited decision is reduced risk; say that nothing could be tested.
 - Print only the summary; `code_run` output is bounded.

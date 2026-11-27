@@ -68,9 +68,13 @@ class IntradayMethodContent(unittest.TestCase):
                        '**Persistence:**', '**Carry it forward:**', 'limit order', 'Never use a market order to enter',
                        'VWAP + 1 × ATR(14)', '**No upward re-pricing.**', 'never use a wider stop than the owner\'s',
                        '**Time exit:**', 'quantity = floor(risk per trade ÷ (entry price − stop price))',
-                       "within the owner's budget", '**Daily loss stop:**', '**Gate:**', 'observe-only',
+                       "within the owner's budget", '**Daily loss stop:**', 'observe-only',
                        'The condition check only does what the plan states', '**Finish inside the run\'s time.**',
-                       'Skipped signals matter', '**checkable expectation:**', '**settle by:**'):
+                       'Skipped signals matter', '**checkable expectation:**', '**settle by:**',
+                       '**Full gate**', '**Data-limited mode**', 'a quarter of the normal risk per trade',
+                       'with every owner limit unchanged', 'the rule is data-limited', '**Let history accumulate.**',
+                       'the full gate applies', '**Recorded outcomes also decide.**', 'returns to observe-only',
+                       'Data-limited mode lowers risk; it never widens'):
             self.assertIn(phrase, self.text)
 
     def test_the_gate_pins_maintained_packages_that_fit_code_run(self):

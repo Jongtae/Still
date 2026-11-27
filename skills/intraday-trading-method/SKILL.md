@@ -85,10 +85,15 @@ Place the exits together with the entry, so they are in force the moment the ent
 Before a new rule or a changed parameter (a threshold, a multiple, a bar length) trades with money, test it on history in `code_run`. Running the same unchanged rules again does not need a new test.
 
 - Packages, pinned: `backtesting==0.6.6` (AGPL-3.0) for the backtest and `pandas-ta-classic==0.9.0` (MIT, imported as `pandas_ta_classic`) for indicators, plus `pandas` and `numpy`. `TA-Lib` (BSD-2-Clause) is optional for speed. Stay well within `code_run`'s package limit and its time limit.
-- Data: at least 20 recent sessions of the same bar length and instrument, closed bars only, from the owner's broker or data tool.
+- Data: the full history is at least 20 recent sessions of the same bar length and instrument, closed bars only, from the owner's broker or data tool and the bars earlier runs saved.
 - Costs: the broker's real commission on each side, taxes, and slippage of one tick per fill.
-- **Gate:** at least 30 trades, positive expectancy after costs, and a maximum drawdown no larger than three times the owner's daily loss stop. Otherwise the rule stays in observe-only mode: you plan and record signals (section 9) but place no order with it.
-- Report the result in the plan: sessions tested, trades, win rate, average gain and loss after costs, expectancy, maximum drawdown and pass or fail. A sketch is in `references/backtest-gate.md`; read it with `skill_resource` when you run the gate.
+- **Full gate**, when that history is available: at least 30 trades, positive expectancy after costs, and a maximum drawdown no larger than three times the owner's daily loss stop. Pass: the rule trades at normal size. Fail: the rule stays in observe-only mode: you plan and record signals (section 9) but place no order with it.
+- **Data-limited mode**, when the source cannot supply that history (for example a broker that returns only today's bars): run the same test on whatever closed-bar history you have and state how much (sessions, bars, trades). If the result is clearly negative after costs (negative expectancy over at least 10 trades), the rule stays observe-only. Otherwise, including when there is too little history to test, the rule may trade at reduced risk: a quarter of the normal risk per trade (section 6) and at most two new entries per day, with every owner limit unchanged and every decision recorded (section 9). Say plainly in the plan and in each report that the rule is data-limited.
+- **Let history accumulate.** Each run saves the closed bars it fetched, by your own means (for example a file per instrument and session in the line's workspace), adding to what earlier runs saved and never keeping a forming bar. Read the saved bars first when you run the gate. Once they cover the full history above, the full gate applies and decides between normal size and observe-only.
+- **Recorded outcomes also decide.** A rule whose settled decisions (section 9) turn clearly negative after costs, by the same measure, returns to observe-only whatever its backtest said, until a changed rule passes the gate.
+- Report the result in the plan: the mode (full or data-limited), sessions tested, trades, win rate, average gain and loss after costs, expectancy, maximum drawdown and pass or fail. A sketch is in `references/backtest-gate.md`; read it with `skill_resource` when you run the gate.
+
+Data-limited mode lowers risk; it never widens a budget, a stop, a daily loss stop or an approval, and it grants nothing.
 
 A backtest is evidence about the past under assumptions, not a promise. Say so when you report it.
 
