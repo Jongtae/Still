@@ -145,3 +145,17 @@ def test_a_change_waiting_for_the_owner_after_outside_content_is_asked_not_refus
         assert service.step_approval_pending(job['id']), 'the owner was asked'
         assert all('refused' not in evidence for _status, evidence in permissions(store, job))
         assert not connector_change_refused(store, job['id'])
+
+
+def test_the_same_input_on_another_engine_does_not_make_up_for_a_refused_change():
+    """Connections are engine-scoped: a change made through Claude Code is not the refused Codex one (#1271 review)."""
+    temp, store, service, job = plain()
+    with temp:
+        refuse_then_allow(store, service, job)
+        owner_mcp.set_confirmed(store, 'claude-code', ['synthetic'])
+        trust_record.set_operation(store, trust_record.connection('claude-code', 'owner-mcp', 'synthetic'), 'apply_change', 'mutate')
+        assert service.connector_permission(job, {'engine': 'claude-code', 'tool_name': ACTION, 'input': INPUT})['behavior'] == 'allow'
+        digest = service.connector_input_digest(ACTION, INPUT)
+        service.record_connector_calls(job['id'], [{'tool': ACTION, 'status': 'succeeded', 'input_digest': digest}],
+                                       engine='claude-code')
+        assert connector_change_refused(store, job['id']), 'the Codex change is still owed'

@@ -2904,8 +2904,8 @@ def connector_refused_rows(db, ids):
 
  ``refused``: ``(work_id, evidence)`` of each state change Still's connector decision refused before
  it left (``connector_permission`` ``denied`` with ``refused``: ``mutate`` or ``payment``), as #1250
- records a code run's.  ``sent``: the keyed identities (``input_digest``) of the connector changes the
- worker's stream showed completing under an allowed decision.  A payment waiting for the owner's
+ records a code run's.  ``sent``: the ``connector_change_key`` of each connector change the worker's
+ stream showed completing under an allowed decision.  A payment waiting for the owner's
  approval is asked, not refused, and carries no ``refused``.
  """
  ids=list(ids)
@@ -2921,18 +2921,27 @@ def connector_refused_rows(db, ids):
    refused.append((row['job_id'],evidence))
   elif (row['tool']=='connector_read' and row['status']=='succeeded' and detail.get('effect') in ('mutate','payment')
         and detail.get('permission_event') and isinstance(detail.get('input_digest'),str)):
-   sent.add(detail['input_digest'])
+   sent.add(connector_change_key(evidence,detail['input_digest']))
  return refused,sent
+
+def connector_change_key(evidence, digest):
+ """One connector change: its engine-scoped connection, operation and keyed input (#1271 review).
+
+ The input digest alone names only the tool and its input; the same server name may be another
+ account on another engine, so a change there never makes up for this one.
+ """
+ return (*(evidence.get(key) for key in ('engine','kind','identity','operation')),digest)
 
 def connector_change_refused(store, work_id):
  """Whether a connector change Still refused unsent is still owed by this Work (#1271).
 
- Made up for only by the same change (its keyed ``input_digest``) completing in this Work, before or
+ Made up for only by the same change (``connector_change_key``) completing in this Work, before or
  after the refusal: a refused replay of a change already made is not short.  A refusal without an
  identity (its input could not be read exactly) nothing can be shown to have made up for.
  """
  with store.db() as db:refused,sent=connector_refused_rows(db,[work_id])
- return any(not evidence.get('input_digest') or evidence['input_digest'] not in sent for _work,evidence in refused)
+ return any(not evidence.get('input_digest') or connector_change_key(evidence,evidence['input_digest']) not in sent
+            for _work,evidence in refused)
 
 def work_state_change_short(store, work_id, steps):
  """Account for reconciled calls before the ordinary completion judgment.
