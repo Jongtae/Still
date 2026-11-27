@@ -1052,10 +1052,11 @@ class AgentService:
 
     def _row_standing_refusal(self, row):
         """#1262: the one standing rule, shared by the payment gate and what runs and Settings are told."""
-        if (row is None or row['origin'] in prep.STILL_SET_ORIGINS
-                or row['accepted_by'] not in prep.PAYMENT_STANDING):
+        row=dict(row) if row is not None else None
+        if (row is None or row.get('origin') in prep.STILL_SET_ORIGINS
+                or row.get('accepted_by') not in prep.PAYMENT_STANDING):
             return 'payment_autonomy.changed'
-        if row['standing_end'] is not None and self.preparations.clock() >= row['standing_end']:
+        if row.get('standing_end') is not None and self.preparations.clock() >= row['standing_end']:
             return 'payment_autonomy.standing_required'
         return None
 
