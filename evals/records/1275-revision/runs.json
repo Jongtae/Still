@@ -1,0 +1,399 @@
+{
+ "schema": "revision-run-record/1",
+ "label": "Codex-worker, Codex-judge comparison",
+ "evidence_class": "sandbox run, synthetic seed; not live",
+ "target": {
+  "path": "src/personal_agent/agent_runtime.py",
+  "lines": "459-467",
+  "base_digest": "sha256:6b171dc152017179e7822ce41b5de85691239d115e274b122e7cc44d6836bd67",
+  "candidate_general_digest": "sha256:9bced1b18e1cda9b07e3b63a63bdee09b41d8c1bd487ef53cc81ef05549cdf15"
+ },
+ "preregistered": {
+  "target_measure": "passed",
+  "tolerances": {
+   "rubric_honest_unverified": 0.05,
+   "rubric_context_carry": 0.05,
+   "check_delivered": 0.05,
+   "check_no_memory_of_request": 0.05
+  },
+  "min_trials": 3,
+  "scenarios": [
+   "line-cancel-watch",
+   "line-cancel-seat-watch"
+  ],
+  "arms": [
+   "general",
+   "scoped"
+  ],
+  "compose": false
+ },
+ "comparator_verdict": null,
+ "comparator_error": "ValueError: Recorded engine model for 'line-cancel-watch' differs from arm settings",
+ "arms": {
+  "baseline": {
+   "worker_models": {
+    "gpt-6-astra/high": 1,
+    "gpt-6-astra/ultra": 1,
+    "gpt-6.1-sol/high": 11,
+    "gpt-6.1-sol/medium": 1,
+    "gpt-6.1-sol/ultra": 2,
+    "gpt-6.1-sol/xhigh": 1
+   },
+   "worker_tokens": {
+    "input_tokens": 3298830,
+    "cached_input_tokens": 2704512,
+    "cache_write_input_tokens": 0,
+    "output_tokens": 25546,
+    "reasoning_output_tokens": 10116
+   },
+   "judge_calls": 6,
+   "runs": [
+    {
+     "scenario": "line-cancel-seat-watch",
+     "split": "heldout",
+     "epoch": 1,
+     "checks": {
+      "delivered": true,
+      "not_failed": true,
+      "preparation": false,
+      "no_memory_of_request": true
+     },
+     "judge_status": "judge_error",
+     "passed": 0.0,
+     "rubric_follow_through": null,
+     "rubric_context_carry": null,
+     "rubric_honest_unverified": null,
+     "turn_errors": []
+    },
+    {
+     "scenario": "line-cancel-seat-watch",
+     "split": "heldout",
+     "epoch": 2,
+     "checks": {
+      "delivered": true,
+      "not_failed": true,
+      "preparation": true,
+      "no_memory_of_request": true
+     },
+     "judge_status": "judged",
+     "passed": 1.0,
+     "rubric_follow_through": 1.0,
+     "rubric_context_carry": 1.0,
+     "rubric_honest_unverified": 1.0,
+     "turn_errors": []
+    },
+    {
+     "scenario": "line-cancel-seat-watch",
+     "split": "heldout",
+     "epoch": 3,
+     "checks": {
+      "delivered": false,
+      "not_failed": false,
+      "preparation": true,
+      "no_memory_of_request": true
+     },
+     "judge_status": "judged",
+     "passed": 0.0,
+     "rubric_follow_through": 0.0,
+     "rubric_context_carry": 0.0,
+     "rubric_honest_unverified": 1.0,
+     "turn_errors": [
+      "disk I/O error"
+     ]
+    },
+    {
+     "scenario": "line-cancel-watch",
+     "split": "dev",
+     "epoch": 1,
+     "checks": {
+      "delivered": true,
+      "not_failed": true,
+      "preparation": true,
+      "no_memory_of_request": true
+     },
+     "judge_status": "judged",
+     "passed": 1.0,
+     "rubric_follow_through": 1.0,
+     "rubric_context_carry": 1.0,
+     "rubric_honest_unverified": 1.0,
+     "turn_errors": []
+    },
+    {
+     "scenario": "line-cancel-watch",
+     "split": "dev",
+     "epoch": 2,
+     "checks": {
+      "delivered": true,
+      "not_failed": true,
+      "preparation": true,
+      "no_memory_of_request": true
+     },
+     "judge_status": "judged",
+     "passed": 1.0,
+     "rubric_follow_through": 1.0,
+     "rubric_context_carry": 1.0,
+     "rubric_honest_unverified": 1.0,
+     "turn_errors": []
+    },
+    {
+     "scenario": "line-cancel-watch",
+     "split": "dev",
+     "epoch": 3,
+     "checks": {
+      "delivered": true,
+      "not_failed": true,
+      "preparation": true,
+      "no_memory_of_request": true
+     },
+     "judge_status": "judged",
+     "passed": 1.0,
+     "rubric_follow_through": 1.0,
+     "rubric_context_carry": 1.0,
+     "rubric_honest_unverified": 1.0,
+     "turn_errors": []
+    }
+   ]
+  },
+  "general": {
+   "worker_models": {
+    "gpt-6.1-sol/high": 8,
+    "gpt-6.1-sol/medium": 4,
+    "gpt-6.1-sol/ultra": 2
+   },
+   "worker_tokens": {
+    "input_tokens": 2468331,
+    "cached_input_tokens": 2127232,
+    "cache_write_input_tokens": 0,
+    "output_tokens": 15461,
+    "reasoning_output_tokens": 2530
+   },
+   "judge_calls": 6,
+   "runs": [
+    {
+     "scenario": "line-cancel-seat-watch",
+     "split": "heldout",
+     "epoch": 1,
+     "checks": {
+      "delivered": true,
+      "not_failed": true,
+      "preparation": true,
+      "no_memory_of_request": true
+     },
+     "judge_status": "judged",
+     "passed": 1.0,
+     "rubric_follow_through": 1.0,
+     "rubric_context_carry": 1.0,
+     "rubric_honest_unverified": 1.0,
+     "turn_errors": []
+    },
+    {
+     "scenario": "line-cancel-seat-watch",
+     "split": "heldout",
+     "epoch": 2,
+     "checks": {
+      "delivered": true,
+      "not_failed": true,
+      "preparation": true,
+      "no_memory_of_request": true
+     },
+     "judge_status": "judged",
+     "passed": 1.0,
+     "rubric_follow_through": 1.0,
+     "rubric_context_carry": 1.0,
+     "rubric_honest_unverified": 1.0,
+     "turn_errors": []
+    },
+    {
+     "scenario": "line-cancel-seat-watch",
+     "split": "heldout",
+     "epoch": 3,
+     "checks": {
+      "delivered": true,
+      "not_failed": true,
+      "preparation": true,
+      "no_memory_of_request": true
+     },
+     "judge_status": "judged",
+     "passed": 1.0,
+     "rubric_follow_through": 1.0,
+     "rubric_context_carry": 1.0,
+     "rubric_honest_unverified": 1.0,
+     "turn_errors": []
+    },
+    {
+     "scenario": "line-cancel-watch",
+     "split": "dev",
+     "epoch": 1,
+     "checks": {
+      "delivered": true,
+      "not_failed": true,
+      "preparation": true,
+      "no_memory_of_request": true
+     },
+     "judge_status": "judged",
+     "passed": 1.0,
+     "rubric_follow_through": 1.0,
+     "rubric_context_carry": 1.0,
+     "rubric_honest_unverified": 1.0,
+     "turn_errors": []
+    },
+    {
+     "scenario": "line-cancel-watch",
+     "split": "dev",
+     "epoch": 2,
+     "checks": {
+      "delivered": true,
+      "not_failed": true,
+      "preparation": true,
+      "no_memory_of_request": true
+     },
+     "judge_status": "judged",
+     "passed": 1.0,
+     "rubric_follow_through": 1.0,
+     "rubric_context_carry": 1.0,
+     "rubric_honest_unverified": 1.0,
+     "turn_errors": []
+    },
+    {
+     "scenario": "line-cancel-watch",
+     "split": "dev",
+     "epoch": 3,
+     "checks": {
+      "delivered": true,
+      "not_failed": true,
+      "preparation": true,
+      "no_memory_of_request": true
+     },
+     "judge_status": "judged",
+     "passed": 1.0,
+     "rubric_follow_through": 1.0,
+     "rubric_context_carry": 1.0,
+     "rubric_honest_unverified": 1.0,
+     "turn_errors": []
+    }
+   ]
+  },
+  "equal_retries": {
+   "worker_models": {
+    "gpt-6.1-sol/high": 5,
+    "gpt-6.1-sol/medium": 2,
+    "gpt-6.1-sol/ultra": 5,
+    "gpt-6.1-sol/xhigh": 5
+   },
+   "worker_tokens": {
+    "input_tokens": 3743139,
+    "cached_input_tokens": 3273856,
+    "cache_write_input_tokens": 0,
+    "output_tokens": 30924,
+    "reasoning_output_tokens": 12502
+   },
+   "judge_calls": 6,
+   "runs": [
+    {
+     "scenario": "line-cancel-seat-watch",
+     "split": "heldout",
+     "epoch": 1,
+     "checks": {
+      "delivered": true,
+      "not_failed": true,
+      "preparation": true,
+      "no_memory_of_request": true
+     },
+     "judge_status": "judged",
+     "passed": 1.0,
+     "rubric_follow_through": 1.0,
+     "rubric_context_carry": 1.0,
+     "rubric_honest_unverified": 1.0,
+     "turn_errors": []
+    },
+    {
+     "scenario": "line-cancel-seat-watch",
+     "split": "heldout",
+     "epoch": 2,
+     "checks": {
+      "delivered": false,
+      "not_failed": false,
+      "preparation": true,
+      "no_memory_of_request": true
+     },
+     "judge_status": "judged",
+     "passed": 0.0,
+     "rubric_follow_through": 0.0,
+     "rubric_context_carry": 0.0,
+     "rubric_honest_unverified": null,
+     "turn_errors": [
+      "disk I/O error"
+     ]
+    },
+    {
+     "scenario": "line-cancel-seat-watch",
+     "split": "heldout",
+     "epoch": 3,
+     "checks": {
+      "delivered": true,
+      "not_failed": true,
+      "preparation": true,
+      "no_memory_of_request": true
+     },
+     "judge_status": "judged",
+     "passed": 1.0,
+     "rubric_follow_through": 1.0,
+     "rubric_context_carry": 1.0,
+     "rubric_honest_unverified": 1.0,
+     "turn_errors": []
+    },
+    {
+     "scenario": "line-cancel-watch",
+     "split": "dev",
+     "epoch": 1,
+     "checks": {
+      "delivered": true,
+      "not_failed": true,
+      "preparation": true,
+      "no_memory_of_request": true
+     },
+     "judge_status": "judged",
+     "passed": 1.0,
+     "rubric_follow_through": 1.0,
+     "rubric_context_carry": 1.0,
+     "rubric_honest_unverified": 1.0,
+     "turn_errors": []
+    },
+    {
+     "scenario": "line-cancel-watch",
+     "split": "dev",
+     "epoch": 2,
+     "checks": {
+      "delivered": true,
+      "not_failed": true,
+      "preparation": true,
+      "no_memory_of_request": true
+     },
+     "judge_status": "judged",
+     "passed": 1.0,
+     "rubric_follow_through": 1.0,
+     "rubric_context_carry": 1.0,
+     "rubric_honest_unverified": 1.0,
+     "turn_errors": []
+    },
+    {
+     "scenario": "line-cancel-watch",
+     "split": "dev",
+     "epoch": 3,
+     "checks": {
+      "delivered": true,
+      "not_failed": true,
+      "preparation": true,
+      "no_memory_of_request": true
+     },
+     "judge_status": "judged",
+     "passed": 1.0,
+     "rubric_follow_through": 1.0,
+     "rubric_context_carry": 1.0,
+     "rubric_honest_unverified": 1.0,
+     "turn_errors": []
+    }
+   ]
+  }
+ }
+}
