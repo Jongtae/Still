@@ -14,6 +14,7 @@ from datetime import datetime
 
 from . import entrusted_lines as el
 from . import condition_checks as checks
+from .line_decisions import LineDecisions
 from . import preparations as prep
 from . import owner_model as om
 from . import work_status as ws
@@ -3035,6 +3036,16 @@ class PreparationsService:
                     result=self.line_read(args.get('line'))
                     self._record_line_read(job['id'],result,held=True)
                     return result
+                if action in ('decide','settle','learn'):
+                    line=args.get('line')
+                    if not service.owner_typed_work(job):
+                        own=self.own_running_row(job)
+                        if not own or not own.get('line_id') or own['line_id']!=line:raise refused('unattended_run')
+                    if not isinstance(line,str) or not line or service.lines.current(line) is None:
+                        raise refused('line_not_found')
+                    decisions=LineDecisions(service.store,service.preparations.clock)
+                    if action=='learn':return decisions.learn(line,job['id'],args)
+                    return getattr(decisions,action)(line,job['id'],args,service._redact_known_secrets)
                 if action not in ('open','revise','undo','stop','restart'):raise refused('line_invalid_action')
                 if service.owner_typed_work(job):return getattr(self,'_line_'+action)(job,args)
                 # #968: a scheduled run writes only its own line: as the owner's steer asks, or its open matters.
@@ -3263,7 +3274,9 @@ class PreparationsService:
             # #1252: a run that continues the line reconciles an open change before acting again.
             effects=self.line_effects_text(self.line_effects(row['line_id']))
             if effects:lead+='\n'+effects
-        return lead+'\n'+self.current_line_text(brief)+'\n'+el.outcomes_text(outcomes,row.get('timezone'))
+        clock=service.preparations.clock
+        recall=LineDecisions(service.store,clock).recall_text(row['line_id'],as_of=clock())
+        return lead+'\n'+self.current_line_text(brief)+'\n'+el.outcomes_text(outcomes,row.get('timezone'))+'\n'+recall
 
     def plan_execute_note(self, row):
         """#1253: a line that acts on time between runs is told the plan-then-execute split, whatever the owner's words.

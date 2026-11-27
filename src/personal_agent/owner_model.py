@@ -2373,7 +2373,7 @@ class WorkingLessons:
         self.store, self.clock = store, clock
         # As ``WorkingNotes`` did: the receipt and tombstone tables these lessons rely on exist from start-up
         # (other readers, such as entrusted lines, query them).
-        OwnerForget(store, clock)
+        self.forget = OwnerForget(store, clock)
 
     def _owner_key(self):
         from .agent_runtime import MEMORY_OWNER
@@ -2408,12 +2408,12 @@ class WorkingLessons:
             attempt += 1
             candidate = f'{norm}\n{attempt}'
 
-    def _save(self, db, key, text, owner_key, work_id, origin, why=None, sources=None):
+    def _save(self, db, key, text, owner_key, work_id, origin, why=None, sources=None, saved_at=None):
         # The anchor Work first (the notice and undo use it), then each cited Work once.
         source_works = list(dict.fromkeys(([work_id] if work_id else []) + [work for work in sources or () if work]))
         return self.store._save_memory(
             db, key, text, owner_key, self.store._work_binding(work_id) if work_id else None,
-            origin=origin, source_works=source_works or None, basis=BASIS_INFERRED, evidence=why)
+            origin=origin, source_works=source_works or None, basis=BASIS_INFERRED, evidence=why, saved_at=saved_at)
 
     @staticmethod
     def _forgotten_texts(db, owner_key):
@@ -2450,22 +2450,24 @@ class WorkingLessons:
                         json.dumps(fingerprint), state, None, self.clock(), conversation[0]))
             break
 
-    def apply(self, ops, change, work_id, *, origin, expected_rows=None, sources=None):
+    def apply(self, ops, change, work_id, *, origin, expected_rows=None, sources=None, notify=True, db=None, saved_at=None):
         """Apply validated operations in one transaction, rechecking current state.
 
         Upkeep supplies the row ids that its judgment saw, so a replaced row
         cannot be updated or removed on the strength of older wording.
         ``sources`` are the cited Work ids, following the anchor Work.
+        A caller passing ``db`` already holds the write transaction.
         """
         from .agent_runtime import MEMORY_OWNER, SECRET_SHAPED_VALUE, memory_value_has_secret
         from .current_context import redact_known_secrets
         if not ops:
             return {'applied': [], 'dropped': []}
-        forget = OwnerForget(self.store, self.clock)
         owner_key = self._owner_key()
         applied, dropped = {}, {}
-        with self.store.db() as db:
-            db.execute('BEGIN IMMEDIATE')
+        with (self.store.db() if db is None else contextlib.nullcontext(db)) as conn:
+            if db is None:
+                conn.execute('BEGIN IMMEDIATE')
+            db = conn
             current = {lesson['id']: lesson for lesson in self.current(db)}
             forgotten = self._forgotten_texts(db, owner_key)
             # Removals make room for additions in the same answer, regardless of its order.
@@ -2496,7 +2498,7 @@ class WorkingLessons:
                     continue
                 change_record = {'op': op}
                 if target:
-                    receipt = forget.forget_in(db, MEMORY_OWNER, target['ref'], operation=MIGRATE, work_id=work_id)
+                    receipt = self.forget.forget_in(db, MEMORY_OWNER, target['ref'], operation=MIGRATE, work_id=work_id)
                     change_record['receipt'] = receipt['receipt']
                 if op == 'remove':
                     memory_id = target['memory_id']
@@ -2504,13 +2506,14 @@ class WorkingLessons:
                                (reason, self.clock(), memory_id))
                     del current[ident]
                 else:
-                    memory_id = self._save(db, key, text, owner_key, work_id, origin, why, sources=sources)['id']
+                    memory_id = self._save(db, key, text, owner_key, work_id, origin, why,
+                                           sources=sources, saved_at=saved_at)['id']
                     ident = key[len(LESSONS_PREFIX):]
                     current[ident] = {'key': key, 'memory_id': memory_id, 'text': text, 'ref': MEMORY_PREFIX + memory_id}
                 applied[index] = {**change_record, 'id': ident, 'memory_id': memory_id}
 
             applied = [applied[index] for index in sorted(applied)]
-            if applied and work_id:
+            if applied and work_id and notify:
                 jobs = db.execute('SELECT id,channel,chat_id,delivery FROM jobs WHERE id=?', (work_id,))
                 self._notice(db, jobs, NOTICE_KIND,
                              {'change': redact_known_secrets(self.store, change), 'items': applied})

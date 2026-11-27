@@ -195,6 +195,9 @@ FORGET_RECORD_ARGUMENTS={
 #: owner may have phrased around a secret before the host redacts it.
 #: #1216 review: an API request body; #1380: code, whose digest is in the run's Evidence (``HOST_TOOLS``).
 REDACTED_ARGUMENTS={name:tool.recorded_by_length for name,tool in HOST_TOOLS.items() if tool.recorded_by_length}
+# Lesson operations contain JSON-escaped text. Record only their length and let
+# WorkingLessons check the decoded values before accepting any Memory write.
+REDACTED_ARGUMENTS['entrusted_line']=('lessons',)
 #: #659: the argument recorded with only stored secrets and credential shapes
 #: removed (``Capabilities.judgment_text``): a
 #: preparation goal is owner text the owner reads back, not a secret.
@@ -202,7 +205,9 @@ REDACTED_ARGUMENTS={name:tool.recorded_by_length for name,tool in HOST_TOOLS.ite
 SCRUBBED_ARGUMENTS={'schedule_preparation':('goal','title','offer'),
                     'update_check_state':('preparation_id','check_digest'),
                     # #798: a line's brief is the owner's own words, kept like a preparation goal.
-                    'entrusted_line':('title','task','report_promise','rules','rule','open_matters'),
+                    'entrusted_line':('title','task','report_promise','rules','rule','open_matters',
+                                     'about','claim','expectation','settle_after','check','lessons_applied',
+                                     'decision','outcome','matched','observed_at','unsettleable'),
                     # Memory queries are model-authored owner text and may
                     # contain a stored credential; scrub every durable call record.
                     'search_memory':'query',
@@ -507,9 +512,11 @@ ENTRUSTED_LINE_DESCRIPTION=(
  'rules, then schedule with schedule_preparation line. Reuse the line for the same work. Revise with rule_scope=today '
  'for corrections tied to today (today’s date or this session) or of unclear duration, unless the owner says to keep them. Record completion '
  'and its reason in open_matters. Use stop with scope work when asked to stop current work or the scope is unclear. '
- 'Use scope line when asked to end the line. Still announces openings, standing rule changes and stops.')
+ 'Use scope line when asked to end the line. Still announces openings, standing rule changes and stops. '
+ 'Use decide to record an expectation, settle to report a due outcome you checked, and learn to save lessons citing settled decisions.')
 ENTRUSTED_LINE_ARGUMENTS={
- 'action':('list, read, open, revise, undo, stop, restart. A scheduled run may revise its own open_matters, '
+ 'action':('list, read, open, revise, undo, stop, restart, decide, settle, learn. A scheduled run can record decisions, '
+           'outcomes and lessons on its own line. It may revise its own open_matters, '
            'or revise or stop its line as the owner steered it. If more than one active line could be meant, use list '
            'and read, then ask which title and include a recognizable detail for each. Wait for the answer and omit IDs.'),
  'line':'The line id (from list, read or open), for every action but list and open.',
@@ -531,6 +538,20 @@ ENTRUSTED_LINE_ARGUMENTS={
                  'at most 1000 characters, in plain words. It is the line\'s plan, not a log: what a run observed or did '
                  '(figures, prices, times checked) goes in that run\'s own answer, whose start later runs receive. Change it only '
                  'when what later runs should do changes. Run-written matters become dated notes after the owner’s day ends.'),
+ 'about':'For decide, a short label for what the decision concerns.',
+ 'claim':'For decide, the judgment you made.',
+ 'expectation':'For decide, the result you expect to observe.',
+ 'settle_after':'For decide, a future time to check the outcome, as epoch seconds or ISO 8601 (UTC by default).',
+ 'check':'For decide, an optional note about how to check the outcome.',
+ 'lessons_applied':'For decide, optional current lesson refs or IDs, separated by spaces or commas.',
+ 'decision':'For settle, the ID of a due decision of this line.',
+ 'outcome':'For settle, the outcome you observed. Use with matched.',
+ 'matched':'For settle, whether the observed outcome matched the expectation: yes, no or unclear.',
+ 'observed_at':'For settle, optional source time in epoch seconds or ISO 8601 (UTC by default). Defaults to now.',
+ 'unsettleable':'For settle, use this reason alone if you could not check the outcome. The decision ends after three failed attempts.',
+ 'lessons':('For learn, a JSON list of up to five operations with op add, edit, agree or downvote. '
+            'Include text for add or edit, an existing lesson id for edit, agree or downvote, and optional why. '
+            'Every operation needs a decisions array citing settled decisions of this line.'),
 }
 #: #774 step 2: ask the owner, in the paired Telegram chat, for a current position.
 ASK_LOCATION_DESCRIPTION=('Ask the owner through their paired Telegram chat to share their current location for this request. Use it only when the answer depends on where the owner is now and the current context does not already hold a fresh position. '
@@ -696,7 +717,14 @@ DEFINITIONS=[
                            'host, path (exact or ending in /*) and action_id. If the API documents an '
                            'idempotency_header, name it and send action_id as its value. Keep action_id for the same action.'}),
         ['preparation_id','check_digest','patch']),
- schema('entrusted_line',ENTRUSTED_LINE_DESCRIPTION,described({'action':{'type':'string','enum':['list','read','open','revise','undo','stop','restart']},'line':STRING,'scope':{'type':'string','enum':['work','line']},'title':STRING,'task':STRING,'report_promise':STRING,'rules':STRING,'rule':STRING,'rule_scope':{'type':'string','enum':['today','standing']},'drop_rule':STRING,'open_matters':STRING,'expected_version':STRING,'version':STRING,'account_every_days':STRING},ENTRUSTED_LINE_ARGUMENTS),['action']),
+ schema('entrusted_line',ENTRUSTED_LINE_DESCRIPTION,described({
+        'action':{'type':'string','enum':['list','read','open','revise','undo','stop','restart','decide','settle','learn']},
+        'line':STRING,'scope':{'type':'string','enum':['work','line']},'title':STRING,'task':STRING,
+        'report_promise':STRING,'rules':STRING,'rule':STRING,'rule_scope':{'type':'string','enum':['today','standing']},
+        'drop_rule':STRING,'open_matters':STRING,'expected_version':STRING,'version':STRING,'account_every_days':STRING,
+        'about':STRING,'claim':STRING,'expectation':STRING,'settle_after':STRING,'check':STRING,
+        'lessons_applied':STRING,'decision':STRING,'outcome':STRING,'matched':{'type':'string','enum':['yes','no','unclear']},
+        'observed_at':STRING,'unsettleable':STRING,'lessons':STRING},ENTRUSTED_LINE_ARGUMENTS),['action']),
  schema('tell_owner',TELL_OWNER_DESCRIPTION,{'text':STRING},['text']),
  schema('ask_location',ASK_LOCATION_DESCRIPTION,described({'reason':STRING,'button_label':STRING,'mode':{'type':'string','enum':['ask','with_answer']}},ASK_LOCATION_ARGUMENTS),['reason']),
  schema('skill_load',SKILL_LOAD_DESCRIPTION,{'skill':STRING,'part':{'type':'string','enum':['full','header']}},['skill']),

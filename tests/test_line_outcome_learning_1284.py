@@ -32,7 +32,7 @@ class _Case(_RunCase):
         self.row, self.run = self.running(line=self.line_id)
 
     def decide(self, run=None, **extra):
-        args = {'action': 'decide', 'line': self.line_id, 'subject': 'item-A',
+        args = {'action': 'decide', 'line': self.line_id, 'about': 'item-A',
                 'claim': 'The list grows because the source added a weekly batch.',
                 'expectation': 'The list has at least 3 more entries one hour later.',
                 'settle_after': str(self.clock[0] + HOUR), 'check': 'count the entries again',
@@ -84,13 +84,13 @@ class DecisionRecordTests(_Case):
     def test_a_run_cannot_record_on_another_line(self):
         other = self.service.lines.open('owner-other', task='Another watch', report_promise='a note')['line_id']
         with self.assertRaises(ToolError) as refused:
-            self.line_call(self.run, action='decide', line=other, subject='s', claim='c', expectation='e',
+            self.line_call(self.run, action='decide', line=other, about='s', claim='c', expectation='e',
                            settle_after=str(self.clock[0] + HOUR))
         self.assertEqual(refused.exception.code, 'unattended_run')
         self.assertEqual(self.decisions().line_rows(other), [])
 
     def test_missing_fields_and_past_or_unreadable_settle_time_are_refused(self):
-        for extra in ({'claim': ''}, {'expectation': ''}, {'subject': ''}, {'settle_after': 'soon'},
+        for extra in ({'claim': ''}, {'expectation': ''}, {'about': ''}, {'settle_after': 'soon'},
                       {'settle_after': str(self.clock[0] - 1)}):
             with self.subTest(extra=extra), self.assertRaises(ToolError) as refused:
                 self.decide(**extra)
@@ -174,7 +174,7 @@ class SettlementTests(_Case):
     def test_a_decision_of_another_line_is_unknown_here(self):
         other = self.service.lines.open('owner-other', task='Another watch', report_promise='a note')['line_id']
         other_row, other_run = self.running(line=other)
-        decision = self.line_call(other_run, action='decide', line=other, subject='s', claim='c', expectation='e',
+        decision = self.line_call(other_run, action='decide', line=other, about='s', claim='c', expectation='e',
                                   settle_after=str(self.clock[0] + 1))['decision']
         self.clock[0] += 2
         with self.assertRaises(ToolError) as refused:
@@ -265,6 +265,20 @@ class LessonTests(_Case):
         self.learn([{'op': 'downvote', 'id': lesson['id'], 'decisions': [decision]}])
         self.assertEqual(self.strength(lesson), ld.ADD_STRENGTH - 1)
 
+    def test_outcomes_never_rewrite_or_end_a_lesson_saved_another_way(self):
+        self.lessons().migrate()
+        self.lessons().apply([{'op': 'add', 'id': '', 'text': 'Owner said: keep notes short.', 'why': 'w', 'reason': ''}],
+                             'seed', None, origin='test')
+        lesson = self.lesson_by_text('Owner said: keep notes short.')
+        decision = self.settled()
+        with self.assertRaises(ToolError) as refused:
+            self.learn([{'op': 'edit', 'id': lesson['id'], 'text': 'Long notes.', 'why': 'w', 'decisions': [decision]}])
+        self.assertEqual(refused.exception.code, 'line_lesson_refused')
+        for _ in range(ld.ADD_STRENGTH + 1):
+            self.learn([{'op': 'downvote', 'id': lesson['id'], 'decisions': [decision]}])
+        self.assertIsNotNone(self.lesson_by_text('Owner said: keep notes short.'), 'still current')
+        self.assertEqual(self.strength(lesson), 0)
+
     def test_a_line_run_lesson_change_sends_no_messenger_notice(self):
         self.add()
         with self.store.db() as db:
@@ -282,9 +296,9 @@ class LessonTests(_Case):
 
 class RecallTests(_Case):
     def test_a_run_reads_its_due_and_settled_decisions_labelled_as_information(self):
-        due = self.decide(subject='due-one')['decision']
-        settled = self.settled(subject='settled-one')
-        later = self.decide(subject='later-one', settle_after=str(self.clock[0] + 5 * HOUR))['decision']
+        due = self.decide(about='due-one')['decision']
+        settled = self.settled(about='settled-one')
+        later = self.decide(about='later-one', settle_after=str(self.clock[0] + 5 * HOUR))['decision']
         self.clock[0] += 1
         text = self.service.preparations_service.line_run_input(self.run, self.row)
         self.assertIn(msg('lines.decisions_heading'), text)
@@ -304,7 +318,7 @@ class RecallTests(_Case):
         self.assertIn('4 more entries', self.decisions().recall_text(self.line_id, as_of=self.clock[0]))
 
     def test_recall_lists_newest_own_settled_decisions_only(self):
-        ids = [self.settled(subject=f'subject-{n}') for n in range(ld.RECALL_SETTLED + 2)]
+        ids = [self.settled(about=f'subject-{n}') for n in range(ld.RECALL_SETTLED + 2)]
         text = self.decisions().recall_text(self.line_id, as_of=self.clock[0])
         for old in ids[:2]:
             self.assertNotIn(old, text)
@@ -318,7 +332,7 @@ class RecallTests(_Case):
         for n in range(ld.RECALL_CROSS + 1):
             other = self.service.lines.open(f'owner-other-{n}', task=f'Watch {n}', report_promise='a note')['line_id']
             _row, run = self.running(line=other)
-            decision = self.line_call(run, action='decide', line=other, subject='s', claim='c', expectation='e',
+            decision = self.line_call(run, action='decide', line=other, about='s', claim='c', expectation='e',
                                       settle_after=str(self.clock[0] + 1))['decision']
             self.clock[0] += 2
             self.line_call(run, action='settle', line=other, decision=decision, outcome='o', matched='yes')
@@ -338,7 +352,7 @@ class RecallTests(_Case):
 
     def test_recall_is_bounded(self):
         for n in range(ld.RECALL_SETTLED):
-            self.settled(claim='y' * ld.CLAIM_CHARS, subject=f's{n}')
+            self.settled(claim='y' * ld.CLAIM_CHARS, about=f's{n}')
         self.assertLessEqual(len(self.decisions().recall_text(self.line_id, as_of=self.clock[0])), ld.RECALL_CHARS)
 
     def test_a_line_with_no_decisions_adds_only_the_short_how_to(self):
@@ -352,6 +366,8 @@ class RetentionTests(_Case):
         for _ in range(ld.MAX_LINE_DECISIONS + 2):
             self.row, self.run = self.running(line=self.line_id)
             self.settled()
+            self.settle(self.row, self.run)
+            self.preps.cancel(self.row['id'])  # Retire the fixture schedule before creating the next one.
         rows = self.decisions().line_rows(self.line_id)
         self.assertLessEqual(len(rows), ld.MAX_LINE_DECISIONS)
         self.assertIn(pending, [row['id'] for row in rows])
