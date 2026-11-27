@@ -1263,8 +1263,10 @@ class StartLatencyTests(NativePresenceTestCase):
         self.connect_model()
         self.install_judgments({'conversation-followup': FOLLOWUP_CANCEL})
         first, _ = self.turn('오늘 저녁 메뉴 추천해줘')
+        # #1261: only a cancel that withdrew the earlier Work ends the turn; a Work still
+        # waiting is withdrawn, a running one would let the message run as a request.
         with self.store.db() as db:
-            db.execute("UPDATE jobs SET status='running' WHERE id=?", (first['id'],))
+            db.execute("UPDATE jobs SET status='queued' WHERE id=?", (first['id'],))
         self.judgment_log.clear()
         # Test the routing phase after admission. Slice 2 intentionally keeps
         # another owner Work in this conversation queued while the first runs;
@@ -1282,6 +1284,7 @@ class StartLatencyTests(NativePresenceTestCase):
         job = self.store.job(job_id)
         self.assertEqual(job['relation_kind'], FOLLOWUP_CANCEL)
         self.assertEqual(job['model'], 'continuity')
+        self.assertEqual(self.store.job(first['id'])['status'], 'cancelled')
         self.assertIn('conversation-followup', self.purposes())
 
     def test_a_routing_judgment_error_surfaces_where_it_did_before(self):

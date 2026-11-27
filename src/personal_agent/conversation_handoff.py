@@ -962,6 +962,7 @@ class ConversationJudgments:
                 f'{label}_reply': bounded(work.get('reply')),
                 f'{label}_reply_at': work.get('reply_at') or 'unknown',
                 f'{label}_linked_to': work.get('linked_to') or 'none',
+                f'{label}_started_by': work.get('started_by') or 'owner',
             })
             texts += [f'{label}_owner_message', f'{label}_reply']
         candidates = tuple(f'{relation} w{number}' for number in range(1, len(works) + 1)

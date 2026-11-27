@@ -456,6 +456,17 @@ RETRY_EFFECT_NOTE_HEAD=('Still note (not from the owner): the owner\'s message b
                         'request, which Still did not replay because that earlier Work called tools that may have '
                         'changed state:')
 RETRY_EFFECT_NOTE_TAIL='Check the current state before repeating any of these; ask the owner if unsure.'
+#: #1261: the factual note the worker reads when the owner's message was judged to stop an earlier
+#: request that Still did not withdraw; the message then runs as the owner's request.
+CANCEL_NOT_DONE_NOTE=('Still note (not from the owner): the owner\'s message below was read as asking to stop an '
+                      'earlier request, and Still did not stop it: {why}. Do what the message asks, all of it; if it '
+                      'only asked to stop that request, tell the owner plainly that it was not stopped and why.')
+CANCEL_NOT_DONE_WHY={
+    'running':'it is still running',
+    'finished':'it had already finished',
+    'scheduled':('it is a run of a scheduled preparation, and the preparation itself stays scheduled; '
+                 'stopping, replacing or restarting it is done with your preparation tools'),
+}
 #: #774: the same factual note for a location continuation, whose request is the
 #: asking Work's message run again once the owner shared a position.
 CONTINUATION_EFFECT_NOTE_HEAD=('Still note (not from the owner): the request below continues an earlier Work that '
@@ -3144,7 +3155,9 @@ class AgentService:
             entry={'request':'' if self.store.work_request_forgotten(work['id']) else work.get('message') or '',
                    'request_at':self._minutes_ago(now,work.get('created')),
                    'status':work.get('status') or '','intent':work.get('intent') or '',
-                   'linked_to':labels.get(work.get('related_job_id'))}
+                   'linked_to':labels.get(work.get('related_job_id')),
+                   # #1261: a run Still started for a scheduled preparation is not the owner's own request.
+                   'started_by':'a scheduled preparation' if prep.preparation_of(work.get('request_key')) else 'owner'}
             try:
                 reply=self.store.last_reply(work['id'],with_created=True)
                 if reply:
@@ -3216,6 +3229,15 @@ class AgentService:
                 try:return urlsplit(url).hostname or None
                 except ValueError:return None
         return None
+
+    @staticmethod
+    def cancel_not_done_note(previous, scheduled=False):
+        """#1261: why a judged stop withdrew nothing, for the worker that now runs the message.
+
+        Status facts only; the owner's words reach the worker unchanged after it.
+        """
+        why='scheduled' if scheduled else 'running' if ws.is_active(previous.get('status')) else 'finished'
+        return CANCEL_NOT_DONE_NOTE.format(why=CANCEL_NOT_DONE_WHY[why])
 
     def retry_effect_note(self, previous, head=RETRY_EFFECT_NOTE_HEAD, ignore=()):
         """The factual note for a refused retry whose earlier Work called effect tools (#730 review).
