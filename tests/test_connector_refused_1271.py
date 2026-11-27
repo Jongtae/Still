@@ -132,3 +132,16 @@ def test_reads_and_owner_refused_operations_record_no_refused_change():
         assert call(service, job)['behavior'] == 'deny'
         assert all('refused' not in evidence for _status, evidence in permissions(store, job))
         assert not connector_change_refused(store, job['id'])
+
+
+def test_a_change_waiting_for_the_owner_after_outside_content_is_asked_not_refused():
+    """With outside content read, a plain change asks the owner; that wait is not a refusal (#1271 review)."""
+    temp, store, service, job = plain()
+    with temp:
+        connect(store, service, operation='mutate')
+        store.mark_outside_content(job['id'], {'category': 'web', 'operation': 'page_read'})
+        service.connector_approval_note(job, {'tool_name': ACTION, 'input': INPUT, 'approval_note': 'Apply it.'})
+        assert call(service, job)['behavior'] == 'deny'
+        assert service.step_approval_pending(job['id']), 'the owner was asked'
+        assert all('refused' not in evidence for _status, evidence in permissions(store, job))
+        assert not connector_change_refused(store, job['id'])

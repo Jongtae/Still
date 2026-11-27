@@ -8843,6 +8843,10 @@ class AgentService:
                     write_ticket=self.self_set_write(job,binding,f'connector:{engine}|{kind}|{identity}',operation,
                         value_lines(values),(),effect=reversibility or 'irreversible',values=values,note=note,require_note=True)
                 except ToolError as exc:
+                    # Asked, not refused: a change whose owner approval is now pending waits (#1271 review), as a
+                    # payment's does; ``line_effects`` counts it as asked.
+                    if exc.code=='approval_required' and self.step_approval_pending(job['id']):
+                        return {'behavior':'deny','message':str(exc)}
                     return refused(note_required if exc.code=='approval_note_required' else str(exc))
             if effect=='payment':
                 label=f'{service_name} / {operation}\n'+value_lines(values)  # #945: readable, every value kept
