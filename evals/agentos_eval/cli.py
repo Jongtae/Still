@@ -6,6 +6,7 @@
     python -m agentos_eval sweep --world appworld --scenarios world-appworld-pay-approved
     python -m agentos_eval report --log <eval log>
     python -m agentos_eval budget
+    python -m agentos_eval blockers --store <data folder or quickstart.db>
 
 Run from the ``evals`` folder (or with it on ``PYTHONPATH``).  ``sweep`` and
 ``report`` need the eval extra (``evals/requirements.txt``); a ``--world``
@@ -400,6 +401,17 @@ def cmd_progress_forms(args):
     print(progress_forms.render_markdown(result))
 
 
+def cmd_blockers(args):
+    from . import blockers
+    if args.scan < 1:
+        raise SystemExit('--scan must be a positive integer')
+    try:
+        rows = blockers.read_blockers(args.store, args.scan)
+    except (ValueError, OSError, blockers.sqlite3.Error) as exc:
+        raise SystemExit(str(exc)) from None
+    print(blockers.render(rows, args.scan))
+
+
 def cmd_judgments(args):
     from . import judgments
     if args.action == 'plan':
@@ -621,6 +633,9 @@ def main(argv=None):
     forms = sub.add_parser('progress-forms', help='compare progress-update forms from recorded runs; no model call (#1036)')
     forms.add_argument('--baseline', required=True, help='label of the arm the others are compared with')
     forms.add_argument('--arm', action='append', required=True, help='label=<records.json>, one per reporting-rule arm')
+    listed = sub.add_parser('blockers', help='list recent self-review blockers, read-only (#1277)')
+    listed.add_argument('--store', required=True, help='Still data folder or its quickstart.db; no default')
+    listed.add_argument('--scan', type=int, default=20000, help='newest tool events to look at (default 20000)')
     judgments = sub.add_parser('judgments', help='measure shipped judgments (#42)')
     actions = judgments.add_subparsers(dest='action', required=True)
     from .judgments import DEFAULT_CASES
@@ -679,7 +694,7 @@ def main(argv=None):
         return 0
     handler = {'snapshot': cmd_snapshot, 'scenarios': cmd_scenarios, 'sweep': cmd_sweep, 'report': cmd_report,
                'p1-report': cmd_p1_report, 'budget': cmd_budget, 'judgments': cmd_judgments, 'progress-forms': cmd_progress_forms, 'continuity': cmd_continuity,
-               'coverage': cmd_coverage, 'recall': cmd_recall}[args.command]
+               'coverage': cmd_coverage, 'recall': cmd_recall, 'blockers': cmd_blockers}[args.command]
     return handler(args) or 0
 
 
