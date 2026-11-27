@@ -45,6 +45,9 @@ BUNDLE_SETTLE_SECONDS = 1800
 BUNDLE_CHARS = el.BUNDLE_CHARS
 
 
+#: #1270 review: the states whose row the scheduler still runs (a run's own row is running).
+LIVE_SCHEDULE_STATES=(prep.STATE_RUNNING,prep.STATE_SCHEDULED)
+
 class PreparationsService:
     """Preparation operations over one owning service's existing state."""
 
@@ -1140,10 +1143,7 @@ class PreparationsService:
             local=lambda slot:prep.local_text(slot,row['timezone'])
             recurrence=row.get('recurrence')
             until_at=row.get('until_at')
-            if recurrence==prep.RECURRENCE_WINDOW:
-                following=prep.next_window_slot(row,row['due_at'])
-            else:
-                following=prep.next_due(row['due_at'],row['timezone'],recurrence,row['due_at'],row.get('rule_start'),count)
+            following=self.run_following(row,service.preparations.clock())
             schedule=(msg('preparations.run_next',due=local(following)) if following is not None
                       else msg('preparations.run_last'))
             if row.get('check_spec'):
@@ -1176,6 +1176,105 @@ class PreparationsService:
         except Exception:
             LOG.info('preparation run fact unavailable job=%s',job.get('id'))
             return msg('preparations.run_fact')+'\n'+msg('preparations.own_limits')
+
+    @staticmethod
+    def run_following(row, now=None):
+        """The slot after the run at ``row['due_at']``, by the scheduler's own slot functions, or None.
+
+        ``now`` (the scheduler's clock) skips slots that already passed, as ``Preparations.settle``
+        does, so a run that started late is told the next live slot.
+
+        A row no longer running or scheduled (cancelled, paused, done) has none: the scheduler admits only
+        a scheduled row.  An extra run (``run_return_state``, an owner's run now) leaves the regular schedule as it was: its
+        settlement returns to the preserved ``due_at`` (#575), or to a pause, which has no next slot.
+        """
+        if row.get('state') not in LIVE_SCHEDULE_STATES:
+            return None
+        if row.get('run_return_state'):
+            return row['due_at'] if row['run_return_state']==prep.STATE_SCHEDULED else None
+        if row.get('recurrence')==prep.RECURRENCE_WINDOW:
+            # A recurring window's last slot of the day is followed by the next day's opening (``settle``).
+            after=max(row['due_at'],now if now is not None else row['due_at'])
+            following=prep.next_window_slot(row,after)
+            return following if following is not None else prep.next_day_window(row,after).get('due_at')
+        after=max(row['due_at'],now if now is not None else row['due_at'])
+        return prep.next_due(row['due_at'],row['timezone'],row.get('recurrence'),after,row.get('rule_start'),
+                             int(row['run_count']))
+
+    @staticmethod
+    def check_following(row):
+        """The next condition check of a check row, or None when there is none.
+
+        None, as the scheduler's own settlement decides (``Preparations.settle``): the run returns the
+        row to a pause, it used the last permitted run (``run_count >= max_runs``), or the next check
+        would fall at or after the window's end (``until_at``).
+        """
+        if row.get('state') not in LIVE_SCHEDULE_STATES:
+            return None
+        if row.get('run_return_state') and row['run_return_state']!=prep.STATE_SCHEDULED:
+            return None
+        at,end,maximum=row.get('check_next_at'),row.get('until_at'),row.get('max_runs')
+        if at is None or (maximum is not None and int(row.get('run_count') or 0)>=int(maximum)):
+            return None
+        if end is not None and at>=end:
+            return None
+        return at
+
+    def preparation_next_start(self, job):
+        """#1269: when the next run of the schedule this run belongs to starts, for the plan's time.
+
+        ``{'at', 'kind', 'local'}``: a row with a condition check names the check's next time (``check``),
+        which acts on the plan this run leaves; any other row its next slot (``run``).  None for a Work no
+        preparation started, the last run, or an unreadable row.
+        """
+        service=self.service
+        preparation_id=prep.preparation_of(job.get('request_key'))
+        if not preparation_id or job.get('model')=='preparation':return None
+        try:
+            row=service.preparations.get(preparation_id)
+            if not row:return None
+            kind,at=('check',self.check_following(row)) if row.get('check_spec') else ('run',self.run_following(row,service.preparations.clock()))
+            if at is None:return None
+            return {'at':float(at),'kind':kind,'local':prep.local_text(at,row['timezone'])}
+        except Exception:
+            LOG.info('preparation next start unavailable job=%s',job.get('id'))
+            return None
+
+    def work_schedule_fact(self, job):
+        """#1270: Still's record of the schedule ``job`` is a run of, or set up, for its outcome judgment.
+
+        One line per schedule: this run (which run, the next start, the end) and each active row this
+        Work created (its state, next start, end), read from the rows at judgment time.  Ids, states
+        and times only, no goal text.  '' when there is none or the rows cannot be read.
+        """
+        service=self.service
+        lines=[]
+        try:
+            preparation_id=prep.preparation_of(job.get('request_key'))
+            if preparation_id and job.get('model')!='preparation':
+                row=service.preparations.get(preparation_id)
+                if row:
+                    following=self.run_following(row,service.preparations.clock()) if not row.get('check_spec') else self.check_following(row)
+                    lines.append(msg('preparations.schedule_run',id=preparation_id,run=int(row['run_count']),state=row['state'],
+                                     next=prep.local_text(following,row['timezone']) if following is not None
+                                     else msg('label.none'),
+                                     end=prep.local_text(row['until_at'],row['timezone']) if row.get('until_at') is not None
+                                     else msg('label.none')))
+            with service.store.db() as db:
+                own=[dict(item) for item in db.execute(
+                    'SELECT * FROM preparations WHERE created_from=? AND state IN (?,?,?,?) ORDER BY created_at LIMIT 8',
+                    (job['id'],*prep.ACTIVE_STATES))]
+            for row in own:
+                start=row.get('check_next_at') if row.get('check_spec') else row.get('due_at')
+                lines.append(msg('preparations.schedule_set_up',id=row['id'],state=row['state'],
+                                 next=prep.local_text(start,row['timezone']) if start is not None
+                                 else msg('label.none'),
+                                 end=prep.local_text(row['until_at'],row['timezone']) if row.get('until_at') is not None
+                                 else msg('label.none')))
+        except Exception:
+            LOG.info('work schedule fact unavailable job=%s',job.get('id'))
+            return ''
+        return '\n'.join(lines)
 
     def preparation_history(self, job):
         """The only conversation a preparation's Work is shown (#659).

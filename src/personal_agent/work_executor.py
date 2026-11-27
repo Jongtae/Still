@@ -1831,6 +1831,8 @@ class WorkExecutor:
                                   secret_redactor=service._redact_known_secrets,
                                   **service.work_lookup_options(job,run.prompt))
         run.work_capabilities[0]=run.capabilities
+        # #1270: the schedule this Work is a run of or set up, read when its goal is judged.
+        run.capabilities.work_schedule=lambda:service.work_schedule_fact(job)
         run.work_sources|=run.capabilities.private_provenance
         # Recorded before model use.
         service.record_work_sources(job['id'],run.work_sources)
