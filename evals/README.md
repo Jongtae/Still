@@ -161,6 +161,7 @@ The adopt-or-not gate for a revision of versioned method text (a bundled skill, 
 - Verdict per candidate, in this order. `insufficient_evidence`: fewer than `min_trials` (at least 2) graded runs of a scenario, unbalanced epochs, a dev or held-out split with no scenario, or a missing grade. `rejected`: a dimension falls beyond its tolerance on dev or held-out, or the target does not improve, by more than the noise, against the baseline or `equal_retries`. `insufficient_evidence`: a difference within the noise, no or too small `equal_retries`, or no cost. Otherwise `preferred`.
 - Noise, per split, is the larger of the two arms' max - min of the per-epoch split mean (the spread rule of `continuity.py`). It is a descriptive bound, not a significance test.
 - Cases with `source: local` are reported as `owner_store_check` and never decide.
+- Known limit (first end-to-end run, [records](records/1275-revision/README.md)): the default Codex route picks the worker model per request, so recorded arms can hold two models and are then refused.
 
 ## Versioned-text revision candidates (`agentos_eval/revise.py`, #1283)
 
