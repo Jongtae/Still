@@ -2899,12 +2899,58 @@ def _call_target(action,detail):
  if action in BROWSER_ACTIONS and host:return effect_target(TARGET_PAGE,host,(host,))
  return None
 
+def connector_refused_rows(db, ids):
+ """``(refused, sent)`` of these Works' connector changes (#1271).
+
+ ``refused``: ``(work_id, evidence)`` of each state change Still's connector decision refused before
+ it left (``connector_permission`` ``denied`` with ``refused``: ``mutate`` or ``payment``), as #1250
+ records a code run's.  ``sent``: the ``connector_change_key`` of each connector change the worker's
+ stream showed completing under an allowed decision.  A payment waiting for the owner's
+ approval is asked, not refused, and carries no ``refused``.
+ """
+ ids=list(ids)
+ if not ids:return [],set()
+ refused,sent=[],set()
+ for row in db.execute("SELECT job_id,tool,status,detail FROM tool_events WHERE job_id IN ("+','.join('?' for _ in ids)+") "
+                       "AND tool IN ('connector_permission','connector_read') ORDER BY id",ids):
+  try:detail=json.loads(row['detail'] or '{}')
+  except (TypeError,ValueError):continue
+  if not isinstance(detail,dict):continue
+  evidence=detail.get('evidence') if isinstance(detail.get('evidence'),dict) else {}
+  if row['tool']=='connector_permission' and row['status']=='denied' and evidence.get('refused') in ('mutate','payment'):
+   refused.append((row['job_id'],evidence))
+  elif (row['tool']=='connector_read' and row['status']=='succeeded' and detail.get('effect') in ('mutate','payment')
+        and detail.get('permission_event') and isinstance(detail.get('input_digest'),str)):
+   sent.add(connector_change_key(evidence,detail['input_digest']))
+ return refused,sent
+
+def connector_change_key(evidence, digest):
+ """One connector change: its engine-scoped connection, operation and keyed input (#1271 review).
+
+ The input digest alone names only the tool and its input; the same server name may be another
+ account on another engine, so a change there never makes up for this one.
+ """
+ return (*(evidence.get(key) for key in ('engine','kind','identity','operation')),digest)
+
+def connector_change_refused(store, work_id):
+ """Whether a connector change Still refused unsent is still owed by this Work (#1271).
+
+ Made up for only by the same change (``connector_change_key``) completing in this Work, before or
+ after the refusal: a refused replay of a change already made is not short.  A refusal without an
+ identity (its input could not be read exactly) nothing can be shown to have made up for.
+ """
+ with store.db() as db:refused,sent=connector_refused_rows(db,[work_id])
+ return any(not evidence.get('input_digest') or connector_change_key(evidence,evidence['input_digest']) not in sent
+            for _work,evidence in refused)
+
 def work_state_change_short(store, work_id, steps):
  """Account for reconciled calls before the ordinary completion judgment.
 
  A not-applied receipt leaves work outstanding until a later dispatch is
  observed. The goal judgment still checks what that later dispatch achieved.
+ A connector change Still refused unsent (#1271) leaves it outstanding too.
  """
+ if connector_change_refused(store, work_id):return True
  observed, _ = external_effect_events(store, work_id)
  not_applied = [(event,row) for event,row in observed if row.get('resolution') == 'not-applied']
  latest_change = max((event for event,row in observed if row.get('resolution') != 'not-applied'), default=0)
