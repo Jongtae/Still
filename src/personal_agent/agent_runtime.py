@@ -5167,7 +5167,8 @@ class Capabilities:
      raise effect_fence_error(refusal)
     # #1274: a line in rehearsal records the change it would make instead of making it.  A browser step is
     # gated by its own declared effect in the session; a settings change is the owner's local Still state.
-    if action not in BROWSER_ACTIONS and action!='settings_change':
+    # A delegation runs its specialist read-only (its own calls meet these gates) and changes nothing itself.
+    if action not in BROWSER_ACTIONS and action!='settings_change' and action not in _state_free_actions():
      with self.store.db() as db:
       if line_rehearsal(db,self.job_id):raise not_run(rehearsal_error())
    # #606 T1: every route's attempt, Stop and deadline check happens here.  #620: a browser step
