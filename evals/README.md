@@ -186,6 +186,7 @@ PYTHONPATH=src:evals python -m agentos_eval revise record --candidates <folder> 
 - Run the current arm first, then propose with `--baseline`, run each candidate arm, and run equal retries on the
   current text. Give equal retries at least the sum of all candidate arms' `--epochs`. Use seed names or absolute paths
   in sweep arguments because the sweep runs inside a temporary copy of the committed `HEAD`.
+  Give every arm the same `--worker-model` and `--worker-effort` (#1296), or the comparator refuses per-request routing.
 - The `--baseline` must be a current arm for the same text, path and line range, with complete dev scores for
   `--measure` (default `passed`). If all dev scores are at the maximum, `no_room_on_dev` stops the proposal before it
   calls a model or writes output.
