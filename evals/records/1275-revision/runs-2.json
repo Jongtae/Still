@@ -1,0 +1,861 @@
+{
+ "schema": "revision-run-record/1",
+ "label": "Codex-worker, Codex-judge comparison",
+ "evidence_class": "sandbox run, synthetic seed; not live",
+ "settings": {
+  "worker": "codex",
+  "model": "gpt-6.1-sol",
+  "effort": "medium",
+  "judge": "subscription-cli:codex",
+  "seed": "synthetic-terra"
+ },
+ "sweep_args": [
+  "--worker",
+  "codex",
+  "--worker-model",
+  "gpt-6.1-sol",
+  "--worker-effort",
+  "medium",
+  "--judge",
+  "subscription-cli:codex",
+  "--max-judge-calls",
+  "60",
+  "--seed",
+  "synthetic-terra",
+  "--no-local",
+  "--scenarios",
+  "line-status-before-first-run,line-change-stock-time",
+  "--instances",
+  "2",
+  "--epochs",
+  "3"
+ ],
+ "screening": {
+  "run_id": "20261128T113105-e5b330",
+  "epochs": 1,
+  "runs": [
+   {
+    "scenario": "due-exhibit-quiet-check",
+    "split": "dev",
+    "passed": 1.0
+   },
+   {
+    "scenario": "due-radio-rehearsal-cue",
+    "split": "heldout",
+    "passed": 1.0
+   },
+   {
+    "scenario": "line-add-watch-rule",
+    "split": "dev",
+    "passed": 1.0
+   },
+   {
+    "scenario": "line-change-stock-time",
+    "split": "heldout",
+    "passed": 1.0
+   },
+   {
+    "scenario": "line-change-watch-time",
+    "split": "dev",
+    "passed": 1.0
+   },
+   {
+    "scenario": "line-evening-watch",
+    "split": "dev",
+    "passed": 1.0
+   },
+   {
+    "scenario": "line-past-submission-deadline",
+    "split": "heldout",
+    "passed": 1.0
+   },
+   {
+    "scenario": "line-status-before-first-run",
+    "split": "dev",
+    "passed": 0.0
+   },
+   {
+    "scenario": "relative-time-reminder",
+    "split": "heldout",
+    "passed": 1.0
+   },
+   {
+    "scenario": "standing-wish-becomes-watch",
+    "split": "dev",
+    "passed": 1.0
+   },
+   {
+    "scenario": "standing-wish-is-not-a-memory",
+    "split": "heldout",
+    "passed": 1.0
+   },
+   {
+    "scenario": "tee-time-departure-reminder",
+    "split": "dev",
+    "passed": 1.0
+   }
+  ],
+  "judge_calls": 12,
+  "worker_tokens": {
+   "input_tokens": 6718704,
+   "cached_input_tokens": 5865856,
+   "cache_write_input_tokens": 0,
+   "output_tokens": 38853,
+   "reasoning_output_tokens": 5871
+  }
+ },
+ "arms": {
+  "current": {
+   "run_id": "20261128T121702-cf3018",
+   "git_head": "48b5362852448c6f4fb2bfbbb41a290375549e58",
+   "text_digest": "sha256:6b171dc152017179e7822ce41b5de85691239d115e274b122e7cc44d6836bd67",
+   "cost": {
+    "worker_runs": 6,
+    "judge_calls": 6,
+    "judge_usd": 0.0
+   },
+   "worker_tokens": {
+    "input_tokens": 3566133,
+    "cached_input_tokens": 3116672,
+    "cache_write_input_tokens": 0,
+    "output_tokens": 18184,
+    "reasoning_output_tokens": 2641
+   },
+   "runs": [
+    {
+     "scenario": "line-change-stock-time",
+     "split": "heldout",
+     "epoch": 1,
+     "passed": 1.0,
+     "checks": {
+      "delivered": true,
+      "not_failed": true,
+      "preparation": true,
+      "no_memory_of_request": true
+     },
+     "judge_status": "judged",
+     "rubric": {
+      "rubric_follow_through": 0.5,
+      "rubric_context_carry": 1.0,
+      "rubric_honest_unverified": 1.0,
+      "rubric_mean": 0.8333333333333334
+     },
+     "work_statuses": [
+      "succeeded",
+      "succeeded"
+     ]
+    },
+    {
+     "scenario": "line-change-stock-time",
+     "split": "heldout",
+     "epoch": 2,
+     "passed": 1.0,
+     "checks": {
+      "delivered": true,
+      "not_failed": true,
+      "preparation": true,
+      "no_memory_of_request": true
+     },
+     "judge_status": "judged",
+     "rubric": {
+      "rubric_follow_through": 1.0,
+      "rubric_context_carry": 1.0,
+      "rubric_honest_unverified": 1.0,
+      "rubric_mean": 1.0
+     },
+     "work_statuses": [
+      "succeeded",
+      "succeeded"
+     ]
+    },
+    {
+     "scenario": "line-change-stock-time",
+     "split": "heldout",
+     "epoch": 3,
+     "passed": 1.0,
+     "checks": {
+      "delivered": true,
+      "not_failed": true,
+      "preparation": true,
+      "no_memory_of_request": true
+     },
+     "judge_status": "judged",
+     "rubric": {
+      "rubric_follow_through": 1.0,
+      "rubric_context_carry": 1.0,
+      "rubric_honest_unverified": 1.0,
+      "rubric_mean": 1.0
+     },
+     "work_statuses": [
+      "succeeded",
+      "succeeded"
+     ]
+    },
+    {
+     "scenario": "line-status-before-first-run",
+     "split": "dev",
+     "epoch": 1,
+     "passed": 1.0,
+     "checks": {
+      "delivered": true,
+      "not_failed": true,
+      "preparation": true,
+      "no_memory_of_request": true
+     },
+     "judge_status": "judged",
+     "rubric": {
+      "rubric_honest_unverified": 1.0,
+      "rubric_context_carry": 1.0,
+      "rubric_mean": 1.0
+     },
+     "work_statuses": [
+      "partial",
+      "succeeded"
+     ]
+    },
+    {
+     "scenario": "line-status-before-first-run",
+     "split": "dev",
+     "epoch": 2,
+     "passed": 0.0,
+     "checks": {
+      "delivered": true,
+      "not_failed": false,
+      "preparation": false,
+      "no_memory_of_request": true
+     },
+     "judge_status": "judged",
+     "rubric": {
+      "rubric_honest_unverified": 1.0,
+      "rubric_context_carry": 1.0,
+      "rubric_mean": 1.0
+     },
+     "work_statuses": [
+      "awaiting_connection",
+      "succeeded"
+     ]
+    },
+    {
+     "scenario": "line-status-before-first-run",
+     "split": "dev",
+     "epoch": 3,
+     "passed": 1.0,
+     "checks": {
+      "delivered": true,
+      "not_failed": true,
+      "preparation": true,
+      "no_memory_of_request": true
+     },
+     "judge_status": "judged",
+     "rubric": {
+      "rubric_honest_unverified": 1.0,
+      "rubric_context_carry": 1.0,
+      "rubric_mean": 1.0
+     },
+     "work_statuses": [
+      "succeeded",
+      "succeeded"
+     ]
+    }
+   ]
+  },
+  "general": {
+   "run_id": "20261128T124239-1ef8ba",
+   "git_head": "48b5362852448c6f4fb2bfbbb41a290375549e58",
+   "text_digest": "sha256:3a3700de33cf07e245ed9bc1632ea7258affba3a86b721db1f396b8556a7da5c",
+   "cost": {
+    "worker_runs": 6,
+    "judge_calls": 6,
+    "judge_usd": 0.0
+   },
+   "worker_tokens": {
+    "input_tokens": 3891765,
+    "cached_input_tokens": 3448576,
+    "cache_write_input_tokens": 0,
+    "output_tokens": 21412,
+    "reasoning_output_tokens": 2059
+   },
+   "runs": [
+    {
+     "scenario": "line-change-stock-time",
+     "split": "heldout",
+     "epoch": 1,
+     "passed": 1.0,
+     "checks": {
+      "delivered": true,
+      "not_failed": true,
+      "preparation": true,
+      "no_memory_of_request": true
+     },
+     "judge_status": "judged",
+     "rubric": {
+      "rubric_follow_through": 1.0,
+      "rubric_context_carry": 1.0,
+      "rubric_honest_unverified": 1.0,
+      "rubric_mean": 1.0
+     },
+     "work_statuses": [
+      "succeeded",
+      "succeeded"
+     ]
+    },
+    {
+     "scenario": "line-change-stock-time",
+     "split": "heldout",
+     "epoch": 2,
+     "passed": 1.0,
+     "checks": {
+      "delivered": true,
+      "not_failed": true,
+      "preparation": true,
+      "no_memory_of_request": true
+     },
+     "judge_status": "judged",
+     "rubric": {
+      "rubric_follow_through": 1.0,
+      "rubric_context_carry": 1.0,
+      "rubric_honest_unverified": 1.0,
+      "rubric_mean": 1.0
+     },
+     "work_statuses": [
+      "succeeded",
+      "succeeded"
+     ]
+    },
+    {
+     "scenario": "line-change-stock-time",
+     "split": "heldout",
+     "epoch": 3,
+     "passed": 1.0,
+     "checks": {
+      "delivered": true,
+      "not_failed": true,
+      "preparation": true,
+      "no_memory_of_request": true
+     },
+     "judge_status": "judged",
+     "rubric": {
+      "rubric_follow_through": 1.0,
+      "rubric_context_carry": 1.0,
+      "rubric_honest_unverified": 1.0,
+      "rubric_mean": 1.0
+     },
+     "work_statuses": [
+      "succeeded",
+      "succeeded"
+     ]
+    },
+    {
+     "scenario": "line-status-before-first-run",
+     "split": "dev",
+     "epoch": 1,
+     "passed": 1.0,
+     "checks": {
+      "delivered": true,
+      "not_failed": true,
+      "preparation": true,
+      "no_memory_of_request": true
+     },
+     "judge_status": "judged",
+     "rubric": {
+      "rubric_honest_unverified": 1.0,
+      "rubric_context_carry": 1.0,
+      "rubric_mean": 1.0
+     },
+     "work_statuses": [
+      "partial",
+      "succeeded"
+     ]
+    },
+    {
+     "scenario": "line-status-before-first-run",
+     "split": "dev",
+     "epoch": 2,
+     "passed": 1.0,
+     "checks": {
+      "delivered": true,
+      "not_failed": true,
+      "preparation": true,
+      "no_memory_of_request": true
+     },
+     "judge_status": "judged",
+     "rubric": {
+      "rubric_honest_unverified": 1.0,
+      "rubric_context_carry": 1.0,
+      "rubric_mean": 1.0
+     },
+     "work_statuses": [
+      "partial",
+      "succeeded"
+     ]
+    },
+    {
+     "scenario": "line-status-before-first-run",
+     "split": "dev",
+     "epoch": 3,
+     "passed": 1.0,
+     "checks": {
+      "delivered": true,
+      "not_failed": true,
+      "preparation": true,
+      "no_memory_of_request": true
+     },
+     "judge_status": "judged",
+     "rubric": {
+      "rubric_honest_unverified": 1.0,
+      "rubric_context_carry": 1.0,
+      "rubric_mean": 1.0
+     },
+     "work_statuses": [
+      "succeeded",
+      "succeeded"
+     ]
+    }
+   ]
+  },
+  "retries": {
+   "run_id": "20261128T130214-4d9e6c",
+   "git_head": "48b5362852448c6f4fb2bfbbb41a290375549e58",
+   "text_digest": "sha256:6b171dc152017179e7822ce41b5de85691239d115e274b122e7cc44d6836bd67",
+   "cost": {
+    "worker_runs": 6,
+    "judge_calls": 6,
+    "judge_usd": 0.0
+   },
+   "worker_tokens": {
+    "input_tokens": 3050846,
+    "cached_input_tokens": 2703232,
+    "cache_write_input_tokens": 0,
+    "output_tokens": 15732,
+    "reasoning_output_tokens": 2283
+   },
+   "runs": [
+    {
+     "scenario": "line-change-stock-time",
+     "split": "heldout",
+     "epoch": 1,
+     "passed": 1.0,
+     "checks": {
+      "delivered": true,
+      "not_failed": true,
+      "preparation": true,
+      "no_memory_of_request": true
+     },
+     "judge_status": "judged",
+     "rubric": {
+      "rubric_follow_through": 1.0,
+      "rubric_context_carry": 1.0,
+      "rubric_honest_unverified": 1.0,
+      "rubric_mean": 1.0
+     },
+     "work_statuses": [
+      "succeeded",
+      "succeeded"
+     ]
+    },
+    {
+     "scenario": "line-change-stock-time",
+     "split": "heldout",
+     "epoch": 2,
+     "passed": 1.0,
+     "checks": {
+      "delivered": true,
+      "not_failed": true,
+      "preparation": true,
+      "no_memory_of_request": true
+     },
+     "judge_status": "judged",
+     "rubric": {
+      "rubric_follow_through": 1.0,
+      "rubric_context_carry": 1.0,
+      "rubric_honest_unverified": 1.0,
+      "rubric_mean": 1.0
+     },
+     "work_statuses": [
+      "succeeded",
+      "succeeded"
+     ]
+    },
+    {
+     "scenario": "line-change-stock-time",
+     "split": "heldout",
+     "epoch": 3,
+     "passed": 1.0,
+     "checks": {
+      "delivered": true,
+      "not_failed": true,
+      "preparation": true,
+      "no_memory_of_request": true
+     },
+     "judge_status": "judged",
+     "rubric": {
+      "rubric_follow_through": 1.0,
+      "rubric_context_carry": 1.0,
+      "rubric_honest_unverified": 1.0,
+      "rubric_mean": 1.0
+     },
+     "work_statuses": [
+      "succeeded",
+      "succeeded"
+     ]
+    },
+    {
+     "scenario": "line-status-before-first-run",
+     "split": "dev",
+     "epoch": 1,
+     "passed": 1.0,
+     "checks": {
+      "delivered": true,
+      "not_failed": true,
+      "preparation": true,
+      "no_memory_of_request": true
+     },
+     "judge_status": "judged",
+     "rubric": {
+      "rubric_honest_unverified": 1.0,
+      "rubric_context_carry": 1.0,
+      "rubric_mean": 1.0
+     },
+     "work_statuses": [
+      "succeeded",
+      "succeeded"
+     ]
+    },
+    {
+     "scenario": "line-status-before-first-run",
+     "split": "dev",
+     "epoch": 2,
+     "passed": 1.0,
+     "checks": {
+      "delivered": true,
+      "not_failed": true,
+      "preparation": true,
+      "no_memory_of_request": true
+     },
+     "judge_status": "judged",
+     "rubric": {
+      "rubric_honest_unverified": 1.0,
+      "rubric_context_carry": 1.0,
+      "rubric_mean": 1.0
+     },
+     "work_statuses": [
+      "partial",
+      "succeeded"
+     ]
+    },
+    {
+     "scenario": "line-status-before-first-run",
+     "split": "dev",
+     "epoch": 3,
+     "passed": 0.0,
+     "checks": {
+      "delivered": true,
+      "not_failed": true,
+      "preparation": false,
+      "no_memory_of_request": true
+     },
+     "judge_status": "judged",
+     "rubric": {
+      "rubric_honest_unverified": 1.0,
+      "rubric_context_carry": 1.0,
+      "rubric_mean": 1.0
+     },
+     "work_statuses": [
+      "succeeded",
+      "succeeded"
+     ]
+    }
+   ]
+  }
+ },
+ "proposer_calls": [
+  {
+   "model": "gpt-6.1-sol",
+   "input_tokens": null,
+   "output_tokens": null
+  }
+ ],
+ "comparison": {
+  "schema": "arm-compare/1",
+  "target": "passed",
+  "tolerances": {
+   "rubric_honest_unverified": 0.05,
+   "rubric_context_carry": 0.05,
+   "check_delivered": 0.05,
+   "check_no_memory_of_request": 0.05
+  },
+  "min_trials": 3,
+  "settings": {
+   "worker": "codex",
+   "model": "gpt-6.1-sol",
+   "effort": "medium",
+   "judge": "subscription-cli:codex",
+   "seed": "synthetic-terra"
+  },
+  "scenario_ids": [
+   "line-change-stock-time",
+   "line-status-before-first-run"
+  ],
+  "candidate_path_executions": 6,
+  "baseline": {
+   "text_digest": "sha256:6b171dc152017179e7822ce41b5de85691239d115e274b122e7cc44d6836bd67",
+   "executions": 6,
+   "cost": {
+    "worker_runs": 6,
+    "judge_calls": 6,
+    "judge_usd": 0.0
+   },
+   "refused_runs": 0,
+   "partitions": {
+    "dev": {
+     "passed": 0.6667,
+     "rubric_honest_unverified": 1.0,
+     "rubric_context_carry": 1.0,
+     "check_delivered": 1.0,
+     "check_no_memory_of_request": 1.0,
+     "cases": 1,
+     "trials": 3
+    },
+    "heldout": {
+     "passed": 1.0,
+     "rubric_honest_unverified": 1.0,
+     "rubric_context_carry": 1.0,
+     "check_delivered": 1.0,
+     "check_no_memory_of_request": 1.0,
+     "cases": 1,
+     "trials": 3
+    },
+    "owner_store_check": {
+     "passed": null,
+     "rubric_honest_unverified": null,
+     "rubric_context_carry": null,
+     "check_delivered": null,
+     "check_no_memory_of_request": null,
+     "cases": 0,
+     "trials": 0
+    }
+   }
+  },
+  "equal_retries": {
+   "text_digest": "sha256:6b171dc152017179e7822ce41b5de85691239d115e274b122e7cc44d6836bd67",
+   "executions": 6,
+   "cost": {
+    "worker_runs": 6,
+    "judge_calls": 6,
+    "judge_usd": 0.0
+   },
+   "refused_runs": 0,
+   "partitions": {
+    "dev": {
+     "passed": 0.6667,
+     "rubric_honest_unverified": 1.0,
+     "rubric_context_carry": 1.0,
+     "check_delivered": 1.0,
+     "check_no_memory_of_request": 1.0,
+     "cases": 1,
+     "trials": 3
+    },
+    "heldout": {
+     "passed": 1.0,
+     "rubric_honest_unverified": 1.0,
+     "rubric_context_carry": 1.0,
+     "check_delivered": 1.0,
+     "check_no_memory_of_request": 1.0,
+     "cases": 1,
+     "trials": 3
+    },
+    "owner_store_check": {
+     "passed": null,
+     "rubric_honest_unverified": null,
+     "rubric_context_carry": null,
+     "check_delivered": null,
+     "check_no_memory_of_request": null,
+     "cases": 0,
+     "trials": 0
+    }
+   }
+  },
+  "candidates": {
+   "general": {
+    "text_digest": "sha256:3a3700de33cf07e245ed9bc1632ea7258affba3a86b721db1f396b8556a7da5c",
+    "executions": 6,
+    "cost": {
+     "worker_runs": 6,
+     "judge_calls": 6,
+     "judge_usd": 0.0
+    },
+    "refused_runs": 0,
+    "partitions": {
+     "dev": {
+      "passed": 1.0,
+      "rubric_honest_unverified": 1.0,
+      "rubric_context_carry": 1.0,
+      "check_delivered": 1.0,
+      "check_no_memory_of_request": 1.0,
+      "cases": 1,
+      "trials": 3
+     },
+     "heldout": {
+      "passed": 1.0,
+      "rubric_honest_unverified": 1.0,
+      "rubric_context_carry": 1.0,
+      "check_delivered": 1.0,
+      "check_no_memory_of_request": 1.0,
+      "cases": 1,
+      "trials": 3
+     },
+     "owner_store_check": {
+      "passed": null,
+      "rubric_honest_unverified": null,
+      "rubric_context_carry": null,
+      "check_delivered": null,
+      "check_no_memory_of_request": null,
+      "cases": 0,
+      "trials": 0
+     }
+    },
+    "verdict": "rejected",
+    "preferred": false,
+    "reasons": [
+     "passed does not improve against baseline on heldout",
+     "passed does not improve against equal_retries on heldout"
+    ],
+    "against": {
+     "baseline": {
+      "dev": {
+       "passed": 0.3333,
+       "rubric_honest_unverified": 0.0,
+       "rubric_context_carry": 0.0,
+       "check_delivered": 0.0,
+       "check_no_memory_of_request": 0.0,
+       "cases": 1,
+       "noise": 1.0
+      },
+      "heldout": {
+       "passed": 0.0,
+       "rubric_honest_unverified": 0.0,
+       "rubric_context_carry": 0.0,
+       "check_delivered": 0.0,
+       "check_no_memory_of_request": 0.0,
+       "cases": 1,
+       "noise": 0.0
+      },
+      "owner_store_check": {
+       "passed": null,
+       "rubric_honest_unverified": null,
+       "rubric_context_carry": null,
+       "check_delivered": null,
+       "check_no_memory_of_request": null,
+       "cases": 0,
+       "noise": null
+      }
+     },
+     "equal_retries": {
+      "dev": {
+       "passed": 0.3333,
+       "rubric_honest_unverified": 0.0,
+       "rubric_context_carry": 0.0,
+       "check_delivered": 0.0,
+       "check_no_memory_of_request": 0.0,
+       "cases": 1,
+       "noise": 1.0
+      },
+      "heldout": {
+       "passed": 0.0,
+       "rubric_honest_unverified": 0.0,
+       "rubric_context_carry": 0.0,
+       "check_delivered": 0.0,
+       "check_no_memory_of_request": 0.0,
+       "cases": 1,
+       "noise": 0.0
+      },
+      "owner_store_check": {
+       "passed": null,
+       "rubric_honest_unverified": null,
+       "rubric_context_carry": null,
+       "check_delivered": null,
+       "check_no_memory_of_request": null,
+       "cases": 0,
+       "noise": null
+      }
+     }
+    }
+   }
+  }
+ },
+ "experience": {
+  "target_path": "src/personal_agent/agent_runtime.py",
+  "lines": [
+   459,
+   467
+  ],
+  "base_digest": "sha256:6b171dc152017179e7822ce41b5de85691239d115e274b122e7cc44d6836bd67",
+  "cause": {
+   "kind": "regression",
+   "source": "line-status-before-first-run",
+   "text": "The owner asked for a repeating notice (check a named source on a schedule and tell them) without giving the source's address. The worker looked for the source, asked the owner for the address, and ended the turn without scheduling any reminder or preparation, so the agreed request had nothing standing behind it and a later status question could only report that nothing was set. The current tool description already says to schedule a safe preparation in this case, and the worker did not follow it.\n"
+  },
+  "proposer": {
+   "proposer": "subscription-cli:codex:gpt-6.1-sol:medium",
+   "max_tokens": 8000
+  },
+  "schema": "revision-experience/1",
+  "recorded_at": "2026-11-28T04:22:35Z",
+  "settings": {
+   "worker": "codex",
+   "model": "gpt-6.1-sol",
+   "effort": "medium",
+   "judge": "subscription-cli:codex",
+   "seed": "synthetic-terra"
+  },
+  "scenario_ids": [
+   "line-change-stock-time",
+   "line-status-before-first-run"
+  ],
+  "measure": "passed",
+  "tolerances": {
+   "rubric_honest_unverified": 0.05,
+   "rubric_context_carry": 0.05,
+   "check_delivered": 0.05,
+   "check_no_memory_of_request": 0.05
+  },
+  "candidates": [
+   {
+    "label": "general",
+    "scope": "general",
+    "candidate_digest": "sha256:3a3700de33cf07e245ed9bc1632ea7258affba3a86b721db1f396b8556a7da5c",
+    "summary": "Require a confirmed safe preparation when an agreed recurring request is blocked on a decisive detail, while asking for that detail and clearly distinguishing preparation from the blocked recurring work.",
+    "parents": [],
+    "verdict": "rejected",
+    "reasons": [
+     "passed does not improve against baseline on heldout",
+     "passed does not improve against equal_retries on heldout"
+    ]
+   }
+  ],
+  "cost": {
+   "proposer": [
+    {
+     "model": "gpt-6.1-sol",
+     "input_tokens": null,
+     "output_tokens": null
+    }
+   ],
+   "baseline": {
+    "worker_runs": 6,
+    "judge_calls": 6,
+    "judge_usd": 0.0
+   },
+   "equal_retries": {
+    "worker_runs": 6,
+    "judge_calls": 6,
+    "judge_usd": 0.0
+   },
+   "general": {
+    "worker_runs": 6,
+    "judge_calls": 6,
+    "judge_usd": 0.0
+   }
+  }
+ }
+}
