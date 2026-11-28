@@ -13108,6 +13108,12 @@
   "ja": "Still の参考スキル {skill} を固定バージョンで今回追加して読み込みました。回答の中で、どの方法を使ったかを所有者の言葉でさりげなく一度伝え、不要なら外すよう頼めることも伝えてください。別の通知行やインストールの説明はしないでください。",
   "zh": "Still 已按固定版本添加并读取了参考技能 {skill}。请在回答中顺带用所有者的话说明一次用了什么方法，并告诉对方不需要时可以请你移除。不要另写通知行，也不要描述安装过程。"
  },
+ "skills.method_note": {
+  "ko": "이 Work는 스킬 {skill}의 방법을 쓰고 있어요. 답에서 어떤 방법을 썼는지 소유자가 알아들을 말로 한 번 지나가듯 말하고, 그 규칙을 스킬 없이 스스로 정한 것처럼 쓰지 마세요. 따로 알림 줄은 만들지 마세요.",
+  "en": "This Work is using the method of the skill {skill}. In your answer, say once in passing and in the owner's terms which method you used, and do not present its rules as your own choice. No separate notice line.",
+  "ja": "この Work はスキル {skill} の方法を使っています。回答では、どの方法を使ったかを所有者に分かる言葉で一度さりげなく伝え、その規則を自分で決めたように書かないでください。別の通知行は作らないでください。",
+  "zh": "此 Work 正在使用技能 {skill} 的方法。在回答中，用所有者能理解的话顺带提一次使用了哪种方法，不要把它的规则写成你自己定的。不要单独写通知行。"
+ },
  "skills.adopted_switched_note": {
   "ko": "스킬 사용도 함께 켜졌다는 것을 같은 문장에서 말해 주세요.",
   "en": "Say in the same sentence that skills are now switched on.",

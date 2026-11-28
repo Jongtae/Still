@@ -564,6 +564,9 @@ class PublicPageReader:
                 raise ValueError('HTML 또는 텍스트 공개 페이지만 읽을 수 있습니다.')
             encoding=(response.headers.get('Content-Encoding','') if hasattr(response,'headers') else '').lower()
             raw=bytearray()
+            # #1313 follow-up: a page larger than the read budget is read up to it and marked cut,
+            # like the visible text below (``content_truncated``), instead of failing the whole read.
+            raw_cut=False
             try:
                 while True:
                     self._set_response_deadline(response,deadline)
@@ -571,7 +574,8 @@ class PublicPageReader:
                         chunk=response.read(min(64*1024, MAX_PAGE_BYTES-len(raw)+1))
                     if not chunk: break
                     raw.extend(chunk)
-                    if len(raw)>MAX_PAGE_BYTES: raise ValueError('공개 페이지 응답 크기 제한을 초과했습니다.')
+                    if len(raw)>MAX_PAGE_BYTES:
+                        del raw[MAX_PAGE_BYTES:]; raw_cut=True; break
             except http.client.HTTPException as exc:
                 raise ProviderError('공개 페이지 응답을 해석하지 못했습니다.') from exc
             if encoding == 'gzip':
@@ -582,7 +586,7 @@ class PublicPageReader:
                         if len(expanded)>MAX_PAGE_DECOMPRESSED_BYTES: raise ValueError('압축 해제 후 공개 페이지 크기 제한을 초과했습니다.')
                     expanded.extend(decompressor.flush(MAX_PAGE_DECOMPRESSED_BYTES-len(expanded)+1))
                     if len(expanded)>MAX_PAGE_DECOMPRESSED_BYTES: raise ValueError('압축 해제 후 공개 페이지 크기 제한을 초과했습니다.')
-                    if not decompressor.eof or decompressor.unused_data or decompressor.unconsumed_tail:
+                    if not raw_cut and (not decompressor.eof or decompressor.unused_data or decompressor.unconsumed_tail):
                         raise ValueError('압축된 공개 페이지를 완전히 해석하지 못했습니다.')
                     data=bytes(expanded)
                 except ValueError: raise
@@ -592,9 +596,13 @@ class PublicPageReader:
                 content_type,
                 data if media_type in ('text/html','application/xhtml+xml') else b'',
             )
-            try: text=data.decode(charset,'strict')
-            except UnicodeDecodeError:
-                raise ValueError('공개 페이지 문자 인코딩과 응답 내용이 일치하지 않습니다.') from None
+            text=None
+            # A cut page may end inside one multi-byte character; only that tail is dropped.
+            for tail in range(4 if raw_cut else 1):
+                try: text=(data[:len(data)-tail] if tail else data).decode(charset,'strict'); break
+                except UnicodeDecodeError: continue
+            if text is None:
+                raise ValueError('공개 페이지 문자 인코딩과 응답 내용이 일치하지 않습니다.')
             # Every accepted markup type must be parsed into visible text.
             # Classifying raw source as evidence would let a comment or a
             # script body become an observed fact the page never displays.
@@ -603,6 +611,7 @@ class PublicPageReader:
             else:
                 page_text=text
             clean,truncated=_bounded_complete_text(page_text)
+            truncated=truncated or raw_cut
             validators_received = ({'etag':response.headers.get('ETag'),
                                     'last_modified':response.headers.get('Last-Modified')} if status == 200 else {})
             return {'tool':'public_page_read','url':current,'retrieved_at':time.time(),'content':clean,

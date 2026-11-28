@@ -998,6 +998,10 @@ class SkillBinding:
             # #1291 (C5/#955 pattern): told in passing in the answer, undone exactly by the owner's word.
             note = ' '.join([msg('skills.adopted_note', skill=entry['name']),
                              *([msg('skills.adopted_switched_note')] if adopted['skills_switched_on'] else []), note])
+        elif not str(entry.get('skill', '')).startswith('agentos/'):
+            # #1313: every load of an added skill, not only the one that added it, carries the
+            # tell-in-passing line, so a later Work, or a long one that reloads it, still names the method.
+            note = ' '.join([msg('skills.method_note', skill=entry['name']), note])
         return {**self.identity(entry), **(adopted or {}), 'instructions': body.strip()[:MAX_BODY_BYTES],
                 'resources': [path for path in files if path != 'SKILL.md' and Path(path).suffix.lower() in TEXT_SUFFIXES][:40],
                 'note': note}
