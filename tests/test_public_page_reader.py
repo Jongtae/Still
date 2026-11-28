@@ -692,3 +692,12 @@ class PublicPdfTests(unittest.TestCase):
         opener=Opener(Response(b'%PDF-1.4 not really', headers={'Content-Type':'application/pdf'}))
         with self.assertRaisesRegex(ValueError, 'PDF'):
             PublicPageReader(opener=opener,resolver=public_dns).read('https://example.com/bad.pdf')
+
+    def test_a_pdf_cut_by_the_extractor_is_marked_truncated_even_when_it_then_fits(self):
+        from personal_agent import document_reader
+        whitespace_heavy=[{'location':'page 1','text':'Fee 0.015%. '+' '*(document_reader.MAX_EXTRACTED_CHARS)}]
+        with patch.object(document_reader, '_pdf', return_value=document_reader.Document('pdf', whitespace_heavy)):
+            opener=Opener(Response(b'%PDF-1.4', headers={'Content-Type':'application/pdf'}))
+            result=PublicPageReader(opener=opener,resolver=public_dns).read('https://example.com/long.pdf')
+        self.assertTrue(result['content_truncated'])
+        self.assertLess(len(result['content']), 24000)

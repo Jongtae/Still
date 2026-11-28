@@ -608,9 +608,12 @@ class PublicPageReader:
                 except (OSError, zlib.error): raise ValueError('압축된 공개 페이지를 해석하지 못했습니다.') from None
             else: data=bytes(raw)
             if is_pdf:
-                from .document_reader import _pdf
-                page_text=_pdf(io.BytesIO(data)).text
-                clean,truncated=_bounded_complete_text(page_text)
+                from . import document_reader
+                document=document_reader._pdf(io.BytesIO(data))
+                # Codex review on #1334: the extractor stops at its own character cap; that cut is a cut
+                # even when the collapsed text then fits the page bound.
+                extraction_cut=sum(len(segment['text']) for segment in document.segments)>=document_reader.MAX_EXTRACTED_CHARS
+                clean,truncated=_bounded_complete_text(document.text, cut=extraction_cut)
                 return {'tool':'public_page_read','url':current,'retrieved_at':time.time(),'content':clean,
                         'content_truncated':truncated,'content_type':PDF_MEDIA_TYPE,
                         'content_bytes':len(data),'scope':PAGE_READ_SCOPE,'sources':[current]}
