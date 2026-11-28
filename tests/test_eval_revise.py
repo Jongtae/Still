@@ -307,9 +307,16 @@ def test_cli_propose_then_record_without_touching_the_repository(tmp_path, monke
     cause = tmp_path / 'cause.txt'
     cause.write_text(CAUSE['text'])
     out = tmp_path / 'cands'
+    from agentos_eval import scenarios
+    dev = next(s['id'] for s in scenarios.load(include_local=False) if s['split'] == 'dev')
+    arm = tmp_path / 'baseline.json'  # #1298: propose needs a current-text arm with room on dev
+    arm.write_text(json.dumps({'schema': 'revision-arm/1', 'role': 'current',
+                               'text_digest': revise.load_target(SKILL, (1, 5))['digest'], 'target_path': SKILL,
+                               'lines': [1, 5], 'records': [{'scenario': dev, 'epoch': 1, 'refused_effects': 0,
+                                                             'value': {'passed': 0.0}}]}))
     assert cli.main(['revise', 'propose', '--target', SKILL, '--lines', '1-5', '--cause-kind', 'blocker',
                      '--cause-source', 'work-1', '--cause-file', str(cause), '--proposer', 'fake/model',
-                     '--out', str(out)]) == 0
+                     '--baseline', str(arm), '--out', str(out)]) == 0
     assert seen['spec'] == 'fake/model' and len(calls) == 1
     assert skill.read_bytes() == before
     meta = json.loads((out / 'general.json').read_text())

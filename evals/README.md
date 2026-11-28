@@ -166,16 +166,38 @@ The adopt-or-not gate for a revision of versioned method text (a bundled skill, 
 
 ## Versioned-text revision candidates (`agentos_eval/revise.py`, #1283)
 
-Propose and compose for the #1275 loop (adapted from Harness², arXiv 2610.14224). It writes candidate revisions of one versioned text and records one experience entry per comparison. It never edits repository text: adopting a candidate is a reviewed PR.
+Run and compare revisions of one versioned text for the #1275 loop. Proposal and composition follow Harness²
+(arXiv 2610.14224). Adopting a candidate takes a reviewed PR.
 
 ```
-PYTHONPATH=src:evals python -m agentos_eval revise propose --target <repo path under src/> [--lines A-B] \
+PYTHONPATH=src:evals python -m agentos_eval revise arm --current --target <src file> [--lines A-B] \
+    [--out <file>] -- <sweep args>
+PYTHONPATH=src:evals python -m agentos_eval revise propose --target <src file> [--lines A-B] \
+    --baseline <current arm> \
     --cause-kind blocker|regression --cause-source <Work id or scenario id> --cause-file <text file> \
     --proposer <provider/model | subscription-cli:codex[:<model>[:<effort>]]> [--seed <seed>] [--compose] \
-    [--out <folder>] [--experience <folder>] [--prior 8]
+    [--measure passed] [--out <folder>] [--experience <folder>] [--prior 8]
+PYTHONPATH=src:evals python -m agentos_eval revise arm --candidate <label.txt> [--out <file>] -- <sweep args>
+PYTHONPATH=src:evals python -m agentos_eval revise arm --current --target <src file> [--lines A-B] \
+    --equal-retries [--out <file>] -- --epochs <total candidate epochs> <other sweep args>
 PYTHONPATH=src:evals python -m agentos_eval revise record --candidates <folder> --comparison <compare.json> [--experience <folder>]
 ```
 
+- Run the current arm first, then propose with `--baseline`, run each candidate arm, and run equal retries on the
+  current text. Give equal retries at least the sum of all candidate arms' `--epochs`. Use seed names or absolute paths
+  in sweep arguments because the sweep runs inside a temporary copy of the committed `HEAD`.
+  Give every arm the same `--worker-model` and `--worker-effort` (#1296), or the comparator refuses per-request routing.
+- The `--baseline` must be a current arm for the same text, path and line range, with complete dev scores for
+  `--measure` (default `passed`). If all dev scores are at the maximum, `no_room_on_dev` stops the proposal before it
+  calls a model or writes output.
+- A `revision-arm/1` record stores the role and label, target path and lines, base and run text digests, observed
+  settings, scenario IDs, unchanged run records, cost, sweep run ID, full commit SHA and sweep arguments. The default
+  location is `$AGENTOS_EVAL_HOME/revisions/<target slug>/arms/`.
+- After the sweep exits, the runner moves its JSON and Markdown reports to `$AGENTOS_EVAL_HOME/arm-reports/` to keep
+  ordinary sweep trend baselines independent of revision arms.
+- The runner refuses world sweeps, `--worker both`, output inside the repository, targets outside `src/`, mismatched
+  candidate or base digests, and replacements that would join the next line. A stopped sweep, an exit other than 0 or 1,
+  or a sweep with no records produces no arm record.
 - **Target**: one file under `src/` (a bundled skill, a module holding tool guidance or a prompt section), optionally a 1-based inclusive line range. Its digest is `arm_compare.text_digest` of exactly that text. Files under `evals/` or `tests/` (scenarios, judges, rubrics, the adoption rule, tolerances) are never a target.
 - **Cause**: a kind (`blocker`: the stored, already redacted text `agentos_eval blockers` printed; `regression`: a developer-written failure statement), a source id and the text. Only the text reaches the proposer; a cause that contains a scenario id (rubric or any world) is refused.
 - **Proposer input** is exactly `{target_path, lines, base_digest, text, cause, prior}`. `prior` is the earlier experience for the same target path, newest entry first, at most `--prior` entries, each candidate projected to `{candidate_digest, scope, summary, cause, verdict, adopted}`. `adopted` is true when that candidate's digest is the current text's digest. Scenario ids, settings, verdict reasons, measures and tolerances are left out.
