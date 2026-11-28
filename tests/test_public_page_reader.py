@@ -620,3 +620,12 @@ class OversizedPageTests(unittest.TestCase):
         result=PublicPageReader(opener=Opener(response),resolver=public_dns).read('https://example.com/big.gz')
         self.assertTrue(result['content_truncated'])
         self.assertTrue(result['content'].startswith('Fresh data.'))
+
+    def test_a_value_cut_at_the_byte_budget_is_never_shown_as_a_partial_number(self):
+        # Codex review on #1320: a cut through "1000000" must not surface as "Total USD 1".
+        from personal_agent.local_tools import MAX_PAGE_BYTES
+        head=b'<!--'+b'x'*(MAX_PAGE_BYTES-len(b'<!--')-len(b'--><p>Total USD ')-1)+b'--><p>Total USD '
+        body=head+b'1000000.</p>'
+        result=PublicPageReader(opener=Opener(Response(body)),resolver=public_dns).read('https://example.com/cut')
+        self.assertTrue(result['content_truncated'])
+        self.assertNotIn('USD 1', result['content'])

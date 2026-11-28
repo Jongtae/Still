@@ -119,9 +119,11 @@ def _explicit_port(parsed):
     return port
 
 
-def _bounded_complete_text(value, limit=MAX_PAGE_CONTENT_CHARACTERS):
+def _bounded_complete_text(value, limit=MAX_PAGE_CONTENT_CHARACTERS, cut=False):
+    """``cut``: the page bytes themselves ended at the read budget (#1319), so the text's
+    end is a cut too and gets the same complete-sentence/complete-token boundary."""
     clean=re.sub(r'\s+',' ',value).strip()
-    if len(clean) <= limit: return clean,False
+    if len(clean) <= limit and not cut: return clean,False
     prefix=clean[:limit]
     boundaries=[match.end() for match in re.finditer(r'(?:[.!?](?=\s|$)|[。！？])',prefix)]
     if boundaries:
@@ -610,8 +612,7 @@ class PublicPageReader:
                 parser=_PageText(); parser.feed(text); page_text=' '.join(parser.parts)
             else:
                 page_text=text
-            clean,truncated=_bounded_complete_text(page_text)
-            truncated=truncated or raw_cut
+            clean,truncated=_bounded_complete_text(page_text, cut=raw_cut)
             validators_received = ({'etag':response.headers.get('ETag'),
                                     'last_modified':response.headers.get('Last-Modified')} if status == 200 else {})
             return {'tool':'public_page_read','url':current,'retrieved_at':time.time(),'content':clean,
