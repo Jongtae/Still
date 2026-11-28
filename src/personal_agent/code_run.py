@@ -627,6 +627,9 @@ class CodeRunner:
             if not isinstance(kept, dict):
                 raise CodeRunError('이 작업에는 승인을 요청한 코드 실행이 없어요. 코드를 직접 주세요.', 'code_run_argument_invalid')
             args = dict(kept)
+        if isinstance(args, dict) and isinstance(args.get('download_artifact'), str) and not args['download_artifact'].strip():
+            # #1324: an optional field sent blank, as tool callers commonly do, names no download.
+            args = {key: value for key, value in args.items() if key != 'download_artifact'}
         code, packages, hosts, names, timeout = _arguments(args if isinstance(args, dict) else {}, self._intranet_host)
         download = self._download(args['download_artifact']) if 'download_artifact' in args else None
         proposed = _library_argument(args, names)
