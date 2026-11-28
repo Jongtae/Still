@@ -14,8 +14,10 @@ from test_preparations import _Case
 
 
 def account_of(case, line_id):
-    return next(row for row in case.service.preparations_service.line_rows(line_id)
-                if row.get('origin') == prep.ORIGIN_LINE_ACCOUNT)
+    """The line's newest account (an active one first: the fake clock can give two rows one created_at)."""
+    rows = [row for row in case.service.preparations_service.line_rows(line_id)
+            if row.get('origin') == prep.ORIGIN_LINE_ACCOUNT]
+    return next((row for row in rows if row['state'] in prep.ACTIVE_STATES), rows[0])
 
 
 def first_user_text(bodies):
@@ -92,6 +94,27 @@ class AccountLifecycleTests(_LineCase):
         account = account_of(self, line)
         self.assertNotEqual(account['id'], ended['id'])
         self.assertEqual(account['state'], prep.STATE_SCHEDULED)
+
+    def test_a_revived_held_account_keeps_its_original_send_intent(self):
+        brief, _ = self.open_line(recurrence=None)
+        line = brief['line_id']
+        [work] = self.work_rows(line)
+        ended = account_of(self, line)
+        with self.service.store.db() as db:
+            db.execute("INSERT INTO tool_events(job_id,tool,status,detail,created) VALUES (?,?,?,?,?)",
+                       ('setup', 'line_held', 'succeeded', json.dumps({'preparation_id': ended['id'], 'channel': 'telegram:held'}), self.now))
+            db.execute("UPDATE preparations SET state='delivered' WHERE id=?", (ended['id'],))
+            db.commit()
+        self.service.preparations.create(kind=prep.KIND_PREPARE, goal='다시 확인', due_at=self.now + 3600,
+                                         timezone='Asia/Seoul', recurrence=None, channel='telegram',
+                                         created_from='settings', state=prep.STATE_SCHEDULED,
+                                         accepted_by=prep.ACCEPTED_OWNER_WORK, line_id=line)
+        account = account_of(self, line)
+        self.assertNotEqual(account['id'], ended['id'])
+        with self.service.store.db() as db:
+            held = db.execute("SELECT json_extract(detail,'$.channel') FROM tool_events WHERE tool='line_held' "
+                              "AND json_extract(detail,'$.preparation_id')=?", (account['id'],)).fetchone()
+        self.assertEqual(held[0], 'telegram:held')
 
     def test_a_cancelled_account_is_not_started_again_by_new_work(self):
         brief, _ = self.open_line()

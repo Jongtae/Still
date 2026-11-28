@@ -1877,14 +1877,18 @@ class Preparations:
         one (an owner decision, as ``ensure_line_account``'s callers keep it) is left as it is.
         """
         from .entrusted_lines import EntrustedLines, STATE_ACTIVE
-        last = db.execute('SELECT state,accepted_by FROM preparations WHERE line_id=? AND origin=? '
-                          'ORDER BY created_at DESC LIMIT 1', (line_id, ORIGIN_LINE_ACCOUNT)).fetchone()
+        last = db.execute('SELECT id,state,accepted_by FROM preparations WHERE line_id=? AND origin=? '
+                          'ORDER BY created_at DESC, rowid DESC LIMIT 1', (line_id, ORIGIN_LINE_ACCOUNT)).fetchone()
         if last is None or last['state'] in ACTIVE_STATES or last['state'] == STATE_CANCELLED:
             return None
         brief = EntrustedLines(self.store, clock=self.clock).readable(line_id, db)
         if not brief or brief['state'] != STATE_ACTIVE:
             return None
-        return self.ensure_line_account(brief, created_from=created_from, db=db, accepted_by=last['accepted_by'])
+        # A held account keeps its original send intent (the ``line_held`` receipt), as when it was set up.
+        held = db.execute("SELECT json_extract(detail,'$.channel') FROM tool_events WHERE tool='line_held' "
+                          "AND json_extract(detail,'$.preparation_id')=? ORDER BY id DESC LIMIT 1", (last['id'],)).fetchone()
+        return self.ensure_line_account(brief, created_from=created_from, db=db, accepted_by=last['accepted_by'],
+                                        bundle_channel=held[0] if held else None)
 
     def ensure_line_account(self, brief, *, created_from, db, accepted_by=ACCEPTED_OWNER_WORK,
                             channel=None, bundle_channel=None, replace_inactive=True):
