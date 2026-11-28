@@ -12202,6 +12202,30 @@
   "ja": "このラインはリハーサル中のため、この変更は送信せずリハーサルとして記録しました。報告では送信していないと明示してください。",
   "zh": "这条任务线正在演练，因此此变更未发送，已记录为演练。请在报告中说明未发送。"
  },
+ "lines.versions_heading": {
+  "ko": "전략 버전별 이 일의 결과(최신순, Still 기록일 뿐 어느 쪽이 나았는지의 판단이 아니에요). 보고에서 버전을 비교할 때 이 기록과 직접 확인한 내용을 근거로 쓰세요:",
+  "en": "Results of this work by strategy version (newest first; Still's records, not a judgment of which did better). When the report compares versions, base it on these records and what you checked yourself:",
+  "ja": "戦略バージョン別のこの仕事の結果（新しい順。Still の記録で、どちらが良かったかの判断ではありません）。報告でバージョンを比べるときは、この記録とご自身で確認した内容を根拠にしてください:",
+  "zh": "按策略版本列出的这项工作的结果（最新在前；这是 Still 的记录，不是哪个更好的判断）。报告中比较版本时，请以这些记录和你自己核实的内容为依据："
+ },
+ "lines.version_result": {
+  "ko": "- 버전 {versions}({since}부터, {mode}): 실행 {runs}회(전달 {delivered}, Still에 보관 {kept}, 실패 {failed}, 진행 중 {open}); 외부 변경 전송 {sent}건, 반영 안 됨으로 확인 {not_applied}건, 결과 미확인 {unconfirmed}건, 보내기 전에 거절 {refused}건, 리허설(보내지 않음) {rehearsed}건",
+  "en": "- Version {versions} (from {since}, {mode}): {runs} runs ({delivered} delivered, {kept} kept in Still, {failed} failed, {open} open); external changes {sent} sent, {not_applied} confirmed not applied, {unconfirmed} with no confirmed result, {refused} refused before sending, {rehearsed} rehearsed (not sent)",
+  "ja": "- バージョン {versions}（{since}から、{mode}）: 実行 {runs}回（届けた {delivered}、Still に保管 {kept}、失敗 {failed}、進行中 {open}）; 外部変更 送信 {sent}件、未反映と確認 {not_applied}件、結果未確認 {unconfirmed}件、送信前に拒否 {refused}件、リハーサル（未送信） {rehearsed}件",
+  "zh": "- 版本 {versions}（自 {since}起，{mode}）：运行 {runs} 次（已送达 {delivered}，保存在 Still {kept}，失败 {failed}，进行中 {open}）；外部变更 已发送 {sent} 项，确认未生效 {not_applied} 项，结果未确认 {unconfirmed} 项，发送前被拒 {refused} 项，演练（未发送） {rehearsed} 项"
+ },
+ "lines.version_rehearsal": {
+  "ko": "리허설",
+  "en": "rehearsal",
+  "ja": "リハーサル",
+  "zh": "演练"
+ },
+ "lines.version_live": {
+  "ko": "실제 운용",
+  "en": "live",
+  "ja": "本番",
+  "zh": "正式运行"
+ },
  "lines.effects_rehearsed": {
   "ko": "리허설로 기록만 하고 보내지 않은 변경: {count}건. 보낸 변경에는 들어가지 않아요.",
   "en": "Changes recorded in rehearsal and not sent: {count}. They are not counted as sent.",
