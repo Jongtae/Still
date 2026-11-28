@@ -7,7 +7,9 @@
     python -m agentos_eval report --log <eval log>
     python -m agentos_eval budget
     python -m agentos_eval blockers --store <data folder or quickstart.db>
-    python -m agentos_eval revise propose --target <src file> --cause-kind <kind> --cause-source <id> --cause-file <file> --proposer <model>
+    python -m agentos_eval revise arm --current --target <src file> -- <sweep args>
+    python -m agentos_eval revise propose --target <src file> --baseline <arm record>
+        --cause-kind <kind> --cause-source <id> --cause-file <file> --proposer <model>
 
 Run from the ``evals`` folder (or with it on ``PYTHONPATH``).  ``sweep`` and
 ``report`` need the eval extra (``evals/requirements.txt``); a ``--world``
@@ -427,8 +429,22 @@ def cmd_blockers(args):
 def cmd_revise(args):
     from . import revise
 
-    experience = args.experience if args.experience is not None else eval_home() / 'experience'
     try:
+        if args.action == 'arm':
+            from . import arm_run
+
+            if args.current and args.target is None:
+                raise ValueError('--current requires --target')
+            if args.candidate is not None and (args.target is not None or args.lines is not None):
+                raise ValueError('--candidate cannot be combined with --target or --lines')
+            sweep_args = args.sweep_args
+            if sweep_args[:1] == ['--']:
+                sweep_args = sweep_args[1:]
+            print(arm_run.run_arm(sweep_args, candidate=args.candidate, target=args.target, lines=args.lines,
+                                  equal_retries=args.equal_retries, out=args.out))
+            return
+
+        experience = args.experience if args.experience is not None else eval_home() / 'experience'
         if args.action == 'record':
             comparison = json.loads(args.comparison.expanduser().read_text(encoding='utf-8'))
             recorded_at = datetime.now(timezone.utc).strftime('%Y-%m-%dT%H:%M:%SZ')
@@ -437,6 +453,9 @@ def cmd_revise(args):
             return
 
         target = revise.load_target(args.target, args.lines)
+        baseline = revise._read_json(args.baseline.expanduser())
+        meta = {item['id']: {'split': item['split'], 'source': item['source']} for item in scenario_module.load()}
+        revise.check_room(baseline, target, meta=meta, measure=args.measure)
         cause = {'kind': args.cause_kind, 'source': args.cause_source,
                  'text': args.cause_file.expanduser().read_text(encoding='utf-8')}
         out = revise.candidate_folder(target, args.out)
@@ -690,11 +709,22 @@ def main(argv=None):
     listed = sub.add_parser('blockers', help='list recent self-review blockers, read-only (#1277)')
     listed.add_argument('--store', required=True, help='Still data folder or its quickstart.db; no default')
     listed.add_argument('--scan', type=int, default=20000, help='newest tool events to look at (default 20000)')
-    revision = sub.add_parser('revise', help='propose versioned-text candidates or record a comparison (#1283)')
+    revision = sub.add_parser('revise', help='run arms, propose versioned-text candidates or record a comparison')
     revision_actions = revision.add_subparsers(dest='action', required=True)
+    arm = revision_actions.add_parser('arm')
+    text = arm.add_mutually_exclusive_group(required=True)
+    text.add_argument('--candidate', type=Path)
+    text.add_argument('--current', action='store_true')
+    arm.add_argument('--target', type=Path)
+    arm.add_argument('--lines', type=_revision_lines)
+    arm.add_argument('--equal-retries', action='store_true')
+    arm.add_argument('--out', type=Path)
+    arm.add_argument('sweep_args', nargs=argparse.REMAINDER)
     proposing = revision_actions.add_parser('propose')
     proposing.add_argument('--target', type=Path, required=True)
     proposing.add_argument('--lines', type=_revision_lines)
+    proposing.add_argument('--baseline', type=Path, required=True)
+    proposing.add_argument('--measure', default='passed')
     proposing.add_argument('--cause-kind', choices=('blocker', 'regression'), required=True)
     proposing.add_argument('--cause-source', required=True)
     proposing.add_argument('--cause-file', type=Path, required=True)
