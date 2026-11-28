@@ -13,6 +13,7 @@ Candidate text lives in the loop's output folder outside the repository; the wor
 """
 import asyncio
 import json
+import math
 import re
 from datetime import datetime, timezone
 from pathlib import Path
@@ -57,8 +58,13 @@ def _scenario_args(sweep_args, ids, epochs):
     return [*sweep_args, '--scenarios', ','.join(ids), '--epochs', str(epochs)]
 
 
-def _check_arm_scenarios(path, allowed):
+def _check_arm_scenarios(path, allowed, record):
+    """Refuse an arm that ran another scenario or another commit than the loop's first arm."""
     arm = revise._read_json(Path(path))
+    head = record.setdefault('git_head', arm.get('git_head'))
+    if arm.get('git_head') != head:
+        raise ValueError(f'An arm ran commit {arm.get("git_head")} but the loop runs {head}; '
+                         'start a new loop for a new commit')
     seen = set(arm['scenario_ids']) | {row.get('scenario') for row in arm['records']}
     if not seen <= set(allowed):
         raise ValueError('An arm ran scenarios outside its allowed set: ' + ', '.join(sorted(map(str, seen - set(allowed)))))
@@ -189,7 +195,7 @@ def run_loop(*, target, sweep_args, dev_ids, scenarios, rounds, epochs, max_work
     def run(label, folder, row, **kwargs):
         path = arm_runner(_scenario_args(sweep_args, dev_ids, kwargs.pop('epochs')), out=folder / f'{label}.json',
                           base_text=base_text, **kwargs)
-        arm = _check_arm_scenarios(path, allowed)
+        arm = _check_arm_scenarios(path, allowed, record)
         budget.charge(arm)
         row['cost'] = _cost_total([row.get('cost'), arm['cost']])
         return path, arm
@@ -329,7 +335,8 @@ def final_heldout(loop_file, *, heldout_ids, scenarios, epochs, bar, max_worker_
         'equal_retries': arm_runner(args, target=loop['target_path'], lines=loop['lines'], base_text=start_text,
                                     equal_retries=True, out=folder / 'equal_retries.json'),
     }
-    arms = {label: _check_arm_scenarios(path, heldout_ids) for label, path in paths.items()}
+    arms = {label: _check_arm_scenarios(path, heldout_ids, {'git_head': loop.get('git_head')})
+            for label, path in paths.items()}
     comparison = compare_versioned_text(arms['start'], {'final': arms['final']}, meta=meta, target=loop['measure'],
                                         tolerances=loop['tolerances'], equal_retries=arms['equal_retries'],
                                         min_trials=loop['min_trials'], splits=FINAL_SPLITS)
@@ -337,7 +344,8 @@ def final_heldout(loop_file, *, heldout_ids, scenarios, epochs, bar, max_worker_
     row = comparison['candidates']['final']
     gains = {label: row['against'][label]['heldout'][loop['measure']] for label in ('baseline', 'equal_retries')}
     noise = {label: row['against'][label]['heldout']['noise'] for label in ('baseline', 'equal_retries')}
-    met = row['verdict'] == 'preferred' and all(g is not None and g >= bar for g in gains.values())
+    met = row['verdict'] == 'preferred' and all(
+        g is not None and (g > bar or math.isclose(g, bar, abs_tol=1e-9)) for g in gains.values())
     result.update(outcome='compared', verdict=row['verdict'], reasons=row['reasons'], gain=gains, noise=noise,
                   bar_met=met, arms={label: _arm_summary(arm, loop['measure']) for label, arm in arms.items()},
                   cost=_cost_total(arm['cost'] for arm in arms.values()), finished_at=clock())

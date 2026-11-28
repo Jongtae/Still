@@ -3,7 +3,6 @@
 The fake sweep scores runs from the text it finds in the copy, so a promotion that does not reach the next
 round, or a held-out scenario that reaches a loop run, changes what the tests observe.
 """
-import asyncio
 import functools
 import json
 import subprocess
@@ -319,3 +318,21 @@ def test_compare_cli_writes_the_same_result_as_the_function(tmp_path, monkeypatc
     with pytest.raises(SystemExit, match='outside the repository'):
         cli.main(['revise', 'compare', '--baseline', str(tmp_path / 'base.json'),
                   '--candidate', f'general={tmp_path / "cand.json"}', '--out', str(ROOT / 'cmp.json')])
+
+
+def test_arms_from_another_commit_are_refused_in_the_final_step(repo, tmp_path):
+    loop(repo, tmp_path, Proposer(BETTER), Sweep())
+    (repo / TARGET).write_text('new first line\n' + START)
+    git(repo, 'commit', '-qam', 'move')
+    with pytest.raises(ValueError, match='start a new loop'):
+        revise_loop.final_heldout(tmp_path / 'loop/loop.json', heldout_ids=HELD, scenarios=SCENARIOS, epochs=3,
+                                  bar=0.2, max_worker_runs=100,
+                                  arm_runner=functools.partial(arm_run.run_arm, repo=repo, runner=Sweep()))
+
+
+def test_a_gain_equal_to_the_bar_meets_it(repo, tmp_path):
+    loop(repo, tmp_path, Proposer(BETTER), Sweep())
+    result = json.loads(revise_loop.final_heldout(
+        tmp_path / 'loop/loop.json', heldout_ids=HELD, scenarios=SCENARIOS, epochs=3, bar=0.5 + 1e-15,
+        max_worker_runs=100, arm_runner=functools.partial(arm_run.run_arm, repo=repo, runner=Sweep())).read_text())
+    assert result['gain']['baseline'] == 0.5 and result['bar_met'] is True
