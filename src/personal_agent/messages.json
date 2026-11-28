@@ -12190,6 +12190,18 @@
   "ja": "送信後に読み戻したところ、サービスが実行していないと答えた変更：{items}。",
   "zh": "发送后回读时服务表示未执行的变更：{items}。"
  },
+ "lines.effects_awaiting_connector_read_back": {
+  "ko": "연결을 통해 보낸 변경 {count}건의 결과를 아직 확인해야 해요({items}). 각 변경의 결과를 같은 연결의 조회 도구로 읽은 뒤, entrusted_line의 read_back 작업에 receipt로 영수증 번호를, outcome으로 결과를 넘겨 보고하세요. 변경을 다시 보내지는 마세요.",
+  "en": "The outcomes of {count} sent connector changes still need checking ({items}). Read each outcome using the same connection’s own read tool, then report it with the entrusted_line action read_back, passing the receipt number as receipt and the outcome as outcome. Do not send these changes again.",
+  "ja": "接続を通じて送信した変更のうち、結果の確認が必要なものが{count}件あります（{items}）。同じ接続の読み取りツールで各変更の結果を確認し、entrusted_line の read_back に受領番号を receipt、結果を outcome として渡して報告してください。変更は再送しないでください。",
+  "zh": "有 {count} 项已通过连接发送的变更仍需核查结果（{items}）。请用同一连接自带的读取工具查询每项结果，再通过 entrusted_line 的 read_back 操作报告，将回执编号传给 receipt，将结果传给 outcome。请勿重新发送这些变更。"
+ },
+ "lines.effects_read_back_not_applied_reported": {
+  "ko": "소유자의 AI가 결과를 다시 읽고 실행되지 않았다고 보고한 변경은 {items}이에요.",
+  "en": "The owner’s AI read back the outcomes and reported that these changes were not carried out ({items}).",
+  "ja": "オーナーの AI は結果を読み戻し、これらの変更は実行されなかったと報告しました（{items}）。",
+  "zh": "所有者的 AI 回读了结果，并报告这些变更未执行（{items}）。"
+ },
  "lines.rehearsal_mode": {
   "ko": "이 줄은 리허설 중이에요. 외부 상태를 바꾸는 요청은 보내지 않고 리허설로 기록만 해요. 하려던 변경은 그대로 시도하되, 보고에서는 각각 리허설(보내지 않음)이라고 밝히고, 실제로 한 일처럼 말하지 마세요. 실제 운용으로 바꾸는 건 소유자만 할 수 있어요. 전환할 만하다고 보이면 소유자에게 제안하세요.",
   "en": "This line is in rehearsal. Requests that would change outside state are not sent; they are recorded as rehearsed. Attempt the changes you would make, report each as rehearsed (not sent), and never describe one as done. Only the owner can take the line live; when it looks ready, propose that to the owner.",
@@ -12411,6 +12423,24 @@
   "en": "This line was not found.",
   "ja": "この仕事が見つかりません。",
   "zh": "未找到此受托事项。"
+ },
+ "lines.refused_read_back_not_found": {
+  "ko": "이 맡은 일에서 연결을 통해 보낸 변경의 영수증을 찾지 못했어요.",
+  "en": "This receipt did not match a sent connector change on this line that can be read back.",
+  "ja": "この仕事で読み戻せる送信済みの変更が、その受領番号では見つかりませんでした。",
+  "zh": "此回执未匹配到该受托事项中可回读的已发送连接变更。"
+ },
+ "lines.refused_read_back_not_read": {
+  "ko": "변경을 보낸 뒤 이 Work가 같은 연결을 조회한 기록이 없어요. 그 연결의 조회 도구로 결과를 읽은 뒤 보고하세요.",
+  "en": "This Work has no successful read through the same connection after the change was sent. Read the outcome through that connection before reporting it.",
+  "ja": "変更の送信後に、この Work が同じ接続を通じて読み取りに成功した記録がありません。その接続で結果を読み取ってから報告してください。",
+  "zh": "变更发送后，此 Work 没有通过同一连接成功读取的记录。请通过该连接读取结果后再报告。"
+ },
+ "lines.refused_read_back_invalid_outcome": {
+  "ko": "read_back의 outcome에는 applied, not-applied, unknown 중 하나를 넣어 주세요.",
+  "en": "For read_back, use applied, not-applied or unknown as the outcome.",
+  "ja": "read_back の outcome には applied、not-applied、unknown のいずれかを指定してください。",
+  "zh": "read_back 的 outcome 必须为 applied、not-applied 或 unknown。"
  },
  "lines.refused_line_invalid_scope": {
   "ko": "중지 범위(scope)는 work 또는 line이어야 해요.",
