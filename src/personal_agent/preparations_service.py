@@ -3082,8 +3082,9 @@ class PreparationsService:
         def at(when):
             return max((index for index,group in enumerate(groups) if group['since']<=when),default=0)
         outcomes={item['work_id']:item['outcome'] for item in self.line_outcomes(line_id,exclude=exclude,limit=None)}
+        # Every Work of the line counts toward its group's changes, a deleted schedule's included (its Works and
+        # Evidence stay, as in the line totals); only a run with a visible outcome counts as a run (#1333 review).
         for work in works:
-            if work not in outcomes:continue
             index=group_of.get(reads[work]) if work in reads else None
             groups[at(created.get(work,0)) if index is None else index]['works'].append(work)
         out=[]
@@ -3091,7 +3092,7 @@ class PreparationsService:
             until=groups[index+1]['since'] if index+1<len(groups) else None
             effects=self.line_effects(line_id,works=group['works'],window=(group['since'],until))
             counts={key:effects[key] for key in self.VERSION_EFFECTS}
-            labels=[outcomes[work] for work in group['works']]
+            labels=[outcomes[work] for work in group['works'] if work in outcomes]
             if not labels and not any(counts.values()):continue
             out.append({**{key:group[key] for key in ('from_version','to_version','since','rehearsal')},
                         'runs':len(labels),'outcomes':{label:labels.count(label) for label in

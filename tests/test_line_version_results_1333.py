@@ -25,16 +25,9 @@ def run_of(c, row, slot, brief=None, status='failed'):
 
 
 def now(c):
-    # Version saves follow Still's clock; a check's ledger rows follow the wall clock, as they do live.
-    c.clock[0] = time.time()
-
-
-def saved_now(c, line):
-    """Stamp the line's newest version with the wall clock, after a check moved Still's clock on to be due."""
-    from personal_agent import entrusted_lines as el
-    with c.store.db() as db:
-        db.execute('UPDATE procedure_versions SET saved=? WHERE slot=? AND version=?',
-                   (time.time(), el.slot(line), c.service.lines.current(line)['version']))
+    # Live, Still's clock is the wall clock; a check's ledger rows follow the wall clock and its other
+    # records Still's clock, so the fixture clock starts at the wall clock (the test runs well within 15 s).
+    c.clock[0] = float(int(time.time()))
 
 
 def test_a_rehearsal_and_the_live_version_are_told_apart(case):
@@ -48,11 +41,11 @@ def test_a_rehearsal_and_the_live_version_are_told_apart(case):
     finish(case, row)
     case.clock[0] += 15
     rehearse(case, line)
-    saved_now(case, line)
     rehearsal = case.service.lines.current(line)
     run_of(case, row, 'slot-2', rehearsal)
-    run_of(case, row, 'slot-3', rehearsal, status='queued')
     assert not run_due(case, [], request=dict(POST, query='limit=3'))['allow'], 'the rehearsal records instead'
+    # Made after the check ran: a queued Work would be picked up by the service's own lanes meanwhile.
+    run_of(case, row, 'slot-3', rehearsal, status='queued')
 
     newer, older = lines.line_versions(line)
     assert (newer['from_version'], newer['rehearsal'], newer['runs']) == (rehearsal['version'], True, 2)
@@ -110,3 +103,17 @@ def test_the_account_and_the_closing_report_carry_it(case):
     rehearse(case, line)
     run_of(case, row, 'slot-2', case.service.lines.current(line))
     assert msg('lines.versions_heading') in lines.line_closing_account(case.service.lines.current(line))
+
+
+def test_a_deleted_schedules_changes_stay_in_its_version(case):
+    """Deleting a schedule keeps its past Works and Evidence, so its changes stay counted (#1333 review)."""
+    from test_sent_change_read_back_1273 import sent_on_line
+    lines = case.service.preparations_service
+    now(case)
+    line, _receipt = sent_on_line(case)
+    [row] = lines.line_rows(line)
+    finish(case, row)
+    case.preps.cancel(row['id'])
+    case.preps.delete(row['id'])
+    [only] = lines.line_versions(line)
+    assert only['effects']['sent'] == lines.line_effects(line)['sent'] == 1
