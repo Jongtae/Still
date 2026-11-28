@@ -12016,6 +12016,12 @@
   "ja": "この実行はオーナーが任せた仕事の定期報告です。前回以降にしたことと結果（オーナーが任せた目標に照らした仕事の結果と、遂行の過程—オーナーの介入、送信・確認済み・未確認・拒否された変更、遅延と復旧、現在の状態—を分けて）、有効なルールすべて、わかったこと、未解決の事項を伝えてください。変化がなくてもそう伝えてください（権限は与えません）:",
   "zh": "本次运行是主人受托事项的定期汇报。请汇报自上次汇报以来做了什么及结果（按主人交代的目标衡量的事情结果，并另外说明执行过程：主人的介入、已发送/已确认/未确认/被拒绝的变更、延迟与恢复、当前状态）、现行的全部规则、了解到的情况和未决事项；即使没有变化也请说明（不授予任何权限）："
  },
+ "lines.account_closing": {
+  "ko": "이 일에는 더 실행될 작업이 남아 있지 않아요. 이번이 마지막 보고이고, 이후 정기 보고는 없어요. 맡긴 일이 어떻게 끝났는지(마지막 결과와 소유자에게 이미 전달된 것)를 먼저 말하고, 더 보고하지 않는다고 알려 주세요. 다음 정기 보고 일정을 말하지 마세요.",
+  "en": "No work of this line is left to run. This is the closing account and no periodic account follows. Lead with how the entrusted work ended (its last result and what already reached the owner), and say there are no further accounts; do not name a next account.",
+  "ja": "この仕事には実行される作業がもう残っていません。今回が最後の報告で、以後の定期報告はありません。任された仕事がどう終わったか（最後の結果と、すでにオーナーに伝わったこと）を先に伝え、これ以上報告しないことを伝えてください。次の定期報告の予定は言わないでください。",
+  "zh": "此事已没有待运行的工作。这是最后一次汇报，之后不再有定期汇报。请先说明受托事项如何结束（最后的结果以及已送达主人的内容），并说明不再汇报；不要提下一次定期汇报的时间。"
+ },
  "lines.account_pieces": {
   "ko": "지난 보고 이후 이 일의 조각이 {count}번 실행됐어요: 전달 {delivered}, 보관 {kept}, 실패 {failed}, 진행 중 {open}. 이 숫자를 보고에 포함하세요.",
   "en": "Since the last account, {count} pieces of this work ran: {delivered} delivered, {kept} kept, {failed} failed, {open} still open. Include these counts in the account.",

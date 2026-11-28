@@ -856,6 +856,22 @@ def next_window_slot(row, now):
     return slot if slot <= end else None
 
 
+def window_checks_left(row, now):
+    """How many slots of a watch's current window are still to run after ``now`` (#1299).
+
+    Counts with ``next_window_slot`` as each would start, so ``max_runs`` and ``until_at`` bound it.
+    """
+    left, current = 0, dict(row)
+    while left < int(row.get('max_runs') or 0):
+        slot = next_window_slot(current, now)
+        if slot is None:
+            break
+        left += 1
+        current.update(due_at=slot, run_count=int(current.get('run_count') or 0) + 1)
+        now = slot
+    return left
+
+
 def next_due(due_at, timezone_name, recurrence, now, rule_start=None, run_count=0):
     """The first slot of ``recurrence`` strictly after ``now`` (and ``due_at``), or None.
 
@@ -1764,6 +1780,8 @@ class Preparations:
                 db.execute('INSERT INTO tool_events(job_id,tool,status,detail,created) VALUES (?,?,?,?,?)',
                            (created_from, 'line_held', 'succeeded',
                             json.dumps({'preparation_id': row['id'], 'channel': bundle_channel}), now))
+            if line_id and origin != ORIGIN_LINE_ACCOUNT and state == STATE_SCHEDULED:
+                self.revive_line_account(line_id, created_from=created_from, db=db)
             return row
 
     def _piece_admission(self, db, line_id, piece_of, due_at, now):
@@ -1805,6 +1823,13 @@ class Preparations:
                           'AND origin IS NOT ? AND id IS NOT ? LIMIT 1',
                           (line_id, STATE_SCHEDULED, ORIGIN_LINE_ACCOUNT, exclude)).fetchone() is not None
 
+    @staticmethod
+    def line_has_live_work(db, line_id):
+        """#1299: whether any row of the line's work may still run (an open offer and a pause count)."""
+        return db.execute(f"SELECT 1 FROM preparations WHERE line_id=? AND origin IS NOT ? "
+                          f"AND state IN ({','.join('?' * len(ACTIVE_STATES))}) LIMIT 1",
+                          (line_id, ORIGIN_LINE_ACCOUNT, *ACTIVE_STATES)).fetchone() is not None
+
     def line_resume_target(self, line_id, db=None):
         """The owner-opened, stopped or unscheduled brief eligible for an offer."""
         from .entrusted_lines import EntrustedLines, STATE_ACTIVE
@@ -1844,6 +1869,22 @@ class Preparations:
             self._exact_line_resume(row, offer_digest)
             self.cancel(preparation_id, db=db)
             db.execute('UPDATE preparations SET last_outcome=? WHERE id=?', ('declined', preparation_id))
+
+    def revive_line_account(self, line_id, *, created_from, db):
+        """#1299: an account that ended with its line's work starts again when the line has work again.
+
+        Only an account that ended that way: none yet (the line's own setup makes it) or a cancelled
+        one (an owner decision, as ``ensure_line_account``'s callers keep it) is left as it is.
+        """
+        from .entrusted_lines import EntrustedLines, STATE_ACTIVE
+        last = db.execute('SELECT state,accepted_by FROM preparations WHERE line_id=? AND origin=? '
+                          'ORDER BY created_at DESC LIMIT 1', (line_id, ORIGIN_LINE_ACCOUNT)).fetchone()
+        if last is None or last['state'] in ACTIVE_STATES or last['state'] == STATE_CANCELLED:
+            return None
+        brief = EntrustedLines(self.store, clock=self.clock).readable(line_id, db)
+        if not brief or brief['state'] != STATE_ACTIVE:
+            return None
+        return self.ensure_line_account(brief, created_from=created_from, db=db, accepted_by=last['accepted_by'])
 
     def ensure_line_account(self, brief, *, created_from, db, accepted_by=ACCEPTED_OWNER_WORK,
                             channel=None, bundle_channel=None, replace_inactive=True):
@@ -1927,6 +1968,8 @@ class Preparations:
                     raise PreparationRefusal('not_found')
                 raise PreparationRefusal('expired' if row['state'] == STATE_PROPOSED and (window_ended(row, now)
                                          or row['check_spec'] and now >= row['until_at']) else 'not_proposed')
+            if row.get('line_id') and row.get('origin') != ORIGIN_LINE_ACCOUNT:
+                self.revive_line_account(row['line_id'], created_from=accepted_from or row['created_from'], db=db)
             return row
 
     def cancel(self, preparation_id, *, db=None):
@@ -3126,6 +3169,10 @@ class Preparations:
                     updates['state'] = outcome
             else:
                 updates.update(state=STATE_SCHEDULED, due_at=current['due_at'] if current.get('check_spec') else following)
+            if (current.get('origin') == ORIGIN_LINE_ACCOUNT and current.get('line_id')
+                    and not self.line_has_live_work(db, current['line_id'])):
+                # #1299: the account lasts as long as the line's work; with none left this was the closing one.
+                updates['state'], following = outcome, None
             if current.get('run_return_state'):
                 # #575: the extra run does not consume or advance the regular schedule.
                 updates.update(state=current['run_return_state'], due_at=current['due_at'], run_return_state=None)
@@ -3147,6 +3194,12 @@ class Preparations:
             db.execute(f"UPDATE preparations SET {','.join(k + '=?' for k in updates)} WHERE id=? AND state=?",
                        (*updates.values(), current['id'], STATE_RUNNING))
             self._clear_closed_budget_skips(db)
+            if (current.get('line_id') and current.get('origin') != ORIGIN_LINE_ACCOUNT
+                    and updates.get('state') not in ACTIVE_STATES
+                    and not self.line_has_live_work(db, current['line_id'])):
+                # #1299: the line's last work ended; its account runs now as the closing account, not days later.
+                db.execute('UPDATE preparations SET due_at=?,updated_at=? WHERE line_id=? AND origin=? AND state=? AND due_at>?',
+                           (now, now, current['line_id'], ORIGIN_LINE_ACCOUNT, STATE_SCHEDULED, now))
             if job:
                 detail = {'preparation_id': current['id'], 'outcome': outcome, 'delivery': job['delivery'],
                           'next_due': iso(following) if following else None}

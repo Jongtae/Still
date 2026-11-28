@@ -580,9 +580,9 @@ class RunTests(_LineCase):
         [account] = [row for row in self.service.preparations_service.line_rows(brief['line_id'])
                      if row.get('origin') == prep.ORIGIN_LINE_ACCOUNT]
         self.assertEqual(account['channel'], 'telegram')
-        # Only the account is due in this test.
+        # Only the account is due in this test; the paused work is still the line's (#1299).
         [work] = self.work_rows(brief['line_id'])
-        self.service.cancel_preparation(work['id'])
+        self.service.preparations.pause(work['id'])
         self.deliver_all()
         self.telegram.clear()
         bodies = self.run_line(account, [{'content': '지난 7일 동안 바뀐 것은 없습니다. 규칙 두 가지를 지키고 있습니다.'}])

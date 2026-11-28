@@ -1092,9 +1092,15 @@ class PreparationsService:
         result=str(answer)[:service.WATCH_RESULT_CHARS]
         try:
             with self._judged_for_run(row):
+                # #1299: the judgment sees when it judges and what is left of the window.
+                now=service.preparations.clock()
+                window={'judged_at':prep.local_text(now,row['timezone'],service.home_zone()),
+                        'window_last_check':prep.local_text(row['until_at'],row['timezone'],service.home_zone()),
+                        'checks_left':str(prep.window_checks_left(row,now))}
                 judged=service.decision_judge.watch_window_closed(row['goal_text'],result,
                                                                   work_id=row.get('last_run_job_id'),
-                                                                  offer=prep.accepted_offer(row) or None)
+                                                                  offer=prep.accepted_offer(row) or None,
+                                                                  window=window)
         except Exception as exc:  # A failed judgment leaves the accepted schedule active.
             LOG.warning('watch closing judgment unavailable kind=%s',type(exc).__name__)
             return False
@@ -3389,6 +3395,10 @@ class PreparationsService:
         outcomes=self.line_outcomes(row['line_id'],exclude=job['id'])
         if row.get('origin')==prep.ORIGIN_LINE_ACCOUNT:
             lead=msg('lines.account_input')
+            with service.store.db() as db:
+                closing=not service.preparations.line_has_live_work(db,row['line_id'])
+            # #1299: with no work left the account ends after this run, so it is the closing one.
+            if closing:lead+='\n'+msg('lines.account_closing')
             pieces=self.line_pieces_account(row,job)
             if pieces:lead+='\n'+pieces
             check_counts=self.line_checks_account(row,job)
