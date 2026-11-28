@@ -72,10 +72,10 @@ class Pullback(Strategy):
         near_ema = self.data.Low[-1] <= self.ema20[-1] * 1.001 and close > self.vwap[-1]
         if not (trend_up and near_ema):
             return
-        ceiling = self.vwap[-1] + self.ceiling_atr * atr
-        limit = np.floor((min(close, self.vwap[-1], self.ema20[-1]) - tick) / tick) * tick
-        if limit > ceiling:
+        anchor = self.ema20[-1]  # the level the pullback signal refers to; VWAP is only its filter
+        if close > anchor + self.ceiling_atr * atr:
             return  # past the ceiling: a skipped signal, no entry
+        limit = np.floor((min(close, anchor) - tick) / tick) * tick
         stop = max(limit * (1 - stop_frac), limit - 1.5 * atr)
         qty = int(min(risk // (limit - stop), cash // limit))
         if qty < 1:

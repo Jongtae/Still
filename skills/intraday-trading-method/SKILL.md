@@ -3,7 +3,7 @@ name: intraday-trading-method
 description: A method for intraday trading on short closed bars within the owner's own limits - a judgment of the day's regime and macro backdrop recorded before one method is chosen and kept, closed-bar data, an in-session regime check with hysteresis, limit-only entries that never chase, ATR exits with the owner's stop and a time exit, stop-sized positions, a backtest gate before a rule goes live, a plan that a condition check carries out between runs, and every entry and skipped signal recorded to settle later. Use when an owner's line or request trades or plans intraday trades. It grants nothing.
 license: AGPL-3.0-only
 metadata:
-  version: "2"
+  version: "3"
 ---
 # An intraday trading method
 
@@ -94,8 +94,9 @@ Regimes flip back and forth when the reading sits near a threshold, and a method
 Chasing is the most common way an intraday plan turns a good idea into a bad fill: the limit is raised again and again while price runs away, and the position opens at the top.
 
 - Enter only with a **limit order**. Never use a market order to enter.
-- Set the limit at or below the lowest of the last close, VWAP and EMA(20), minus one tick.
-- **Ceiling:** never place or move a buy limit above VWAP + 1 × ATR(14) (for a sell, below VWAP − 1 × ATR). If the price is already past the ceiling, there is no entry: record the skipped signal.
+- **Anchor the entry to the level the signal refers to.** For a trend pullback that is EMA(20); for range reversion it is the lower Bollinger band. VWAP stays a filter of the trend pullback signal (section 6), not its entry price: on a trend day price holds away from VWAP, so a limit or ceiling tied to VWAP would never meet the pullback the method looks for.
+- Set the limit at or below the lower of the last close and the anchor, minus one tick.
+- **Ceiling:** never place or move a buy limit above anchor + 1 × ATR(14) (for a sell, below anchor − 1 × ATR). If the last close is already past the ceiling, the pullback is over and there is no entry: record the skipped signal.
 - **No upward re-pricing.** Once placed, a buy limit is never raised. If it does not fill within the time the plan states (for example 3 bars), cancel it and record it as unfilled. A later signal gets a new limit computed from scratch, still under the ceiling. At most one new limit per instrument per signal.
 - Do not average down, and do not add to a losing position.
 
