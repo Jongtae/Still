@@ -76,6 +76,10 @@ jobs:
       - name: Verify every platform installs from wheels
         run: sh scripts/dev/verify_wheels.sh
 
+      # #1297: the documented eval setup, into a fresh venv; fails when the judge/proposer path cannot import.
+      - name: Verify the evaluation environment setup
+        run: sh scripts/dev/eval_env.sh "$RUNNER_TEMP/eval-venv"
+
       # These checks do not use service fixtures; classification coverage is local and model-free.
       - name: Run focused governance and README tests
         run: |

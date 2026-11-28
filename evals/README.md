@@ -27,9 +27,10 @@ The older `owner-usefulness-*.json` and `use01-fixtures.json` files in this fold
 ## One-time setup
 
 ```sh
-python3 -m venv ~/.local/share/agentos-evals/venv
-~/.local/share/agentos-evals/venv/bin/pip install -r evals/requirements.txt
+sh scripts/dev/eval_env.sh
 ```
+
+This needs [uv](https://docs.astral.sh/uv/) and Python 3.12 or newer (`PYTHON=...` selects one). It creates or updates `~/.local/share/agentos-evals/venv` with `evals/requirements.txt` and Still's runtime dependencies at the versions in `uv.lock`, then checks that the judge and proposer code imports there (#1297). Run it again after a dependency change.
 
 The sandbox servers themselves run with the normal `python3` that already runs Still (override with `AGENTOS_EVAL_SERVER_PYTHON`), using the checkout's own `src/`.
 
