@@ -21,6 +21,17 @@ class FinishedWindowNotOffered(*resume_1027.ResumeOffers.__bases__):
             db.commit()
         return row
 
+    def resume_row(self, brief, state, accepted_by):
+        row = self.service.preparations.create(kind='prepare', goal='오늘 변동 확인', due_at=self.now + 7200,
+                                               timezone='Asia/Seoul', recurrence=None, channel='web',
+                                               created_from=self.receive('계획'), state=prep.STATE_PROPOSED,
+                                               offer='오늘 이어서 확인할까요?', origin=prep.ORIGIN_LINE_RESUME,
+                                               line_id=brief['line_id'])
+        with self.store.db() as db:
+            db.execute('UPDATE preparations SET state=?,accepted_by=?,created_at=? WHERE id=?',
+                       (state, accepted_by, self.now + 60, row['id']))
+            db.commit()
+
     def test_a_window_that_closed_on_its_terms_leaves_nothing_to_resume(self):
         brief = self.line()
         self.window_row(brief, prep.STATE_DELIVERED, prep.REASON_WINDOW_CLOSED)
@@ -41,6 +52,18 @@ class FinishedWindowNotOffered(*resume_1027.ResumeOffers.__bases__):
         self.window_row(brief, prep.STATE_DELIVERED, prep.REASON_WINDOW_CLOSED)
         brief, _ = self.service.preparations_service.stop_line(brief['line_id'], self.receive('멈춰'), end_line=True)
         self.assertIsNotNone(self.service.preparations.line_resume_target(brief['line_id']))
+
+    def test_accepted_resume_work_that_was_cancelled_counts_over_the_finished_window(self):
+        brief = self.line()
+        self.resume_row(brief, prep.STATE_CANCELLED, prep.ACCEPTED_OWNER_ANSWER)  # dated after the window below
+        self.window_row(brief, prep.STATE_DELIVERED, prep.REASON_WINDOW_CLOSED)
+        self.assertIsNotNone(self.service.preparations.line_resume_target(brief['line_id']))
+
+    def test_an_unaccepted_resume_offer_does_not_hide_the_finished_window(self):
+        brief = self.line()
+        self.resume_row(brief, prep.STATE_EXPIRED, None)  # dated after the window below
+        self.window_row(brief, prep.STATE_DELIVERED, prep.REASON_WINDOW_CLOSED)
+        self.assertIsNone(self.service.preparations.line_resume_target(brief['line_id']))
 
 
 class RankedPlaceNamed(unittest.TestCase):

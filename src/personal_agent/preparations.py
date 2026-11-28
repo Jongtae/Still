@@ -1869,8 +1869,10 @@ class Preparations:
         out, so the line has nothing the owner stopped and nothing to offer to resume.  A window the
         owner cancelled, or a run that failed, settles otherwise and stays eligible.
         """
+        # An accepted resume row is the line's work; only an offer never accepted is not.
         last = db.execute('SELECT recurrence,state,last_decision_reason FROM preparations WHERE line_id=? '
-                          'AND origin IS NOT ? AND origin IS NOT ? ORDER BY created_at DESC, rowid DESC LIMIT 1',
+                          'AND origin IS NOT ? AND NOT (origin IS ? AND accepted_by IS NULL) '
+                          'ORDER BY created_at DESC, rowid DESC LIMIT 1',
                           (line_id, ORIGIN_LINE_ACCOUNT, ORIGIN_LINE_RESUME)).fetchone()
         return bool(last and last['recurrence'] == RECURRENCE_WINDOW and last['state'] == STATE_DELIVERED
                     and last['last_decision_reason'] == REASON_WINDOW_CLOSED)
