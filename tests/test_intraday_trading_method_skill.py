@@ -49,7 +49,7 @@ class IntradayMethodContent(unittest.TestCase):
         self.assertEqual((record['status'], record['licence']), (['supported_as_is'], 'AGPL-3.0-only'))
         self.assertEqual(sorted(record['files']), ['SKILL.md', GATE], 'text only: no scripts Still would refuse')
         frontmatter, _body = parse_frontmatter(self.text)
-        self.assertEqual(frontmatter['metadata']['version'], '3')
+        self.assertEqual(frontmatter['metadata']['version'], '4')
         listed = {row['name']: row for row in reference_skills()}
         # #1291: pinned to one exact commit and its content digest.
         self.assertRegex(listed[NAME]['address'], rf'^github\.com/{REPO}/tree/[0-9a-f]{{40}}/skills/{NAME}$')
@@ -94,6 +94,15 @@ class IntradayMethodContent(unittest.TestCase):
         self.assertNotIn('lowest of the last close, VWAP and EMA(20)', self.text)
         self.assertNotIn('`subject`', self.text, 'the decide argument is about, not subject')
         self.assertLess(self.text.index('## 3. Judge the day'), self.text.index('## 6. Signals by method'))
+
+    def test_it_lists_what_to_read_at_every_decision_and_checks_cost_per_instrument(self):
+        # #1363: runs read different inputs each time and used an instrument whose cost matched the move.
+        for phrase in ('**What to read at every decision.**', '**Always:**', '**For the regime (section 5):**',
+                       '**When the broker streams them:**', '**Once before the session:**',
+                       '**Cost check, per instrument, every time:**', 'do not use that instrument for a hold that short',
+                       '**Do not lean on:**', 'say in the plan which ones you could not get'):
+            self.assertIn(phrase, self.text)
+        self.assertLess(self.text.index('**What to read at every decision.**'), self.text.index('## 3. Judge the day'))
 
     def test_the_gate_pins_maintained_packages_that_fit_code_run(self):
         # #1348: code_run accepts only name==version, so every named package carries its version.

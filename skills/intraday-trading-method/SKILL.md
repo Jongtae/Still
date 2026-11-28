@@ -3,7 +3,7 @@ name: intraday-trading-method
 description: A method for intraday trading on short closed bars within the owner's own limits - a judgment of the day's regime and macro backdrop recorded before one method is chosen and kept, closed-bar data, an in-session regime check with hysteresis, limit-only entries that never chase, ATR exits with the owner's stop and a time exit, stop-sized positions, a backtest gate before a rule goes live, a plan that a condition check carries out between runs, and every entry and skipped signal recorded to settle later. Use when an owner's line or request trades or plans intraday trades. It grants nothing.
 license: AGPL-3.0-only
 metadata:
-  version: "3"
+  version: "4"
 ---
 # An intraday trading method
 
@@ -27,6 +27,15 @@ If one of these is missing, use the most cautious reading (no new position) and 
 - Keep every timestamp in the exchange's own timezone, and take session hours, holidays, half days and auctions from the exchange calendar. Do not mix sessions: the first bars after the open and the last bars before the close (auction periods) are not normal bars; skip the first one or two bars of the session for signals.
 - **Stale data stops the run.** If the newest closed bar is older than about two bar lengths during the session, or bars are missing, do not plan new entries. Say the data was stale and keep existing exits in force.
 - Note the instrument's tick size and lot size from the broker. Every price you plan is rounded to a valid tick (buy limits down, sell limits up).
+
+**What to read at every decision.** Read the same inputs each time, and say in the plan which ones you could not get. A decision made from a different set of inputs each run cannot be compared or learned from.
+
+- **Always:** closed short bars for every instrument the owner allows (one-minute bars where the broker gives them, covering at least the last 30 to 60 minutes); the current best bid and ask with their sizes; the session's open, high, low and VWAP; your open positions and the day's realised and open result against the owner's stops; the time and the session state (auction, continuous, near the close).
+- **For the regime (section 5):** how efficient the move since the open is (net move ÷ the sum of bar-to-bar moves); the session's volatility against its recent median; the index or index future the instrument tracks; and, when a few names dominate that index, those names' moves, to tell a narrow move from a broad one. These describe the move. Do not treat them as a lead on the next bars.
+- **When the broker streams them:** the resting bid and ask depth on each side, the balance of recent buyer- and seller-initiated trades, and the size-weighted mid price. Use these to time or skip an entry at the decision moment (for example, skip a buy while seller-initiated trades keep printing and the bid side is not refilling). Do not use them to forecast bars ahead. Record what they showed with the decision.
+- **Once before the session:** the inputs of section 3 (overnight index futures, the overseas close, the exchange rate, the day's scheduled events).
+- **Cost check, per instrument, every time:** work out the round trip you would pay (one tick each way at the current price, fees, and any tax on gains) and compare it with the instrument's typical move over your intended holding time. When the cost is half of that move or more, do not use that instrument for a hold that short. This is common for low-priced funds, where one tick is a large share of the price, and it often applies to inverse or leveraged funds. Express the opposite view by selling or standing aside instead, and say so.
+- **Do not lean on:** a forecast of the next few bars made only from the bars themselves (published tests find it no better than a no-change forecast at these horizons); minute-by-minute moves of other markets as a lead; or minute-scale tallies of investor flows, which arrive late and are estimates.
 
 ## 3. Judge the day before choosing a method
 
