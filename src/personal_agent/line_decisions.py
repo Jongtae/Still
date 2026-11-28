@@ -43,7 +43,29 @@ def _text(value):
     return value.strip() if isinstance(value, str) else ''
 
 
-def _timestamp(value):
+def _refusal(code, key, **values):
+    """A refusal whose text names the field and the rule, so one retry can fix the call (#1309)."""
+    return LineRefusal(code, message='lines.refused_' + key, values=values)
+
+
+def _invalid(key, **values):
+    return _refusal('line_decision_invalid', key, **values)
+
+
+def _required(action, fields):
+    missing = [name for name, value in fields if not value]
+    if missing:
+        raise _invalid('decision_required', action=action, fields=', '.join(missing))
+
+
+def _iso(stamp, rounded=math.floor):
+    try:
+        return datetime.fromtimestamp(rounded(stamp), timezone.utc).isoformat()
+    except (ValueError, OverflowError, OSError):
+        return str(stamp)
+
+
+def _timestamp(value, field):
     try:
         stamp = float(_text(value))
     except ValueError:
@@ -53,9 +75,9 @@ def _timestamp(value):
                 moment = moment.replace(tzinfo=timezone.utc)
             stamp = moment.timestamp()
         except (ValueError, OverflowError, OSError):
-            raise LineRefusal('line_decision_invalid') from None
+            raise _invalid('decision_time', field=field) from None
     if not math.isfinite(stamp):
-        raise LineRefusal('line_decision_invalid')
+        raise _invalid('decision_time', field=field)
     return stamp
 
 
@@ -98,9 +120,9 @@ class LineDecisions:
             redact(_text(args.get(field)))[:limit] for field, limit in (
                 ('about', SUBJECT_CHARS), ('claim', CLAIM_CHARS),
                 ('expectation', EXPECTATION_CHARS), ('check', CHECK_CHARS)))
-        settle_after = _timestamp(args.get('settle_after'))
-        if not (subject and claim and expectation):
-            raise LineRefusal('line_decision_invalid')
+        _required('decide', (('about', subject), ('claim', claim), ('expectation', expectation),
+                             ('settle_after', _text(args.get('settle_after')))))
+        settle_after = _timestamp(args.get('settle_after'), 'settle_after')
 
         refs = re.findall(r'[^,\s]+', _text(args.get('lessons_applied')))
         lessons = om.WorkingLessons(self.store, self.clock) if refs else None
@@ -110,7 +132,7 @@ class LineDecisions:
             self.store.require_read_checkpoint_writer(db)
             now = self.clock()
             if settle_after <= now:
-                raise LineRefusal('line_decision_invalid')
+                raise _invalid('decision_settle_after_past', now=_iso(now))
             # The Evidence survives row rotation, so the Work's budget does too.
             count = db.execute("SELECT COUNT(*) FROM tool_events WHERE job_id=? AND tool='line_decision'",
                                (work_id,)).fetchone()[0]
@@ -138,6 +160,7 @@ class LineDecisions:
         outcome = redact(_text(args.get('outcome')))[:OUTCOME_CHARS]
         reason = redact(_text(args.get('unsettleable')))[:REASON_CHARS]
         matched = args.get('matched')
+        _required('settle', (('decision', decision),))
         with self.store.db() as db:
             db.execute('BEGIN IMMEDIATE')
             self.store.require_read_checkpoint_writer(db)
@@ -145,24 +168,31 @@ class LineDecisions:
             row = db.execute('SELECT * FROM line_decisions WHERE id=? AND line_id=?',
                              (decision, line_id)).fetchone()
             if row is None:
-                raise LineRefusal('line_decision_unknown')
+                raise _refusal('line_decision_unknown', 'line_decision_unknown')
             if row['state'] != PENDING:
-                raise LineRefusal('line_decision_settled')
+                raise _refusal('line_decision_settled', 'line_decision_settled')
             if now < row['settle_after']:
-                raise LineRefusal('line_decision_not_due')
+                raise _refusal('line_decision_not_due', 'line_decision_not_due',
+                               due=_iso(row['settle_after'], math.ceil))
             if reason:
-                if outcome or matched or _text(args.get('observed_at')):
-                    raise LineRefusal('line_decision_invalid')
+                extra = [name for name, value in (('outcome', outcome), ('matched', matched),
+                                                  ('observed_at', _text(args.get('observed_at')))) if value]
+                if extra:
+                    raise _invalid('decision_unsettleable_alone', fields=', '.join(extra))
                 attempts = row['attempts'] + 1
                 state = UNSETTLEABLE if attempts >= SETTLE_ATTEMPTS else PENDING
                 db.execute('UPDATE line_decisions SET state=?,reason=?,attempts=?,settled_at=?,settle_work_id=? '
                            'WHERE id=?', (state, reason, attempts, now if state == UNSETTLEABLE else None,
                                           work_id, decision))
             else:
+                _required('settle', (('outcome', outcome), ('matched', matched)))
+                if matched not in MATCHED:
+                    raise _invalid('decision_matched')
                 observed = args.get('observed_at')
-                resolved_at = now if observed in (None, '') else _timestamp(observed)
-                if not outcome or matched not in MATCHED or not row['made_at'] <= resolved_at <= now:
-                    raise LineRefusal('line_decision_invalid')
+                resolved_at = now if observed in (None, '') else _timestamp(observed, 'observed_at')
+                if not row['made_at'] <= resolved_at <= now:
+                    raise _invalid('decision_observed_window',
+                                   made=_iso(row['made_at'], math.ceil), now=_iso(now))
                 state = SETTLED
                 db.execute('UPDATE line_decisions SET state=?,outcome=?,matched=?,resolved_at=?,settled_at=?,'
                            'settle_work_id=?,reason=NULL WHERE id=?',
@@ -172,30 +202,39 @@ class LineDecisions:
 
     @staticmethod
     def _lesson_ops(raw):
+        def invalid(key, **values):
+            return _refusal('line_lesson_invalid', 'lesson_' + key, **values)
         try:
             ops = json.loads(raw)
         except (TypeError, ValueError, RecursionError):
-            raise LineRefusal('line_lesson_invalid') from None
-        if not isinstance(ops, list) or not 0 < len(ops) <= om.MAX_LESSON_OPS:
-            raise LineRefusal('line_lesson_invalid')
-        for item in ops:
-            op = item.get('op') if isinstance(item, dict) else None
-            if (op not in ('add', 'edit', 'agree', 'downvote')
-                    or (op != 'add' and not _text(item.get('id')))
-                    or (op in ('add', 'edit') and not 0 < len(_text(item.get('text'))) <= om.POINT_CHARS)
-                    or ('why' in item and (not isinstance(item['why'], str) or len(item['why']) > om.CHANGE_CHARS))):
-                raise LineRefusal('line_lesson_invalid')
+            raise invalid('json') from None
+        if not isinstance(ops, list):
+            raise invalid('json')
+        if not 0 < len(ops) <= om.MAX_LESSON_OPS:
+            raise invalid('count', max=om.MAX_LESSON_OPS)
+        for index, item in enumerate(ops):
+            if not isinstance(item, dict):
+                raise invalid('object', index=index)
+            op = item.get('op')
+            if op not in ('add', 'edit', 'agree', 'downvote'):
+                raise invalid('op', index=index)
+            if op != 'add' and not _text(item.get('id')):
+                raise invalid('id', index=index)
+            if op in ('add', 'edit') and not 0 < len(_text(item.get('text'))) <= om.POINT_CHARS:
+                raise invalid('text', index=index, max=om.POINT_CHARS)
+            if 'why' in item and (not isinstance(item['why'], str) or len(item['why']) > om.CHANGE_CHARS):
+                raise invalid('why', index=index, max=om.CHANGE_CHARS)
         return ops
 
     @staticmethod
     def _citations(db, line_id, ops):
         settled = dict(db.execute('SELECT id,settle_work_id FROM line_decisions WHERE line_id=? AND state=?',
                                   (line_id, SETTLED)))
-        for item in ops:
+        for index, item in enumerate(ops):
             cited = item.get('decisions')
             if (not isinstance(cited, list) or not cited
                     or any(not isinstance(ref, str) or ref not in settled for ref in cited)):
-                raise LineRefusal('line_lesson_uncited')
+                raise _refusal('line_lesson_uncited', 'line_lesson_uncited', index=index)
         return settled
 
     def learn(self, line_id, work_id, args):

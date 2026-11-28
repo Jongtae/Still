@@ -80,7 +80,7 @@ class AccountIntervalTests(_LineCase):
     def test_after_an_account_ran_its_period_starts_at_that_run(self):
         brief, _work = self.open_line()
         [work] = self.work_rows(brief['line_id'])
-        self.service.cancel_preparation(work['id'])
+        self.service.preparations.pause(work['id'])  # the line keeps work, so its account repeats (#1299)
         account = self.account(brief)
         self.run_line(account, [{'content': '지난주 정리입니다.'}])
         ran_at = account['due_at']

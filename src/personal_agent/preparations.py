@@ -696,32 +696,48 @@ def normalize_window(every_minutes, until, max_runs, due_at, timezone_name, now,
     number of slots in it, lowered by ``max_runs`` when given. Each local date
     is bounded by ``MAX_DAILY_WINDOW_RUNS``. A budget shortfall stores the real
     last check as the end. ``until`` is parsed like ``due`` (same zone rules).
+    #1308: without ``until``, ``max_runs`` bounds the window, which then ends at
+    its last slot.
     """
     minutes = _whole_number(every_minutes)
     if minutes is None or not MIN_EVERY_MINUTES <= minutes <= MAX_EVERY_MINUTES:
         raise PreparationRefusal('invalid_window', msg('preparations.window_minutes', value=repr(every_minutes),
                                                      minimum=MIN_EVERY_MINUTES, maximum=MAX_EVERY_MINUTES))
-    if until in (None, ''):
-        raise PreparationRefusal('invalid_window', msg('preparations.window_until_missing', value=repr(until)))
-    try:
-        until_at, _zone = parse_due(until, timezone_name, timezone_name, now)
-    except PreparationRefusal as exc:
-        reason = ('order' if exc.code == 'due_in_past' else
-                  'span' if exc.code == 'due_too_far' else 'invalid')
-        raise PreparationRefusal('invalid_window', msg('preparations.window_until_' + reason,
-                                 value=repr(until), due=iso(due_at), days=MAX_WINDOW_SECONDS // 86400)) from None
-    if until_at <= due_at:
-        raise PreparationRefusal('invalid_window', msg('preparations.window_until_order',
-                                 value=repr(until), due=iso(due_at)))
-    if until_at - due_at > MAX_WINDOW_SECONDS:
-        raise PreparationRefusal('invalid_window', msg('preparations.window_until_span',
-                                 value=repr(until), due=iso(due_at), days=MAX_WINDOW_SECONDS // 86400))
     every = minutes * 60
+    derived = until in (None, '')
+    if derived:
+        if max_runs in (None, ''):
+            raise PreparationRefusal('invalid_window', msg('preparations.window_until_missing', value=repr(until)))
+        count = _whole_number(max_runs)
+        if count is None or count < 1:
+            raise PreparationRefusal('invalid_max_runs')
+        span = every * (count - 1)
+        if span > MAX_WINDOW_SECONDS:
+            raise PreparationRefusal('invalid_max_runs')
+        if recurrence:  # a day-level rhythm counts slots in wall time, like next_window_slot
+            local = datetime.fromtimestamp(due_at, zone(timezone_name)).replace(tzinfo=None)
+            until_at = (local + timedelta(seconds=span)).replace(tzinfo=zone(timezone_name)).timestamp()
+        else:
+            until_at = due_at + span
+    else:
+        try:
+            until_at, _zone = parse_due(until, timezone_name, timezone_name, now)
+        except PreparationRefusal as exc:
+            reason = ('order' if exc.code == 'due_in_past' else
+                      'span' if exc.code == 'due_too_far' else 'invalid')
+            raise PreparationRefusal('invalid_window', msg('preparations.window_until_' + reason,
+                                     value=repr(until), due=iso(due_at), days=MAX_WINDOW_SECONDS // 86400)) from None
+        if until_at <= due_at:
+            raise PreparationRefusal('invalid_window', msg('preparations.window_until_order',
+                                     value=repr(until), due=iso(due_at)))
+        if until_at - due_at > MAX_WINDOW_SECONDS:
+            raise PreparationRefusal('invalid_window', msg('preparations.window_until_span',
+                                     value=repr(until), due=iso(due_at), days=MAX_WINDOW_SECONDS // 86400))
     if recurrence:
         tz = zone(timezone_name)
         first = datetime.fromtimestamp(due_at, tz).replace(tzinfo=None)
         last = datetime.fromtimestamp(until_at, tz).replace(tzinfo=None)
-        if first.date() != last.date() or last <= first:
+        if first.date() != last.date() or (last <= first and not derived):
             raise PreparationRefusal('invalid_window', msg('preparations.recurring_window_same_day'))
     permitted, slots = daily_window_slots(every, due_at, until_at, timezone_name, recurrence)
     if max_runs in (None, ''):
@@ -854,6 +870,22 @@ def next_window_slot(row, now):
         return None
     slot = row['due_at'] + every * (int(max(0.0, now - row['due_at']) // every) + 1)
     return slot if slot <= end else None
+
+
+def window_checks_left(row, now):
+    """How many slots of a watch's current window are still to run after ``now`` (#1299).
+
+    Counts with ``next_window_slot`` as each would start, so ``max_runs`` and ``until_at`` bound it.
+    """
+    left, current = 0, dict(row)
+    while left < int(row.get('max_runs') or 0):
+        slot = next_window_slot(current, now)
+        if slot is None:
+            break
+        left += 1
+        current.update(due_at=slot, run_count=int(current.get('run_count') or 0) + 1)
+        now = slot
+    return left
 
 
 def next_due(due_at, timezone_name, recurrence, now, rule_start=None, run_count=0):
@@ -1764,6 +1796,8 @@ class Preparations:
                 db.execute('INSERT INTO tool_events(job_id,tool,status,detail,created) VALUES (?,?,?,?,?)',
                            (created_from, 'line_held', 'succeeded',
                             json.dumps({'preparation_id': row['id'], 'channel': bundle_channel}), now))
+            if line_id and origin != ORIGIN_LINE_ACCOUNT and state == STATE_SCHEDULED:
+                self.revive_line_account(line_id, created_from=created_from, db=db)
             return row
 
     def _piece_admission(self, db, line_id, piece_of, due_at, now):
@@ -1805,6 +1839,13 @@ class Preparations:
                           'AND origin IS NOT ? AND id IS NOT ? LIMIT 1',
                           (line_id, STATE_SCHEDULED, ORIGIN_LINE_ACCOUNT, exclude)).fetchone() is not None
 
+    @staticmethod
+    def line_has_live_work(db, line_id):
+        """#1299: whether any row of the line's work may still run (an open offer and a pause count)."""
+        return db.execute(f"SELECT 1 FROM preparations WHERE line_id=? AND origin IS NOT ? "
+                          f"AND state IN ({','.join('?' * len(ACTIVE_STATES))}) LIMIT 1",
+                          (line_id, ORIGIN_LINE_ACCOUNT, *ACTIVE_STATES)).fetchone() is not None
+
     def line_resume_target(self, line_id, db=None):
         """The owner-opened, stopped or unscheduled brief eligible for an offer."""
         from .entrusted_lines import EntrustedLines, STATE_ACTIVE
@@ -1844,6 +1885,26 @@ class Preparations:
             self._exact_line_resume(row, offer_digest)
             self.cancel(preparation_id, db=db)
             db.execute('UPDATE preparations SET last_outcome=? WHERE id=?', ('declined', preparation_id))
+
+    def revive_line_account(self, line_id, *, created_from, db):
+        """#1299: an account that ended with its line's work starts again when the line has work again.
+
+        Only an account that ended that way: none yet (the line's own setup makes it) or a cancelled
+        one (an owner decision, as ``ensure_line_account``'s callers keep it) is left as it is.
+        """
+        from .entrusted_lines import EntrustedLines, STATE_ACTIVE
+        last = db.execute('SELECT id,state,accepted_by FROM preparations WHERE line_id=? AND origin=? '
+                          'ORDER BY created_at DESC, rowid DESC LIMIT 1', (line_id, ORIGIN_LINE_ACCOUNT)).fetchone()
+        if last is None or last['state'] in ACTIVE_STATES or last['state'] == STATE_CANCELLED:
+            return None
+        brief = EntrustedLines(self.store, clock=self.clock).readable(line_id, db)
+        if not brief or brief['state'] != STATE_ACTIVE:
+            return None
+        # A held account keeps its original send intent (the ``line_held`` receipt), as when it was set up.
+        held = db.execute("SELECT json_extract(detail,'$.channel') FROM tool_events WHERE tool='line_held' "
+                          "AND json_extract(detail,'$.preparation_id')=? ORDER BY id DESC LIMIT 1", (last['id'],)).fetchone()
+        return self.ensure_line_account(brief, created_from=created_from, db=db, accepted_by=last['accepted_by'],
+                                        bundle_channel=held[0] if held else None)
 
     def ensure_line_account(self, brief, *, created_from, db, accepted_by=ACCEPTED_OWNER_WORK,
                             channel=None, bundle_channel=None, replace_inactive=True):
@@ -1927,6 +1988,8 @@ class Preparations:
                     raise PreparationRefusal('not_found')
                 raise PreparationRefusal('expired' if row['state'] == STATE_PROPOSED and (window_ended(row, now)
                                          or row['check_spec'] and now >= row['until_at']) else 'not_proposed')
+            if row.get('line_id') and row.get('origin') != ORIGIN_LINE_ACCOUNT:
+                self.revive_line_account(row['line_id'], created_from=accepted_from or row['created_from'], db=db)
             return row
 
     def cancel(self, preparation_id, *, db=None):
@@ -2331,6 +2394,9 @@ class Preparations:
                     raise PreparationRefusal('resume_expired')
                 db.execute('UPDATE preparations SET state=?,due_at=?,updated_at=? WHERE id=?',
                            (STATE_SCHEDULED, following, revision, row['id']))
+            if row.get('line_id') and row.get('origin') != ORIGIN_LINE_ACCOUNT:
+                # #1299: restored line work brings back an account that ended with the line's work.
+                self.revive_line_account(row['line_id'], created_from=row['created_from'], db=db)
         return self.get(preparation_id)
 
     def edit(self, preparation_id, *, states=(STATE_PROPOSED, STATE_SCHEDULED, STATE_PAUSED), expected_max_runs=None, **changes):
@@ -3130,6 +3196,11 @@ class Preparations:
                 # #575: the extra run does not consume or advance the regular schedule.
                 updates.update(state=current['run_return_state'], due_at=current['due_at'], run_return_state=None)
                 following = current['due_at']
+            if (current.get('origin') == ORIGIN_LINE_ACCOUNT and current.get('line_id')
+                    and not self.line_has_live_work(db, current['line_id'])):
+                # #1299: the account lasts as long as the line's work; with none left this was the closing one,
+                # an extra run the owner asked for included.
+                updates['state'], following = outcome, None
             notified = False
             if decision is not None and job:
                 updates.update(last_decision=decision[0], last_decision_reason=decision[1])
@@ -3147,6 +3218,12 @@ class Preparations:
             db.execute(f"UPDATE preparations SET {','.join(k + '=?' for k in updates)} WHERE id=? AND state=?",
                        (*updates.values(), current['id'], STATE_RUNNING))
             self._clear_closed_budget_skips(db)
+            if (current.get('line_id') and current.get('origin') != ORIGIN_LINE_ACCOUNT
+                    and updates.get('state') not in ACTIVE_STATES
+                    and not self.line_has_live_work(db, current['line_id'])):
+                # #1299: the line's last work ended; its account runs now as the closing account, not days later.
+                db.execute('UPDATE preparations SET due_at=?,updated_at=? WHERE line_id=? AND origin=? AND state=? AND due_at>?',
+                           (now, now, current['line_id'], ORIGIN_LINE_ACCOUNT, STATE_SCHEDULED, now))
             if job:
                 detail = {'preparation_id': current['id'], 'outcome': outcome, 'delivery': job['delivery'],
                           'next_due': iso(following) if following else None}

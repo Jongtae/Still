@@ -11513,10 +11513,10 @@
   "zh": "every_minutes={value}：需要{minimum}到{maximum}之间的整数。"
  },
  "preparations.window_until_missing": {
-  "ko": "until={value}: 종료 시각이 필요해요.",
-  "en": "until={value}: an end time is required.",
-  "ja": "until={value}: 終了時刻が必要です。",
-  "zh": "until={value}：需要结束时间。"
+  "ko": "until={value}: 종료 시각이나 max_runs가 필요해요.",
+  "en": "until={value}: an end time or max_runs is required.",
+  "ja": "until={value}: 終了時刻か max_runs が必要です。",
+  "zh": "until={value}：需要结束时间或 max_runs。"
  },
  "preparations.window_until_invalid": {
   "ko": "until={value}: RFC3339 시각으로 읽을 수 없어요. 시간대도 확인해 주세요.",
@@ -12016,6 +12016,12 @@
   "ja": "この実行はオーナーが任せた仕事の定期報告です。前回以降にしたことと結果（オーナーが任せた目標に照らした仕事の結果と、遂行の過程—オーナーの介入、送信・確認済み・未確認・拒否された変更、遅延と復旧、現在の状態—を分けて）、有効なルールすべて、わかったこと、未解決の事項を伝えてください。変化がなくてもそう伝えてください（権限は与えません）:",
   "zh": "本次运行是主人受托事项的定期汇报。请汇报自上次汇报以来做了什么及结果（按主人交代的目标衡量的事情结果，并另外说明执行过程：主人的介入、已发送/已确认/未确认/被拒绝的变更、延迟与恢复、当前状态）、现行的全部规则、了解到的情况和未决事项；即使没有变化也请说明（不授予任何权限）："
  },
+ "lines.account_closing": {
+  "ko": "이 일에는 더 실행될 작업이 남아 있지 않아요. 이번이 마지막 보고이고, 이후 정기 보고는 없어요. 맡긴 일이 어떻게 끝났는지(마지막 결과와 소유자에게 이미 전달된 것)를 먼저 말하고, 더 보고하지 않는다고 알려 주세요. 다음 정기 보고 일정을 말하지 마세요.",
+  "en": "No work of this line is left to run. This is the closing account and no periodic account follows. Lead with how the entrusted work ended (its last result and what already reached the owner), and say there are no further accounts; do not name a next account.",
+  "ja": "この仕事には実行される作業がもう残っていません。今回が最後の報告で、以後の定期報告はありません。任された仕事がどう終わったか（最後の結果と、すでにオーナーに伝わったこと）を先に伝え、これ以上報告しないことを伝えてください。次の定期報告の予定は言わないでください。",
+  "zh": "此事已没有待运行的工作。这是最后一次汇报，之后不再有定期汇报。请先说明受托事项如何结束（最后的结果以及已送达主人的内容），并说明不再汇报；不要提下一次定期汇报的时间。"
+ },
  "lines.account_pieces": {
   "ko": "지난 보고 이후 이 일의 조각이 {count}번 실행됐어요: 전달 {delivered}, 보관 {kept}, 실패 {failed}, 진행 중 {open}. 이 숫자를 보고에 포함하세요.",
   "en": "Since the last account, {count} pieces of this work ran: {delivered} delivered, {kept} kept, {failed} failed, {open} still open. Include these counts in the account.",
@@ -12244,11 +12250,41 @@
   "ja": "action は list, read, open, revise, undo, stop, restart, decide, settle, learn のいずれかです。",
   "zh": "action 为 list、read、open、revise、undo、stop、restart、decide、settle 或 learn 之一。"
  },
- "lines.refused_line_decision_invalid": {
-  "ko": "결정이나 결과에 필요한 내용과 시간을 확인해 주세요.",
-  "en": "Check the required decision or outcome fields and times.",
-  "ja": "判断や結果に必要な項目と時刻を確認してください。",
-  "zh": "请检查决定或结果的必填字段和时间。"
+ "lines.refused_decision_required": {
+  "ko": "{action}에 필요한 값이 없어요: {fields}.",
+  "en": "{action} is missing: {fields}.",
+  "ja": "{action} に必要な値がありません: {fields}。",
+  "zh": "{action} 缺少必填值：{fields}。"
+ },
+ "lines.refused_decision_time": {
+  "ko": "{field}: 시간으로 읽을 수 없어요. epoch 초나 ISO 8601(예: 2026-01-02T15:30:00+09:00)로 주세요. 시간대가 없으면 UTC예요.",
+  "en": "{field}: not a readable time. Give epoch seconds or ISO 8601 (for example 2026-01-02T15:30:00+09:00). Without an offset it is UTC.",
+  "ja": "{field}: 時刻として読めません。epoch 秒または ISO 8601（例: 2026-01-02T15:30:00+09:00）で指定してください。時差がなければ UTC です。",
+  "zh": "{field}：无法识别为时间。请用 epoch 秒或 ISO 8601（例如 2026-01-02T15:30:00+09:00）。未写时区则按 UTC。"
+ },
+ "lines.refused_decision_settle_after_past": {
+  "ko": "settle_after: 지금({now})보다 뒤의 시간이어야 해요.",
+  "en": "settle_after: must be later than now ({now}).",
+  "ja": "settle_after: 現在（{now}）より後の時刻にしてください。",
+  "zh": "settle_after：必须晚于当前时间（{now}）。"
+ },
+ "lines.refused_decision_unsettleable_alone": {
+  "ko": "unsettleable: 단독으로만 써요. {fields}를 빼거나, 결과를 확인했다면 unsettleable을 빼세요.",
+  "en": "unsettleable: use it alone. Drop {fields}, or drop unsettleable if you checked the outcome.",
+  "ja": "unsettleable: 単独で使ってください。{fields} を外すか、結果を確認した場合は unsettleable を外してください。",
+  "zh": "unsettleable：只能单独使用。请去掉 {fields}；若已核查结果，请去掉 unsettleable。"
+ },
+ "lines.refused_decision_matched": {
+  "ko": "matched: yes, no, unclear 중 하나여야 해요.",
+  "en": "matched: must be yes, no or unclear.",
+  "ja": "matched: yes, no, unclear のいずれかにしてください。",
+  "zh": "matched：必须是 yes、no 或 unclear。"
+ },
+ "lines.refused_decision_observed_window": {
+  "ko": "observed_at: 결정을 기록한 시각({made})부터 지금({now}) 사이여야 해요. 생략하면 지금으로 기록해요.",
+  "en": "observed_at: must be between when the decision was made ({made}) and now ({now}). Omit it to record now.",
+  "ja": "observed_at: 判断を記録した時刻（{made}）から現在（{now}）の間にしてください。省略すると現在になります。",
+  "zh": "observed_at：须在记录决定的时间（{made}）与当前时间（{now}）之间。省略则记为当前时间。"
  },
  "lines.refused_line_decision_limit": {
   "ko": "이번 실행에서 기록할 수 있는 결정 수에 도달했어요.",
@@ -12257,34 +12293,70 @@
   "zh": "本次工作已达到决定记录上限。"
  },
  "lines.refused_line_decision_not_due": {
-  "ko": "아직 이 결정을 확인할 때가 아니에요.",
-  "en": "This decision is still waiting for its check time.",
-  "ja": "この判断はまだ確認時期を迎えていません。",
-  "zh": "这项决定尚未到核查时间。"
+  "ko": "decision: 아직 확인할 때가 아니에요. {due}부터 settle할 수 있어요.",
+  "en": "decision: not due yet. It can be settled from {due}.",
+  "ja": "decision: まだ確認時期ではありません。{due} 以降に settle できます。",
+  "zh": "decision：尚未到核查时间。{due} 起才能 settle。"
  },
  "lines.refused_line_decision_settled": {
-  "ko": "이 결정은 이미 마감됐어요.",
-  "en": "This decision has already been closed.",
-  "ja": "この判断の記録はすでに締め切られています。",
-  "zh": "这项决定已关闭。"
+  "ko": "decision: 이 결정은 이미 마감됐어요. 아직 열려 있는 결정의 id를 주세요.",
+  "en": "decision: this decision has already been closed. Give the id of one still pending.",
+  "ja": "decision: この判断はすでに締め切られています。未確定の判断の id を指定してください。",
+  "zh": "decision：该决定已关闭。请提供仍待核查的决定 id。"
  },
  "lines.refused_line_decision_unknown": {
-  "ko": "이 일에서 그 결정을 찾을 수 없어요.",
-  "en": "That decision could not be found on this line.",
-  "ja": "この仕事ではその判断が見つかりません。",
-  "zh": "在此事项中找不到该决定。"
+  "ko": "decision: 이 일에 그 id의 결정이 없어요. decide가 돌려준 id를 쓰세요.",
+  "en": "decision: no decision with that id on this line. Use the id that decide returned.",
+  "ja": "decision: この仕事にその id の判断はありません。decide が返した id を使ってください。",
+  "zh": "decision：此事项中没有该 id 的决定。请使用 decide 返回的 id。"
  },
  "lines.refused_line_lesson_uncited": {
-  "ko": "교훈을 바꿀 때마다 이 일에서 결과를 확인한 결정을 인용해 주세요.",
-  "en": "Cite a settled decision of this line for every lesson operation.",
-  "ja": "教訓の操作ごとに、この仕事の確認済みの判断を引用してください。",
-  "zh": "每项经验操作都需引用此事项中已核查的决定。"
+  "ko": "lessons[{index}].decisions: 이 일에서 결과를 확인(settle)한 결정 id를 하나 이상 목록으로 인용해 주세요.",
+  "en": "lessons[{index}].decisions: cite a list of one or more settled decision ids of this line.",
+  "ja": "lessons[{index}].decisions: この仕事で結果を確認（settle）した判断の id を1件以上、リストで引用してください。",
+  "zh": "lessons[{index}].decisions：请以列表引用此事项中至少一个已核查（settle）的决定 id。"
  },
- "lines.refused_line_lesson_invalid": {
-  "ko": "교훈을 바꿀 내용과 형식이 맞는지 확인해 주세요.",
-  "en": "Check the lesson operations and their format.",
-  "ja": "教訓の操作内容と形式を確認してください。",
-  "zh": "请检查经验操作及其格式。"
+ "lines.refused_lesson_json": {
+  "ko": "lessons: 연산 객체의 JSON 목록을 담은 문자열이어야 해요.",
+  "en": "lessons: must be a string holding a JSON list of operation objects.",
+  "ja": "lessons: 操作オブジェクトの JSON リストを含む文字列にしてください。",
+  "zh": "lessons：必须是包含操作对象 JSON 列表的字符串。"
+ },
+ "lines.refused_lesson_count": {
+  "ko": "lessons: 연산은 1개에서 {max}개까지예요.",
+  "en": "lessons: give 1 to {max} operations.",
+  "ja": "lessons: 操作は 1〜{max} 件にしてください。",
+  "zh": "lessons：操作数量须为 1 到 {max} 项。"
+ },
+ "lines.refused_lesson_object": {
+  "ko": "lessons[{index}]: 객체여야 해요.",
+  "en": "lessons[{index}]: must be an object.",
+  "ja": "lessons[{index}]: オブジェクトにしてください。",
+  "zh": "lessons[{index}]：必须是对象。"
+ },
+ "lines.refused_lesson_op": {
+  "ko": "lessons[{index}].op: add, edit, agree, downvote 중 하나여야 해요.",
+  "en": "lessons[{index}].op: must be add, edit, agree or downvote.",
+  "ja": "lessons[{index}].op: add, edit, agree, downvote のいずれかにしてください。",
+  "zh": "lessons[{index}].op：必须是 add、edit、agree 或 downvote。"
+ },
+ "lines.refused_lesson_id": {
+  "ko": "lessons[{index}].id: edit, agree, downvote에는 기존 교훈 id가 필요해요.",
+  "en": "lessons[{index}].id: edit, agree and downvote need an existing lesson id.",
+  "ja": "lessons[{index}].id: edit、agree、downvote には既存の教訓の id が必要です。",
+  "zh": "lessons[{index}].id：edit、agree、downvote 需要现有经验的 id。"
+ },
+ "lines.refused_lesson_text": {
+  "ko": "lessons[{index}].text: add와 edit에는 1~{max}자의 text가 필요해요.",
+  "en": "lessons[{index}].text: add and edit need text of 1 to {max} characters.",
+  "ja": "lessons[{index}].text: add と edit には 1〜{max} 文字の text が必要です。",
+  "zh": "lessons[{index}].text：add 和 edit 需要 1 到 {max} 个字符的 text。"
+ },
+ "lines.refused_lesson_why": {
+  "ko": "lessons[{index}].why: {max}자 이하의 문자열이어야 해요. 생략해도 돼요.",
+  "en": "lessons[{index}].why: must be a string of at most {max} characters, or omitted.",
+  "ja": "lessons[{index}].why: {max} 文字以内の文字列にするか、省略してください。",
+  "zh": "lessons[{index}].why：须为不超过 {max} 个字符的字符串，或省略。"
  },
  "lines.refused_line_lesson_refused": {
   "ko": "반영된 교훈 변경이 없어요 ({detail}).",

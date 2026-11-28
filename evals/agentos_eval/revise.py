@@ -8,7 +8,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from tempfile import NamedTemporaryFile, TemporaryDirectory
 
-from .arm_compare import text_digest
+from .arm_compare import _run_scores, partition_ids, record_refused, text_digest
 from .paths import REPO, eval_home
 
 PROPOSER_KEYS = ('target_path', 'lines', 'base_digest', 'text', 'cause', 'prior')
@@ -57,6 +57,32 @@ def load_target(path, lines=None, *, repo=REPO):
         text = ''.join(rows[first - 1:last])
         lines = [first, last]
     return {'path': path.relative_to(root).as_posix(), 'lines': lines, 'text': text, 'digest': text_digest(text)}
+
+
+def check_room(arm, target, *, meta, measure):
+    """Require complete dev evidence with room to improve."""
+    if (not isinstance(arm, dict) or arm.get('schema') != 'revision-arm/1' or arm.get('role') != 'current'
+            or not isinstance(arm.get('records'), list)):
+        raise ValueError('Expected a current revision-arm/1 baseline with records')
+    if (arm.get('text_digest'), arm.get('target_path'), arm.get('lines')) != (
+            target['digest'], target['path'], target['lines']):
+        raise ValueError('The baseline does not match the current text')
+    records = arm['records']
+    ids = set()
+    for row in records:
+        ident = row.get('scenario') if isinstance(row, dict) else None
+        if not isinstance(ident, str) or ident not in meta:
+            raise ValueError('The baseline contains an unknown scenario')
+        ids.add(ident)
+    dev = set(partition_ids(ids, meta)['dev'])
+    if not dev:
+        raise ValueError('The baseline contains no dev records')
+    scores = [_run_scores(row, (measure,), measure, record_refused(row))[measure]
+              for row in records if row['scenario'] in dev]
+    if None in scores:
+        raise ValueError(f'The baseline has incomplete dev scores for {measure}')
+    if all(score >= 1.0 for score in scores):
+        raise ValueError(f'no_room_on_dev: {measure} is at its maximum on dev and no revision can be preferred')
 
 
 def _recent(entries, target_path, limit):

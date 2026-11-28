@@ -119,7 +119,14 @@ def _reported_cost(cost):
     return cost
 
 
+_PIN_HINT = 'pin every arm\'s worker with `sweep --worker-model` (and `--worker-effort`)'
+
+
 def _validate_recorded_engine(record, settings):
+    pin = record.get('worker_pin')
+    if pin is not None and (pin.get('model') != settings['model'] or
+                            (pin.get('effort') or '') != settings.get('effort', '')):
+        raise ValueError(f'Recorded worker pin for {record["scenario"]!r} differs from arm settings')
     work = record.get('work')
     if not isinstance(work, dict):
         return
@@ -130,7 +137,8 @@ def _validate_recorded_engine(record, settings):
             for field in fields:
                 value = engine.get(field)
                 if value and value != settings[field]:
-                    raise ValueError(f'Recorded engine {field} for {record["scenario"]!r} differs from arm settings')
+                    raise ValueError(f'Recorded engine {field} for {record["scenario"]!r} differs from arm settings; '
+                                     f'{_PIN_HINT}')
 
 
 def _validate_arm(arm, baseline, meta, *, same_text):

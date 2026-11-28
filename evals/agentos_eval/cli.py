@@ -7,7 +7,9 @@
     python -m agentos_eval report --log <eval log>
     python -m agentos_eval budget
     python -m agentos_eval blockers --store <data folder or quickstart.db>
-    python -m agentos_eval revise propose --target <src file> --cause-kind <kind> --cause-source <id> --cause-file <file> --proposer <model>
+    python -m agentos_eval revise arm --current --target <src file> -- <sweep args>
+    python -m agentos_eval revise propose --target <src file> --baseline <arm record>
+        --cause-kind <kind> --cause-source <id> --cause-file <file> --proposer <model>
 
 Run from the ``evals`` folder (or with it on ``PYTHONPATH``).  ``sweep`` and
 ``report`` need the eval extra (``evals/requirements.txt``); a ``--world``
@@ -30,7 +32,7 @@ from . import scenarios as scenario_module
 from .budget import JudgeBudget
 from .paths import LIVE_DATA, REPO, eval_home
 from .report import records_from_samples, world_records, write_report
-from .sandbox import WORLD_WORKER, run_id, snapshot_seed
+from .sandbox import WORLD_WORKER, run_id, snapshot_seed, worker_pin
 
 #: Where a judge key may come from at run time (never stored by this tool).
 KEY_ENV = {'openai': 'OPENAI_API_KEY', 'anthropic': 'ANTHROPIC_API_KEY', 'google': 'GOOGLE_API_KEY'}
@@ -266,6 +268,15 @@ def cmd_sweep(args, folder=None, inspect_eval=None, task_factory=None, key_loade
     # The run's spending cap applies to every route, the world sweep included (#545).
     if args.cap_usd is not None:
         os.environ['AGENTOS_EVAL_JUDGE_CAP_USD'] = str(args.cap_usd)
+    # #1296: refuse a bad pin before any notice, sandbox or model call.
+    model, effort = getattr(args, 'worker_model', ''), getattr(args, 'worker_effort', '')
+    try:
+        pin = worker_pin(args.worker, model, effort)
+    except ValueError as exc:
+        raise SystemExit(str(exc)) from None
+    pinned = {'worker_model': model, 'worker_effort': effort} if pin else {}
+    if pin and args.world:
+        raise SystemExit('--worker-model is not supported with --world')
     if args.world:
         return run_world_sweep(args)
     if inspect_eval is None or task_factory is None:
@@ -281,14 +292,15 @@ def cmd_sweep(args, folder=None, inspect_eval=None, task_factory=None, key_loade
            **({'claude_auth': getattr(args, 'claude_auth', 'api')} if args.worker != 'codex' else {}),
            'instances': args.instances, 'epochs': args.epochs, 'judge': judge, 'judge_key': key_source,
            'judgment_timeout': getattr(args, 'judgment_timeout', JUDGMENT_TIMEOUT),
-           'seed': seed.name if seed else 'fresh', **({'arm': args.arm} if getattr(args, 'arm', '') else {})}
+           'seed': seed.name if seed else 'fresh', **({'arm': args.arm} if getattr(args, 'arm', '') else {}),
+           **pinned}
     if getattr(args, 'continuity', None):
         run['continuity'] = args.continuity
         run['observation_version'] = args.continuity['observation_version']
     task = task_factory(scenarios=args.scenarios, split=args.split, worker=args.worker,
                              instances=args.instances, seed=str(seed or ''), judge=judge,
                              turn_timeout=args.turn_timeout, judgment_timeout=run['judgment_timeout'],
-                             **({'arm': args.arm} if getattr(args, 'arm', '') else {}),
+                             **({'arm': args.arm} if getattr(args, 'arm', '') else {}), **pinned,
                              include_local=not args.no_local,
                              keep_sandboxes=args.keep_sandboxes, measures=getattr(args, 'measures', ''),
                              sample_limit=args.limit, judge_notice=False,
@@ -417,8 +429,22 @@ def cmd_blockers(args):
 def cmd_revise(args):
     from . import revise
 
-    experience = args.experience if args.experience is not None else eval_home() / 'experience'
     try:
+        if args.action == 'arm':
+            from . import arm_run
+
+            if args.current and args.target is None:
+                raise ValueError('--current requires --target')
+            if args.candidate is not None and (args.target is not None or args.lines is not None):
+                raise ValueError('--candidate cannot be combined with --target or --lines')
+            sweep_args = args.sweep_args
+            if sweep_args[:1] == ['--']:
+                sweep_args = sweep_args[1:]
+            print(arm_run.run_arm(sweep_args, candidate=args.candidate, target=args.target, lines=args.lines,
+                                  equal_retries=args.equal_retries, out=args.out))
+            return
+
+        experience = args.experience if args.experience is not None else eval_home() / 'experience'
         if args.action == 'record':
             comparison = json.loads(args.comparison.expanduser().read_text(encoding='utf-8'))
             recorded_at = datetime.now(timezone.utc).strftime('%Y-%m-%dT%H:%M:%SZ')
@@ -427,6 +453,9 @@ def cmd_revise(args):
             return
 
         target = revise.load_target(args.target, args.lines)
+        baseline = revise._read_json(args.baseline.expanduser())
+        meta = {item['id']: {'split': item['split'], 'source': item['source']} for item in scenario_module.load()}
+        revise.check_room(baseline, target, meta=meta, measure=args.measure)
         cause = {'kind': args.cause_kind, 'source': args.cause_source,
                  'text': args.cause_file.expanduser().read_text(encoding='utf-8')}
         out = revise.candidate_folder(target, args.out)
@@ -599,6 +628,9 @@ def main(argv=None):
     listing.add_argument('--world', default='', help='list the world scenarios of this world instead')
     sweep = sub.add_parser('sweep', help='run scenarios on fresh sandboxes and write the trend report')
     sweep.add_argument('--worker', choices=('codex', 'claude-code', 'both'), default='codex')
+    sweep.add_argument('--worker-model', default='',
+                       help="pin the worker's main AI model for every run (#1296); not with --worker both or --world")
+    sweep.add_argument('--worker-effort', default='', help='pin its reasoning effort too; needs --worker-model')
     sweep.add_argument('--instances', type=int, default=3)
     sweep.add_argument('--epochs', type=int, default=1)
     sweep.add_argument('--seed', default=os.environ.get('AGENTOS_EVAL_SEED', ''),
@@ -677,11 +709,22 @@ def main(argv=None):
     listed = sub.add_parser('blockers', help='list recent self-review blockers, read-only (#1277)')
     listed.add_argument('--store', required=True, help='Still data folder or its quickstart.db; no default')
     listed.add_argument('--scan', type=int, default=20000, help='newest tool events to look at (default 20000)')
-    revision = sub.add_parser('revise', help='propose versioned-text candidates or record a comparison (#1283)')
+    revision = sub.add_parser('revise', help='run arms, propose versioned-text candidates or record a comparison')
     revision_actions = revision.add_subparsers(dest='action', required=True)
+    arm = revision_actions.add_parser('arm')
+    text = arm.add_mutually_exclusive_group(required=True)
+    text.add_argument('--candidate', type=Path)
+    text.add_argument('--current', action='store_true')
+    arm.add_argument('--target', type=Path)
+    arm.add_argument('--lines', type=_revision_lines)
+    arm.add_argument('--equal-retries', action='store_true')
+    arm.add_argument('--out', type=Path)
+    arm.add_argument('sweep_args', nargs=argparse.REMAINDER)
     proposing = revision_actions.add_parser('propose')
     proposing.add_argument('--target', type=Path, required=True)
     proposing.add_argument('--lines', type=_revision_lines)
+    proposing.add_argument('--baseline', type=Path, required=True)
+    proposing.add_argument('--measure', default='passed')
     proposing.add_argument('--cause-kind', choices=('blocker', 'regression'), required=True)
     proposing.add_argument('--cause-source', required=True)
     proposing.add_argument('--cause-file', type=Path, required=True)

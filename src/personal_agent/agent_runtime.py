@@ -475,10 +475,10 @@ SCHEDULE_PREPARATION_ARGUMENTS={
  'timezone':'An IANA name such as Asia/Seoul; default the owner\'s time zone.',
  'recurrence':('daily, weekdays or weekly (repeating from due); omit for once. A request that repeats on a calendar rhythm (every day, weekday mornings, every Monday) is one preparation with recurrence, and a repetition up to a deadline is one watch (every_minutes with until). Combine recurrence with every_minutes and until for the same local window on each recurring day; never split either into separately dated one-shot preparations.'),
  'rrule':'Use rrule only when daily/weekdays/weekly cannot express specific weekdays, monthly days, every N weeks, an end date or a run count: FREQ=DAILY/WEEKLY/MONTHLY; INTERVAL=1–12; BYDAY (ordinals only MONTHLY); BYMONTHDAY=1–31 or -1; UNTIL=date/date-time or COUNT=1–366, never both; no other parts; repeats from due, without recurrence or a window (#580).',
- 'every_minutes':('With until (#719): repeat every that many minutes (a whole number, 5 to 720) from due until the until time, at most max_runs times - for watching something up to a deadline. One wish is one watch: never add a separate preparation for its first or last check. The result\'s last_check is the last scheduled check; describe the watch by it. '
+ 'every_minutes':('With until or max_runs (#719): repeat every that many minutes (a whole number, 5 to 720) from due until the until time, at most max_runs times - for watching something up to a deadline or a set number of checks. One wish is one watch: never add a separate preparation for its first or last check. The result\'s last_check is the last scheduled check; describe the watch by it. '
   'Standing wish (#846, #755): when the owner states a wish about something that changes over time (a price, availability, weather, a delivery, an opening) and wants to know when it comes about, in a Work the owner started set up one kind prepare watch with delivery when_needed at once, rather than answering once and stopping: goal states what to check and what counts as news, due is the first check, until is the owner\'s deadline. When a detail you can reasonably assume is missing (the cadence, the deadline), set up the watch with that assumption and say what you assumed and that the owner can change or cancel it. Ask one question first only when the missing detail decides what is checked (which date, which item) and only the owner can give it; set it up after the answer (#406). '
   'Default cadence about three checks a day at times fitted to the owner\'s day (morning, afternoon, evening local), so every_minutes around 360 to 480; hourly or closer only when the owner asks for it or the deadline is within hours. After an invalid_window result, correct and retry that same bounded watch; never replace it with separately dated one-shot or daily preparations for the same goal.'),
- 'until':('For every_minutes: RFC3339, within 31 days of due. With recurrence, until and due must be on the same local day and define each day’s window. Inclusive like RFC 5545 UNTIL: a check falling at until itself runs, none after it, so pass the owner\'s end time as said. '
+ 'until':('For every_minutes: RFC3339, within 31 days of due; may be omitted when max_runs is given, and the window then ends at that last run. With recurrence, until and due must be on the same local day and define each day’s window. Inclusive like RFC 5545 UNTIL: a check falling at until itself runs, none after it, so pass the owner\'s end time as said. '
           'If the result has requested_until, the daily cap shortened the window: state last_check as the real final check and say the requested end could not be covered at that interval. covering_every_minutes is the smallest whole-minute cadence that fits the daily cap for the whole requested period.'),
  'max_runs':f'For every_minutes: an integer from 1 to {MAX_DAILY_WINDOW_RUNS} per recurring day, or times the number of started 24-hour periods for a one-off window (rounded up; an inclusive endpoint adds no extra period); default every slot within the daily cap. Each local date also permits at most {MAX_DAILY_WINDOW_RUNS} checks, including each day of a recurring window. If a date exceeds it, the window ends at the last permitted check.',
  'report_every_minutes':'For a when_needed watch, use when the owner requests or agrees to progress reports at an interval even without a change. A whole number multiple of every_minutes, measured from each window’s first scheduled slot. The final check is reported as well.',
@@ -539,19 +539,21 @@ ENTRUSTED_LINE_ARGUMENTS={
  'rehearsal':('For open or revise. true: the line runs in rehearsal. Its external changes are recorded as rehearsed, '
               'not sent. Use it when the owner asks to try the line out first. false takes the line live, and only '
               'the owner\'s own message asking for exactly that does it. Otherwise propose it to the owner.'),
- 'about':'For decide, a short label for what the decision concerns.',
+ 'about':'For decide, a short label for what the decision concerns. decide needs about, claim, expectation and settle_after.',
  'claim':'For decide, the judgment you made.',
  'expectation':'For decide, the result you expect to observe.',
  'settle_after':'For decide, a future time to check the outcome, as epoch seconds or ISO 8601 (UTC by default).',
  'check':'For decide, an optional note about how to check the outcome.',
  'lessons_applied':'For decide, optional current lesson refs or IDs, separated by spaces or commas.',
  'decision':'For settle, the ID of a due decision of this line.',
- 'outcome':'For settle, the outcome you observed. Use with matched.',
+ 'outcome':'For settle, the outcome you observed. Use with matched; settle needs both unless unsettleable.',
  'matched':'For settle, whether the observed outcome matched the expectation: yes, no or unclear.',
- 'observed_at':'For settle, optional source time in epoch seconds or ISO 8601 (UTC by default). Defaults to now.',
+ 'observed_at':('For settle, optional source time in epoch seconds or ISO 8601 (UTC by default), between when the '
+                'decision was made and now. Defaults to now.'),
  'unsettleable':'For settle, use this reason alone if you could not check the outcome. The decision ends after three failed attempts.',
  'lessons':('For learn, a JSON list of up to five operations with op add, edit, agree or downvote. '
-            'Include text for add or edit, an existing lesson id for edit, agree or downvote, and optional why. '
+            'Include text (at most 200 characters) for add or edit, an existing lesson id for edit, agree or downvote, '
+            'and optional why (at most 200 characters). '
             'Every operation needs a decisions array citing settled decisions of this line.'),
 }
 #: #774 step 2: ask the owner, in the paired Telegram chat, for a current position.

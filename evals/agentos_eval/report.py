@@ -60,7 +60,7 @@ def records_from_samples(samples, scorer=SCORER):
             measurements.update(judgment_fallback_counts(run.get('work')))
         if 'judgment' in run:
             measurements['judgment_ai'] = run['judgment']
-        for key in ('turns', 'due_observations', 'observation_version', 'worker_api'):
+        for key in ('turns', 'due_observations', 'observation_version', 'worker_api', 'worker_pin'):
             if key in run:
                 measurements[key] = run[key]
         if score is None:

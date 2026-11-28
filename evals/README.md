@@ -27,11 +27,14 @@ The older `owner-usefulness-*.json` and `use01-fixtures.json` files in this fold
 ## One-time setup
 
 ```sh
-python3 -m venv ~/.local/share/agentos-evals/venv
-~/.local/share/agentos-evals/venv/bin/pip install -r evals/requirements.txt
+sh scripts/dev/eval_env.sh
 ```
 
+This needs [uv](https://docs.astral.sh/uv/) and Python 3.12 or newer (`PYTHON=...` selects one). It creates or updates `~/.local/share/agentos-evals/venv` with `evals/requirements.txt` and Still's runtime dependencies at the versions in `uv.lock`, then checks that the judge and proposer code imports there (#1297). Run it again after a dependency change.
+
 The sandbox servers themselves run with the normal `python3` that already runs Still (override with `AGENTOS_EVAL_SERVER_PYTHON`), using the checkout's own `src/`.
+
+On macOS, a server Python linked to Apple's SQLite (system, Xcode or pyenv) can end turns with `disk I/O error` until [#1304](https://github.com/Jongtae/Still/issues/1304) is fixed; a Homebrew Python did not show it in the model-free reproduction.
 
 ### Seed: a sanitized copy of the owner's profile
 
@@ -99,6 +102,7 @@ cd evals
 ```
 
 - `--worker codex|claude-code|both`: `both` runs every scenario once per worker, so a sweep covers both subscriptions. This also tests engine replaceability.
+- `--worker-model <model>` with optional `--worker-effort low|medium|high|xhigh|max|ultra` (#1296): pins the worker's model for every run, so recorded arms are comparable. The sweep writes Still's own Main AI model setting into each sandbox, and the sandbox import guard (`sandbox_site/eval_worker_pin.py`) offers the orchestrator's plan only that worker, model and effort (without `--worker-effort`, no effort is passed: the CLI's default). A pinned sweep therefore does not measure Still's model routing; the Judgment AI keeps its own route. A model the provider refuses is not replaced; that run, and any pinned run in which the worker CLI never completed a turn (for example an effort the CLI does not accept), is recorded as an error with the reason. Still's side answer to a message sent while a Work runs uses the pinned model but the CLI's default effort. Each record carries `worker_pin`. Not valid with `--worker both` or `--world`. The Inspect task takes the same values as `-T worker_model=` and `-T worker_effort=`.
 - `--claude-auth api|subscription` (#545, default `api`): the Claude Code worker runs on the Anthropic API key from the Keychain entry `agentos-evals` / `anthropic` (the judge's entry; `security add-generic-password -s agentos-evals -a anthropic -w`), so it no longer shares the owner's Claude subscription limit. `worker_key.py` puts one `claude` wrapper first on the sandbox server's `PATH`; only that wrapper reads the key (a 0600 file beside the slot, removed when the sandbox stops) and starts the real CLI with `ANTHROPIC_API_KEY`, the subscription token removed and `CLAUDE_CODE_SUBPROCESS_ENV_SCRUB=1`. The Still server, its store, prompts, logs, Evidence and the eval transcripts never hold it. Every model launch reserves `AGENTOS_EVAL_WORKER_RESERVE_USD` (default 1) against the same daily cap as the judge (`--cap-usd`, default 10), refused past it, then settles to the CLI's reported per-model `costUSD`; an unreported cost keeps the reserve. `sweep` prints the worker's totals. `--claude-auth subscription` keeps the old route.
 - `--instances N`: concurrent sandboxes (default 3). Each run gets a **fresh copy** of the seed, so trials are independent.
 - `--scenarios id1,id2`, `--split dev|heldout`, `--no-local` (bundled scenarios only) and `--limit N` narrow the set, for example a targeted re-run for a PR.
@@ -154,27 +158,49 @@ The adopt-or-not gate for a revision of versioned method text (a bundled skill, 
 - An arm is `{"text_digest": text_digest(text), "settings": {"worker", "model", ...}, "scenario_ids": [...], "records": [...], "cost": {...}}`. `records` are `report.records_from_samples` rows. `settings` holds everything that must be matched (worker, model, effort, judge). `cost` is a mapping of numbers the caller measured (calls, tokens, USD).
 - `meta` maps scenario id to `{"split": "dev" | "heldout", "source"}` and comes from the scenario set, never from an arm.
 - `target` and every key of `tolerances` (the safety and honesty dimensions, at least one) are keys of a record's `value`. Higher is better for all of them.
-- Refused with an error: different scenario sets or settings, runs outside the declared scenarios or from another worker, a repeated (scenario, epoch), a run whose recorded engine model or effort contradicts `settings`, different judges or a mix of judged and checks-only runs (`passed` depends on the judge), a candidate with the current digest, an `equal_retries` arm with another digest.
+- Refused with an error: different scenario sets or settings, runs outside the declared scenarios or from another worker, a repeated (scenario, epoch), a run whose recorded engine model or effort contradicts `settings`, a run whose `worker_pin` model or effort differs from `settings` (a sweep pinned with `--worker-effort` needs `effort` in `settings`), different judges or a mix of judged and checks-only runs (`passed` depends on the judge), a candidate with the current digest, an `equal_retries` arm with another digest.
 - A run with a request Still refused (`refused_effects`) scores 0 on the target. A run above 0 whose refusals were not observed is missing evidence. Records written before #1278, and world-run records, carry no refusal observation.
 - A run the judge failed or refused to grade (`judge_error`, `budget_refused`) and scored above 0 is missing evidence.
 - `equal_retries` is the current text run at least as many times, per scenario, as all candidate arms together. Pass every candidate arm that was run, including dropped ones and a composition.
 - Verdict per candidate, in this order. `insufficient_evidence`: fewer than `min_trials` (at least 2) graded runs of a scenario, unbalanced epochs, a dev or held-out split with no scenario, or a missing grade. `rejected`: a dimension falls beyond its tolerance on dev or held-out, or the target does not improve, by more than the noise, against the baseline or `equal_retries`. `insufficient_evidence`: a difference within the noise, no or too small `equal_retries`, or no cost. Otherwise `preferred`.
 - Noise, per split, is the larger of the two arms' max - min of the per-epoch split mean (the spread rule of `continuity.py`). It is a descriptive bound, not a significance test.
 - Cases with `source: local` are reported as `owner_store_check` and never decide.
-- Known limit (first end-to-end run, [records](records/1275-revision/README.md)): the default Codex route picks the worker model per request, so recorded arms can hold two models and are then refused.
+- Run every arm with the same `sweep --worker-model` (and `--worker-effort`), and give that model and effort as `settings`. Without a pin the default Codex route picks the worker model per request, so an arm can hold two models and is refused ([first end-to-end run](records/1275-revision/README.md)).
 
 ## Versioned-text revision candidates (`agentos_eval/revise.py`, #1283)
 
-Propose and compose for the #1275 loop (adapted from Harness², arXiv 2610.14224). It writes candidate revisions of one versioned text and records one experience entry per comparison. It never edits repository text: adopting a candidate is a reviewed PR.
+Run and compare revisions of one versioned text for the #1275 loop. Proposal and composition follow Harness²
+(arXiv 2610.14224). Adopting a candidate takes a reviewed PR.
 
 ```
-PYTHONPATH=src:evals python -m agentos_eval revise propose --target <repo path under src/> [--lines A-B] \
+PYTHONPATH=src:evals python -m agentos_eval revise arm --current --target <src file> [--lines A-B] \
+    [--out <file>] -- <sweep args>
+PYTHONPATH=src:evals python -m agentos_eval revise propose --target <src file> [--lines A-B] \
+    --baseline <current arm> \
     --cause-kind blocker|regression --cause-source <Work id or scenario id> --cause-file <text file> \
     --proposer <provider/model | subscription-cli:codex[:<model>[:<effort>]]> [--seed <seed>] [--compose] \
-    [--out <folder>] [--experience <folder>] [--prior 8]
+    [--measure passed] [--out <folder>] [--experience <folder>] [--prior 8]
+PYTHONPATH=src:evals python -m agentos_eval revise arm --candidate <label.txt> [--out <file>] -- <sweep args>
+PYTHONPATH=src:evals python -m agentos_eval revise arm --current --target <src file> [--lines A-B] \
+    --equal-retries [--out <file>] -- --epochs <total candidate epochs> <other sweep args>
 PYTHONPATH=src:evals python -m agentos_eval revise record --candidates <folder> --comparison <compare.json> [--experience <folder>]
 ```
 
+- Run the current arm first, then propose with `--baseline`, run each candidate arm, and run equal retries on the
+  current text. Give equal retries at least the sum of all candidate arms' `--epochs`. Use seed names or absolute paths
+  in sweep arguments because the sweep runs inside a temporary copy of the committed `HEAD`.
+  Give every arm the same `--worker-model` and `--worker-effort` (#1296), or the comparator refuses per-request routing.
+- The `--baseline` must be a current arm for the same text, path and line range, with complete dev scores for
+  `--measure` (default `passed`). If all dev scores are at the maximum, `no_room_on_dev` stops the proposal before it
+  calls a model or writes output.
+- A `revision-arm/1` record stores the role and label, target path and lines, base and run text digests, observed
+  settings, scenario IDs, unchanged run records, cost, sweep run ID, full commit SHA and sweep arguments. The default
+  location is `$AGENTOS_EVAL_HOME/revisions/<target slug>/arms/`.
+- After the sweep exits, the runner moves its JSON and Markdown reports to `$AGENTOS_EVAL_HOME/arm-reports/` to keep
+  ordinary sweep trend baselines independent of revision arms.
+- The runner refuses world sweeps, `--worker both`, output inside the repository, targets outside `src/`, mismatched
+  candidate or base digests, and replacements that would join the next line. A stopped sweep, an exit other than 0 or 1,
+  or a sweep with no records produces no arm record.
 - **Target**: one file under `src/` (a bundled skill, a module holding tool guidance or a prompt section), optionally a 1-based inclusive line range. Its digest is `arm_compare.text_digest` of exactly that text. Files under `evals/` or `tests/` (scenarios, judges, rubrics, the adoption rule, tolerances) are never a target.
 - **Cause**: a kind (`blocker`: the stored, already redacted text `agentos_eval blockers` printed; `regression`: a developer-written failure statement), a source id and the text. Only the text reaches the proposer; a cause that contains a scenario id (rubric or any world) is refused.
 - **Proposer input** is exactly `{target_path, lines, base_digest, text, cause, prior}`. `prior` is the earlier experience for the same target path, newest entry first, at most `--prior` entries, each candidate projected to `{candidate_digest, scope, summary, cause, verdict, adopted}`. `adopted` is true when that candidate's digest is the current text's digest. Scenario ids, settings, verdict reasons, measures and tolerances are left out.

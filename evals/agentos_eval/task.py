@@ -31,7 +31,7 @@ from inspect_ai.util import EarlyStop
 from agentos_eval import scenarios as scenario_module
 from agentos_eval.budget import scorer_judge_resources
 from agentos_eval.runner import WORKERS, StopOnUsageLimit, record_messages, run_scenario
-from agentos_eval.sandbox import SandboxPool
+from agentos_eval.sandbox import SandboxPool, worker_pin
 from agentos_eval.scoring import JUDGE_MAX_TOKENS, score_run
 
 
@@ -134,14 +134,16 @@ def claude_worker_api(worker, claude_auth='api', key_loader=None, budget_path=No
 @task
 def agentos_secretary(scenarios='', split='', worker='codex', instances=3, seed='', judge='',
                       turn_timeout=900, judgment_timeout=300, include_local=True, keep_sandboxes=False, measures='',
-                      sample_limit=None, judge_notice=True, arm='', claude_auth='api'):
+                      sample_limit=None, judge_notice=True, arm='', claude_auth='api', worker_model='',
+                      worker_effort=''):
     """Multi-turn owner scenarios against fresh Still sandboxes, on Codex and/or Claude Code."""
     seed = seed or os.environ.get('AGENTOS_EVAL_SEED', '')
     from agentos_eval.cli import judge_notice as announce_judge, task_judge_settings
     judge, scorer_judge, model_roles, announce = task_judge_settings(judge, judge_notice)
     if announce:
         announce_judge(judge)
-    pool = SandboxPool(size=int(instances), seed=Path(seed).expanduser() if seed else None,
+    pin = worker_pin(worker, worker_model, worker_effort)
+    pool = SandboxPool(size=int(instances), worker_pin=pin, seed=Path(seed).expanduser() if seed else None,
                        keep=str(keep_sandboxes).lower() in ('1', 'true', 'yes'),
                        worker_api=claude_worker_api(worker, claude_auth))
     include_local = str(include_local).lower() not in ('0', 'false', 'no')
@@ -157,4 +159,5 @@ def agentos_secretary(scenarios='', split='', worker='codex', instances=3, seed=
                 early_stopping=StopOnUsageLimit(EarlyStop),
                 model_roles=model_roles,
                 metadata={'worker': worker, 'instances': int(instances), 'seed': bool(seed), 'judge': judge,
-                          'scenario_ids': scenario_ids, 'arm': arm})
+                          'scenario_ids': scenario_ids, 'arm': arm,
+                          **({'worker_model': worker_model, 'worker_effort': worker_effort} if pin else {})})

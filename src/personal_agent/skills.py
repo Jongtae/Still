@@ -52,6 +52,9 @@ MAX_FILE_BYTES = 256 * 1024
 MAX_FILES = 200
 MAX_PACKAGE_BYTES = 4 * 1024 * 1024
 MAX_DOWNLOAD_BYTES = 32 * 1024 * 1024
+# Bounds compressed bytes received per repository archive, with about 4x headroom
+# over Still's ~64 MB archive. Memory use is independent of this cap because reads stream.
+MAX_ARCHIVE_BYTES = 256 * 1024 * 1024
 MAX_BODY_BYTES = 32 * 1024
 MAX_BODY_LINES = 500
 MAX_RESOURCE_BYTES = 64 * 1024
@@ -320,8 +323,47 @@ class _GitHubRedirects(urllib.request.HTTPRedirectHandler):
 GITHUB_HOSTS = ('https://codeload.github.com/', 'https://api.github.com/')
 
 
+class _BoundedStream(io.RawIOBase):
+    """Count bytes read from a binary response and close it with the stream."""
+
+    def __init__(self, response, limit):
+        self._response = response
+        self._remaining = limit
+        self.error = None
+
+    def readable(self):
+        return True
+
+    def readinto(self, buffer):
+        if self.closed:
+            raise ValueError('I/O operation on closed stream')
+        if self.error is not None:
+            raise self.error
+        try:
+            data = self._response.read(min(len(buffer), self._remaining + 1))
+        except SkillError as exc:
+            self.error = exc
+            raise
+        except (urllib.error.URLError, TimeoutError, OSError):
+            self.error = SkillError(msg('skills.download_failed'), 'source_unavailable')
+            raise self.error from None
+        self._remaining -= len(data)
+        if self._remaining < 0:
+            self.error = SkillError(msg('skills.download_limit'), 'invalid_package')
+            raise self.error
+        buffer[:len(data)] = data
+        return len(data)
+
+    def close(self):
+        if not self.closed:
+            try:
+                self._response.close()
+            finally:
+                super().close()
+
+
 def http_get(url, limit=MAX_DOWNLOAD_BYTES, timeout=30):
-    """Bytes of one HTTPS GET to GitHub, bounded; the default transport."""
+    """Return bounded bytes for GitHub API answers and a bounded stream for codeload."""
     if not url.startswith(GITHUB_HOSTS):
         raise SkillError(msg('skills.github_only'), 'invalid_source')
     # The commits API answers a ref with only its SHA under this documented media type
@@ -329,8 +371,11 @@ def http_get(url, limit=MAX_DOWNLOAD_BYTES, timeout=30):
     accept = 'application/vnd.github.sha' if url.startswith('https://api.github.com/') else 'application/octet-stream'
     request = urllib.request.Request(url, headers={'User-Agent': 'personal-agentos-skills', 'Accept': accept})
     try:
-        with urllib.request.build_opener(_GitHubRedirects).open(request, timeout=timeout) as response:
-            data = response.read(limit + 1)
+        response = urllib.request.build_opener(_GitHubRedirects).open(request, timeout=timeout)
+        if url.startswith('https://codeload.github.com/'):
+            return _BoundedStream(response, limit)
+        with response as body:
+            data = body.read(limit + 1)
     except (urllib.error.URLError, TimeoutError, OSError):
         raise SkillError(msg('skills.download_failed'), 'source_unavailable') from None
     if len(data) > limit:
@@ -408,16 +453,20 @@ def refusal_reasons(status):
 
 
 def fetch_github(source, dest, transport=http_get):
-    """Extract exactly ``source['path']`` of the pinned commit into ``dest``.
+    """Stream the pinned commit's archive and extract ``source['path']`` into ``dest``.
 
     The only other thing written is that commit's repository-root licence files
     (#1219), into the sibling ``REPOSITORY_LICENCES`` folder, bounded.
     """
-    data = transport(f"https://codeload.github.com/{source['repo']}/tar.gz/{source['revision']}")
     prefix = source['path'].strip('/') + '/'
     written = count = licences = 0
+    limit = MAX_ARCHIVE_BYTES
+    response = transport(f"https://codeload.github.com/{source['repo']}/tar.gz/{source['revision']}", limit=limit)
+    if isinstance(response, bytes):
+        response = io.BytesIO(response)
+    reader = response if isinstance(response, _BoundedStream) else _BoundedStream(response, limit)
     try:
-        with tarfile.open(fileobj=io.BytesIO(data), mode='r:gz') as archive:
+        with tarfile.open(fileobj=reader, mode='r|gz') as archive:
             for member in archive:
                 top, _sep, rest = member.name.partition('/')
                 if ('/' not in rest and rest.upper().startswith(LICENCE_NAMES) and member.isfile()
@@ -447,7 +496,11 @@ def fetch_github(source, dest, transport=http_get):
                 target.parent.mkdir(parents=True, exist_ok=True)
                 target.write_bytes(archive.extractfile(member).read())
     except (tarfile.TarError, EOFError, OSError):
+        if reader.error is not None:
+            raise reader.error from None
         raise SkillError(msg('skills.archive_failed'), 'invalid_package') from None
+    finally:
+        reader.close()
     if not (Path(dest) / 'SKILL.md').is_file():
         raise SkillError(msg('skills.commit_folder_missing'), 'invalid_package')
     return Path(dest)
