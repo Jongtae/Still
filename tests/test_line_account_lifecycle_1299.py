@@ -116,6 +116,21 @@ class AccountLifecycleTests(_LineCase):
                               "AND json_extract(detail,'$.preparation_id')=?", (account['id'],)).fetchone()
         self.assertEqual(held[0], 'telegram:held')
 
+    def test_an_owner_run_now_of_the_closing_account_also_ends_it(self):
+        brief, _ = self.open_line()
+        line = brief['line_id']
+        [work] = self.work_rows(line)
+        self.service.preparations.cancel(work['id'])
+        account = account_of(self, line)
+        self.service.preparations.run_now(account['id'], channel='web', chat_id=None)
+        self.script = [{'content': '맡긴 일은 여기까지예요.'}] * 2
+        self.assertTrue(self.service.run_one())
+        self.deliver_all()
+        self.tick()
+        after = self.service.preparations.get(account['id'])
+        self.assertNotIn(after['state'], prep.ACTIVE_STATES)
+        self.assertIsNone(after['run_return_state'])
+
     def test_a_cancelled_account_is_not_started_again_by_new_work(self):
         brief, _ = self.open_line()
         line = brief['line_id']

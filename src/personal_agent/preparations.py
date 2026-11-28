@@ -3176,14 +3176,15 @@ class Preparations:
                     updates['state'] = outcome
             else:
                 updates.update(state=STATE_SCHEDULED, due_at=current['due_at'] if current.get('check_spec') else following)
-            if (current.get('origin') == ORIGIN_LINE_ACCOUNT and current.get('line_id')
-                    and not self.line_has_live_work(db, current['line_id'])):
-                # #1299: the account lasts as long as the line's work; with none left this was the closing one.
-                updates['state'], following = outcome, None
             if current.get('run_return_state'):
                 # #575: the extra run does not consume or advance the regular schedule.
                 updates.update(state=current['run_return_state'], due_at=current['due_at'], run_return_state=None)
                 following = current['due_at']
+            if (current.get('origin') == ORIGIN_LINE_ACCOUNT and current.get('line_id')
+                    and not self.line_has_live_work(db, current['line_id'])):
+                # #1299: the account lasts as long as the line's work; with none left this was the closing one,
+                # an extra run the owner asked for included.
+                updates['state'], following = outcome, None
             notified = False
             if decision is not None and job:
                 updates.update(last_decision=decision[0], last_decision_reason=decision[1])
