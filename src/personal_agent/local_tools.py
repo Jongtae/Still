@@ -710,10 +710,12 @@ class LocalTools:
         # several words (a district, a neighbourhood).  When the whole text matches nothing, ask
         # again with it shortened from the end, at most GEOCODING_RETRIES more requests; the
         # ambiguity check below still reports a same-named result to the worker.
-        # #1299: a hyphenated place ("Name-gun") is shortened at its hyphen too; the whole asked
-        # text still goes to the region comparison, so its suffix can pick the matching admin area.
-        words=re.split(r'[\s-]+',city.strip());places=[];asked=city
-        for index,name in enumerate([city]+[' '.join(words[:n]) for n in range(len(words)-1,0,-1)][:GEOCODING_RETRIES]):
+        # #1299: after the whole words, the first word is shortened at its hyphens ("Name-gun" ->
+        # "Name"), so a hyphenated name ("Aix-en-Provence France") is tried whole first.  The whole
+        # asked text still goes to the region comparison, so a suffix can pick the matching admin area.
+        words=city.split();first=words[0].split('-') if words else [];places=[];asked=city
+        names=[' '.join(words[:n]) for n in range(len(words)-1,0,-1)]+['-'.join(first[:n]) for n in range(len(first)-1,0,-1)]
+        for index,name in enumerate([city]+[n for n in dict.fromkeys(names) if n and n!=city][:GEOCODING_RETRIES]):
             places=self._public_request(GEOCODING_SEARCH+'?'+urlencode({'name':name,**args}),10,first=index==0).get('results',[])
             if places:city=name;break
         if not places:raise ValueError('도시를 찾지 못했습니다. 도시와 국가를 함께 알려 주세요.')

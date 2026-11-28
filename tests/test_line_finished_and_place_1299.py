@@ -84,6 +84,15 @@ class RankedPlaceNamed(unittest.TestCase):
         self.assertEqual(forecasts, [(5.0, 5.0)])
         self.assertEqual(result['location']['searched_text'], 'Vale-gun')
 
+    def test_a_hyphenated_name_followed_by_a_region_is_tried_whole_first(self):
+        searches = []
+        city = place('Aix-en-Provence', 'Northland', 'Bouches', 7.0, 7.0)
+        tools, forecasts = tools_with({'Aix-en-Provence': [city], 'Aix': [place('Aix', 'Eastland', 'A', 1.0, 1.0)]},
+                                      searches=searches)
+        tools.weather('Aix-en-Provence Northland')
+        self.assertEqual(searches, ['Aix-en-Provence Northland', 'Aix-en-Provence'])
+        self.assertEqual(forecasts, [(7.0, 7.0)])
+
     def test_the_region_named_after_the_place_resolves_it(self):
         tools, forecasts = tools_with({'Vale': [self.county, *self.villages]})
         tools.weather('Vale Northland')
