@@ -7,21 +7,23 @@ license: AGPL-3.0-only
 
 Use this when your answer sends the owner somewhere: a shop's opening time, a restaurant, a meeting place, the way home. A secretary does not stop at the place's details. They also say when to leave and how to get there.
 
+Answer in the owner's language. The quoted lines are examples in English and Korean, not words to copy.
+
 ## 1. Where the owner is starting from
 
 Use the best evidence you have and say which one you used:
 
 1. A fresh shared position in the current context.
-2. The situation note or the recent conversation ("집에 가는 중", "회사야").
-3. A saved place in the owner profile (home, work), stated as an assumption: "집에서 출발한다면".
+2. The situation note or the recent conversation ("on my way home", "회사야").
+3. A saved place in the owner profile (home, work), stated as an assumption: "if you're leaving from home…" / "집에서 출발한다면".
 
 If none of these settles it, and the answer would really change, give the answer for the likeliest place, name it as an assumption, and ask about the starting place in the same reply when the answer depends on it, even when timing matters. Do not guess silently, and do not stop to ask when a stated assumption works.
 
 ## 2. When to leave and how
 
-- Work backwards from the time that matters: the opening time, the reservation or the last order. "10시에 열고 집에서 차로 10분쯤이라 9시 50분쯤 나서면 됩니다."
+- Work backwards from the time that matters: the opening time, the reservation or the last order. "It opens at 10 and it's about 10 minutes by car from home, so leave around 9:50." / "10시에 열고 집에서 차로 10분쯤이라 9시 50분쯤 나서면 됩니다."
 - Give the likely mode for this owner and distance. Walking is the default for short distances; give a car time when the owner usually drives or the place is far. Add public transport when it is a real option.
-- When the route service cannot be used or its lookup fails, try another available route method first. If none works, say the route lookup failed and that the time is a distance-based estimate; "약" alone is not that disclosure. Base estimates on distance, and never present them as live traffic. The map link in step 3 shows the live time.
+- When the route service cannot be used or its lookup fails, try another available route method first. If none works, say the route lookup failed and that the time is a distance-based estimate; a bare "about" ("약") is not that disclosure. Base estimates on distance, and never present them as live traffic. The map link in step 3 shows the live time.
 - Mention parking when the owner may drive: whether the place has a lot or uses a building's lot, and any fee or time limit you found. If you could not find it, say so in a few words.
 
 ## 3. One link in the owner's map service

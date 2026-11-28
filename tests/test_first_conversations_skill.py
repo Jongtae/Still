@@ -49,6 +49,13 @@ class FirstConversationsContent(unittest.TestCase):
                        'ask nothing optional', 'Use mode `ask` when you only ask'):
             self.assertIn(phrase, self.text)
 
+    def test_it_answers_in_the_owners_language_rather_than_one_locale(self):
+        """#1314: a public method; Korean register is the Korean case, not the default for every owner."""
+        self.assertIn("Answer in the owner's language", self.text)
+        tone = self.text.split('## 5. Tone', 1)[1]
+        self.assertIn("Use the owner's language", tone)
+        self.assertNotIn('해요체 by default', tone)
+
 
 if __name__ == '__main__':
     unittest.main()
