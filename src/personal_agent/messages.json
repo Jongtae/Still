@@ -11513,10 +11513,10 @@
   "zh": "every_minutes={value}：需要{minimum}到{maximum}之间的整数。"
  },
  "preparations.window_until_missing": {
-  "ko": "until={value}: 종료 시각이 필요해요.",
-  "en": "until={value}: an end time is required.",
-  "ja": "until={value}: 終了時刻が必要です。",
-  "zh": "until={value}：需要结束时间。"
+  "ko": "until={value}: 종료 시각이나 max_runs가 필요해요.",
+  "en": "until={value}: an end time or max_runs is required.",
+  "ja": "until={value}: 終了時刻か max_runs が必要です。",
+  "zh": "until={value}：需要结束时间或 max_runs。"
  },
  "preparations.window_until_invalid": {
   "ko": "until={value}: RFC3339 시각으로 읽을 수 없어요. 시간대도 확인해 주세요.",
