@@ -34,6 +34,8 @@ This needs [uv](https://docs.astral.sh/uv/) and Python 3.12 or newer (`PYTHON=..
 
 The sandbox servers themselves run with the normal `python3` that already runs Still (override with `AGENTOS_EVAL_SERVER_PYTHON`), using the checkout's own `src/`.
 
+On macOS, a server Python linked to Apple's SQLite (system, Xcode or pyenv) can end turns with `disk I/O error` until [#1304](https://github.com/Jongtae/Still/issues/1304) is fixed; a Homebrew Python did not show it in the model-free reproduction.
+
 ### Seed: a sanitized copy of the owner's profile
 
 ```sh
