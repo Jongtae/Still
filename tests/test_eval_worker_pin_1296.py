@@ -157,8 +157,18 @@ class _Client:
         return lambda *args, **kwargs: {}
 
 
-@pytest.mark.parametrize('refused_at, failed', [(1, True), (-3600, False), (None, False)])
-def test_a_refused_pinned_model_is_a_failed_run_with_its_reason(refused_at, failed, monkeypatch):
+FAILED, DONE = {'status': 'failed'}, {'status': 'succeeded'}
+
+
+@pytest.mark.parametrize('refused_at, turns, launches, said', [
+    (1, [DONE, FAILED], ['succeeded', 'failed'], 'refused by the provider'),
+    (None, [FAILED, FAILED], ['failed', 'failed'], 'completed no turn'),   # e.g. an effort the CLI rejects
+    (-3600, [DONE, FAILED], ['succeeded', 'failed'], None),                # a refusal the seed already had
+    (None, [FAILED], ['succeeded'], None),                # the worker answered; the Work still failed
+    (None, [FAILED], [], None),                           # no worker was launched
+    (None, [{**FAILED, 'failure_class': 'usage-limit'}], ['failed'], None),
+])
+def test_a_pin_the_provider_rejects_is_a_failed_run_with_its_reason(refused_at, turns, launches, said, monkeypatch):
     reason = "The 'm-pin' model is not supported when using Codex with a ChatGPT account."
     rows = {} if refused_at is None else {orchestrator.MODEL_REFUSALS_KEY: json.dumps(
         {'codex': {'m-pin': {'at': time.time() + refused_at}}})}
@@ -174,13 +184,15 @@ def test_a_refused_pinned_model_is_a_failed_run_with_its_reason(refused_at, fail
 
     monkeypatch.setattr(runner, 'prepare_judgment', lambda *a, **k: {})
     monkeypatch.setattr(runner, 'sandbox_zone', lambda *a: None)
-    monkeypatch.setattr(runner, 'run_turns', lambda *a, **k: [{'status': 'failed', 'error': reason}])
-    monkeypatch.setattr(runner, 'work_measurements', lambda *a: {})
+    monkeypatch.setattr(runner, 'run_turns', lambda *a, **k: [
+        {**turn, 'error': reason if turn['status'] == 'failed' else None} for turn in turns])
+    events = [{'tool': 'subscription_engine', 'status': status} for status in ('running', *launches)]
+    monkeypatch.setattr(runner, 'work_measurements', lambda *a: {'t': {'tools': events if launches else None}})
     monkeypatch.setattr(runner, 'state_diff', lambda *a: {})
     record = runner.run_scenario({'id': 's', 'turns': []}, 'codex', Pool(), client_factory=_Client)
     assert record['worker_pin'] == {'model': 'm-pin', 'effort': 'high'}
-    if failed:
-        assert 'm-pin' in record['error'] and reason in record['error']
+    if said:
+        assert all(part in record['error'] for part in ('m-pin', said, reason))
     else:
         assert record['error'] is None
 

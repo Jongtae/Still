@@ -599,22 +599,29 @@ def prepare_judgment(client, pool, box, worker, timeout=300, clock=time.monotoni
             **({'fallback': fallback} if fallback else {}), **({'failure': failure} if failure else {})}
 
 
-def pinned_model_refusal(box, record, since):
-    """#1296: why a pinned run failed when the CLI refused its model in this run, else ''.
+def pinned_run_failure(box, record, since):
+    """#1296: why a pinned run is a failed run rather than a measurement, else ''.
 
-    Reads Still's own refusal memory (``orchestrator.MODEL_REFUSALS_KEY``); a row
-    older than the run came with the seed.
+    Either the CLI refused the pinned model in this run (Still's own refusal
+    memory, ``orchestrator.MODEL_REFUSALS_KEY``; an older row came with the
+    seed), or the worker CLI started and never completed a turn: a pin it rejects
+    another way (an effort it does not accept, an unclassified model error) fails
+    every launch.  A Work that failed after the worker answered stays a
+    measurement, and a usage limit keeps its own handling.
     """
-    pin = box.worker_pin
+    pin, turns = box.worker_pin, record['turns']
     try:
         rows = json.loads(box.read_config(('route_model_refusals',)).get('route_model_refusals') or '{}')
-        at = rows[pin['worker']][pin['model']]['at']
+        refused = rows[pin['worker']][pin['model']]['at'] >= since
     except (KeyError, TypeError, ValueError, sqlite3.Error):
+        refused = False
+    launches = {row.get('status') for work in (record.get('work') or {}).values()
+                for row in work.get('tools') or () if row.get('tool') == 'subscription_engine'}
+    if not refused and (usage_limited(record) or 'failed' not in launches or 'succeeded' in launches):
         return ''
-    if at < since:
-        return ''
-    reason = next((turn['error'] for turn in record['turns'] if turn.get('error')), 'no reason reported')
-    return f'the pinned worker model {pin["model"]} was refused by the provider: {reason}'
+    reason = next((turn['error'] for turn in turns if turn.get('error')), 'no reason reported')
+    what = 'was refused by the provider' if refused else 'completed no turn'
+    return f'the pinned worker model {pin["model"]} {what}: {reason}'
 
 
 def run_scenario(scenario, worker, pool, client_factory=AgentOSClient, turn_timeout=900, poll_interval=2.0,
@@ -652,9 +659,9 @@ def run_scenario(scenario, worker, pool, client_factory=AgentOSClient, turn_time
             record['upkeep'] = client.wait_upkeep_idle(upkeep_timeout, poll_interval)
             record['diff'] = state_diff(before, client.snapshot())
             if getattr(box, 'worker_pin', None):
-                refused = pinned_model_refusal(box, record, started)
-                if refused:
-                    record['error'] = record['error'] or refused
+                failed = pinned_run_failure(box, record, started)
+                if failed:
+                    record['error'] = record['error'] or failed
     except (SandboxError, ClientError, OSError) as exc:
         record['error'] = f'{type(exc).__name__}: {exc}'
     finally:
