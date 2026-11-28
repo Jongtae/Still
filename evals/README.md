@@ -192,6 +192,8 @@ PYTHONPATH=src:evals python -m agentos_eval revise record --candidates <folder> 
 - A `revision-arm/1` record stores the role and label, target path and lines, base and run text digests, observed
   settings, scenario IDs, unchanged run records, cost, sweep run ID, full commit SHA and sweep arguments. The default
   location is `$AGENTOS_EVAL_HOME/revisions/<target slug>/arms/`.
+- After the sweep exits, the runner moves its JSON and Markdown reports to `$AGENTOS_EVAL_HOME/arm-reports/` to keep
+  ordinary sweep trend baselines independent of revision arms.
 - The runner refuses world sweeps, `--worker both`, output inside the repository, targets outside `src/`, mismatched
   candidate or base digests, and replacements that would join the next line. A stopped sweep, an exit other than 0 or 1,
   or a sweep with no records produces no arm record.

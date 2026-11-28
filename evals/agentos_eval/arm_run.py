@@ -28,8 +28,10 @@ def run_sweep(copy_root, sweep_args, *, read_records=_read_records):
     """Stream a sweep from the copy and read its report and log."""
     root = Path(copy_root).resolve()
     cwd = root / 'evals'
+    home = eval_home().resolve()
     env = dict(os.environ, PYTHONPATH=os.pathsep.join(map(str, (root / 'src', cwd))),
-               AGENTOS_EVAL_HOME=str(eval_home().resolve()), PYTHONUNBUFFERED='1', PYTHONDONTWRITEBYTECODE='1')
+               AGENTOS_EVAL_HOME=str(home), GIT_CEILING_DIRECTORIES=str(root.parent),
+               PYTHONUNBUFFERED='1', PYTHONDONTWRITEBYTECODE='1')
     command = [sys.executable, '-m', 'agentos_eval', 'sweep', *sweep_args]
     locations = {}
     with subprocess.Popen(command, cwd=cwd, env=env, stdout=subprocess.PIPE, text=True) as child:
@@ -44,9 +46,18 @@ def run_sweep(copy_root, sweep_args, *, read_records=_read_records):
             child.kill()
             child.wait()
             raise
-    if not locations.get('report') or not locations.get('log'):
+    report = None
+    if locations.get('report'):
+        source = cwd / locations['report']
+        folder = home / 'arm-reports'
+        folder.mkdir(parents=True, exist_ok=True)
+        report = source.replace(folder / source.name)
+        markdown = source.with_suffix('.md')
+        if markdown.is_file():
+            markdown.replace(folder / markdown.name)
+    if report is None or not locations.get('log'):
         raise ValueError(f'Sweep printed no report or log (exit code {exit_code})')
-    run = revise._read_json(cwd / locations['report'])['run']
+    run = revise._read_json(report)['run']
     return {'exit_code': exit_code, 'run': run, 'records': read_records(locations['log'])}
 
 
@@ -80,12 +91,15 @@ def _splice(copy, target, replacement, expected):
 
 def _settings(run, records):
     settings = {'worker': run['worker'], 'model': 'unrecorded'}
-    engines = [engine for row in records for work in (row.get('work') or {}).values()
-               for engine in work.get('engine') or []]
+    pins = [row['worker_pin'] for row in records if row.get('worker_pin')]
+    engines = pins or [engine for row in records for work in (row.get('work') or {}).values()
+                       for engine in work.get('engine') or []]
     for field in ('model', 'effort'):
-        values = sorted({engine[field] for engine in engines if engine.get(field)})
-        if values:
-            settings[field] = values[0] if len(values) == 1 else 'per-request: ' + ', '.join(values)
+        values = sorted({engine[field] for engine in engines if pins or engine.get(field)})
+        if len(values) > 1:
+            settings[field] = 'per-request: ' + ', '.join(value or '(none)' for value in values)
+        elif values and (field == 'model' or values[0]):
+            settings[field] = values[0]
     settings.update({key: run[key] for key in ('judge', 'seed') if key in run})
     return settings
 
