@@ -121,6 +121,114 @@ class DecisionRecordTests(_Case):
         self.assertLessEqual(len(row['claim']), ld.CLAIM_CHARS)
 
 
+class RefusalNamesFieldTests(_Case):
+    """#1309: each refusal names the field and the rule, so one retry can fix the call."""
+
+    def refused(self, code, call, *named):
+        with self.assertRaises(ToolError) as refused:
+            call()
+        self.assertEqual(refused.exception.code, code)
+        for text in named:
+            self.assertIn(text, str(refused.exception))
+        return str(refused.exception)
+
+    def due(self):
+        decision = self.decide()['decision']
+        self.clock[0] += HOUR + 1
+        return decision
+
+    def test_decide_names_each_missing_field(self):
+        for field in ('about', 'claim', 'expectation', 'settle_after'):
+            with self.subTest(field=field):
+                self.refused('line_decision_invalid', lambda: self.decide(**{field: ''}), f': {field}.')
+        self.refused('line_decision_invalid', lambda: self.decide(claim='', settle_after=''),
+                     'claim, settle_after')
+
+    def test_decide_names_an_unreadable_or_non_finite_settle_after(self):
+        for value in ('soon', 'inf'):
+            with self.subTest(value=value):
+                self.refused('line_decision_invalid', lambda: self.decide(settle_after=value),
+                             'settle_after:', 'ISO 8601')
+
+    def test_decide_names_a_settle_after_that_is_not_in_the_future(self):
+        self.refused('line_decision_invalid', lambda: self.decide(settle_after=str(self.clock[0])),
+                     'settle_after:', '지금')
+
+    def test_settle_names_a_missing_decision(self):
+        self.refused('line_decision_invalid', lambda: self.settle_decision('', outcome='o', matched='yes'),
+                     ': decision.')
+
+    def test_settle_names_an_unknown_decision(self):
+        self.refused('line_decision_unknown',
+                     lambda: self.settle_decision('no-such-id', outcome='o', matched='yes'), 'decision:')
+
+    def test_settle_names_a_closed_decision(self):
+        decision = self.settled()
+        self.refused('line_decision_settled',
+                     lambda: self.settle_decision(decision, outcome='o', matched='yes'), 'decision:')
+
+    def test_settle_says_when_a_decision_becomes_due(self):
+        from datetime import datetime, timezone
+        decision = self.decide()['decision']
+        message = self.refused('line_decision_not_due',
+                               lambda: self.settle_decision(decision, outcome='o', matched='yes'), 'decision:')
+        due = datetime.fromisoformat(message.split('. ')[-1].split('부터')[0]).astimezone(timezone.utc)
+        self.assertGreaterEqual(due.timestamp(), self.decisions().get(decision)['settle_after'])
+
+    def test_settle_names_missing_outcome_and_matched(self):
+        decision = self.due()
+        self.refused('line_decision_invalid', lambda: self.settle_decision(decision, matched='yes'), ': outcome.')
+        self.refused('line_decision_invalid', lambda: self.settle_decision(decision, outcome='o'), ': matched.')
+
+    def test_settle_names_the_values_matched_takes(self):
+        decision = self.due()
+        self.refused('line_decision_invalid',
+                     lambda: self.settle_decision(decision, outcome='o', matched='maybe'),
+                     'matched:', 'yes, no, unclear')
+
+    def test_settle_names_the_fields_that_cannot_go_with_unsettleable(self):
+        decision = self.due()
+        self.refused('line_decision_invalid',
+                     lambda: self.settle_decision(decision, unsettleable='gone', outcome='o', matched='yes'),
+                     'unsettleable:', 'outcome, matched')
+
+    def test_settle_names_an_unreadable_observed_at(self):
+        decision = self.due()
+        self.refused('line_decision_invalid',
+                     lambda: self.settle_decision(decision, outcome='o', matched='yes', observed_at='today'),
+                     'observed_at:', 'ISO 8601')
+
+    def test_settle_names_the_window_observed_at_must_fall_in(self):
+        decision = self.due()
+        self.refused('line_decision_invalid',
+                     lambda: self.settle_decision(decision, outcome='o', matched='yes',
+                                                  observed_at=str(self.clock[0] + 5)),
+                     'observed_at:', '+00:00')
+
+    def test_learn_names_the_broken_operation_field(self):
+        decision = self.settled()
+        good = {'op': 'add', 'text': 'A lesson.', 'decisions': [decision]}
+        cases = (('lessons:', []), ('lessons:', {'op': 'add'}),
+                 ('lessons:', [good] * (om.MAX_LESSON_OPS + 1)),
+                 ('lessons[1]:', [good, 'text']),
+                 ('lessons[1].op:', [good, {**good, 'op': 'drop'}]),
+                 ('lessons[0].id:', [{**good, 'op': 'agree'}]),
+                 ('lessons[0].text:', [{**good, 'text': 'x' * (om.POINT_CHARS + 1)}]),
+                 ('lessons[0].why:', [{**good, 'why': 'x' * (om.CHANGE_CHARS + 1)}]))
+        for named, ops in cases:
+            with self.subTest(named=named, ops=ops):
+                self.refused('line_lesson_invalid', lambda: self.learn(ops), named)
+        self.refused('line_lesson_invalid',
+                     lambda: self.line_call(self.run, action='learn', line=self.line_id, lessons='add it'),
+                     'lessons:', 'JSON')
+
+    def test_learn_names_the_operation_without_a_settled_citation(self):
+        decision = self.settled()
+        self.refused('line_lesson_uncited', lambda: self.learn(
+            [{'op': 'add', 'text': 'One.', 'decisions': [decision]},
+             {'op': 'add', 'text': 'Two.', 'decisions': []}]), 'lessons[1].decisions:')
+
+
 class SettlementTests(_Case):
     def test_a_decision_settles_only_after_its_window(self):
         decision = self.decide()['decision']
