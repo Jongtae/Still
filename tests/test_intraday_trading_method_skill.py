@@ -94,9 +94,12 @@ class IntradayMethodContent(unittest.TestCase):
         self.assertLess(self.text.index('## 3. Judge the day'), self.text.index('## 6. Signals by method'))
 
     def test_the_gate_pins_maintained_packages_that_fit_code_run(self):
-        for pin in ('backtesting==0.6.6', 'pandas-ta-classic==0.9.0'):
+        # #1348: code_run accepts only name==version, so every named package carries its version.
+        for pin in ('backtesting==0.6.6', 'pandas-ta-classic==0.9.0', 'pandas==3.1.1', 'numpy==2.5.5'):
             self.assertIn(pin, self.text)
             self.assertIn(pin, self.gate)
+        for text in (self.text, self.gate):
+            self.assertIsNone(re.search(r'`(pandas|numpy)`', text), 'an unpinned package name is refused by code_run')
         self.assertIn('import pandas_ta_classic as ta', self.gate)
         self.assertIn('from backtesting import Backtest, Strategy', self.gate)
         for rejected in ('vectorbt', 'backtrader', 'import pandas_ta\n'):

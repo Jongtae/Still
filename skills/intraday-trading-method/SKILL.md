@@ -121,7 +121,7 @@ Place the exits together with the entry, so they are in force the moment the ent
 
 Before a new rule or a changed parameter (a threshold, a multiple, a bar length) trades with money, test it on history in `code_run`. Running the same unchanged rules again does not need a new test.
 
-- Packages, pinned: `backtesting==0.6.6` (AGPL-3.0) for the backtest and `pandas-ta-classic==0.9.0` (MIT, imported as `pandas_ta_classic`) for indicators, plus `pandas` and `numpy`. `TA-Lib` (BSD-2-Clause) is optional for speed. Stay well within `code_run`'s package limit and its time limit.
+- Packages, pinned: `backtesting==0.6.6` (AGPL-3.0) for the backtest and `pandas-ta-classic==0.9.0` (MIT, imported as `pandas_ta_classic`) for indicators, plus `pandas==3.1.1` and `numpy==2.5.5` (exact versions: `code_run` accepts only `name==version`). `TA-Lib` (BSD-2-Clause) is optional for speed. Stay well within `code_run`'s package limit and its time limit.
 - Data: the full history is at least 20 recent sessions of the same bar length and instrument, closed bars only, from the owner's broker or data tool and the bars earlier runs saved.
 - Costs: the broker's real commission on each side, taxes, and slippage of one tick per fill.
 - **Full gate**, when that history is available: at least 30 trades, positive expectancy after costs, and a maximum drawdown no larger than three times the owner's daily loss stop. Pass: the rule trades at normal size. Fail: the rule stays in observe-only mode: you plan and record signals (section 11) but place no order with it.
