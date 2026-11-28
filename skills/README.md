@@ -21,7 +21,7 @@ A method works for any owner, market, shop or service, in the owner's own langua
 
 ## Site and region know-how
 
-A site skill adds what is known about one site or service to a method: where things are, how sign-in works, what differs there. It is useful only to owners who use that site, and is an example of the pattern rather than a recommendation of the site. It carries no account, address or order data, and every hint is checked on the page.
+A site skill adds what is known about one site or service to a method: where things are, how sign-in works, what differs there. This repository publishes methods, plus `emart-ssg` as one example of the site-skill format. It is not a recommendation of the site.
 
 | Skill | What it is |
 | --- | --- |
@@ -31,4 +31,22 @@ Site hints are observations, not guarantees. Pages change, and the method tells 
 
 ## Adding a skill
 
-A new method belongs here when it is a reusable way of working, not the script of one request or one evaluation scenario (Constitution C16). A new site or region skill follows `emart-ssg`: it says which method it extends, records where its hints came from (with personal details removed), and adds no payment, account or personal data. A new map service is a new file in `map-directions/references/` taken from that service's own documentation.
+### Site or region skills: your own repository
+
+Publish a new site or region skill as an Agent Skills folder in your own GitHub repository, not here. The owner adds it by giving Still the folder address:
+
+`github.com/<owner>/<repo>/tree/<ref>/<folder>`
+
+Still pins the address to one commit, checks the folder like any external skill (for example, it needs a recognised licence and no scripts), and installs it only after the owner confirms. The repository must be public, and the folder name must match the skill's `name`.
+
+A good site skill:
+
+- says which method it extends;
+- records where its hints came from, with personal details removed;
+- carries no account, address, order, payment or other personal data;
+- offers hints that are checked on the page.
+
+### What belongs here
+
+- A new method, when it is a reusable way of working, not the script of one request or one evaluation scenario (Constitution C16).
+- A new map-service link reference in `map-directions/references/`, taken from that service's own documentation.
