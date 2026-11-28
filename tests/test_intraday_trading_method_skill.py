@@ -49,7 +49,7 @@ class IntradayMethodContent(unittest.TestCase):
         self.assertEqual((record['status'], record['licence']), (['supported_as_is'], 'AGPL-3.0-only'))
         self.assertEqual(sorted(record['files']), ['SKILL.md', GATE], 'text only: no scripts Still would refuse')
         frontmatter, _body = parse_frontmatter(self.text)
-        self.assertEqual(frontmatter['metadata']['version'], '1')
+        self.assertEqual(frontmatter['metadata']['version'], '2')
         listed = {row['name']: row for row in reference_skills()}
         # #1291: pinned to one exact commit and its content digest.
         self.assertRegex(listed[NAME]['address'], rf'^github\.com/{REPO}/tree/[0-9a-f]{{40}}/skills/{NAME}$')
@@ -78,6 +78,20 @@ class IntradayMethodContent(unittest.TestCase):
                        'the full gate applies', '**Recorded outcomes also decide.**', 'returns to observe-only',
                        'Data-limited mode lowers risk; it never widens'):
             self.assertIn(phrase, self.text)
+
+    def test_it_judges_the_day_and_keeps_one_method_learned_by_day_type(self):
+        # #1342: replays loaded the skill yet improvised a different rule each run.
+        for phrase in ('## 3. Judge the day before choosing a method', '**Use only what was public at the decision time.**',
+                       '**Macro backdrop**', '**The initial range:**', '**High volatility:**', '**Unclear:**',
+                       '## 4. Choose one method for the day, and keep it', '**Use this method; do not improvise another.**',
+                       'A rule outside these methods', 'is a rule change', '**Keep it for the session.**',
+                       '**Switch only on a clear change,**', 'never a switch just because the method has lost',
+                       '**Read what the line learned first.**', '`entrusted_line` with `action` `decide`',
+                       '`settle_after`', '`lessons_applied`', '**Learn by day type and method.**',
+                       'Do not write a lesson from one outcome', 'Say in passing which day judgment and method you used'):
+            self.assertIn(phrase, self.text)
+        self.assertNotIn('`subject`', self.text, 'the decide argument is about, not subject')
+        self.assertLess(self.text.index('## 3. Judge the day'), self.text.index('## 6. Signals by method'))
 
     def test_the_gate_pins_maintained_packages_that_fit_code_run(self):
         for pin in ('backtesting==0.6.6', 'pandas-ta-classic==0.9.0'):
@@ -122,7 +136,7 @@ class IntradayMethodLifecycle(unittest.TestCase):
         self.assertEqual(binding.loaded, {}, 'nothing is loaded until the model asks')
         caps = self.caps()
         loaded = caps.execute('skill_load', {'skill': SKILL})
-        self.assertIn('## 5. Entries: limit orders only, never chase', loaded['instructions'])
+        self.assertIn('## 7. Entries: limit orders only, never chase', loaded['instructions'])
         resource = caps.execute('skill_resource', {'skill': SKILL, 'path': GATE})
         self.assertIn('class Pullback(Strategy)', str(resource))
 

@@ -1,6 +1,6 @@
 # Backtest gate sketch
 
-A starting point for section 7 of the method, for `code_run` with the packages
+A starting point for section 9 of the method, for `code_run` with the packages
 `backtesting==0.6.6`, `pandas-ta-classic==0.9.0`, `pandas` and `numpy`. Adapt it to
 the rule you are testing; it is a sketch, not a finished strategy.
 
