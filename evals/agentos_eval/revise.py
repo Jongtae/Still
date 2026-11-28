@@ -8,7 +8,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from tempfile import NamedTemporaryFile, TemporaryDirectory
 
-from .arm_compare import _run_scores, partition_ids, record_refused, text_digest
+from .arm_compare import DECISION_SPLITS, _exceeds, _TextArm, mean, partition_ids, text_digest
 from .paths import REPO, eval_home
 
 PROPOSER_KEYS = ('target_path', 'lines', 'base_digest', 'text', 'cause', 'prior')
@@ -59,30 +59,43 @@ def load_target(path, lines=None, *, repo=REPO):
     return {'path': path.relative_to(root).as_posix(), 'lines': lines, 'text': text, 'digest': text_digest(text)}
 
 
-def check_room(arm, target, *, meta, measure):
-    """Require complete dev evidence with room to improve."""
+def check_room(arm, target, *, meta, measure, min_trials=3):
+    """Refuse a baseline against which no candidate could be preferred.
+
+    Applies the comparator's own gate (#1331): the target must be able to improve beyond the baseline's
+    epoch spread on every decision split. Even a candidate that scores the maximum on every run gains
+    only 1 minus the baseline mean, so a split at its maximum, or one whose spread is at least that gain,
+    leaves nothing a comparison could show.
+    """
     if (not isinstance(arm, dict) or arm.get('schema') != 'revision-arm/1' or arm.get('role') != 'current'
             or not isinstance(arm.get('records'), list)):
         raise ValueError('Expected a current revision-arm/1 baseline with records')
     if (arm.get('text_digest'), arm.get('target_path'), arm.get('lines')) != (
             target['digest'], target['path'], target['lines']):
         raise ValueError('The baseline does not match the current text')
-    records = arm['records']
     ids = set()
-    for row in records:
+    for row in arm['records']:
         ident = row.get('scenario') if isinstance(row, dict) else None
         if not isinstance(ident, str) or ident not in meta:
             raise ValueError('The baseline contains an unknown scenario')
         ids.add(ident)
-    dev = set(partition_ids(ids, meta)['dev'])
-    if not dev:
-        raise ValueError('The baseline contains no dev records')
-    scores = [_run_scores(row, (measure,), measure, record_refused(row))[measure]
-              for row in records if row['scenario'] in dev]
-    if None in scores:
-        raise ValueError(f'The baseline has incomplete dev scores for {measure}')
-    if all(score >= 1.0 for score in scores):
-        raise ValueError(f'no_room_on_dev: {measure} is at its maximum on dev and no revision can be preferred')
+    parts = partition_ids(ids, meta)
+    for part in DECISION_SPLITS:
+        if not parts[part]:
+            raise ValueError(f'The baseline contains no {part} records')
+    current = _TextArm(arm, parts, (measure,), measure, min_trials)
+    for part in DECISION_SPLITS:
+        if current.spreads[part] is None:
+            raise ValueError(f'The baseline has incomplete {measure} scores on {part}: every scenario needs '
+                             f'at least {min_trials} graded runs over the same epochs')
+        gain = 1.0 - mean((current.scores[i][measure] for i in parts[part]), digits=None)
+        if not _exceeds(gain, 0.0):
+            raise ValueError(f'no_room_on_{part}: {measure} is at its maximum on {part} and no revision '
+                             f'can be preferred')
+        if not _exceeds(gain, current.spreads[part]):
+            raise ValueError(f'no_detectable_gain_on_{part}: the largest possible gain on {part} '
+                             f'({gain:.4g}) does not exceed the baseline spread ({current.spreads[part]:.4g}); '
+                             f'add scenarios or trials to the split')
 
 
 def _recent(entries, target_path, limit):
