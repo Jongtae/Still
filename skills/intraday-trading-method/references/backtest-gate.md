@@ -1,7 +1,8 @@
 # Backtest gate sketch
 
 A starting point for section 9 of the method, for `code_run` with the packages
-`backtesting==0.6.6`, `pandas-ta-classic==0.9.0`, `pandas` and `numpy`. Adapt it to
+`backtesting==0.6.6`, `pandas-ta-classic==0.9.0`, `pandas==3.1.1` and `numpy==2.5.5`
+(exact versions: `code_run` accepts only `name==version`). Adapt it to
 the rule you are testing; it is a sketch, not a finished strategy.
 
 Inputs you supply in the code:
