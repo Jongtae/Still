@@ -115,6 +115,11 @@ class ReferencePackages(unittest.TestCase):
         reference = (ROOT / 'skills' / 'map-directions' / 'references' / 'kakaomap.md').read_text()
         self.assertIn('https://apis.map.kakao.com/web/guide/', reference)
         self.assertIn('/link/by/{mode}/', reference)
+        # #1314: a second service, so an owner outside one region still gets a route link.
+        google = (ROOT / 'skills' / 'map-directions' / 'references' / 'google-maps.md').read_text()
+        self.assertIn('https://developers.google.com/maps/documentation/urls/get-started', google)
+        self.assertIn('https://www.google.com/maps/dir/?api=1&destination=', google)
+        self.assertIn("Answer in the owner's language", method)
 
     def test_the_bundled_guide_points_at_reference_skill_discovery(self):
         guide = (ROOT / 'src' / 'personal_agent' / 'bundled_skills' / 'agentos-skills' / 'SKILL.md').read_text()
