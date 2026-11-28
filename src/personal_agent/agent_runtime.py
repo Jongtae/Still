@@ -5144,6 +5144,10 @@ class Capabilities:
  @refused_before_hand_off
  def execute(self,name,args):
   tool=self.tools.get(name)
+  # #1328: an optional field sent as JSON null was not given (JSON Schema); engines fill unset fields with
+  # null, and tools test argument presence, so null is dropped once here before any tool sees it.
+  if isinstance(args,dict) and any(value is None for value in args.values()):
+   args={key:value for key,value in args.items() if value is not None}
   # #1484: a refusal here comes before the tool runs, so its record says ``ran: false``.
   try:
    if not tool or name not in self.allowed_tools:raise ValueError(msg('agent_runtime.tool_not_declared'))
