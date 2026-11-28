@@ -377,9 +377,10 @@ class PublicPageReaderTests(unittest.TestCase):
             with self.subTest(headers=headers),self.assertRaisesRegex(ValueError,'인코딩'):
                 PublicPageReader(opener=Opener(Response(body,headers=headers)),resolver=public_dns).read('https://example.com/')
 
-    def test_rejects_oversize_and_non_text(self):
-        with self.assertRaisesRegex(ValueError, '응답 크기'):
-            PublicPageReader(opener=Opener(Response(b'a'*(1_000_001))), resolver=public_dns).read('https://example.com/')
+    def test_reads_oversize_up_to_the_budget_and_rejects_non_text(self):
+        # #1313 follow-up: an oversized page is cut at the budget and marked, not refused.
+        result=PublicPageReader(opener=Opener(Response(b'a'*(1_000_001))), resolver=public_dns).read('https://example.com/')
+        self.assertTrue(result['content_truncated']); self.assertEqual(result['content_bytes'], 1_000_000)
         with self.assertRaisesRegex(ValueError, 'HTML 또는 텍스트'):
             PublicPageReader(opener=Opener(Response(b'pdf', headers={'Content-Type':'application/pdf'})), resolver=public_dns).read('https://example.com/')
 
@@ -596,3 +597,35 @@ class PublicPageReaderTests(unittest.TestCase):
 
 
 if __name__ == '__main__': unittest.main()
+
+
+class OversizedPageTests(unittest.TestCase):
+    """A page larger than the read budget is read up to it and marked cut, not refused."""
+
+    def test_an_oversized_page_is_read_up_to_the_budget_and_marked_truncated(self):
+        from personal_agent.local_tools import MAX_PAGE_BYTES
+        body=('<p>'+'가격 정보입니다. '*200000+'</p>').encode()
+        self.assertGreater(len(body), MAX_PAGE_BYTES)
+        result=PublicPageReader(opener=Opener(Response(body)),resolver=public_dns).read('https://example.com/big')
+        self.assertTrue(result['content_truncated'])
+        self.assertTrue(result['content'].startswith('가격 정보입니다.'))
+        self.assertLessEqual(result['content_bytes'], MAX_PAGE_BYTES)
+
+    def test_an_oversized_gzip_page_is_read_from_the_cut_stream(self):
+        import os
+        from personal_agent.local_tools import MAX_PAGE_BYTES
+        body=gzip.compress(b'<p>Fresh data.</p>'+os.urandom(MAX_PAGE_BYTES).hex().encode())
+        self.assertGreater(len(body), MAX_PAGE_BYTES)
+        response=Response(body); response.headers['Content-Encoding']='gzip'
+        result=PublicPageReader(opener=Opener(response),resolver=public_dns).read('https://example.com/big.gz')
+        self.assertTrue(result['content_truncated'])
+        self.assertTrue(result['content'].startswith('Fresh data.'))
+
+    def test_a_value_cut_at_the_byte_budget_is_never_shown_as_a_partial_number(self):
+        # Codex review on #1320: a cut through "1000000" must not surface as "Total USD 1".
+        from personal_agent.local_tools import MAX_PAGE_BYTES
+        head=b'<!--'+b'x'*(MAX_PAGE_BYTES-len(b'<!--')-len(b'--><p>Total USD ')-1)+b'--><p>Total USD '
+        body=head+b'1000000.</p>'
+        result=PublicPageReader(opener=Opener(Response(body)),resolver=public_dns).read('https://example.com/cut')
+        self.assertTrue(result['content_truncated'])
+        self.assertNotIn('USD 1', result['content'])
