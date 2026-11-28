@@ -2930,12 +2930,8 @@ class PreparationsService:
                                     refused_rows, refused_state_change)
         store=self.service.store
         with store.db() as db:
-            works=[item['id'] for item in db.execute(
-                f"SELECT id FROM jobs WHERE {prep.line_works_sql('request_key',include_deleted=True)}",(line_id,line_id))]
-            rows=[item['id'] for item in db.execute(
-                "SELECT id FROM preparations WHERE line_id=? UNION SELECT job_id FROM tool_events "
-                "WHERE tool='preparation_lineage' AND status='deleted' AND json_extract(detail,'$.line_id')=?",(line_id,line_id))]
-            ids=[*works,*(prep.CHECK_RECORD_PREFIX+item for item in rows)]
+            works,checks=prep.line_effect_record_ids(db,line_id)
+            ids=[*works,*checks]
             ledger=effect_rows(db,ids)
             # #1252 review: calls whose own record is unknown (a browser step, a connector or API call with no
             # ledger claim), classified by the one rule (``record_effect``) as ``unknown_effect_targets`` reads them.
@@ -2944,9 +2940,23 @@ class PreparationsService:
                             "AND status IN ('succeeded','failed') AND (tool='code_run' OR json_extract(detail,'$.host_action')='code_run')",
                             works).fetchall() if works else []
         observed,claims=classify_effect_rows(ledger)
-        out={'sent':0,'not_applied':0,'unconfirmed':len(claims),'refused':0,'asked':0,'unconfirmed_items':[]}
-        for _event,evidence in observed:
+        out={'sent':0,'not_applied':0,'unconfirmed':len(claims),'refused':0,'asked':0,'unconfirmed_items':[],
+             'awaiting_read_back':0,'awaiting_read_back_items':[],'read_back_not_applied':[]}
+        for event,evidence in observed:
             out['not_applied' if evidence.get('resolution')=='not-applied' else 'sent']+=1
+            # #1273: a sent API dispatch the service identifies by its request reference can have its outcome
+            # read back (``reconcile_receipt``).  Until a read settles it, it is named with its receipt; only
+            # the owner's AI's read counts, never Still's inference.  A read-back of not applied is told in the account.
+            if evidence.get('resolution') or evidence.get('kind')!='api-slot' or not evidence.get('request_ref'):continue
+            read_back=evidence.get('read_back') if isinstance(evidence.get('read_back'),dict) else {}
+            item={'receipt':str(event),**{key:str(evidence[key])[:120] for key in ('operation','host','identity')
+                                         if isinstance(evidence.get(key),str) and evidence[key]}}
+            if read_back.get('outcome')=='not-applied':
+                if len(out['read_back_not_applied'])<self.LINE_EFFECTS_NAMED:out['read_back_not_applied'].append(item)
+            elif read_back.get('outcome')!='applied':
+                out['awaiting_read_back']+=1
+                if len(out['awaiting_read_back_items'])<self.LINE_EFFECTS_NAMED:
+                    out['awaiting_read_back_items'].append({**item,'read':'open' if read_back else 'none'})
         for _event,evidence in claims[:self.LINE_EFFECTS_NAMED]:
             out['unconfirmed_items'].append({key:str(evidence[key])[:120] for key in ('operation','host','identity','service')
                                              if isinstance(evidence.get(key),str) and evidence[key]})
@@ -3005,12 +3015,21 @@ class PreparationsService:
         """
         counts=('sent','not_applied','unconfirmed','refused','asked')
         if not effects or not any(effects[key] for key in counts):return ''
-        if not account and not (effects['unconfirmed'] or effects['refused'] or effects['asked']):return ''
+        awaiting=effects.get('awaiting_read_back',0)
+        if not account and not (effects['unconfirmed'] or effects['refused'] or effects['asked'] or awaiting):return ''
         text=msg('lines.effects_recorded',**{key:effects[key] for key in counts})
         if effects['unconfirmed']:
             named='; '.join(' '.join(item[key] for key in ('operation','host','identity','service') if key in item)
                             for item in effects['unconfirmed_items'])
             text+='\n'+msg('lines.effects_unconfirmed',items=named or '-')
+        def receipts(items):
+            return '; '.join(' '.join([msg('lines.effects_receipt',receipt=item['receipt']),
+                                       *(item[key] for key in ('operation','host','identity') if key in item)])
+                             for item in items) or '-'
+        if awaiting:
+            text+='\n'+msg('lines.effects_awaiting_read_back',count=awaiting,items=receipts(effects['awaiting_read_back_items']))
+        if account and effects.get('read_back_not_applied'):
+            text+='\n'+msg('lines.effects_read_back_not_applied',items=receipts(effects['read_back_not_applied']))
         return text
 
     def line_checks_account(self, row, job):

@@ -12166,6 +12166,24 @@
   "ja": "結果が確認できていない変更（{items}）は実行された可能性があります。再送する前に現在の状態を確認してください。",
   "zh": "结果未确认的变更（{items}）可能已经执行。再次发送前请先确认其当前状态。"
  },
+ "lines.effects_receipt": {
+  "ko": "영수증 {receipt}",
+  "en": "receipt {receipt}",
+  "ja": "受領番号 {receipt}",
+  "zh": "回执 {receipt}"
+ },
+ "lines.effects_awaiting_read_back": {
+  "ko": "보냈지만 결과를 아직 다시 읽어 확인하지 않은 변경이 {count}건 있어요({items}). 서비스 쪽 결과는 아직 열려 있을 수 있어요. 이 변경에 기대어 다음 행동을 하기 전에, 같은 연결의 상태 조회(GET)에 reconcile_receipt로 영수증 번호를, receipt_ref_field로 서비스가 돌려주는 요청 참조의 JSONPath를 넘겨 결과를 읽어 오세요. 다시 보내지는 마세요.",
+  "en": "{count} sent changes have no read-back of their outcome yet ({items}). The outcome on the service's side may still be open. Before acting on one of them, read it back with the same connection's status GET, passing its receipt number as reconcile_receipt and the JSONPath of the service's returned request reference as receipt_ref_field. Do not send them again.",
+  "ja": "送信済みで、結果をまだ読み戻して確認していない変更が{count}件あります（{items}）。サービス側の結果はまだ確定していない可能性があります。これらに基づいて次の行動をする前に、同じ接続の状態取得（GET）に reconcile_receipt として受領番号を、receipt_ref_field としてサービスが返す要求参照の JSONPath を渡して結果を読み戻してください。再送はしないでください。",
+  "zh": "有 {count} 项已发送的变更尚未回读其结果（{items}）。服务方的结果可能仍未确定。在基于它们采取下一步之前，请用同一连接的状态查询（GET）回读结果：以 reconcile_receipt 传入回执编号，以 receipt_ref_field 传入服务返回的请求引用的 JSONPath。不要再次发送。"
+ },
+ "lines.effects_read_back_not_applied": {
+  "ko": "보낸 뒤 다시 읽어 보니 서비스가 실행하지 않았다고 답한 변경: {items}.",
+  "en": "Sent changes the service later reported as not carried out when read back: {items}.",
+  "ja": "送信後に読み戻したところ、サービスが実行していないと答えた変更：{items}。",
+  "zh": "发送后回读时服务表示未执行的变更：{items}。"
+ },
  "lines.stopped_unconfirmed": {
   "ko": "이 일로 보낸 변경 중 결과가 확인되지 않은 것이 {count}건 있어요. 그만해도 이미 보낸 것은 취소되거나 확인되지 않아요. 답에서 그렇게 알려 주세요.",
   "en": "{count} changes this work sent have no confirmed result. Stopping neither undoes nor confirms what was already sent; say so in your reply.",
