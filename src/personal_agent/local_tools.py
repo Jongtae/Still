@@ -729,19 +729,27 @@ class LocalTools:
         # several words (a district, a neighbourhood).  When the whole text matches nothing, ask
         # again with it shortened from the end, at most GEOCODING_RETRIES more requests; the
         # ambiguity check below still reports a same-named result to the worker.
-        words=city.split();places=[];asked=city
-        for index,name in enumerate([city]+[' '.join(words[:n]) for n in range(len(words)-1,0,-1)][:GEOCODING_RETRIES]):
+        # #1299: after the whole words, the first word is shortened at its hyphens ("Name-gun" ->
+        # "Name"), so a hyphenated name ("Aix-en-Provence France") is tried whole first.  The whole
+        # asked text still goes to the region comparison, so a suffix can pick the matching admin area.
+        words=city.split();first=words[0].split('-') if words else [];places=[];asked=city
+        names=[' '.join(words[:n]) for n in range(len(words)-1,0,-1)]+['-'.join(first[:n]) for n in range(len(first)-1,0,-1)]
+        for index,name in enumerate([city]+[n for n in dict.fromkeys(names) if n and n!=city][:GEOCODING_RETRIES]):
             places=self._public_request(GEOCODING_SEARCH+'?'+urlencode({'name':name,**args}),10,first=index==0).get('results',[])
             if places:city=name;break
         if not places:raise ValueError('도시를 찾지 못했습니다. 도시와 국가를 함께 알려 주세요.')
         places=_region_matches(places,asked,city)
+        # #1299: the ambiguity is reported from these candidates in the geocoder's own order, so a
+        # better-ranked place that the exact-name step below drops ("Name County") is still named.
+        ranked=places
         populated=sorted([p for p in places if p.get('population',0)>=100000],key=lambda p:p['population'],reverse=True)
         if len(populated)==1:places=populated
         exact=[p for p in places if str(p.get('name','')).casefold()==city.strip().casefold()]
         if exact:places=exact
         place=places[0]
         if len({(p.get('country_code'),p.get('admin1')) for p in places})>1:
-            raise ValueError('같은 이름의 지역이 여러 곳입니다. 국가와 지역을 더 구체적으로 알려 주세요: '+', '.join(str(p.get('name'))+' '+str(p.get('admin1',''))+' '+str(p.get('country','')) for p in places[:3]))
+            raise ValueError('같은 이름의 지역이 여러 곳입니다. 도시 이름 뒤에 지역 이름을 붙여 다시 조회하세요: '+', '.join(
+                ' '.join(str(p.get(k)) for k in ('name','admin2','admin1','country') if p.get(k)) for p in ranked[:5]))
         # #233: the city already went to the geocoding host, so a refusal of its coordinates is not "not sent".
         location={k:place.get(k) for k in ('name','country','country_code','admin1','admin2','admin3','admin4',
                                            'latitude','longitude')}
