@@ -1855,9 +1855,25 @@ class Preparations:
             provenance = lines.provenance(line_id, db) if brief else {}
             if provenance.get('change') != 'opened' or provenance.get('by', 'owner') != 'owner':
                 return None
-            if brief['state'] == STATE_ACTIVE and self.line_has_pending_work(db, line_id):
+            if brief['state'] == STATE_ACTIVE and (self.line_has_pending_work(db, line_id)
+                                                   or self.line_work_finished(db, line_id)):
                 return None
             return brief
+
+    @staticmethod
+    def line_work_finished(db, line_id):
+        """#1299: whether an active line's latest work was a window that ended on its own terms.
+
+        A window row settles with ``REASON_WINDOW_CLOSED`` at its last check, or earlier when the
+        early-close judgment found nothing left to change: the request the owner set up was carried
+        out, so the line has nothing the owner stopped and nothing to offer to resume.  A window the
+        owner cancelled, or a run that failed, settles otherwise and stays eligible.
+        """
+        last = db.execute('SELECT recurrence,state,last_decision_reason FROM preparations WHERE line_id=? '
+                          'AND origin IS NOT ? AND origin IS NOT ? ORDER BY created_at DESC, rowid DESC LIMIT 1',
+                          (line_id, ORIGIN_LINE_ACCOUNT, ORIGIN_LINE_RESUME)).fetchone()
+        return bool(last and last['recurrence'] == RECURRENCE_WINDOW and last['state'] == STATE_DELIVERED
+                    and last['last_decision_reason'] == REASON_WINDOW_CLOSED)
 
     def _admit_line_resume(self, db, line_id, due_at, now):
         from .agent_runtime import not_run
