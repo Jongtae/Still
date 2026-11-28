@@ -103,13 +103,16 @@ _CACHE_LOCK = threading.RLock()
 class _ComparisonCache:
     """SQLite data_version observes *other connections*, including forget/delete.
 
+    A read-only open breaks same-process writers on Apple SQLite (#1304).
+    Open read-write and use query_only to prevent writes from this connection.
     This connection executes PRAGMA only, never reads an owner value and never
     holds a transaction. Cached payloads are value-free labels/cuts, bounded
     by Work/call count. A new inode also invalidates a replaced database.
     """
     def __init__(self, store):
         self.identity = (store.path.stat().st_dev, store.path.stat().st_ino)
-        self.db = sqlite3.connect(store.path.as_uri() + '?mode=ro', uri=True, check_same_thread=False)
+        self.db = sqlite3.connect(store.path.as_uri() + '?mode=rw', uri=True, timeout=10, check_same_thread=False)
+        self.db.execute('PRAGMA query_only=ON')
         self.version = None
         self.results = OrderedDict()
         weakref.finalize(store, self.db.close)
