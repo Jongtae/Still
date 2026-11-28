@@ -1456,11 +1456,15 @@ class ConversationJudgments:
         return Judgment(JUDGMENT_UNAVAILABLE if verdict == 'unknown' else verdict,
                         source=decision.confidence.provider or decision.outcome)
 
-    def watch_window_closed(self, goal, result, work_id=None, offer=None):
-        """Can the observed result end this accepted window early (#797)?"""
+    def watch_window_closed(self, goal, result, work_id=None, offer=None, window=None):
+        """Can the observed result end this accepted window early (#797)?
+
+        ``window`` (#1299) names when this is judged, the window's last check and the checks left.
+        """
         facts = {'watch_goal': goal or '', 'run_result': result or ''}
         if offer:
             facts['accepted_offer'] = offer
+        facts.update(window or {})
         context = self._context('watch-window-closed', facts, work_id=work_id)
         decision = self.engine.judge(context, WATCH_CLOSED_PROPOSITION)
         verdict = self.policy.binary(decision)
