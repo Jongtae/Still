@@ -441,7 +441,7 @@ class Bundles(_LinesCase):
         self.assertNotIn('Held answer with a candidate',self.sends()[0]['text'])
         self.assertEqual(self.store.job(job['id'])['delivery'],'none')
 
-    def test_held_budget_continue_request_then_report_is_bundled(self):
+    def test_held_budget_stop_offers_no_continue_and_its_partial_report_is_bundled(self):
         import time
         from personal_agent.work_execution import WorkRun
         row,job=self.start_held_notice_run()
@@ -455,14 +455,16 @@ class Bundles(_LinesCase):
                        (job['id'],'list_notes','failed',json.dumps({'code':'attempt_budget','ran':False}),time.time()))
             db.execute("UPDATE jobs SET status='partial',response='Partial answer' WHERE id=?",(job['id'],))
         run.outcome='partial'
-        self.assertTrue(self.service.offer_budget_continue(run))
-        self.assertTrue(self.service.deliver_notification())
+        # #1352: a scheduled run ends at its budget; no Continue holds the row for a day.
+        self.assertFalse(self.service.offer_budget_continue(run))
         self.assertFalse(self.service.deliver_notification())
-        offer=self.service.budget_continue_offer(job['id'])
-        self.assertIn('Partial answer',offer['progress'])
-        self.assertTrue(self.service.budget_continue_decision({'work_id':job['id'],'nonce':offer['nonce']})['resumed'])
-        self.telegram.clear()
-        self.finish_held_notice_run(row,job)
+        receipts=self.receipts()
+        self.service.run_due_preparation()
+        self.assertEqual(self.service.preparations.get(row['id'])['state'],prep.STATE_SCHEDULED)
+        self.assertEqual(self.sends(),[],'the partial report stays held')
+        self.at(9);bundle=self.flush()
+        self.assertEqual(self.receipts(),[*receipts,(job['id'],bundle)])
+        self.assertIn('Partial answer',self.store.job(bundle)['response'])
 
     def test_work_mode_run_stays_local_after_switch_off_before_report_time(self):
         from personal_agent import work_mode
