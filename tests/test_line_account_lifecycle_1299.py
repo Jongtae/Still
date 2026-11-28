@@ -80,6 +80,19 @@ class AccountLifecycleTests(_LineCase):
         self.assertNotEqual(account['id'], ended['id'])
         self.assertEqual((account['state'], account['accepted_by']), (prep.STATE_SCHEDULED, ended['accepted_by']))
 
+    def test_restoring_cancelled_line_work_starts_an_ended_account_again(self):
+        brief, _ = self.open_line()
+        line = brief['line_id']
+        [work] = self.work_rows(line)
+        cancelled = self.service.preparations.cancel(work['id'])
+        ended = account_of(self, line)
+        self.run_line(ended, [{'content': '맡긴 일은 여기까지예요.'}])
+        self.assertNotIn(self.service.preparations.get(ended['id'])['state'], prep.ACTIVE_STATES)
+        self.service.preparations.restore(work['id'], cancelled_at=cancelled['updated_at'])
+        account = account_of(self, line)
+        self.assertNotEqual(account['id'], ended['id'])
+        self.assertEqual(account['state'], prep.STATE_SCHEDULED)
+
     def test_a_cancelled_account_is_not_started_again_by_new_work(self):
         brief, _ = self.open_line()
         line = brief['line_id']

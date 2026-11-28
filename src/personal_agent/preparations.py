@@ -2374,6 +2374,9 @@ class Preparations:
                     raise PreparationRefusal('resume_expired')
                 db.execute('UPDATE preparations SET state=?,due_at=?,updated_at=? WHERE id=?',
                            (STATE_SCHEDULED, following, revision, row['id']))
+            if row.get('line_id') and row.get('origin') != ORIGIN_LINE_ACCOUNT:
+                # #1299: restored line work brings back an account that ended with the line's work.
+                self.revive_line_account(row['line_id'], created_from=row['created_from'], db=db)
         return self.get(preparation_id)
 
     def edit(self, preparation_id, *, states=(STATE_PROPOSED, STATE_SCHEDULED, STATE_PAUSED), expected_max_runs=None, **changes):
