@@ -60,6 +60,11 @@ def pressed(call_id, arguments, ok):
     return [running('browser_click', call_id, arguments), terminal]
 
 
+def refused(action, code='argument_invalid', **extra):
+    """#1351: a call Still refused as written before running it, recorded as the CLI bridge records it (no arguments)."""
+    return failed(action, code, ran=False, retry='permanent', error=f'{action} needs {code}', **extra)
+
+
 class StepRecoveryTests(unittest.TestCase):
     """The one projection both routes read: which failures a later call made up for."""
 
@@ -100,6 +105,32 @@ class StepRecoveryTests(unittest.TestCase):
                 for index in expected:
                     # Never more lenient than #752's deterministic guard.
                     self.assertFalse(state_change_short(steps[index:]))
+
+    def test_a_call_refused_as_written_is_recovered_by_its_corrected_call(self):
+        """#1351: the correction carries other arguments, so the next call of the action decides."""
+        schedule = succeeded('schedule_preparation', {'scheduled': True})
+        cases = [
+            ('refused, then the corrected call succeeded', [refused('schedule_preparation'), schedule], {0: RECOVERED}),
+            ('refused three times, then the corrected call succeeded',
+             [refused('schedule_preparation', 'a'), succeeded('code_run'), refused('schedule_preparation', 'b'),
+              refused('schedule_preparation', 'c'), schedule], {0: RECOVERED, 2: RECOVERED, 3: RECOVERED}),
+            ('refused, then the action ran and failed',
+             [refused('schedule_preparation'), failed('schedule_preparation', 'tool_failed'), schedule], {}),
+            ('refused, and the action never succeeded', [refused('schedule_preparation'), succeeded('code_run')], {}),
+            ('refused, then only another action succeeded', [refused('save_note'), schedule], {}),
+            ('refused for a step only the owner can take',
+             [refused('schedule_preparation', requires='connection'), schedule], {}),
+            ('a call that ran and failed is not a refusal as written',
+             [failed('schedule_preparation', 'tool_failed', retry='permanent'), schedule], {}),
+        ]
+        for label, rows, expected in cases:
+            with self.subTest(label):
+                self.assertEqual(self.marks(rows), expected)
+                text = failed_steps_text(trail_steps(rows))
+                for index, row in enumerate(rows):
+                    if row[1] != 'failed':continue
+                    entry = next(part for part in text.split('; ') if json.loads(row[2])['error'] in part)
+                    self.assertEqual(RECOVERED_STEP_FACT in entry, index in expected)
 
     def test_the_judgment_text_marks_each_call_and_lists_open_ones_first(self):
         rows = [failed('weather'), failed('browser_click', 'effect_unknown', effect='unknown', declared='mutate'),
@@ -545,6 +576,37 @@ class CliRouteOutcomeTests(orch.Harness):
         self.assertIsNone(row['error'])
         self.assertIn(GOAL_NOT_SHOWN, row['owner_cause'])
         self.assertNotIn('target_not_found', row['owner_cause'])
+
+    def test_a_refusal_the_worker_corrected_is_not_unfinished(self):
+        """#1351: refused as written, corrected, scheduled: the judgment reads it recovered and nobody names it."""
+        rows = [refused('schedule_preparation', 'offer_required'), refused('schedule_preparation', 'invalid_window'),
+                succeeded('schedule_preparation', {'scheduled': True})]
+        for reached, expected in ((True, 'succeeded'), (False, 'partial')):
+            with self.subTest(reached=reached):
+                self.attempt(*rows)
+                self.script([orch.plan('codex', 'Set it up.')], goals=[reached])
+                job, row = self.run_work('매일 아침 확인해줘')
+                self.assertEqual(row['status'], expected)
+                [goal] = self.asked_goals
+                self.assertEqual(goal.facts['failed_steps'].count(RECOVERED_STEP_FACT), 2, goal.facts['failed_steps'])
+                self.assertIsNone(row['error'])
+                self.assertIsNone(row['owner_note'])
+                self.assertNotIn('needs', row['owner_cause'] or '')
+                with self.store.db() as db:
+                    kept = db.execute("SELECT COUNT(*) FROM tool_events WHERE job_id=? AND status='failed'", (job,)).fetchone()[0]
+                self.assertEqual(kept, 2, 'the refused calls stay in Evidence')
+
+    def test_a_refusal_the_worker_never_corrected_stays_named(self):
+        """#1351: the same refusal with no later success of its action still holds and is still said."""
+        self.attempt(refused('schedule_preparation', 'invalid_window'), succeeded('code_run'))
+        self.script([orch.plan('codex', 'Set it up.')], goals=[False])
+        job, row = self.run_work('매일 아침 확인해줘')
+        self.assertEqual(row['status'], 'partial')
+        [goal] = self.asked_goals
+        self.assertEqual(goal.facts['failed_steps'], 'schedule_preparation: schedule_preparation needs invalid_window')
+        self.assertIn('schedule_preparation needs invalid_window', row['error'])
+        # #769: the worker-directed text never reaches the owner's line, but the step is still said.
+        self.assertIn('일부 단계는 끝내지 못했어요', row['owner_note'])
 
     def test_without_recorded_arguments_a_later_call_of_the_action_is_not_a_recovery(self):
         miss = failed('browser_type', 'target_not_found', declared='mutate')
