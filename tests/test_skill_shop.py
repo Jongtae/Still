@@ -37,6 +37,8 @@ METHODS = ('summary-or-analysis', 'claim-analysis', 'source-cross-check')
 FIRST = 'first-conversations'
 #: #783: the trading-costs method, listed last.
 COSTS = 'trading-costs'
+#: #1339: the rule-driven flow research method, listed after the intraday method.
+FLOW = 'rule-driven-flow-research'
 FIXTURE_SITE = Path(__file__).resolve().parent / 'fixtures' / 'skills' / 'fixture-mart'
 
 
@@ -285,7 +287,7 @@ class OwnerAddsAReferenceSkillByName(_Shop):
         available = read['settings']['skills']['add']['available']
         self.assertEqual([(row['name'], row['installed']) for row in available], [(SHOPPING, False), (SITE, False), ('map-directions', False),
                                                                         *[(name, False) for name in METHODS], (FIRST, False), (COSTS, False),
-                                                                        ('intraday-trading-method', False)])
+                                                                        ('intraday-trading-method', False), (FLOW, False)])
         self.assertNotIn('https://', json.dumps(read, ensure_ascii=False), 'no endpoint is reported')
 
     def test_adding_by_name_pins_the_commit_and_switches_skills_on_once_confirmed(self):
@@ -300,7 +302,7 @@ class OwnerAddsAReferenceSkillByName(_Shop):
         listed = self.settings.read('owner', 'skills')['settings']['skills']['add']['available']
         self.assertEqual([(row['name'], row['installed']) for row in listed], [(SHOPPING, True), (SITE, False), ('map-directions', False),
                                                                      *[(name, False) for name in METHODS], (FIRST, False), (COSTS, False),
-                                                                        ('intraday-trading-method', False)])
+                                                                        ('intraday-trading-method', False), (FLOW, False)])
 
     def test_an_unknown_name_is_not_guessed(self):
         from personal_agent.settings_orchestrator import SettingsError

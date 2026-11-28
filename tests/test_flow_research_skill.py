@@ -7,8 +7,7 @@ market data or network is used, so nothing here shows how a live model
 applies the method or that any strategy works.
 
 Reused, not repeated here: install pinning, licence and containment
-(``test_skill_supply``); listing and pins (``test_skill_auto_adopt_1291``,
-once the skill is listed after merge).
+(``test_skill_supply``); listing and pins (``test_skill_auto_adopt_1291``).
 """
 import re
 import tempfile
@@ -18,7 +17,7 @@ from pathlib import Path
 from personal_agent.agent_runtime import Capabilities, ToolError
 from personal_agent.plugins import PluginRegistry
 from personal_agent.quickstart_store import QuickStore
-from personal_agent.skills import SkillLibrary, inspect_skill, parse_frontmatter, usage_header
+from personal_agent.skills import SkillLibrary, inspect_skill, parse_frontmatter, reference_skills, usage_header
 from test_agency_loop import CFG
 from test_no_scenario_code import SITE_TOKENS
 from test_skill_shop import COMMIT, REPO, archive
@@ -55,6 +54,10 @@ class FlowResearchContent(unittest.TestCase):
         frontmatter, _body = parse_frontmatter(self.text)
         self.assertEqual(frontmatter['metadata']['version'], '1')
         self.assertIn(f'`{NAME}`', (ROOT / 'skills' / 'README.md').read_text())
+        listed = {row['name']: row for row in reference_skills()}
+        # #1339: listed and pinned to one exact commit and its content digest (#1291).
+        self.assertRegex(listed[NAME]['address'], rf'^github\.com/{REPO}/tree/[0-9a-f]{{40}}/skills/{NAME}$')
+        self.assertTrue(listed[NAME]['pinned'])
 
     def test_it_opens_with_a_bounded_header_that_disclaims_advice_and_authority(self):
         _frontmatter, body = parse_frontmatter(self.text)
