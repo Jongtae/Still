@@ -382,7 +382,7 @@ class PublicPageReaderTests(unittest.TestCase):
         result=PublicPageReader(opener=Opener(Response(b'a'*(1_000_001))), resolver=public_dns).read('https://example.com/')
         self.assertTrue(result['content_truncated']); self.assertEqual(result['content_bytes'], 1_000_000)
         with self.assertRaisesRegex(ValueError, 'HTML 또는 텍스트'):
-            PublicPageReader(opener=Opener(Response(b'pdf', headers={'Content-Type':'application/pdf'})), resolver=public_dns).read('https://example.com/')
+            PublicPageReader(opener=Opener(Response(b'pdf', headers={'Content-Type':'image/png'})), resolver=public_dns).read('https://example.com/')
 
     def test_bounds_decompressed_content(self):
         body=gzip.compress(b'x'*2_000_001)
@@ -646,7 +646,7 @@ class PublicJsonTests(unittest.TestCase):
         self.assertEqual(PublicPageReader(opener=opener,resolver=public_dns).read('https://example.com/x')['content'], '{"a": 1}')
 
     def test_binary_is_still_refused(self):
-        for kind in ('application/pdf', 'image/png', 'application/octet-stream'):
+        for kind in ('image/png', 'application/octet-stream', 'application/zip'):
             with self.subTest(kind=kind), self.assertRaisesRegex(ValueError, 'HTML 또는 텍스트'):
                 PublicPageReader(opener=Opener(Response(b'x', headers={'Content-Type':kind})),resolver=public_dns).read('https://example.com/')
 
@@ -658,3 +658,46 @@ class PublicJsonTests(unittest.TestCase):
                     PublicPageReader(opener=Opener(Response(b'', status=status)),resolver=public_dns).read('https://example.com/')
                 self.assertIn(f'HTTP {status}', str(caught.exception))
                 self.assertEqual(classify_failure(caught.exception, 'public_page_read')[1], retry)
+
+
+class PublicPdfTests(unittest.TestCase):
+    """#1330: a public PDF is read with Still's own PDF extraction."""
+
+    @staticmethod
+    def _pdf(text):
+        from pypdf import PdfWriter
+        from pypdf.generic import DecodedStreamObject, DictionaryObject, NameObject
+        writer=PdfWriter(); page=writer.add_blank_page(width=300, height=200)
+        font=DictionaryObject({NameObject('/Type'):NameObject('/Font'),NameObject('/Subtype'):NameObject('/Type1'),
+                               NameObject('/BaseFont'):NameObject('/Helvetica')})
+        page[NameObject('/Resources')]=DictionaryObject({NameObject('/Font'):DictionaryObject({NameObject('/F1'):writer._add_object(font)})})
+        stream=DecodedStreamObject(); stream.set_data(f'BT /F1 12 Tf 20 100 Td ({text}) Tj ET'.encode())
+        page[NameObject('/Contents')]=writer._add_object(stream)
+        out=io.BytesIO(); writer.write(out); return out.getvalue()
+
+    def test_a_public_pdf_is_read_as_its_text(self):
+        body=self._pdf('Commission 0.015 percent.')
+        opener=Opener(Response(body, headers={'Content-Type':'application/pdf'}))
+        result=PublicPageReader(opener=opener,resolver=public_dns).read('https://example.com/fees.pdf')
+        self.assertIn('Commission 0.015 percent.', result['content'])
+        self.assertEqual(result['content_type'], 'application/pdf')
+
+    def test_a_pdf_over_the_budget_is_refused_not_cut(self):
+        from personal_agent.local_tools import PDF_MAX_BYTES
+        opener=Opener(Response(b'%PDF-'+b'0'*(PDF_MAX_BYTES+1), headers={'Content-Type':'application/pdf'}))
+        with self.assertRaisesRegex(ValueError, 'PDF'):
+            PublicPageReader(opener=opener,resolver=public_dns).read('https://example.com/huge.pdf')
+
+    def test_an_unreadable_pdf_says_so(self):
+        opener=Opener(Response(b'%PDF-1.4 not really', headers={'Content-Type':'application/pdf'}))
+        with self.assertRaisesRegex(ValueError, 'PDF'):
+            PublicPageReader(opener=opener,resolver=public_dns).read('https://example.com/bad.pdf')
+
+    def test_a_pdf_cut_by_the_extractor_is_marked_truncated_even_when_it_then_fits(self):
+        from personal_agent import document_reader
+        whitespace_heavy=[{'location':'page 1','text':'Fee 0.015%. '+' '*(document_reader.MAX_EXTRACTED_CHARS)}]
+        with patch.object(document_reader, '_pdf', return_value=document_reader.Document('pdf', whitespace_heavy)):
+            opener=Opener(Response(b'%PDF-1.4', headers={'Content-Type':'application/pdf'}))
+            result=PublicPageReader(opener=opener,resolver=public_dns).read('https://example.com/long.pdf')
+        self.assertTrue(result['content_truncated'])
+        self.assertLess(len(result['content']), 24000)
