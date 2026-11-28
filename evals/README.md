@@ -153,7 +153,7 @@ These measure the form of one update in a recurring series (a watch, a line's ru
 
 The adopt-or-not gate for a revision of versioned method text (a bundled skill, tool guidance, a prompt section), for the #1275 loop. It reads recorded runs and calls no model. `progress-forms` is built on the same aggregation and gate pieces and keeps its own rules above.
 
-`compare_versioned_text(baseline, candidates, *, meta, target, tolerances, equal_retries=None, min_trials=3)`
+`compare_versioned_text(baseline, candidates, *, meta, target, tolerances, equal_retries=None, min_trials=3, splits=('dev', 'heldout'))`
 
 - An arm is `{"text_digest": text_digest(text), "settings": {"worker", "model", ...}, "scenario_ids": [...], "records": [...], "cost": {...}}`. `records` are `report.records_from_samples` rows. `settings` holds everything that must be matched (worker, model, effort, judge). `cost` is a mapping of numbers the caller measured (calls, tokens, USD).
 - `meta` maps scenario id to `{"split": "dev" | "heldout", "source"}` and comes from the scenario set, never from an arm.
@@ -211,6 +211,48 @@ PYTHONPATH=src:evals python -m agentos_eval revise record --candidates <folder> 
 - **Output folder** (default `$AGENTOS_EVAL_HOME/revisions/<target slug>/<time>-<base digest 8>/`, refused inside the repository): `<label>.txt` (the revised text), `<label>.json` (`revision-candidate/1`: label, scope, target_path, lines, base_digest, candidate_digest, summary, cause, proposer, parents), `refused.json`, `manifest.json` (`revision-candidates/1`, including the proposer calls and their observed usage).
 - **Experience entry** (`revise record`; one JSON file per comparison under `$AGENTOS_EVAL_HOME/experience/<target slug>/`, never owner Memory; refused inside the repository): `revision-experience/1` with recorded_at, target_path, lines, base_digest, cause, proposer, settings, scenario_ids, measure target and tolerances, candidates (label, scope, candidate_digest, summary, parents, verdict, reasons) and cost (proposer calls and each compared arm's cost). The comparison is a `compare_versioned_text` result (`arm-compare/1`); its baseline must carry the base digest and every compared label must match a candidate's digest. A candidate the comparison did not include is `not_compared`.
 - Tests inject the transport; the command makes at most two model calls and none when a reply is refused.
+
+## Automatic revision loop (`agentos_eval/revise_loop.py`, #1355)
+
+The recursive mode of Harness²: the per-round pieces above run for several rounds with no human step between them,
+each round's `preferred` winner becoming the next round's base. Sandbox only; adopting the final text takes a
+reviewed PR.
+
+```
+PYTHONPATH=src:evals python -m agentos_eval revise loop --target <src file> [--lines A-B] \
+    --scenarios <dev ids> --rounds 3 --epochs 3 --max-worker-runs <n> \
+    --proposer subscription-cli:codex[:<model>[:<effort>]] [--compose] [--measure passed] \
+    [--tolerance <measure>=<n> ...] --out <folder> -- <sweep args without --scenarios/--epochs/--split/--world>
+PYTHONPATH=src:evals python -m agentos_eval revise final --loop <folder>/loop.json --scenarios <held-out ids> \
+    --epochs 3 --bar 0.20 --max-worker-runs <n>
+PYTHONPATH=src:evals python -m agentos_eval revise compare --baseline <arm> --candidate <label>=<arm> ... \
+    [--equal-retries <arm>] [--measure passed] [--tolerance <measure>=<n> ...] [--splits dev,heldout] [--out <file>]
+```
+
+- **Round**: run the base arm on the loop's scenarios (or reuse it when the base did not change), apply the room
+  check on dev, build the cause from the base arm's failed runs (case title, owner turns, what a good secretary
+  does, failure reasons; every scenario id replaced by `<scenario>`), propose, run every candidate arm and an
+  equal-retries arm of the base, compare on dev (`splits=('dev',)`), and record the experience entry in
+  `<out>/experience/`. A `preferred` candidate with the highest dev mean becomes the next base and gets a fresh base
+  arm; otherwise the base is kept and the record says why. The loop stops after `--rounds`, when no room is left,
+  or before a round whose worst case (base arm plus two or three candidates and their retries) would exceed
+  `--max-worker-runs`.
+- **Held-out guard**: every `--scenarios` id must be a bundled dev scenario. The loop sets `--scenarios`, `--epochs`
+  and refuses `--split` and `--world` in the sweep arguments, refuses an arm that ran any other scenario, builds the
+  cause only from its own scenarios' records, and gives the proposer only experience whose comparison used no other
+  scenario. The working tree is never edited: candidate text lives in `<out>/round-<n>/candidates/` and is spliced
+  into a `git archive` copy (`run_arm(base_text=...)`).
+- **Record** (`<out>/loop.json`, `revision-loop/1`, rewritten after every round): start and final digests and text
+  files, settings, budget, and per round the base digest and text, each arm's digest, mean and cost, the proposer
+  calls, each candidate's text file, summary, verdict and reasons, and the outcome (`promoted`, `kept` with a reason,
+  or `stopped`), then the stop reason, worker runs and total cost.
+- **Final** (`revise final`, once, after the loop has finished): the start text, the final text and an equal-retries
+  arm of the start text, each with `--epochs` trials, on held-out scenarios only, compared with `splits=('heldout',)`.
+  `<out>/final/final.json` holds the verdict, the held-out gain against the start text and against equal retries,
+  their noise and `bar_met` (`preferred` and both gains at least `--bar`). It reuses the loop's sweep arguments.
+- `revise compare` writes the `arm-compare/1` result of recorded arm files (default tolerances:
+  `rubric_honest_unverified`, `check_delivered`, `check_not_failed` at 0.05). `--splits` narrows the decision splits;
+  every arm's scenarios must lie in them.
 
 ## Action sandbox: world scenarios (`sweep --world`, #484)
 

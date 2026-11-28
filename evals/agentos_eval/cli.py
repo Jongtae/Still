@@ -10,6 +10,10 @@
     python -m agentos_eval revise arm --current --target <src file> -- <sweep args>
     python -m agentos_eval revise propose --target <src file> --baseline <arm record>
         --cause-kind <kind> --cause-source <id> --cause-file <file> --proposer <model>
+    python -m agentos_eval revise compare --baseline <arm> --candidate <label>=<arm> --equal-retries <arm>
+    python -m agentos_eval revise loop --target <src file> --scenarios <dev ids> --rounds 3 --epochs 3
+        --max-worker-runs <n> --proposer <model> --out <folder> -- <sweep args>
+    python -m agentos_eval revise final --loop <folder>/loop.json --scenarios <held-out ids> --epochs 3
 
 Run from the ``evals`` folder (or with it on ``PYTHONPATH``).  ``sweep`` and
 ``report`` need the eval extra (``evals/requirements.txt``); a ``--world``
@@ -426,10 +430,90 @@ def cmd_blockers(args):
     print(blockers.render(rows, args.scan))
 
 
+DEFAULT_TOLERANCES = {'rubric_honest_unverified': 0.05, 'check_delivered': 0.05, 'check_not_failed': 0.05}
+
+
+def _tolerances(values):
+    if not values:
+        return dict(DEFAULT_TOLERANCES)
+    result = {}
+    for value in values:
+        name, separator, number = value.partition('=')
+        try:
+            result[name] = float(number)
+        except ValueError:
+            separator = ''
+        if not separator or not name:
+            raise ValueError('--tolerance must be <measure>=<number>')
+    return result
+
+
+def _scenario_meta(items):
+    return {item['id']: {'split': item['split'], 'source': item['source']} for item in items}
+
+
+def _id_list(value):
+    return [item for item in (part.strip() for part in value.split(',')) if item]
+
+
+def _revise_compare(args, revise):
+    from .arm_compare import compare_versioned_text
+
+    def arm(path):
+        return revise._read_json(path.expanduser())
+
+    candidates = {}
+    for value in args.candidate:
+        label, separator, path = value.partition('=')
+        if not separator or not label or label in candidates:
+            raise ValueError('--candidate must be a distinct <label>=<arm file>')
+        candidates[label] = arm(Path(path))
+    result = compare_versioned_text(arm(args.baseline), candidates, meta=_scenario_meta(scenario_module.load()),
+                                    target=args.measure, tolerances=_tolerances(args.tolerance),
+                                    equal_retries=arm(args.equal_retries) if args.equal_retries else None,
+                                    min_trials=args.min_trials, splits=tuple(_id_list(args.splits)))
+    text = json.dumps(result, indent=2) + '\n'
+    if args.out is None:
+        print(text, end='')
+        return
+    out = revise._outside_repo(args.out)
+    out.parent.mkdir(parents=True, exist_ok=True)
+    out.write_text(text, encoding='utf-8')
+    print(out)
+    for label, row in result['candidates'].items():
+        print(f"{label} {row['verdict']}" + (f": {'; '.join(row['reasons'])}" if row['reasons'] else ''))
+
+
+def _sweep_args(values):
+    return values[1:] if values[:1] == ['--'] else values
+
+
 def cmd_revise(args):
     from . import revise
 
     try:
+        if args.action == 'compare':
+            _revise_compare(args, revise)
+            return
+        if args.action in ('loop', 'final'):
+            from . import revise_loop
+
+            items = scenario_module.load()
+            if args.action == 'final':
+                if _sweep_args(args.sweep_args):
+                    raise ValueError('The final step reuses the loop\'s sweep settings; pass no sweep args')
+                print(revise_loop.final_heldout(args.loop.expanduser(), heldout_ids=_id_list(args.scenarios),
+                                                scenarios=items, epochs=args.epochs, bar=args.bar,
+                                                max_worker_runs=args.max_worker_runs))
+                return
+            target = revise.load_target(args.target, args.lines)
+            print(revise_loop.run_loop(
+                target=target, sweep_args=_sweep_args(args.sweep_args), dev_ids=_id_list(args.scenarios),
+                scenarios=items, rounds=args.rounds, epochs=args.epochs, max_worker_runs=args.max_worker_runs,
+                generate_factory=lambda: revise.make_generate(args.proposer, seed=args.seed),
+                forbidden=revise.forbidden_ids(), out=args.out.expanduser(), measure=args.measure,
+                tolerances=_tolerances(args.tolerance), compose=args.compose, prior=args.prior))
+            return
         if args.action == 'arm':
             from . import arm_run
 
@@ -734,6 +818,37 @@ def main(argv=None):
     proposing.add_argument('--out', type=Path)
     proposing.add_argument('--experience', type=Path)
     proposing.add_argument('--prior', type=int, default=8)
+    comparing = revision_actions.add_parser('compare', help='compare recorded arms (arm-compare/1); no model call')
+    comparing.add_argument('--baseline', type=Path, required=True)
+    comparing.add_argument('--candidate', action='append', required=True, help='<label>=<arm file>, repeatable')
+    comparing.add_argument('--equal-retries', type=Path)
+    comparing.add_argument('--measure', default='passed')
+    comparing.add_argument('--tolerance', action='append', help='<measure>=<number>, repeatable')
+    comparing.add_argument('--min-trials', type=int, default=3)
+    comparing.add_argument('--splits', default='dev,heldout', help='decision splits (default dev,heldout)')
+    comparing.add_argument('--out', type=Path)
+    looping = revision_actions.add_parser('loop', help='automatic multi-round revision on dev scenarios only')
+    looping.add_argument('--target', type=Path, required=True)
+    looping.add_argument('--lines', type=_revision_lines)
+    looping.add_argument('--scenarios', required=True, help='comma-separated bundled dev scenario ids')
+    looping.add_argument('--rounds', type=int, default=3)
+    looping.add_argument('--epochs', type=int, default=3)
+    looping.add_argument('--max-worker-runs', type=int, required=True)
+    looping.add_argument('--proposer', required=True)
+    looping.add_argument('--seed')
+    looping.add_argument('--compose', action='store_true')
+    looping.add_argument('--measure', default='passed')
+    looping.add_argument('--tolerance', action='append', help='<measure>=<number>, repeatable')
+    looping.add_argument('--prior', type=int, default=8)
+    looping.add_argument('--out', type=Path, required=True)
+    looping.add_argument('sweep_args', nargs=argparse.REMAINDER)
+    finishing = revision_actions.add_parser('final', help='after a loop: start vs final text on held-out only')
+    finishing.add_argument('--loop', type=Path, required=True)
+    finishing.add_argument('--scenarios', required=True, help='comma-separated bundled held-out scenario ids')
+    finishing.add_argument('--epochs', type=int, default=3)
+    finishing.add_argument('--bar', type=float, default=0.20, help='required held-out gain (default 0.20)')
+    finishing.add_argument('--max-worker-runs', type=int, required=True)
+    finishing.add_argument('sweep_args', nargs=argparse.REMAINDER)
     recording = revision_actions.add_parser('record')
     recording.add_argument('--candidates', type=Path, required=True)
     recording.add_argument('--comparison', type=Path, required=True)
