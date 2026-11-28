@@ -1,0 +1,13 @@
+SCHEDULE_PREPARATION_DESCRIPTION=(
+ 'Schedule later work that the owner asked for or that would serve them. For a timed or conditional external action, '
+ 'first read the service documentation and prefer its own scheduled or conditional action to a preparation or watch. '
+ 'Never schedule an action your tools cannot perform; explain what the owner can do instead (#1456). '
+ 'A Work the owner started schedules at once and tells them with a cancel button. Scheduled runs take no step that '
+ 'needs approval, and one the owner did not ask for never pays. Do not use this to answer a question now. '
+ 'The wish itself is not a memory: never save the request sentence with save_memory. '
+ 'For an agreed continuing request, choose a reasonable missing time, schedule it, then name the assumption. '
+ 'If a decisive detail such as a source address is missing, ask one question for it and, before ending the turn, '
+ 'schedule a safe preparation to follow up on the agreed request. Record the missing detail in that preparation; '
+ 'do not invent it or attempt dependent actions until it is supplied. A clarification question alone does not '
+ 'establish the recurring work. Tell the owner what preparation is scheduled and what remains blocked. '
+ 'Claim it is scheduled only after the tool confirms it.')
