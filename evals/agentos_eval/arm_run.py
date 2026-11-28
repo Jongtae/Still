@@ -120,8 +120,13 @@ def _cost(records):
 
 
 def run_arm(sweep_args, *, candidate=None, target=None, lines=None, equal_retries=False,
-            out=None, repo=REPO, runner=run_sweep):
-    """Run one arm from committed text and write its comparison record."""
+            out=None, repo=REPO, runner=run_sweep, base_text=None):
+    """Run one arm from committed text and write its comparison record.
+
+    ``base_text`` replaces the committed target text as the base (#1355): a current or equal-retries arm
+    runs it in place of the committed text, and a candidate must name it as its base. An automatic loop
+    uses it to carry a promoted winner into the next round without touching the working tree.
+    """
     if (candidate is None) == (target is None):
         raise ValueError('Specify exactly one candidate or current target')
     if candidate is not None and (lines is not None or equal_retries):
@@ -162,9 +167,13 @@ def run_arm(sweep_args, *, candidate=None, target=None, lines=None, equal_retrie
             tree.extractall(copy, filter='data')
         selected = revise.load_target(target, lines, repo=copy)
         base = digest = selected['digest']
+        if base_text is not None:
+            base = digest = text_digest(base_text)
+            if candidate is None and digest != selected['digest']:
+                _splice(copy, selected, base_text, digest)
         if candidate is not None:
             if base != meta.get('base_digest'):
-                raise ValueError('HEAD text does not match the candidate base digest')
+                raise ValueError('The base text does not match the candidate base digest')
             digest = _splice(copy, selected, replacement, candidate_digest)
         if out is None:
             folder = _outside_repo(folder / 'revisions' / revise._slug(selected['path']) / 'arms', repo)

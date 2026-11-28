@@ -59,11 +59,12 @@ def load_target(path, lines=None, *, repo=REPO):
     return {'path': path.relative_to(root).as_posix(), 'lines': lines, 'text': text, 'digest': text_digest(text)}
 
 
-def check_room(arm, target, *, meta, measure, min_trials=3):
+def check_room(arm, target, *, meta, measure, min_trials=3, splits=DECISION_SPLITS):
     """Refuse a baseline against which no candidate could be preferred.
 
     Applies the comparator's own gate (#1331): the target must be able to improve beyond the baseline's
-    epoch spread on every decision split. Even a candidate that scores the maximum on every run gains
+    epoch spread on every decision split (``splits``, both by default; an automatic loop checks dev alone,
+    #1355). Even a candidate that scores the maximum on every run gains
     only 1 minus the baseline mean, so a split at its maximum, or one whose spread is at least that gain,
     leaves nothing a comparison could show.
     """
@@ -80,11 +81,11 @@ def check_room(arm, target, *, meta, measure, min_trials=3):
             raise ValueError('The baseline contains an unknown scenario')
         ids.add(ident)
     parts = partition_ids(ids, meta)
-    for part in DECISION_SPLITS:
+    for part in splits:
         if not parts[part]:
             raise ValueError(f'The baseline contains no {part} records')
     current = _TextArm(arm, parts, (measure,), measure, min_trials)
-    for part in DECISION_SPLITS:
+    for part in splits:
         if current.spreads[part] is None:
             raise ValueError(f'The baseline has incomplete {measure} scores on {part}: every scenario needs '
                              f'at least {min_trials} graded runs over the same epochs')

@@ -69,15 +69,15 @@ def paired_deltas(scores, other, parts, measures, *, digits=4):
     return result
 
 
-def target_improves(parts, target, *, exceeds=operator.gt):
+def target_improves(parts, target, *, exceeds=operator.gt, splits=DECISION_SPLITS):
     return all(parts[part][target] is not None and
                exceeds(parts[part][target], parts[part].get('noise', 0))
-               for part in DECISION_SPLITS)
+               for part in splits)
 
 
-def dimension_within_tolerance(parts, measure, tolerance, *, at_most=operator.le):
+def dimension_within_tolerance(parts, measure, tolerance, *, at_most=operator.le, splits=DECISION_SPLITS):
     return all(parts[part][measure] is not None and at_most(-parts[part][measure], tolerance)
-               for part in DECISION_SPLITS)
+               for part in splits)
 
 
 def text_digest(text):
@@ -141,7 +141,7 @@ def _validate_recorded_engine(record, settings):
                                      f'{_PIN_HINT}')
 
 
-def _validate_arm(arm, baseline, meta, *, same_text):
+def _validate_arm(arm, baseline, meta, *, same_text, splits=DECISION_SPLITS):
     if not isinstance(arm, dict):
         raise ValueError('Each arm must be a mapping of arm fields')
     digest = arm.get('text_digest')
@@ -165,6 +165,8 @@ def _validate_arm(arm, baseline, meta, *, same_text):
     for ident in ids:
         if meta[ident].get('source') != 'local' and meta[ident].get('split') not in DECISION_SPLITS:
             raise ValueError(f'Scenario {ident!r} needs a dev or heldout split')
+        if meta[ident].get('source') != 'local' and meta[ident]['split'] not in splits:
+            raise ValueError(f'Scenario {ident!r} is outside the decision splits {", ".join(splits)}')
     seen = set()
     declared = set(ids)
     for record in arm['records']:
@@ -226,11 +228,11 @@ class _TextArm:
         return stats(mean((self.runs[i][epoch][target] for i in ids), digits=None) for epoch in epochs)['spread']
 
 
-def _applicable(arms, parts, tolerances):
+def _applicable(arms, parts, tolerances, splits):
     return {part: {measure: [i for i in parts[part]
                              if any(arm.scores.get(i, {}).get(measure) is not None for arm in arms)]
                    for measure in tolerances}
-            for part in DECISION_SPLITS}
+            for part in splits}
 
 
 def _evidence_gaps(arm, applicable, min_trials, label):
@@ -258,14 +260,14 @@ def _exceeds(value, limit):
     return value > limit and not math.isclose(value, limit, abs_tol=1e-12)
 
 
-def _worse(parts, target):
-    return [part for part in DECISION_SPLITS
+def _worse(parts, target, splits):
+    return [part for part in splits
             if _exceeds(-parts[part][target], parts[part]['noise'])
             or (parts[part]['noise'] == 0 and not _exceeds(parts[part][target], 0))]
 
 
-def _verdict(arm, base, retries, against, parts, tolerances, target, min_trials, candidate_runs):
-    applicable = _applicable((base, arm), parts, tolerances)
+def _verdict(arm, base, retries, against, parts, tolerances, target, min_trials, candidate_runs, splits):
+    applicable = _applicable((base, arm), parts, tolerances, splits)
     gaps = (_evidence_gaps(base, applicable, min_trials, 'Baseline') +
             _evidence_gaps(arm, applicable, min_trials, 'Candidate'))
     if gaps:
@@ -273,7 +275,7 @@ def _verdict(arm, base, retries, against, parts, tolerances, target, min_trials,
     baseline = against['baseline']
     regressions = [f'{measure} falls beyond its tolerance against baseline'
                    for measure, tolerance in tolerances.items()
-                   if not dimension_within_tolerance(baseline, measure, tolerance,
+                   if not dimension_within_tolerance(baseline, measure, tolerance, splits=splits,
                                                      at_most=lambda loss, limit: not _exceeds(loss, limit))]
     if regressions:
         return 'rejected', regressions
@@ -281,19 +283,19 @@ def _verdict(arm, base, retries, against, parts, tolerances, target, min_trials,
     if retries is None:
         retry_gaps = ['Equal retries are missing']
     else:
-        retry_applicable = _applicable((base, arm, retries), parts, tolerances)
+        retry_applicable = _applicable((base, arm, retries), parts, tolerances, splits)
         retry_gaps = (_evidence_gaps(retries, retry_applicable, min_trials, 'Equal retries') +
                       _evidence_gaps(arm, retry_applicable, min_trials, 'Candidate'))
     comparable = {'baseline': baseline}
     if not retry_gaps:
         comparable['equal_retries'] = against['equal_retries']
     worse = [f'{target} does not improve against {label} on {part}'
-             for label, deltas in comparable.items() for part in _worse(deltas, target)]
+             for label, deltas in comparable.items() for part in _worse(deltas, target, splits)]
     if worse:
         return 'rejected', worse
 
     gaps = retry_gaps + [f'{target} is within noise against {label}' for label, deltas in comparable.items()
-                         if not target_improves(deltas, target, exceeds=_exceeds)]
+                         if not target_improves(deltas, target, exceeds=_exceeds, splits=splits)]
     if retries is not None and any(len(retries.runs[i]) < count for i, count in candidate_runs.items()):
         gaps.append('Equal retries do not cover the candidate path executions per scenario')
     for label, current in (('Baseline', base), ('Candidate', arm), ('Equal retries', retries)):
@@ -302,19 +304,28 @@ def _verdict(arm, base, retries, against, parts, tolerances, target, min_trials,
     return ('insufficient_evidence', gaps) if gaps else ('preferred', [])
 
 
-def compare_versioned_text(baseline, candidates, *, meta, target, tolerances, equal_retries=None, min_trials=3):
-    """Report paired deltas and decide each candidate against baseline and equal retries."""
+def compare_versioned_text(baseline, candidates, *, meta, target, tolerances, equal_retries=None, min_trials=3,
+                           splits=DECISION_SPLITS):
+    """Report paired deltas and decide each candidate against baseline and equal retries.
+
+    ``splits`` narrows the decision to a subset of ``DECISION_SPLITS`` (#1355): an automatic loop decides on
+    dev alone so that held-out stays unseen, and its final step decides on held-out alone. Every arm's
+    scenarios must then lie in those splits.
+    """
     if not candidates:
         raise ValueError('At least one candidate is required')
     if not tolerances or any(not _finite_number(t) or t < 0 for t in tolerances.values()):
         raise ValueError('At least one finite, non-negative tolerance is required')
     if type(min_trials) is not int or min_trials < 2:
         raise ValueError('At least two trials per scenario are required')
-    _validate_arm(baseline, baseline, meta, same_text=True)
+    splits = tuple(splits)
+    if not splits or len(set(splits)) != len(splits) or not set(splits) <= set(DECISION_SPLITS):
+        raise ValueError(f'Decision splits must be distinct names from {", ".join(DECISION_SPLITS)}')
+    _validate_arm(baseline, baseline, meta, same_text=True, splits=splits)
     for arm in candidates.values():
-        _validate_arm(arm, baseline, meta, same_text=False)
+        _validate_arm(arm, baseline, meta, same_text=False, splits=splits)
     if equal_retries is not None:
-        _validate_arm(equal_retries, baseline, meta, same_text=True)
+        _validate_arm(equal_retries, baseline, meta, same_text=True, splits=splits)
 
     arms = [baseline, *candidates.values()]
     if equal_retries is not None:
@@ -333,14 +344,14 @@ def compare_versioned_text(baseline, candidates, *, meta, target, tolerances, eq
     retries = _TextArm(equal_retries, parts, measures, target, min_trials) if equal_retries is not None else None
     texts = {label: _TextArm(arm, parts, measures, target, min_trials) for label, arm in candidates.items()}
     candidate_runs = {i: sum(len(arm.runs[i]) for arm in texts.values())
-                      for part in DECISION_SPLITS for i in parts[part]}
+                      for part in splits for i in parts[part]}
     rows = {}
     for label, arm in texts.items():
         against = {'baseline': _comparison(arm, base, parts, measures)}
         if retries is not None:
             against['equal_retries'] = _comparison(arm, retries, parts, measures)
         verdict, reasons = _verdict(arm, base, retries, against, parts, tolerances, target,
-                                    min_trials, candidate_runs)
+                                    min_trials, candidate_runs, splits)
         for deltas in against.values():
             for row in deltas.values():
                 for measure in measures:
@@ -349,6 +360,7 @@ def compare_versioned_text(baseline, candidates, *, meta, target, tolerances, eq
         rows[label] = {**arm.report, 'verdict': verdict, 'preferred': verdict == 'preferred',
                        'reasons': reasons, 'against': against}
     return {'schema': 'arm-compare/1', 'target': target, 'tolerances': dict(tolerances), 'min_trials': min_trials,
+            'splits': list(splits),
             'settings': dict(baseline['settings']), 'scenario_ids': ids,
             'candidate_path_executions': sum(row['executions'] for row in rows.values()),
             'baseline': base.report, 'equal_retries': retries.report if retries is not None else None,
