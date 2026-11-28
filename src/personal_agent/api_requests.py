@@ -1170,8 +1170,9 @@ class ApiRequests:
         approval. Reservation is after credentials/currentness and immediately
         before transport. A crash after reservation is conservatively unknown.
         """
-        from .agent_runtime import (EFFECT_ROUTE_TEXT, TARGET_API, current_effect_call_ref,
-                                    effect_mutation_refusal, effect_target, external_effect_events, not_run)
+        from .agent_runtime import (EFFECT_REHEARSAL, EFFECT_ROUTE_TEXT, TARGET_API, current_effect_call_ref,
+                                    effect_mutation_refusal, effect_target, external_effect_events, line_rehearsal, not_run)
+        from .messages import msg
         from .api_credentials import fingerprint
         with self.store.db() as db:
             db.execute('BEGIN IMMEDIATE')
@@ -1199,6 +1200,9 @@ class ApiRequests:
                                'api_effect_replayed', ran=False)
             if refusal:
                 raise ApiError(EFFECT_ROUTE_TEXT, refusal, ran=False)
+            # #1274: a line in rehearsal records the change instead of sending it, before any approval is asked.
+            if line_rehearsal(db, self.work_id):
+                raise ApiError(msg('lines.rehearsal_not_sent'), EFFECT_REHEARSAL, ran=False)
             if method is None:
                 return None
             # #208 review: asked in the reservation's own transaction, so work mode switched on

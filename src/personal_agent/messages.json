@@ -12190,6 +12190,36 @@
   "ja": "送信後に読み戻したところ、サービスが実行していないと答えた変更：{items}。",
   "zh": "发送后回读时服务表示未执行的变更：{items}。"
  },
+ "lines.rehearsal_mode": {
+  "ko": "이 줄은 리허설 중이에요. 외부 상태를 바꾸는 요청은 보내지 않고 리허설로 기록만 해요. 하려던 변경은 그대로 시도하되, 보고에서는 각각 리허설(보내지 않음)이라고 밝히고, 실제로 한 일처럼 말하지 마세요. 실제 운용으로 바꾸는 건 소유자만 할 수 있어요. 전환할 만하다고 보이면 소유자에게 제안하세요.",
+  "en": "This line is in rehearsal. Requests that would change outside state are not sent; they are recorded as rehearsed. Attempt the changes you would make, report each as rehearsed (not sent), and never describe one as done. Only the owner can take the line live; when it looks ready, propose that to the owner.",
+  "ja": "このラインはリハーサル中です。外部の状態を変える要求は送信せず、リハーサルとして記録だけします。行うはずの変更はそのまま試みてかまいませんが、報告ではそれぞれリハーサル（未送信）と明示し、実際に行ったかのように言わないでください。本番運用に切り替えられるのはオーナーだけです。切り替えてよさそうならオーナーに提案してください。",
+  "zh": "这条任务线正在演练。会改变外部状态的请求不会发送，只记录为演练。可以照常尝试要做的变更，但报告时要逐项注明是演练（未发送），不要说成已经完成。只有所有者可以把它切换为正式运行；看起来可以切换时，请向所有者提议。"
+ },
+ "lines.rehearsal_not_sent": {
+  "ko": "이 줄은 리허설 중이라 이 변경을 보내지 않고 리허설로 기록했어요. 보고에서는 보내지 않았다고 밝히세요.",
+  "en": "This line is in rehearsal, so this change was recorded as rehearsed and not sent. Say in the report that it was not sent.",
+  "ja": "このラインはリハーサル中のため、この変更は送信せずリハーサルとして記録しました。報告では送信していないと明示してください。",
+  "zh": "这条任务线正在演练，因此此变更未发送，已记录为演练。请在报告中说明未发送。"
+ },
+ "lines.effects_rehearsed": {
+  "ko": "리허설로 기록만 하고 보내지 않은 변경: {count}건. 보낸 변경에는 들어가지 않아요.",
+  "en": "Changes recorded in rehearsal and not sent: {count}. They are not counted as sent.",
+  "ja": "リハーサルとして記録し、送信していない変更：{count}件。送信済みには含まれません。",
+  "zh": "仅记录为演练、未发送的变更：{count} 项。不计入已发送。"
+ },
+ "lines.refused_line_invalid_rehearsal": {
+  "ko": "rehearsal은 true 또는 false로만 줄 수 있어요.",
+  "en": "rehearsal takes only true or false.",
+  "ja": "rehearsal には true か false のみ指定できます。",
+  "zh": "rehearsal 只能为 true 或 false。"
+ },
+ "lines.refused_line_rehearsal_owner_only": {
+  "ko": "리허설 중인 줄을 실제 운용으로 바꾸는 건 소유자가 직접 그렇게 요청했을 때만 할 수 있어요. 바꾸지 않았어요. 전환이 필요하면 소유자에게 제안하세요.",
+  "en": "A line in rehearsal goes live only when the owner's own message asks for exactly that. It was not switched; propose it to the owner if it should go live.",
+  "ja": "リハーサル中のラインを本番運用に切り替えられるのは、オーナー自身がそれを求めたときだけです。切り替えていません。必要ならオーナーに提案してください。",
+  "zh": "只有所有者本人明确要求时，演练中的任务线才能切换为正式运行。未切换；如需切换，请向所有者提议。"
+ },
  "lines.stopped_unconfirmed": {
   "ko": "이 일로 보낸 변경 중 결과가 확인되지 않은 것이 {count}건 있어요. 그만해도 이미 보낸 것은 취소되거나 확인되지 않아요. 답에서 그렇게 알려 주세요.",
   "en": "{count} changes this work sent have no confirmed result. Stopping neither undoes nor confirms what was already sent; say so in your reply.",

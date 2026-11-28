@@ -2844,6 +2844,8 @@ class PreparationsService:
             restored={key:earlier[key] for key in el.FIELDS}
             # Undo reverts a rule change; a stop since then stays the owner's.
             restored['state']=brief['state']
+            # #1274: nor does it switch rehearsal: going live is the owner's own act, never an undo's side effect.
+            restored['rehearsal']=brief.get('rehearsal',False)
             return restored
         with service.store.db() as db:
             db.execute('BEGIN IMMEDIATE')
@@ -2934,11 +2936,11 @@ class PreparationsService:
         from .agent_runtime import (CODE_ACTIONS, EFFECT_CHANGED, EFFECT_UNKNOWN, REVISABLE_RECORD_ACTIONS,
                                     EFFECT_FREE_READS, _call_target, _state_free_actions, classify_effect_rows, dispatch_call_accounted,
                                     connector_refused_rows, dispatch_call_keys, effect_call_history_of, effect_rows,
-                                    refused_rows, refused_state_change)
+                                    EFFECT_REHEARSAL, refused_rows, refused_state_change, rehearsed_rows)
         store=self.service.store
         with store.db() as db:
-            works,checks=prep.line_effect_record_ids(db,line_id)
-            ids=[*works,*checks]
+            works,checks_ids=prep.line_effect_record_ids(db,line_id)
+            ids=[*works,*checks_ids]
             ledger=effect_rows(db,ids)
             # #1252 review: calls whose own record is unknown (a browser step, a connector or API call with no
             # ledger claim), classified by the one rule (``record_effect``) as ``unknown_effect_targets`` reads them.
@@ -2947,7 +2949,7 @@ class PreparationsService:
                             "AND status IN ('succeeded','failed') AND (tool='code_run' OR json_extract(detail,'$.host_action')='code_run')",
                             works).fetchall() if works else []
         observed,claims=classify_effect_rows(ledger)
-        out={'sent':0,'not_applied':0,'unconfirmed':len(claims),'refused':0,'asked':0,'unconfirmed_items':[],
+        out={'sent':0,'not_applied':0,'unconfirmed':len(claims),'refused':0,'asked':0,'rehearsed':0,'unconfirmed_items':[],
              'awaiting_read_back':0,'awaiting_read_back_items':[],'read_back_not_applied':[]}
         for event,evidence in observed:
             out['not_applied' if evidence.get('resolution')=='not-applied' else 'sent']+=1
@@ -3003,8 +3005,22 @@ class PreparationsService:
             if not isinstance(detail,dict):continue
             # A run cut off after a refusal keeps it on its failure record (``refused_rows``).
             if refused_state_change('code_run',detail):out['refused']+=len(refused_rows(detail))
+            out['rehearsed']+=len(rehearsed_rows(detail))
         # #1271: and a connector change Still refused before it left.
-        with store.db() as db:out['refused']+=len(connector_refused_rows(db,works)[0])
+        with store.db() as db:
+            out['refused']+=len(connector_refused_rows(db,works)[0])
+            # #1274: a change a line in rehearsal recorded instead of sending: a connector change, and any
+            # other call refused with the rehearsal code (an API request, a browser step, a package tool).
+            if checks_ids:
+                out['rehearsed']+=sum(len(json.loads(item['detail'] or '{}').get('rehearsed') or ()) for item in db.execute(
+                    "SELECT detail FROM tool_events WHERE tool=? AND job_id IN ("+','.join('?' for _ in checks_ids)+")",
+                    (checks.CHECK_REHEARSAL_EVENT,*checks_ids)))
+            if works:
+                marks=','.join('?' for _ in works)
+                out['rehearsed']+=db.execute(
+                    f"SELECT count(*) FROM tool_events WHERE job_id IN ({marks}) AND ((tool='connector_permission' "
+                    "AND status='denied' AND json_extract(detail,'$.evidence.refused')='rehearsal') OR (status='failed' "
+                    "AND json_extract(detail,'$.code')=?))",(*works,EFFECT_REHEARSAL)).fetchone()[0]
         # Waiting now, by the current approval state (``step_approval_pending``: requested, not expired), not by
         # the request ever having been made (#1252 review).  A Work holds at most one request, kept in one map by
         # Work id, so only the line's Works that have an entry there are asked.
@@ -3021,10 +3037,14 @@ class PreparationsService:
         one is open (unconfirmed, refused or waiting for approval), so it reconciles before acting again.
         """
         counts=('sent','not_applied','unconfirmed','refused','asked')
-        if not effects or not any(effects[key] for key in counts):return ''
+        rehearsed=effects.get('rehearsed',0) if effects else 0
+        if not effects or not (any(effects[key] for key in counts) or rehearsed):return ''
         awaiting=effects.get('awaiting_read_back',0)
         if not account and not (effects['unconfirmed'] or effects['refused'] or effects['asked'] or awaiting):return ''
         text=msg('lines.effects_recorded',**{key:effects[key] for key in counts})
+        if rehearsed:
+            # #1274: counted apart, never as sent: nothing of it reached the outside.
+            text+='\n'+msg('lines.effects_rehearsed',count=rehearsed)
         if effects['unconfirmed']:
             named='; '.join(' '.join(item[key] for key in ('operation','host','identity','service') if key in item)
                             for item in effects['unconfirmed_items'])
@@ -3195,7 +3215,8 @@ class PreparationsService:
                                  report_promise=service._redact_known_secrets(args.get('report_promise') or ''),
                                  rules=[service._redact_known_secrets(rule) for rule in rules],
                                  open_matters=service._redact_known_secrets(args.get('open_matters') or ''),
-                                 account_every_days=el.ACCOUNT_DAYS if days is None else days)
+                                 account_every_days=el.ACCOUNT_DAYS if days is None else days,
+                                 rehearsal=bool(self.rehearsal_arg(args)))
         try:self.ensure_line_account(job,brief)
         except prep.PreparationRefusal as exc:LOG.warning('line account not scheduled id=%s code=%s',brief['line_id'],exc.code)
         untold=self.line_notice(job,el.NOTICE_OPENED,brief['line_id'],brief['version'])
@@ -3219,6 +3240,7 @@ class PreparationsService:
         if 'title' in args:
             changes['title']=service._redact_known_secrets(el.normalize_title(args['title']))
         days=el.whole_days(args.get('account_every_days'))
+        rehearsal=self.rehearsal_arg(args)
         # #1249: ``rules`` on revise replaces the whole standing rule set in one change, judged once.
         replace=None
         if args.get('rules') is not None:
@@ -3227,7 +3249,7 @@ class PreparationsService:
         scope=args.get('rule_scope','standing')
         if scope not in ('today','standing') or (scope=='today' and (
                 not rule or args.get('drop_rule') not in (None,'') or changes or replace is not None
-                or args.get('account_every_days') not in (None,''))):
+                or args.get('account_every_days') not in (None,'') or rehearsal is not None)):
             raise el.LineRefusal('line_invalid_rule_scope')
         current=service.lines.current(line_id) if isinstance(line_id,str) and line_id else None
         if current is None:raise el.LineRefusal('line_not_found')
@@ -3235,20 +3257,28 @@ class PreparationsService:
         if args.get('drop_rule') not in (None,'') and not (drop and 1<=drop<=len(current['rules'])):
             raise el.LineRefusal('line_invalid_rules')
         if replace is not None and replace==[item['text'] for item in current['rules']]:replace=None
-        if not (rule or drop or changes or days is not None or replace is not None):raise el.LineRefusal('line_nothing_to_change')
-        ruled=bool(rule or drop or replace is not None or set(changes)-{'open_matters'} or days is not None)
+        if rehearsal is not None and rehearsal==current.get('rehearsal',False):rehearsal=None
+        if not (rule or drop or changes or days is not None or replace is not None or rehearsal is not None):
+            raise el.LineRefusal('line_nothing_to_change')
+        ruled=bool(rule or drop or replace is not None or set(changes)-{'open_matters'} or days is not None
+                   or rehearsal is not None)
+        # #1274 (owner decision 2026-11-28): only the owner takes a line out of rehearsal, in a Work the owner's
+        # own message started and asking for exactly that; the AI or a run may only propose it.
+        going_live=rehearsal is False
+        if going_live and authority!='owner':raise el.LineRefusal('line_rehearsal_owner_only')
         if authority=='steer' and not ruled and self.line_run_row(job):
             authority='self'  # #984: open matters need no steer authority for a qualifying line run.
         if authority=='self' and ruled:
             raise not_run(ToolError(msg('lines.refused_run_open_matters_only'),'unattended_run'))
         money=ruled and self.line_touches_money(line_id)
         marked=authority=='steer' and bool(service.store.outside_content_sources(job['id']))
-        if money or marked:
+        if money or marked or going_live:
             change=el.change_text(current,rule=rule,drop=drop,changes=changes,days=days,today=scope=='today',
-                                  replace=replace)
+                                  replace=replace,rehearsal=rehearsal)
             judged=service.decision_judge.explicit_line_change_request(
                 service.owner_request_words(job),change,self.line_owner_rules(current),service.preparation_conversation(job),work_id=job['id'])
-            if judged.outcome!=JUDGMENT_YES:raise el.LineRefusal('line_change_needs_owner')
+            if judged.outcome!=JUDGMENT_YES:
+                raise el.LineRefusal('line_rehearsal_owner_only' if going_live else 'line_change_needs_owner')
         now=service.preparations.clock()
         day=service.preparations.budget_day(now)
         # Keep the owner turn the rule came from, whether typed or steered.
@@ -3267,7 +3297,8 @@ class PreparationsService:
                 rules=[item for number,item in enumerate(brief['rules'],1) if number!=drop]
             if rule:rules.append(rule_entry)
             updated={**brief,**changes,'rules':rules,
-                     **({'account_every_days':days} if days is not None else {})}
+                     **({'account_every_days':days} if days is not None else {}),
+                     **({'rehearsal':rehearsal} if rehearsal is not None else {})}
             # A run that repeats the existing text keeps its original provenance.
             if 'open_matters' in changes and (authority=='owner' or
                     ' '.join(changes['open_matters'].split())!=brief['open_matters']):
@@ -3308,6 +3339,15 @@ class PreparationsService:
             result.update(open_matters_before=before['open_matters'], outside_content=event['outside_content'],
                           next_step=msg('lines.self_revised_next',version=after['version']))
         return result
+
+    @staticmethod
+    def rehearsal_arg(args):
+        """#1274: the ``rehearsal`` argument as True, False or None (not given); anything else is refused."""
+        value=args.get('rehearsal')
+        if value in (None,''):return None
+        if isinstance(value,bool):return value
+        if isinstance(value,str) and value.strip().lower() in ('true','false'):return value.strip().lower()=='true'
+        raise el.LineRefusal('line_invalid_rehearsal')
 
     def _line_undo(self, job, args):
         version=el.whole_days(args.get('version'))

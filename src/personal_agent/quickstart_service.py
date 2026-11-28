@@ -8749,6 +8749,8 @@ class AgentService:
             if ledger is not None and ledger.lapse(db=db):return None
             if effect_mutation_refusal(db,self.store,job['id'],_claim_target(target),replay_keys={input_digest},
                                        approved_next=approved_next):return None
+            from .agent_runtime import line_rehearsal
+            if line_rehearsal(db,job['id']):return None
             if not self._connector_authority_current(job,target,binding,detail['evidence']['effect'],detail['evidence']['operation']):return None
             if any(work_stop_requested(self.store,work['id']) for work in effect_work_chain(db,job['id'])):
                 return None
@@ -8811,11 +8813,13 @@ class AgentService:
         input_digest=None
         autonomy=None
         exact_step_ready=False
-        def refused(message):
+        def refused(message, rehearsal=False):
             # #1271: a change Still refused before it left is recorded as refused, unsent - as a code run's are
             # (#1250) - so the Work it served is not done and the line's account counts it.  Never its input.
+            # #1274: one a line in rehearsal recorded instead of sending is ``refused: rehearsal``, counted apart.
             evidence={'engine':engine,'service':service_name,'identity':identity,'operation':operation,'kind':kind,
-                      'decision':'deny','effect':'none','refused':effect}
+                      'decision':'deny','effect':'none','refused':'rehearsal' if rehearsal else effect}
+            if rehearsal:evidence['rehearsed']=effect
             if input_digest:evidence['input_digest']=input_digest
             with self.store.db() as db:
                 self.store.require_read_checkpoint_writer(db)
@@ -8845,6 +8849,9 @@ class AgentService:
                 return refused('이 요청의 앞선 동작이 실제로 반영됐는지 아직 확인되지 않았습니다. 결과를 확인하기 전에는 다른 변경이나 반복 실행을 하지 않습니다.')
             if refusal:
                 return refused('현재 권한이나 기존 실행 기록이 달라져 실행하지 않았습니다. 권한과 기존 결과를 확인하고 남은 일만 진행하세요.')
+            from .agent_runtime import line_rehearsal
+            with self.store.db() as db:
+                if line_rehearsal(db,job['id']):return refused(msg('lines.rehearsal_not_sent'),rehearsal=True)
             from .code_run import APPROVAL_EXACT_LABEL, APPROVAL_NOTE_REQUIRED, CONNECTOR_APPROVAL_NOTE_SUFFIX
             note=self._connector_approval_note(job['id'],input_digest)
             note_required=f'approval_note_required: {APPROVAL_NOTE_REQUIRED}{CONNECTOR_APPROVAL_NOTE_SUFFIX}'

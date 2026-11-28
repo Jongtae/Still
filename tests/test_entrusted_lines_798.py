@@ -829,7 +829,7 @@ class AnswerTests(_LineCase):
 class FormatTests(_LineCase):
     def test_the_brief_has_no_authority_rung_amount_or_subject_field_and_an_unknown_field_is_refused(self):
         self.assertEqual(el.FIELDS, ('title', 'task', 'rules', 'report_promise', 'open_matters', 'open_matters_run_day',
-                                     'state', 'account_every_days'))
+                                     'state', 'account_every_days', 'rehearsal'))
         self.assertEqual(el.RULE_FIELDS, ('text', 'from', 'at', 'basis'))
         legacy = el.validate({'task': TASK, 'report_promise': PROMISE,
                               'rules': [{'text': RULE, 'from': 'owner-work', 'at': self.now}]})

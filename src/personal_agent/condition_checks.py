@@ -214,6 +214,10 @@ def _spec_digest(spec):
                                      sort_keys=True).encode()).hexdigest()
 
 
+#: #1274: the tool event a check of a line in rehearsal records its rehearsed requests on.
+CHECK_REHEARSAL_EVENT = 'check_rehearsal'
+
+
 def totals(status):
     # Older rows retain only their latest day's counts.
     return {key: status.get('total_' + key, status.get(key, 0)) for key in ('runs', 'wakes')}
@@ -775,6 +779,7 @@ class ConditionChecks:
         failure_reason = None
         try:
             result = runner.run(args, seconds=spec['every_seconds'])
+            self._record_rehearsed(record_id, result.get('refused_effects'))
             outside = outside_result_source('code_run', 'code_run', args)
             if result.get('output_withheld'):
                 kind, output = 'failure', result.get('stderr') or ''
@@ -792,6 +797,7 @@ class ConditionChecks:
                 kind = 'hit' if kind == 'hit' else 'failure'
                 output = f'{output}\n{note}' if output else note
         except CodeRunError as exc:
+            self._record_rehearsed(record_id, getattr(exc, 'refused_effects', None))
             if exc.code == 'needs_setup':
                 return {'pause': 'setup_missing'}
             if exc.code == 'code_run_interrupted':
@@ -829,6 +835,20 @@ class ConditionChecks:
             # Never stored with the result (a pending hit is kept in SQLite); taken off before settling.
             handoff['state'] = runner.check_state_change
         return handoff
+
+    def _record_rehearsed(self, record_id, rows):
+        """#1274: the requests a check of a line in rehearsal recorded instead of sending, on the check's record.
+
+        By method, host and path only (as ``code_run.evidence`` keeps them), so the line's account counts them.
+        """
+        rows = [{key: row.get(key) for key in ('method', 'host', 'path', 'input_digest') if key in row}
+                for row in rows or () if isinstance(row, dict) and row.get('rehearsal')]
+        if not rows:
+            return
+        with self.store.db() as db:
+            db.execute('INSERT INTO tool_events(job_id,tool,status,detail,created) VALUES (?,?,?,?,?)',
+                       (record_id, CHECK_REHEARSAL_EVENT, 'succeeded', json.dumps({'rehearsed': rows}),
+                        self.preparations.clock()))
 
     @staticmethod
     def _advance(db, row, next_at, status):

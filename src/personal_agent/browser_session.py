@@ -915,7 +915,8 @@ class BrowserSession:
     """
 
     def __init__(self, driver_factory, *, work_id, budget=None, approvals=None, judgments=None,
-                 action_seconds=ACTION_TIMEOUT_SECONDS, allowed_origins_for_tests=(), mutation_refusal=None):
+                 action_seconds=ACTION_TIMEOUT_SECONDS, allowed_origins_for_tests=(), mutation_refusal=None,
+                 rehearsal=None):
         self._factory = driver_factory
         # Test-only exact ``host:port`` allowance for a local fixture site; only
         # a test constructor sets it (never config or environment).
@@ -929,6 +930,8 @@ class BrowserSession:
         self.budget = budget if budget is not None else WorkBudget()
         self.approvals = approvals or NoApprovals()
         self.mutation_refusal = mutation_refusal
+        #: #1274: ``() -> bool``, whether this Work's line is in rehearsal, read per changing step.
+        self.rehearsal = rehearsal
         self._submit_observation = None
         self.action_seconds = action_seconds
         self.last = None
@@ -1084,7 +1087,7 @@ class BrowserSession:
         ready = getattr(self.approvals, 'self_set_submit_ready', None)
         if not callable(ready) or not ready(self._submit_binding(pending[0])):
             return None
-        if self._mutation_refusal(pending[0].get('page')):
+        if self._mutation_refusal(pending[0].get('page')) or (self.rehearsal is not None and self.rehearsal()):
             return None
         self._check()
         self._self_set_submit = None
@@ -1094,6 +1097,12 @@ class BrowserSession:
 
     def _mutation_refusal(self, url):
         return self.mutation_refusal(url) if self.mutation_refusal is not None else None
+
+    def _refuse_in_rehearsal(self, effect):
+        """#1274: a step declared to change or pay is recorded, not pressed, while the line is in rehearsal."""
+        if effect in ('mutate', 'payment') and self.rehearsal is not None and self.rehearsal():
+            from .agent_runtime import not_run, rehearsal_error
+            raise not_run(rehearsal_error())
 
     def _release_submit(self, release, record, timeout):
         from .agent_runtime import handed_off
@@ -1862,6 +1871,7 @@ class BrowserSession:
         resumed = self._resume_self_set_submit()
         if resumed is not None:return resumed
         effect = self._effect(args)
+        self._refuse_in_rehearsal(effect)
         self._require_page()
         self._check()
         snapshot = self._snapshot()
@@ -2003,6 +2013,7 @@ class BrowserSession:
         resumed = self._resume_self_set_submit()
         if resumed is not None:return resumed
         effect = self._effect(args)
+        self._refuse_in_rehearsal(effect)
         self._require_page()
         text = str(args.get('text') or '')
         if len(text) > 2000:

@@ -968,6 +968,9 @@ class CodeRunner:
         # Held in memory as sent; redacted only once the run's own state values are known (``_redacted_refusals``).
         row = {'method': method[:10], 'host': host[:253], 'path': str(message.get('path') or '/'),
                'layer': 'still', 'sent': False, 'reason': str(reason or '')}
+        if getattr(self, '_rehearsed', False):
+            # #1274: recorded as rehearsed for a line in rehearsal, never as refused.
+            row['rehearsal'] = True
         digest = self._request_digest(message, method, host if host in self._owners else _hostname(host))
         if digest:
             row['input_digest'] = digest
@@ -1163,6 +1166,8 @@ class CodeRunner:
             api._effect_guard(slot, identity, replay_keys, approved_next=api._exact_step_ready(binding, effect),
                               check_request=check_request)
         except ApiError as exc:
+            from .agent_runtime import EFFECT_REHEARSAL
+            self._rehearsed = exc.code == EFFECT_REHEARSAL
             return False, str(exc)
         if effect == 'payment':
             # #1470: the AI's description comes first for the owner to read; the exact request below is
@@ -1251,6 +1256,8 @@ class CodeRunner:
                     api._release_effect(claim)
                     return False, str(exc)
         except ApiError as exc:
+            from .agent_runtime import EFFECT_REHEARSAL
+            self._rehearsed = exc.code == EFFECT_REHEARSAL
             return False, str(exc)
         if write_ticket:
             try:self.approvals.self_set_write_check(write_ticket)
@@ -1327,6 +1334,7 @@ class CodeRunner:
                                                      if isinstance(pair, list) and len(pair) == 2)[:APPROVAL_BODY_CHARS]
                         recorded.append(entry)
                     claims, asked = len(self._claims), len(self._asked)
+                    self._rehearsed = False
                     allow, reason = self._decide(message, policy, check=recorded is not None)
                     if not allow and phase == 'run' and recorded is None and len(self._asked) == asked:
                         self._note_refused(message, reason)
@@ -1407,7 +1415,7 @@ def evidence(result):
     if result.get('refused_effects'):
         # #1250: refused unsent by Still, nobody asked; by method, host, path and Still's reason only.
         kept['refused_effects'] = [{key: row.get(key) for key in ('method', 'host', 'path', 'layer', 'sent', 'reason', 'input_digest',
-                                                         'overflow') if key in row}
+                                                         'overflow', 'rehearsal') if key in row}
                                    for row in result['refused_effects'][:MAX_CHECKED_REQUESTS] if isinstance(row, dict)]
     if isinstance(result.get('library'), dict):
         # #1486: what happened to each set's library, never its source.  #1489: and why a proposal was not
