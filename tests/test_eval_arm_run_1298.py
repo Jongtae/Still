@@ -161,6 +161,16 @@ def test_a_per_request_model_or_effort_stays_visible_and_is_refused_by_the_compa
         compare_versioned_text(arm, {'general': other}, meta=meta, target='passed', tolerances={'safe': 0})
 
 
+@pytest.mark.parametrize('effort, expected', [('high', {'model': 'gpt-x', 'effort': 'high'}),
+                                              ('', {'model': 'gpt-x'})])
+def test_a_pinned_sweep_takes_its_settings_from_the_recorded_pin(repo, effort, expected):
+    # #1296 records worker_pin per run; without a pinned effort the comparator needs no effort in settings.
+    rows = [record('dev-a', worker_pin={'model': 'gpt-x', 'effort': effort}, engine=(('gpt-x', effort or 'low'),)),
+            record('held-a', worker_pin={'model': 'gpt-x', 'effort': effort}, work={})]
+    settings = json.loads(arm_run.run_arm(SWEEP, target=TARGET, repo=repo, runner=sweep(rows)).read_text())['settings']
+    assert {k: v for k, v in settings.items() if k in ('model', 'effort')} == expected
+
+
 # --- refusals -------------------------------------------------------------------------------------
 
 def test_splice_refuses_when_head_differs_from_the_candidate_base(repo, tmp_path):
@@ -261,22 +271,27 @@ def test_the_copy_is_removed_when_the_sweep_raises(repo):
 # --- the real process boundary, with a stand-in sweep entry point ---------------------------------
 
 FAKE_ENTRY = """
-import json, os, sys
+import json, os, subprocess, sys
 from pathlib import Path
 import agentos_eval
 home = Path(os.environ['AGENTOS_EVAL_HOME'])
 home.mkdir(parents=True, exist_ok=True)
-(home / 'run.json').write_text(json.dumps({'run': {'id': 'r', 'worker': 'codex'}}))
-seen = {'argv': sys.argv[1:], 'cwd': os.getcwd(), 'pythonpath': os.environ['PYTHONPATH'],
+(home / 'reports').mkdir(exist_ok=True)
+(home / 'reports' / 'r.json').write_text(json.dumps({'run': {'id': 'r', 'worker': 'codex'}}))
+(home / 'reports' / 'r.md').write_text('report')
+found = subprocess.run(['git', 'rev-parse', '--show-toplevel'], capture_output=True, text=True).stdout.strip()
+seen = {'argv': sys.argv[1:], 'cwd': os.getcwd(), 'pythonpath': os.environ['PYTHONPATH'], 'git': found,
         'package': agentos_eval.__file__, 'home': str(home)}
 (home / 'seen.json').write_text(json.dumps(seen))
-print('report: ' + str(home / 'run.json'))
+print('report: ' + str(home / 'reports' / 'r.json'))
 print('log: ' + str(home / 'x.eval'))
 sys.exit(int(os.environ.get('FAKE_EXIT', '0')))
 """
 
 
 def test_the_default_runner_runs_the_copys_own_sweep_entry_point(tmp_path, home, monkeypatch):
+    # The temporary copy is not a repository and must not report an enclosing one's commit.
+    git(tmp_path, 'init', '-q')
     copy = tmp_path / 'copy'
     (copy / 'src').mkdir(parents=True)
     package = copy / 'evals' / 'agentos_eval'
@@ -300,6 +315,10 @@ def test_the_default_runner_runs_the_copys_own_sweep_entry_point(tmp_path, home,
     parts = [Path(p).resolve() for p in seen['pythonpath'].split(os.pathsep)]
     assert parts[:2] == [(copy / 'src').resolve(), (copy / 'evals').resolve()]
     assert (ROOT / 'evals').resolve() not in parts
+    assert seen['git'] == ''
+    # An arm's report must not become the trend baseline of the next ordinary sweep.
+    assert not list((home / 'reports').iterdir())
+    assert sorted(p.name for p in (home / 'arm-reports').iterdir()) == ['r.json', 'r.md']
 
 
 def test_a_sweep_that_prints_no_report_is_an_error(tmp_path):
