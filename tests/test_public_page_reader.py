@@ -629,3 +629,32 @@ class OversizedPageTests(unittest.TestCase):
         result=PublicPageReader(opener=Opener(Response(body)),resolver=public_dns).read('https://example.com/cut')
         self.assertTrue(result['content_truncated'])
         self.assertNotIn('USD 1', result['content'])
+
+
+class PublicJsonTests(unittest.TestCase):
+    """#1326: public JSON data is asked for and read as text; a 4xx says its status and is permanent."""
+
+    def test_the_request_asks_for_json_too(self):
+        opener=Opener(Response(b'{"price": 76760}', headers={'Content-Type':'application/json;charset=UTF-8'}))
+        result=PublicPageReader(opener=opener,resolver=public_dns).read('https://example.com/api/quote')
+        accept=dict(opener.requests[0][0].header_items())['Accept']
+        self.assertIn('application/json', accept)
+        self.assertEqual(result['content'], '{"price": 76760}')
+
+    def test_a_vendor_json_type_is_read(self):
+        opener=Opener(Response(b'{"a": 1}', headers={'Content-Type':'application/vnd.api+json'}))
+        self.assertEqual(PublicPageReader(opener=opener,resolver=public_dns).read('https://example.com/x')['content'], '{"a": 1}')
+
+    def test_binary_is_still_refused(self):
+        for kind in ('application/pdf', 'image/png', 'application/octet-stream'):
+            with self.subTest(kind=kind), self.assertRaisesRegex(ValueError, 'HTML 또는 텍스트'):
+                PublicPageReader(opener=Opener(Response(b'x', headers={'Content-Type':kind})),resolver=public_dns).read('https://example.com/')
+
+    def test_a_client_error_names_its_status_and_is_not_retried(self):
+        from personal_agent.agent_runtime import classify_failure
+        for status, retry in ((406, 'permanent'), (404, 'permanent'), (429, 'transient'), (503, 'transient')):
+            with self.subTest(status=status):
+                with self.assertRaises(ProviderError) as caught:
+                    PublicPageReader(opener=Opener(Response(b'', status=status)),resolver=public_dns).read('https://example.com/')
+                self.assertIn(f'HTTP {status}', str(caught.exception))
+                self.assertEqual(classify_failure(caught.exception, 'public_page_read')[1], retry)
