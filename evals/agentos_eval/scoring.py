@@ -259,7 +259,8 @@ def rubric_failures(judgment):
     return rows
 
 
-CHECK_NAMES = ('harness', 'delivered', 'not_failed', 'memory', 'current_state', 'preparation', 'no_memory_of_request', 'due_completed')
+CHECK_NAMES = ('harness', 'delivered', 'not_failed', 'memory', 'current_state', 'preparation', 'no_memory_of_request',
+               'due_completed', 'readable')
 
 
 def combine(scenario, run, checks, failures, judgment=None, judge_status='skipped',
