@@ -2955,14 +2955,27 @@ class PreparationsService:
                             works).fetchall() if works else []
         observed,claims=classify_effect_rows(ledger)
         out={'sent':0,'not_applied':0,'unconfirmed':len(claims),'refused':0,'asked':0,'rehearsed':0,'unconfirmed_items':[],
-             'awaiting_read_back':0,'awaiting_read_back_items':[],'read_back_not_applied':[]}
+             'awaiting_read_back':0,'awaiting_read_back_items':[],'read_back_not_applied':[],
+             'awaiting_connector_read_back':0,'awaiting_connector_read_back_items':[],'read_back_not_applied_reported':[]}
         for event,evidence in observed:
             out['not_applied' if evidence.get('resolution')=='not-applied' else 'sent']+=1
+            if evidence.get('resolution'):continue
+            read_back=evidence.get('read_back') if isinstance(evidence.get('read_back'),dict) else {}
+            if evidence.get('kind')!='api-slot':
+                if evidence.get('effect') not in ('mutate','payment'):continue
+                item={'receipt':str(event)[:120],**{key:str(evidence.get(key,''))[:120] for key in ('operation','identity')}}
+                if read_back.get('outcome')=='not-applied':
+                    if len(out['read_back_not_applied_reported'])<self.LINE_EFFECTS_NAMED:
+                        out['read_back_not_applied_reported'].append(item)
+                elif not read_back or read_back.get('outcome')=='unknown':
+                    out['awaiting_connector_read_back']+=1
+                    if len(out['awaiting_connector_read_back_items'])<self.LINE_EFFECTS_NAMED:
+                        out['awaiting_connector_read_back_items'].append({**item,'read':'open' if read_back else 'none'})
+                continue
             # #1273: a sent API dispatch the service identifies by its request reference can have its outcome
             # read back (``reconcile_receipt``).  Until a read settles it, it is named with its receipt; only
             # the owner's AI's read counts, never Still's inference.  A read-back of not applied is told in the account.
-            if evidence.get('resolution') or evidence.get('kind')!='api-slot' or not evidence.get('request_ref'):continue
-            read_back=evidence.get('read_back') if isinstance(evidence.get('read_back'),dict) else {}
+            if not evidence.get('request_ref'):continue
             item={'receipt':str(event),**{key:str(evidence[key])[:120] for key in ('operation','host','identity')
                                          if isinstance(evidence.get(key),str) and evidence[key]}}
             if read_back.get('outcome')=='not-applied':
@@ -3116,13 +3129,14 @@ class PreparationsService:
         """The run's fact lines from ``line_effects``, or ``''``.
 
         An account is told whenever the line recorded any change; another run of the line only while
-        one is open (unconfirmed, refused or waiting for approval), so it reconciles before acting again.
+        one is open (unconfirmed, refused, waiting for approval or awaiting read-back).
         """
         counts=('sent','not_applied','unconfirmed','refused','asked')
         rehearsed=effects.get('rehearsed',0) if effects else 0
         if not effects or not (any(effects[key] for key in counts) or rehearsed):return ''
         awaiting=effects.get('awaiting_read_back',0)
-        if not account and not (effects['unconfirmed'] or effects['refused'] or effects['asked'] or awaiting):return ''
+        connector_awaiting=effects.get('awaiting_connector_read_back',0)
+        if not account and not (effects['unconfirmed'] or effects['refused'] or effects['asked'] or awaiting or connector_awaiting):return ''
         text=msg('lines.effects_recorded',**{key:effects[key] for key in counts})
         if rehearsed:
             # #1274: counted apart, never as sent: nothing of it reached the outside.
@@ -3137,8 +3151,13 @@ class PreparationsService:
                              for item in items) or '-'
         if awaiting:
             text+='\n'+msg('lines.effects_awaiting_read_back',count=awaiting,items=receipts(effects['awaiting_read_back_items']))
+        if connector_awaiting:
+            text+='\n'+msg('lines.effects_awaiting_connector_read_back',count=connector_awaiting,
+                           items=receipts(effects['awaiting_connector_read_back_items']))
         if account and effects.get('read_back_not_applied'):
             text+='\n'+msg('lines.effects_read_back_not_applied',items=receipts(effects['read_back_not_applied']))
+        if account and effects.get('read_back_not_applied_reported'):
+            text+='\n'+msg('lines.effects_read_back_not_applied_reported',items=receipts(effects['read_back_not_applied_reported']))
         return text
 
     def line_checks_account(self, row, job):
@@ -3263,13 +3282,15 @@ class PreparationsService:
                     result=self.line_read(args.get('line'))
                     self._record_line_read(job['id'],result,held=True)
                     return result
-                if action in ('decide','settle','learn'):
+                if action in ('decide','settle','learn','read_back'):
                     line=args.get('line')
                     if not service.owner_typed_work(job):
                         own=self.own_running_row(job)
                         if not own or not own.get('line_id') or own['line_id']!=line:raise refused('unattended_run')
-                    if not isinstance(line,str) or not line or service.lines.current(line) is None:
+                    if not isinstance(line,str) or not line:
                         raise refused('line_not_found')
+                    if action=='read_back':return self._line_read_back(job,line,args)
+                    if service.lines.current(line) is None:raise refused('line_not_found')
                     decisions=LineDecisions(service.store,service.preparations.clock)
                     if action=='learn':return decisions.learn(line,job['id'],args)
                     return getattr(decisions,action)(line,job['id'],args,service._redact_known_secrets)
@@ -3287,6 +3308,45 @@ class PreparationsService:
                     raise not_run(ToolError(msg(exc.message,**exc.values),exc.code)) from None
                 raise refused(exc.code) from None
         return handle
+
+    def _line_read_back(self, job, line, args):
+        """#1361: record the owner's AI's report beside a connector send's claim."""
+        from .agent_runtime import classify_effect_rows, effect_rows
+        outcome=args.get('outcome')
+        if outcome not in ('applied','not-applied','unknown'):raise el.LineRefusal('read_back_invalid_outcome')
+        receipt=args.get('receipt')
+        if not isinstance(receipt,str):raise el.LineRefusal('read_back_not_found')
+        try:receipt=int(receipt)
+        except ValueError:raise el.LineRefusal('read_back_not_found') from None
+        service=self.service
+        with service.store.db() as db:
+            db.execute('BEGIN IMMEDIATE')
+            service.store.require_read_checkpoint_writer(db)
+            if service.lines.current(line,db) is None:raise el.LineRefusal('line_not_found')
+            works,checks_ids=prep.line_effect_record_ids(db,line)
+            rows=effect_rows(db,[*works,*checks_ids])
+            try:observed,_=classify_effect_rows(rows)
+            except (TypeError,ValueError):raise el.LineRefusal('read_back_not_found') from None
+            evidence=dict(observed).get(receipt)
+            if (not evidence or evidence.get('kind')=='api-slot' or evidence.get('resolution')
+                    or evidence.get('effect') not in ('mutate','payment')):
+                raise el.LineRefusal('read_back_not_found')
+            sent=next((row for row in rows if row['id']==receipt and row['tool']=='connector_read'),None)
+            if not sent:raise el.LineRefusal('read_back_not_found')
+            permission=json.loads(sent['detail'])['permission_event']
+            claim=db.execute("SELECT detail FROM tool_events WHERE id=? AND tool='connector_permission' AND status='allowed'",
+                             (permission,)).fetchone()
+            if not claim:raise el.LineRefusal('read_back_not_found')
+            read=db.execute("SELECT id FROM tool_events WHERE job_id=? AND id>? AND tool='connector_read' AND status='succeeded' "
+                            "AND json_extract(detail,'$.effect')='none' AND json_extract(detail,'$.evidence.engine')=? "
+                            "AND json_extract(detail,'$.evidence.kind')=? AND json_extract(detail,'$.evidence.identity')=? "
+                            "ORDER BY id DESC LIMIT 1",(job['id'],receipt,*(evidence.get(key) for key in ('engine','kind','identity')))).fetchone()
+            if not read:raise el.LineRefusal('read_back_not_read')
+            detail=json.loads(claim['detail'])
+            read_back={'outcome':outcome,'at':float(service.preparations.clock()),'read_event':read['id'],'attributed_to':'owner-ai'}
+            detail['evidence']['read_back']=read_back
+            db.execute('UPDATE tool_events SET detail=? WHERE id=?',(json.dumps(detail,ensure_ascii=False),permission))
+        return {'receipt':str(receipt),'read_back':read_back}
 
     def _line_open(self, job, args):
         service=self.service

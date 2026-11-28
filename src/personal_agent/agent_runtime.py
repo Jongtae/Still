@@ -510,10 +510,11 @@ ENTRUSTED_LINE_DESCRIPTION=(
  'for corrections tied to today (today’s date or this session) or of unclear duration, unless the owner says to keep them. Record completion '
  'and its reason in open_matters. Use stop with scope work when asked to stop current work or the scope is unclear. '
  'Use scope line when asked to end the line. Still announces openings, standing rule changes and stops. '
- 'Use decide to record an expectation, settle to report a due outcome you checked, and learn to save lessons citing settled decisions.')
+ 'Use decide to record an expectation, settle to report a due outcome you checked, and learn to save lessons citing settled decisions. '
+ 'Use read_back to report a sent connector change’s outcome after reading it through the same connection.')
 ENTRUSTED_LINE_ARGUMENTS={
- 'action':('list, read, open, revise, undo, stop, restart, decide, settle, learn. A scheduled run can record decisions, '
-           'outcomes and lessons on its own line. It may revise its own open_matters, '
+ 'action':('list, read, open, revise, undo, stop, restart, decide, settle, learn, read_back. A scheduled run can record decisions, '
+           'outcomes, lessons and connector read-backs on its own line. It may revise its own open_matters, '
            'or revise or stop its line as the owner steered it. If more than one active line could be meant, use list '
            'and read, then ask which title and include a recognizable detail for each. Wait for the answer and omit IDs.'),
  'line':'The line id (from list, read or open), for every action but list and open.',
@@ -546,7 +547,9 @@ ENTRUSTED_LINE_ARGUMENTS={
  'check':'For decide, an optional note about how to check the outcome.',
  'lessons_applied':'For decide, optional current lesson refs or IDs, separated by spaces or commas.',
  'decision':'For settle, the ID of a due decision of this line.',
- 'outcome':'For settle, the outcome you observed. Use with matched; settle needs both unless unsettleable.',
+ 'receipt':'For read_back, the sent connector change’s receipt number as a string.',
+ 'outcome':('For settle, the outcome you observed. Use with matched; settle needs both unless unsettleable. '
+            'For read_back, report applied, not-applied or unknown.'),
  'matched':'For settle, whether the observed outcome matched the expectation: yes, no or unclear.',
  'observed_at':('For settle, optional source time in epoch seconds or ISO 8601 (UTC by default), between when the '
                 'decision was made and now. Defaults to now.'),
@@ -721,12 +724,12 @@ DEFINITIONS=[
                            'idempotency_header, name it and send action_id as its value. Keep action_id for the same action.'}),
         ['preparation_id','check_digest','patch']),
  schema('entrusted_line',ENTRUSTED_LINE_DESCRIPTION,described({
-        'action':{'type':'string','enum':['list','read','open','revise','undo','stop','restart','decide','settle','learn']},
+        'action':{'type':'string','enum':['list','read','open','revise','undo','stop','restart','decide','settle','learn','read_back']},
         'line':STRING,'scope':{'type':'string','enum':['work','line']},'title':STRING,'task':STRING,
         'report_promise':STRING,'rules':STRING,'rule':STRING,'rule_scope':{'type':'string','enum':['today','standing']},
         'drop_rule':STRING,'open_matters':STRING,'expected_version':STRING,'version':STRING,'account_every_days':STRING,
         'about':STRING,'claim':STRING,'expectation':STRING,'settle_after':STRING,'check':STRING,
-        'lessons_applied':STRING,'decision':STRING,'outcome':STRING,'matched':{'type':'string','enum':['yes','no','unclear']},
+        'lessons_applied':STRING,'decision':STRING,'receipt':STRING,'outcome':STRING,'matched':{'type':'string','enum':['yes','no','unclear']},
         'observed_at':STRING,'unsettleable':STRING,'lessons':STRING,'rehearsal':{'type':'boolean'}},ENTRUSTED_LINE_ARGUMENTS),['action']),
  schema('tell_owner',TELL_OWNER_DESCRIPTION,{'text':STRING},['text']),
  schema('ask_location',ASK_LOCATION_DESCRIPTION,described({'reason':STRING,'button_label':STRING,'mode':{'type':'string','enum':['ask','with_answer']}},ASK_LOCATION_ARGUMENTS),['reason']),
@@ -6319,7 +6322,7 @@ def _evidence_detail(name,result):
  if name=='update_check_state':return {key:result[key] for key in ('keys','bytes') if key in result}
  if name=='entrusted_line':
   # #798: which line, its version and state; never the brief's text.
-  return {key:result.get(key) for key in ('line_id','version','state','restated','changed','money_rules') if key in result}|(
+  return {key:result.get(key) for key in ('line_id','version','state','restated','changed','money_rules','receipt','read_back') if key in result}|(
    {'lines':len(result.get('lines') or [])} if 'lines' in result else {})
  if name=='tell_owner':return {'sent':bool(result.get('sent')),'channel':result.get('channel')}
  if name=='ask_location':return {'requested':bool(result.get('requested')),'channel':result.get('channel'),
