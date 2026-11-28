@@ -190,9 +190,11 @@ PYTHONPATH=src:evals python -m agentos_eval revise record --candidates <folder> 
   current text. Give equal retries at least the sum of all candidate arms' `--epochs`. Use seed names or absolute paths
   in sweep arguments because the sweep runs inside a temporary copy of the committed `HEAD`.
   Give every arm the same `--worker-model` and `--worker-effort` (#1296), or the comparator refuses per-request routing.
-- The `--baseline` must be a current arm for the same text, path and line range, with complete dev scores for
-  `--measure` (default `passed`). If all dev scores are at the maximum, `no_room_on_dev` stops the proposal before it
-  calls a model or writes output.
+- The `--baseline` must be a current arm for the same text, path and line range, with dev and held-out scenarios
+  graded on `--measure` (default `passed`) over at least 3 shared epochs. Before it calls a model or writes output,
+  the proposal applies the comparator's gate to a candidate that would pass every run (#1331): `no_room_on_<split>`
+  when a split is already at its maximum, and `no_detectable_gain_on_<split>` when that best possible gain does not
+  exceed the baseline's epoch spread. Add scenarios or trials to that split, or choose another target.
 - A `revision-arm/1` record stores the role and label, target path and lines, base and run text digests, observed
   settings, scenario IDs, unchanged run records, cost, sweep run ID, full commit SHA and sweep arguments. The default
   location is `$AGENTOS_EVAL_HOME/revisions/<target slug>/arms/`.

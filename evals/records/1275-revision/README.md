@@ -35,7 +35,7 @@ Rubric and tolerance measures were 1.0 in every arm. No run was refused or ungra
 
 - It does not show the candidate is worse. It also does not show it is better: the dev difference is one run in three, inside the arm's own noise.
 - `preferred` was not reachable with this pair, whatever the candidate did. Held-out was already at 3/3. On dev, one scenario with a mixed current arm gives a noise of 1.0 (max minus min across epochs), which no difference between pass rates can exceed. This was visible once the current arm had run, before the candidate.
-- `revise propose` refuses only a dev split at its maximum (`no_room_on_dev`). It does not check held-out room or whether the baseline's noise leaves any gain detectable. A follow-up would have to do that, or add scenarios or trials per split.
+- `revise propose` refuses only a dev split at its maximum (`no_room_on_dev`). It does not check held-out room or whether the baseline's noise leaves any gain detectable. A follow-up would have to do that, or add scenarios or trials per split. #1331 added both checks.
 - Seen in passing, cause not checked: across the three arms, `schedule_preparation` calls often failed one or more times before one succeeded.
 
 ### Cost

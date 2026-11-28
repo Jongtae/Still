@@ -376,30 +376,71 @@ def room(arm, measure='passed'):
     return revise.check_room(arm, {'path': TARGET, 'lines': None, 'digest': DIGEST}, meta=META, measure=measure)
 
 
-def test_a_dev_measure_already_at_its_maximum_leaves_no_room():
-    # Held-out and owner-store failures give no room: only dev must be able to improve.
-    full = [record('dev-a'), record('dev-b'), record('held-a', passed=0.0), record('mine', passed=0.0)]
-    with pytest.raises(ValueError, match='no_room_on_dev'):
-        room(baseline(full))
+def runs(ident, *scores, **extra):
+    return [record(ident, epoch, score, **extra) for epoch, score in enumerate(scores, 1)]
 
 
-@pytest.mark.parametrize('rows', [
-    [record('dev-a'), record('dev-b', passed=0.0)],
-    [record('dev-a', 1), record('dev-a', 2, 0.5)],
-    [record('dev-a', work={'w': {'refused_effects': 1}})],  # a refused run scores 0, as in the comparator
+# Three epochs per scenario: dev means 0.5 and 0.5 on every epoch (spread 0), held-out 0 on every epoch.
+ROOMY = runs('dev-a', 1.0, 1.0, 1.0) + runs('dev-b', 0.0, 0.0, 0.0) + runs('held-a', 0.0, 0.0, 0.0)
+
+
+def test_a_baseline_with_room_on_both_splits_passes():
+    room(baseline(ROOMY))
+    room(baseline(ROOMY + runs('mine', 1.0, 1.0, 1.0)))  # owner-store scenarios decide nothing
+
+
+@pytest.mark.parametrize('rows, message', [
+    (runs('dev-a', 1.0, 1.0, 1.0) + runs('held-a', 0.0, 0.0, 0.0), 'no_room_on_dev'),
+    (runs('dev-a', 0.0, 0.0, 0.0) + runs('held-a', 1.0, 1.0, 1.0), 'no_room_on_heldout'),
+    # #1323: held-out already 3/3, so a dev gain alone could never be preferred.
+    (runs('dev-a', 1.0, 1.0, 0.0) + runs('held-a', 1.0, 1.0, 1.0), 'no_'),
+    # Dev epochs 1, 1, 0: spread 1 is larger than the largest possible gain of 1/3.
+    (runs('dev-a', 1.0, 1.0, 0.0) + runs('held-a', 0.0, 0.0, 0.0), 'no_detectable_gain_on_dev'),
+    (runs('dev-a', 0.0, 0.0, 0.0) + runs('held-a', 0.0, 1.0, 0.5), 'no_detectable_gain_on_heldout'),
 ])
-def test_a_dev_shortfall_leaves_room(rows):
-    room(baseline(rows))
+def test_a_baseline_no_candidate_could_beat_is_refused(rows, message):
+    with pytest.raises(ValueError, match=message):
+        room(baseline(rows))
+
+
+@pytest.mark.parametrize('current, preferable', [
+    (runs('dev-a', 0.0, 0.0, 0.0) + runs('held-a', 0.0, 0.0, 0.0), True),
+    (runs('dev-a', 1.0, 1.0, 0.0) + runs('held-a', 0.0, 0.0, 0.0), False),   # gain within dev noise
+    (runs('dev-a', 0.0, 0.0, 0.0) + runs('held-a', 1.0, 1.0, 1.0), False),   # #1323: held-out at its maximum
+])
+def test_the_precheck_refuses_exactly_what_the_comparator_cannot_prefer(repo, tmp_path, current, preferable):
+    # A candidate that passes every run is the best any revision could do against this baseline.
+    meta = {'dev-a': META['dev-a'], 'held-a': META['held-a']}
+    perfect = runs('dev-a', 1.0, 1.0, 1.0) + runs('held-a', 1.0, 1.0, 1.0)
+    base = json.loads(arm_run.run_arm(SWEEP, target=TARGET, repo=repo, runner=sweep(current)).read_text())
+    retries = json.loads(arm_run.run_arm(SWEEP, target=TARGET, equal_retries=True, repo=repo,
+                                         runner=sweep(current)).read_text())
+    best = json.loads(arm_run.run_arm(SWEEP, candidate=candidate(tmp_path, 'revised\n'), repo=repo,
+                                      runner=sweep(perfect)).read_text())
+    verdict = compare_versioned_text(base, {'best': best}, meta=meta, target='passed', tolerances={'safe': 0.05},
+                                     equal_retries=retries)['candidates']['best']['verdict']
+    assert (verdict == 'preferred') is preferable
+    check = lambda: revise.check_room(base, {'path': TARGET, 'lines': None, 'digest': base['text_digest']},
+                                      meta=meta, measure='passed')
+    if preferable:
+        check()
+    else:
+        with pytest.raises(ValueError, match='no_'):
+            check()
 
 
 @pytest.mark.parametrize('arm, message', [
-    (baseline([record('held-a', passed=0.0)]), 'no dev'),
-    (baseline([record('mine', passed=0.0)]), 'no dev'),
-    (baseline([record('dev-a', judge_status='judge_error')]), 'incomplete'),
-    (baseline([record('dev-a', passed=0.0), record('dev-b', work={})]), 'incomplete'),
+    (baseline(runs('held-a', 0.0, 0.0, 0.0)), 'no dev'),
+    (baseline(runs('dev-a', 0.0, 0.0, 0.0)), 'no heldout'),
+    (baseline(runs('mine', 0.0, 0.0, 0.0) + runs('held-a', 0.0, 0.0, 0.0)), 'no dev'),
+    (baseline(runs('dev-a', 0.0, 0.0) + runs('held-a', 0.0, 0.0, 0.0)), 'incomplete'),
+    (baseline(runs('dev-a', 0.0, 0.0, 0.0) + runs('held-a', 1.0, 1.0, 1.0, judge_status='judge_error')),
+     'incomplete'),  # a passing grade with a judge error is ungraded, as in the comparator
+    (baseline(runs('dev-a', 0.0, 0.0, 0.0) + runs('dev-b', 0.0, 0.0) + [record('dev-b', 4, 0.0)]
+              + runs('held-a', 0.0, 0.0, 0.0)), 'incomplete'),  # unbalanced epochs
     (baseline([record('unknown', passed=0.0)]), 'unknown'),
-    (baseline([record('dev-a', passed=0.0)], digest=text_digest('other')), 'current text'),
-    (baseline([record('dev-a', passed=0.0)], role='candidate'), 'baseline'),
+    (baseline(ROOMY, digest=text_digest('other')), 'current text'),
+    (baseline(ROOMY, role='candidate'), 'baseline'),
     ({'records': []}, 'baseline'),
     (None, 'baseline'),
 ])
@@ -408,9 +449,17 @@ def test_a_baseline_that_cannot_show_room_is_refused(arm, message):
         room(arm)
 
 
+def test_a_refused_run_counts_as_zero_as_in_the_comparator():
+    refused = {'w': {'refused_effects': 1}}
+    rows = runs('dev-a', 1.0, 1.0, 1.0, work=refused) + runs('held-a', 0.0, 0.0, 0.0)
+    room(baseline(rows))
+
+
 def test_room_is_measured_on_the_named_measure():
-    rows = [record('dev-a', value={'passed': 1.0, 'rubric_x': 0.5})]
+    rows = [record(i, e, value={'passed': 1.0, 'rubric_x': 0.5}) for i in ('dev-a', 'held-a') for e in (1, 2, 3)]
     room(baseline(rows), 'rubric_x')
+    with pytest.raises(ValueError, match='no_room_on_dev'):
+        room(baseline(rows))
     with pytest.raises(ValueError, match='incomplete'):
         room(baseline(rows), 'rubric_missing')
 
@@ -426,14 +475,16 @@ def propose_argv(tmp_path, *extra):
 @pytest.mark.parametrize('passed, message', [(None, '--baseline'), (1.0, 'no_room_on_dev')])
 def test_cli_propose_refuses_before_any_model_call(tmp_path, monkeypatch, passed, message):
     from agentos_eval import scenarios
-    dev = next(s['id'] for s in scenarios.load(include_local=False) if s['split'] == 'dev')
+    loaded = scenarios.load(include_local=False)
+    dev = next(s['id'] for s in loaded if s['split'] == 'dev')
+    held = next(s['id'] for s in loaded if s['split'] == 'heldout')
     made = []
     monkeypatch.setattr(revise, 'make_generate', lambda *a, **k: made.append(a) or (never, {}, lambda: None))
     extra = []
     if passed is not None:
         target = revise.load_target('src/personal_agent/bundled_skills/agentos-skills/SKILL.md')
         arm = tmp_path / 'baseline.json'
-        arm.write_text(json.dumps({**baseline([record(dev, passed=passed)], target['digest']),
+        arm.write_text(json.dumps({**baseline(runs(dev, passed, passed, passed) + runs(held, 0.0, 0.0, 0.0), target['digest']),
                                    'target_path': target['path']}))
         extra = ['--baseline', str(arm)]
     with pytest.raises(SystemExit) as stop:
