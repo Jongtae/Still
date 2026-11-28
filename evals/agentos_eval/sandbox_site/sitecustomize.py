@@ -107,3 +107,39 @@ if _BROWSER_ORIGINS:
         sys.stderr.write(f'{exc}\n')
         _os._exit(2)
     sys.meta_path.insert(0, _BrowserReach())
+
+
+_WORKER_PIN = _os.environ.get('AGENTOS_EVAL_WORKER_PIN', '')
+
+
+class _PinnedWorker:
+    """#1296: after ``personal_agent.orchestrator`` loads, hold its worker catalogue to the sweep's pin."""
+
+    @staticmethod
+    def find_spec(name, path=None, target=None):
+        if name != 'personal_agent.orchestrator':
+            return None
+        for finder in sys.meta_path:
+            if finder is _PinnedWorker or isinstance(finder, _NoPyObjC):
+                continue
+            spec = getattr(finder, 'find_spec', lambda *a: None)(name, path, target)
+            if spec is not None and spec.loader is not None:
+                original = spec.loader.exec_module
+
+                def exec_module(module, original=original):
+                    original(module)
+                    import eval_worker_pin
+                    eval_worker_pin.apply(module, _PIN)
+                spec.loader.exec_module = exec_module
+                return spec
+        return None
+
+
+if _WORKER_PIN:
+    try:
+        import eval_worker_pin as _pin_module
+        _PIN = _pin_module.parse(_WORKER_PIN)
+    except ValueError as exc:
+        sys.stderr.write(f'{exc}\n')
+        _os._exit(2)
+    sys.meta_path.insert(0, _PinnedWorker)

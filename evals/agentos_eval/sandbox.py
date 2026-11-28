@@ -26,6 +26,9 @@ Two steps:
    server environment carries the world's exact loopback origins, so the
    import guard enables the embedded browser on the slot's fresh profile and
    lets it load those origins only (``sandbox_site/eval_browser_reach.py``).
+5. A sweep that pins the worker model (#1296) writes Still's own Main AI model
+   setting into the sandbox store, and its server environment makes the plan
+   keep that model (``sandbox_site/eval_worker_pin.py``).
 
 Secrets are copied file-to-file between owner-private (0600/0700) folders and
 are never printed, logged or written into the repository.
@@ -33,6 +36,7 @@ are never printed, logged or written into the repository.
 import fcntl
 import json
 import os
+import re
 import shutil
 import signal
 import socket
@@ -70,10 +74,45 @@ PASS_ENV = ('HOME', 'USER', 'LOGNAME', 'TMPDIR', 'LANG', 'LC_ALL', 'LC_CTYPE', '
 CODEX_LOGIN_FILE = 'auth.json'
 #: The only worker a world run uses (#484): Claude Code world runs are out of scope.
 WORLD_WORKER = 'codex'
+#: #1296: Still's ``decision_adapters.MODEL_ID`` and ``EFFORT_LEVELS`` (the eval venv does not import Still).
+#: Still ignores a stored value outside these, which would silently unpin a sweep, so refuse it here.
+PIN_MODEL_ID = re.compile(r'^[A-Za-z0-9][A-Za-z0-9._:/@-]{0,99}$')
+PIN_EFFORTS = ('low', 'medium', 'high', 'xhigh', 'max', 'ultra')
 
 
 class SandboxError(RuntimeError):
     pass
+
+
+def worker_pin(worker, model='', effort=''):
+    """``{'worker', 'model', 'effort'}`` for a sweep that pins its worker model (#1296), or None."""
+    if not model:
+        if effort:
+            raise ValueError('--worker-effort needs --worker-model')
+        return None
+    if worker not in ('codex', 'claude-code'):
+        raise ValueError('--worker-model pins one worker: use --worker codex or claude-code, not both')
+    if not PIN_MODEL_ID.fullmatch(model):
+        raise ValueError(f'--worker-model {model!r} is not a model id Still accepts')
+    if effort and effort not in PIN_EFFORTS:
+        raise ValueError(f'--worker-effort must be one of {", ".join(PIN_EFFORTS)}')
+    return {'worker': worker, 'model': model, 'effort': effort}
+
+
+def pin_main_ai(data, pin):
+    """Set the stopped sandbox's Main AI model and effort for one CLI, as Still's own route stores them.
+
+    These are the rows ``main_ai.MainAi`` writes (``subscription_engine_models``,
+    ``main_ai_model_choices``).  The owner route ``/api/main-ai/activate`` would
+    also queue a new Judgment AI qualification (model calls) on every run.
+    """
+    keys = ('subscription_engine_models', 'main_ai_model_choices')
+    stored = read_config(data, keys)
+    models, choices = (json.loads(stored[key]) if stored.get(key) else {} for key in keys)
+    models = {**(models if isinstance(models, dict) else {}), pin['worker']: pin['model']}
+    choices = {**(choices if isinstance(choices, dict) else {}),
+               pin['worker']: {'mode': 'pinned', 'effort': pin['effort']}}
+    write_config(data, {keys[0]: json.dumps(models), keys[1]: json.dumps(choices)})
 
 
 def baseline_readable_roots(src=SRC):
@@ -271,7 +310,7 @@ def free_port(start=18900, end=19900, taken=()):
 
 
 def sandbox_environment(data, base=None, src=SRC, telegram_root=None, engine_home=None, browser_origins=(),
-                        worker_bin=None):
+                        worker_bin=None, worker_pin=None):
     """The minimal environment of one sandbox server: no AgentOS_* or connector settings inherited.
 
     ``worker_bin`` (#545) is the folder holding the eval's ``claude`` wrapper
@@ -300,6 +339,8 @@ def sandbox_environment(data, base=None, src=SRC, telegram_root=None, engine_hom
         env.update(HOME=engine_home['HOME'], CODEX_HOME=engine_home['CODEX_HOME'])
     if browser_origins:
         env['AGENTOS_EVAL_BROWSER_ORIGINS'] = ','.join(browser_origins)
+    if worker_pin:
+        env['AGENTOS_EVAL_WORKER_PIN'] = json.dumps(worker_pin)
     return env
 
 
@@ -464,7 +505,7 @@ class Sandbox:
     """
 
     def __init__(self, root, seed=None, port=None, slot=None, python=None, src=SRC, keep=False, start_timeout=60,
-                 telegram=None, world=None, worker_api=None):
+                 telegram=None, world=None, worker_api=None, worker_pin=None):
         self.root = Path(root)
         self.seed = Path(seed).expanduser() if seed else None
         self.port = port
@@ -484,6 +525,8 @@ class Sandbox:
         self.world_setup = None
         #: ``worker_key.WorkerApi`` when this sandbox's Claude Code worker runs on the eval API key (#545).
         self.worker_api = worker_api
+        #: #1296: the pinned worker model of this run (``worker_pin``), or None for Still's own choice.
+        self.worker_pin = worker_pin
         self.worker_folder = None
         #: ``worker_key.usage_totals`` of the last run, read when the sandbox stops.
         self.worker_usage = None
@@ -533,6 +576,10 @@ class Sandbox:
                 self.cache_applied = True
             elif config:
                 self._pending_judgment = {key: value for key, value in config.items() if key in JUDGMENT_KEYS}
+            if self.worker_pin is not None:
+                if not (self.data / 'private' / 'quickstart.db').is_file():
+                    initialize_store(self.data, self.python, src=self.src, timeout=self.start_timeout)
+                pin_main_ai(self.data, self.worker_pin)
             if self.telegram is not None:
                 from .fake_telegram import TOKEN
                 if not (self.data / 'private' / 'quickstart.db').is_file():
@@ -564,7 +611,7 @@ class Sandbox:
             env = sandbox_environment(self.data, src=self.src,
                                       telegram_root=self.telegram.root if self.telegram is not None else None,
                                       engine_home=self.engine_home, browser_origins=self.browser_origins,
-                                      worker_bin=worker_bin)
+                                      worker_bin=worker_bin, worker_pin=self.worker_pin)
             self.process = subprocess.Popen(argv, cwd=str(self.data), env=env,
                                             stdin=subprocess.DEVNULL, stdout=self.log, stderr=subprocess.STDOUT,
                                             start_new_session=True)
@@ -636,7 +683,8 @@ class SandboxPool:
 
     MAX_SLOTS = 16
 
-    def __init__(self, size=3, seed=None, root=None, keep=False, sandbox_factory=Sandbox, worker_api=None):
+    def __init__(self, size=3, seed=None, root=None, keep=False, sandbox_factory=Sandbox, worker_api=None,
+                 worker_pin=None):
         if not 1 <= size <= self.MAX_SLOTS:
             raise ValueError(f'instances must be between 1 and {self.MAX_SLOTS}')
         self.size = size
@@ -646,6 +694,8 @@ class SandboxPool:
         self.factory = sandbox_factory
         #: #545: ``worker_key.WorkerApi`` for Claude Code sandboxes, or None (the subscription).
         self.worker_api = worker_api
+        #: #1296: ``worker_pin`` for every sandbox of that worker, or None.
+        self.worker_pin = worker_pin
         self.slots = threading.BoundedSemaphore(size)
         self.lock = threading.Lock()
         self.ports = set()
@@ -698,6 +748,7 @@ class SandboxPool:
         with self.slots:
             slot, reservation, box = None, None, None
             api = self.worker_api if worker == 'claude-code' else None
+            pin = self.worker_pin if self.worker_pin and self.worker_pin['worker'] == worker else None
             try:
                 if api is not None and not api.admits():
                     raise SandboxError(f'the daily eval budget (USD {api.cap_usd:g}) has no room for another '
@@ -710,7 +761,8 @@ class SandboxPool:
                 box = self.factory(self.root, seed=self.seed, port=port, slot=slot, keep=self.keep,
                                    **({'telegram': telegram} if telegram is not None else {}),
                                    **({'world': world} if world is not None else {}),
-                                   **({'worker_api': api} if api is not None else {}))
+                                   **({'worker_api': api} if api is not None else {}),
+                                   **({'worker_pin': pin} if pin is not None else {}))
                 box._port_reservation = reservation
                 box.cached = self.cached_judgment(slot, worker) if worker else None
                 box.start(config=box.cached)

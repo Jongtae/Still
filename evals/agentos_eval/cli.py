@@ -30,7 +30,7 @@ from . import scenarios as scenario_module
 from .budget import JudgeBudget
 from .paths import LIVE_DATA, REPO, eval_home
 from .report import records_from_samples, world_records, write_report
-from .sandbox import WORLD_WORKER, run_id, snapshot_seed
+from .sandbox import WORLD_WORKER, run_id, snapshot_seed, worker_pin
 
 #: Where a judge key may come from at run time (never stored by this tool).
 KEY_ENV = {'openai': 'OPENAI_API_KEY', 'anthropic': 'ANTHROPIC_API_KEY', 'google': 'GOOGLE_API_KEY'}
@@ -266,6 +266,15 @@ def cmd_sweep(args, folder=None, inspect_eval=None, task_factory=None, key_loade
     # The run's spending cap applies to every route, the world sweep included (#545).
     if args.cap_usd is not None:
         os.environ['AGENTOS_EVAL_JUDGE_CAP_USD'] = str(args.cap_usd)
+    # #1296: refuse a bad pin before any notice, sandbox or model call.
+    model, effort = getattr(args, 'worker_model', ''), getattr(args, 'worker_effort', '')
+    try:
+        pin = worker_pin(args.worker, model, effort)
+    except ValueError as exc:
+        raise SystemExit(str(exc)) from None
+    pinned = {'worker_model': model, 'worker_effort': effort} if pin else {}
+    if pin and args.world:
+        raise SystemExit('--worker-model is not supported with --world')
     if args.world:
         return run_world_sweep(args)
     if inspect_eval is None or task_factory is None:
@@ -281,14 +290,15 @@ def cmd_sweep(args, folder=None, inspect_eval=None, task_factory=None, key_loade
            **({'claude_auth': getattr(args, 'claude_auth', 'api')} if args.worker != 'codex' else {}),
            'instances': args.instances, 'epochs': args.epochs, 'judge': judge, 'judge_key': key_source,
            'judgment_timeout': getattr(args, 'judgment_timeout', JUDGMENT_TIMEOUT),
-           'seed': seed.name if seed else 'fresh', **({'arm': args.arm} if getattr(args, 'arm', '') else {})}
+           'seed': seed.name if seed else 'fresh', **({'arm': args.arm} if getattr(args, 'arm', '') else {}),
+           **pinned}
     if getattr(args, 'continuity', None):
         run['continuity'] = args.continuity
         run['observation_version'] = args.continuity['observation_version']
     task = task_factory(scenarios=args.scenarios, split=args.split, worker=args.worker,
                              instances=args.instances, seed=str(seed or ''), judge=judge,
                              turn_timeout=args.turn_timeout, judgment_timeout=run['judgment_timeout'],
-                             **({'arm': args.arm} if getattr(args, 'arm', '') else {}),
+                             **({'arm': args.arm} if getattr(args, 'arm', '') else {}), **pinned,
                              include_local=not args.no_local,
                              keep_sandboxes=args.keep_sandboxes, measures=getattr(args, 'measures', ''),
                              sample_limit=args.limit, judge_notice=False,
@@ -599,6 +609,9 @@ def main(argv=None):
     listing.add_argument('--world', default='', help='list the world scenarios of this world instead')
     sweep = sub.add_parser('sweep', help='run scenarios on fresh sandboxes and write the trend report')
     sweep.add_argument('--worker', choices=('codex', 'claude-code', 'both'), default='codex')
+    sweep.add_argument('--worker-model', default='',
+                       help="pin the worker's main AI model for every run (#1296); not with --worker both or --world")
+    sweep.add_argument('--worker-effort', default='', help='pin its reasoning effort too; needs --worker-model')
     sweep.add_argument('--instances', type=int, default=3)
     sweep.add_argument('--epochs', type=int, default=1)
     sweep.add_argument('--seed', default=os.environ.get('AGENTOS_EVAL_SEED', ''),
