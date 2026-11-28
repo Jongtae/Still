@@ -214,7 +214,8 @@ class PreparationsService:
         elif has_window:
             window=prep.normalize_window(args.get('every_minutes'),args.get('until'),args.get('max_runs'),
                                          due_at,timezone,now,recurrence=recurrence)
-            requested_until=prep.parse_due(args.get('until'),timezone,timezone,now)[0]
+            if args.get('until') not in (None,''):
+                requested_until=prep.parse_due(args.get('until'),timezone,timezone,now)[0]
         delivery=args.get('delivery')
         if kind==prep.KIND_PREPARE and window and not has_check and delivery=='send' and args.get('every_result') is not True:
             delivery=prep.DELIVERY_WHEN_NEEDED

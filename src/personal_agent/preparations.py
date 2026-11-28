@@ -696,32 +696,48 @@ def normalize_window(every_minutes, until, max_runs, due_at, timezone_name, now,
     number of slots in it, lowered by ``max_runs`` when given. Each local date
     is bounded by ``MAX_DAILY_WINDOW_RUNS``. A budget shortfall stores the real
     last check as the end. ``until`` is parsed like ``due`` (same zone rules).
+    #1308: without ``until``, ``max_runs`` bounds the window, which then ends at
+    its last slot.
     """
     minutes = _whole_number(every_minutes)
     if minutes is None or not MIN_EVERY_MINUTES <= minutes <= MAX_EVERY_MINUTES:
         raise PreparationRefusal('invalid_window', msg('preparations.window_minutes', value=repr(every_minutes),
                                                      minimum=MIN_EVERY_MINUTES, maximum=MAX_EVERY_MINUTES))
-    if until in (None, ''):
-        raise PreparationRefusal('invalid_window', msg('preparations.window_until_missing', value=repr(until)))
-    try:
-        until_at, _zone = parse_due(until, timezone_name, timezone_name, now)
-    except PreparationRefusal as exc:
-        reason = ('order' if exc.code == 'due_in_past' else
-                  'span' if exc.code == 'due_too_far' else 'invalid')
-        raise PreparationRefusal('invalid_window', msg('preparations.window_until_' + reason,
-                                 value=repr(until), due=iso(due_at), days=MAX_WINDOW_SECONDS // 86400)) from None
-    if until_at <= due_at:
-        raise PreparationRefusal('invalid_window', msg('preparations.window_until_order',
-                                 value=repr(until), due=iso(due_at)))
-    if until_at - due_at > MAX_WINDOW_SECONDS:
-        raise PreparationRefusal('invalid_window', msg('preparations.window_until_span',
-                                 value=repr(until), due=iso(due_at), days=MAX_WINDOW_SECONDS // 86400))
     every = minutes * 60
+    derived = until in (None, '')
+    if derived:
+        if max_runs in (None, ''):
+            raise PreparationRefusal('invalid_window', msg('preparations.window_until_missing', value=repr(until)))
+        count = _whole_number(max_runs)
+        if count is None or count < 1:
+            raise PreparationRefusal('invalid_max_runs')
+        span = every * (count - 1)
+        if span > MAX_WINDOW_SECONDS:
+            raise PreparationRefusal('invalid_max_runs')
+        if recurrence:  # a day-level rhythm counts slots in wall time, like next_window_slot
+            local = datetime.fromtimestamp(due_at, zone(timezone_name)).replace(tzinfo=None)
+            until_at = (local + timedelta(seconds=span)).replace(tzinfo=zone(timezone_name)).timestamp()
+        else:
+            until_at = due_at + span
+    else:
+        try:
+            until_at, _zone = parse_due(until, timezone_name, timezone_name, now)
+        except PreparationRefusal as exc:
+            reason = ('order' if exc.code == 'due_in_past' else
+                      'span' if exc.code == 'due_too_far' else 'invalid')
+            raise PreparationRefusal('invalid_window', msg('preparations.window_until_' + reason,
+                                     value=repr(until), due=iso(due_at), days=MAX_WINDOW_SECONDS // 86400)) from None
+        if until_at <= due_at:
+            raise PreparationRefusal('invalid_window', msg('preparations.window_until_order',
+                                     value=repr(until), due=iso(due_at)))
+        if until_at - due_at > MAX_WINDOW_SECONDS:
+            raise PreparationRefusal('invalid_window', msg('preparations.window_until_span',
+                                     value=repr(until), due=iso(due_at), days=MAX_WINDOW_SECONDS // 86400))
     if recurrence:
         tz = zone(timezone_name)
         first = datetime.fromtimestamp(due_at, tz).replace(tzinfo=None)
         last = datetime.fromtimestamp(until_at, tz).replace(tzinfo=None)
-        if first.date() != last.date() or last <= first:
+        if first.date() != last.date() or (last <= first and not derived):
             raise PreparationRefusal('invalid_window', msg('preparations.recurring_window_same_day'))
     permitted, slots = daily_window_slots(every, due_at, until_at, timezone_name, recurrence)
     if max_runs in (None, ''):
