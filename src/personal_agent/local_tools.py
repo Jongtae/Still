@@ -1,5 +1,6 @@
 """Bounded read-only tools executed by the user's Still process."""
 import http.client
+import io
 import ipaddress
 import codecs
 import contextvars
@@ -22,6 +23,9 @@ from .search_providers import ProviderRegistry, validate_locale
 
 
 MAX_PAGE_BYTES = 1_000_000
+#: #1330: public PDFs are extracted by ``document_reader`` within its own file budget.
+PDF_MEDIA_TYPE = 'application/pdf'
+from .document_reader import MAX_FILE_BYTES as PDF_MAX_BYTES  # noqa: E402
 MAX_PAGE_DECOMPRESSED_BYTES = 2_000_000
 MAX_PAGE_REDIRECTS = 3
 MAX_PAGE_SECONDS = 12
@@ -566,8 +570,12 @@ class PublicPageReader:
             if not media_type:
                 raise ValueError('콘텐츠 유형이 없는 공개 페이지는 안전하게 읽을 수 없습니다.')
             if media_type and not (media_type.startswith('text/') or media_type in ('application/xhtml+xml','application/xml','application/json')
-                                   or (media_type.startswith('application/') and media_type.endswith('+json'))):
+                                   or (media_type.startswith('application/') and media_type.endswith('+json'))
+                                   or media_type == PDF_MEDIA_TYPE):
                 raise ValueError('HTML 또는 텍스트 공개 페이지만 읽을 수 있습니다.')
+            # #1330: a public PDF is read with Still's own PDF extraction, within that reader's file budget.
+            is_pdf = media_type == PDF_MEDIA_TYPE
+            byte_budget = PDF_MAX_BYTES if is_pdf else MAX_PAGE_BYTES
             encoding=(response.headers.get('Content-Encoding','') if hasattr(response,'headers') else '').lower()
             raw=bytearray()
             # #1313 follow-up: a page larger than the read budget is read up to it and marked cut,
@@ -577,10 +585,11 @@ class PublicPageReader:
                 while True:
                     self._set_response_deadline(response,deadline)
                     with self._deadline_guard(deadline,lambda:self._interrupt_response(response)):
-                        chunk=response.read(min(64*1024, MAX_PAGE_BYTES-len(raw)+1))
+                        chunk=response.read(min(64*1024, byte_budget-len(raw)+1))
                     if not chunk: break
                     raw.extend(chunk)
-                    if len(raw)>MAX_PAGE_BYTES:
+                    if len(raw)>byte_budget:
+                        if is_pdf: raise ValueError('공개 PDF가 읽기 크기 제한을 넘어 읽지 않았어요.')
                         del raw[MAX_PAGE_BYTES:]; raw_cut=True; break
             except http.client.HTTPException as exc:
                 raise ProviderError('공개 페이지 응답을 해석하지 못했습니다.') from exc
@@ -598,6 +607,13 @@ class PublicPageReader:
                 except ValueError: raise
                 except (OSError, zlib.error): raise ValueError('압축된 공개 페이지를 해석하지 못했습니다.') from None
             else: data=bytes(raw)
+            if is_pdf:
+                from .document_reader import _pdf
+                page_text=_pdf(io.BytesIO(data)).text
+                clean,truncated=_bounded_complete_text(page_text)
+                return {'tool':'public_page_read','url':current,'retrieved_at':time.time(),'content':clean,
+                        'content_truncated':truncated,'content_type':PDF_MEDIA_TYPE,
+                        'content_bytes':len(data),'scope':PAGE_READ_SCOPE,'sources':[current]}
             charset=self._page_charset(
                 content_type,
                 data if media_type in ('text/html','application/xhtml+xml') else b'',
