@@ -599,13 +599,41 @@ def prepare_judgment(client, pool, box, worker, timeout=300, clock=time.monotoni
             **({'fallback': fallback} if fallback else {}), **({'failure': failure} if failure else {})}
 
 
+def pinned_run_failure(box, record, since):
+    """#1296: why a pinned run is a failed run rather than a measurement, else ''.
+
+    Either the CLI refused the pinned model in this run (Still's own refusal
+    memory, ``orchestrator.MODEL_REFUSALS_KEY``; an older row came with the
+    seed), or the worker CLI started and never completed a turn: a pin it rejects
+    another way (an effort it does not accept, an unclassified model error) fails
+    every launch.  A Work that failed after the worker answered stays a
+    measurement, and a usage limit keeps its own handling.
+    """
+    pin, turns = box.worker_pin, record['turns']
+    try:
+        rows = json.loads(box.read_config(('route_model_refusals',)).get('route_model_refusals') or '{}')
+        refused = rows[pin['worker']][pin['model']]['at'] >= since
+    except (KeyError, TypeError, ValueError, sqlite3.Error):
+        refused = False
+    launches = {row.get('status') for work in (record.get('work') or {}).values()
+                for row in work.get('tools') or () if row.get('tool') == 'subscription_engine'}
+    if not refused and (usage_limited(record) or 'failed' not in launches or 'succeeded' in launches):
+        return ''
+    reason = next((turn['error'] for turn in turns if turn.get('error')), 'no reason reported')
+    what = 'was refused by the provider' if refused else 'completed no turn'
+    return f'the pinned worker model {pin["model"]} {what}: {reason}'
+
+
 def run_scenario(scenario, worker, pool, client_factory=AgentOSClient, turn_timeout=900, poll_interval=2.0,
                  judgment_timeout=300, upkeep_timeout=90):
     """One clean-state trial: fresh sandbox, login, select worker, turns, owner-state diff."""
     if worker not in WORKERS:
         raise ValueError(f'worker must be one of {WORKERS}')
     record = {'observation_version': 'continuity-observation-v3', 'worker': worker, 'turns': [], 'diff': {}, 'error': None, 'judgment': None, 'upkeep': None}
-    telegram, box = None, None
+    pin = getattr(pool, 'worker_pin', None)
+    if pin and pin['worker'] == worker:
+        record['worker_pin'] = {'model': pin['model'], 'effort': pin['effort']}
+    telegram, box, started = None, None, time.time()
     try:
         if scenario.get('channel') == 'telegram':
             from .fake_telegram import FakeTelegram
@@ -630,6 +658,10 @@ def run_scenario(scenario, worker, pool, client_factory=AgentOSClient, turn_time
             # #832: upkeep proposes Memory asynchronously after a Work (#805); let it settle first.
             record['upkeep'] = client.wait_upkeep_idle(upkeep_timeout, poll_interval)
             record['diff'] = state_diff(before, client.snapshot())
+            if getattr(box, 'worker_pin', None):
+                failed = pinned_run_failure(box, record, started)
+                if failed:
+                    record['error'] = record['error'] or failed
     except (SandboxError, ClientError, OSError) as exc:
         record['error'] = f'{type(exc).__name__}: {exc}'
     finally:
