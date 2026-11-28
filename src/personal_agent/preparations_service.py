@@ -2922,7 +2922,7 @@ class PreparationsService:
     #: #1252: at most this many unconfirmed changes are named one by one; the count is always whole.
     LINE_EFFECTS_NAMED=8
 
-    def line_effects(self, line_id):
+    def line_effects(self, line_id, *, works=None, window=None):
         """#1252: what Still's own records show of the line's external changes, across every Work and check of it.
 
         From the effect ledger (``classify_effect_rows``, as ``external_effect_events`` reads one Work):
@@ -2931,20 +2931,25 @@ class PreparationsService:
         definite answer, so it may have run). From code-run Evidence: ``refused`` (Still refused it before
         sending, #1250; and a connector change Still refused, #1271) and ``asked`` (a Work of the line waiting now for the owner's approval). ``unconfirmed_items`` names up to
         ``LINE_EFFECTS_NAMED`` of them by operation, host and connection name; never a body or a value.
+
+        #1333: ``works`` narrows it to some of the line's Works, and ``window`` (``(since, until)``) to what
+        the line's check records wrote in that time, so one strategy version's share can be read.
         """
         from .manifests import LOCAL_WRITE_ACTIONS
         from .agent_runtime import (CODE_ACTIONS, EFFECT_CHANGED, EFFECT_UNKNOWN, REVISABLE_RECORD_ACTIONS,
                                     EFFECT_FREE_READS, _call_target, _state_free_actions, classify_effect_rows, dispatch_call_accounted,
                                     connector_refused_rows, dispatch_call_keys, effect_call_history_of, effect_rows,
-                                    EFFECT_REHEARSAL, refused_rows, refused_state_change, rehearsed_rows)
+                                    EFFECT_REHEARSAL, _window_sql, refused_rows, refused_state_change, rehearsed_rows)
         store=self.service.store
         with store.db() as db:
-            works,checks_ids=prep.line_effect_record_ids(db,line_id)
-            ids=[*works,*checks_ids]
-            ledger=effect_rows(db,ids)
+            every,checks_ids=prep.line_effect_record_ids(db,line_id)
+            works=every if works is None else [work for work in every if work in set(works)]
+            ledger=sorted([*effect_rows(db,works),*effect_rows(db,checks_ids,window=window)],key=lambda row:row['id'])
             # #1252 review: calls whose own record is unknown (a browser step, a connector or API call with no
             # ledger claim), classified by the one rule (``record_effect``) as ``unknown_effect_targets`` reads them.
-            calls,unscoped=effect_call_history_of(db,ids)
+            calls,unscoped=effect_call_history_of(db,works)
+            check_calls,check_unscoped=effect_call_history_of(db,checks_ids,window=window)
+            calls,unscoped=[*calls,*check_calls],[*unscoped,*check_unscoped]
             runs=db.execute("SELECT tool,detail FROM tool_events WHERE job_id IN ("+','.join('?' for _ in works)+") "
                             "AND status IN ('succeeded','failed') AND (tool='code_run' OR json_extract(detail,'$.host_action')='code_run')",
                             works).fetchall() if works else []
@@ -3012,9 +3017,10 @@ class PreparationsService:
             # #1274: a change a line in rehearsal recorded instead of sending: a connector change, and any
             # other call refused with the rehearsal code (an API request, a browser step, a package tool).
             if checks_ids:
+                bound,params=_window_sql(window)
                 out['rehearsed']+=sum(len(json.loads(item['detail'] or '{}').get('rehearsed') or ()) for item in db.execute(
-                    "SELECT detail FROM tool_events WHERE tool=? AND job_id IN ("+','.join('?' for _ in checks_ids)+")",
-                    (checks.CHECK_REHEARSAL_EVENT,*checks_ids)))
+                    "SELECT detail FROM tool_events WHERE tool=? AND job_id IN ("+','.join('?' for _ in checks_ids)+")"+bound,
+                    (checks.CHECK_REHEARSAL_EVENT,*checks_ids,*params)))
             if works:
                 marks=','.join('?' for _ in works)
                 out['rehearsed']+=db.execute(
@@ -3029,6 +3035,82 @@ class PreparationsService:
         requests=requests if isinstance(requests,dict) else {}
         out['asked']=sum(1 for work in works if work in requests and self.service.step_approval_pending(work))
         return out
+
+    #: #1333: the strategy groups an account names, newest first, and the brief fields that start a new group.
+    LINE_VERSIONS_SHOWN=5
+    STRATEGY_FIELDS=('task','report_promise','rules','account_every_days','rehearsal')
+    VERSION_EFFECTS=('sent','not_applied','unconfirmed','refused','rehearsed')
+
+    def line_versions(self, line_id, *, exclude=None):
+        """#1333: the line's runs and recorded external changes, grouped by the strategy version they ran under.
+
+        A Work belongs to the version it first recorded reading (``READ_EVENT``), else to the one in force
+        when it was created; a check record's changes belong to the version in force when they were written.
+        Versions that differ only in run-written notes or in state (a stop, a restart) join the strategy
+        before them.  Facts only, newest first: Still neither scores nor ranks them (C16).
+        """
+        from .procedures import CURRENT, KEPT
+        service=self.service
+        with service.store.db() as db:
+            stored=db.execute('SELECT version,source,COALESCE(saved,created) AS at FROM procedure_versions '
+                              'WHERE slot=? AND state IN (?,?) ORDER BY version',(el.slot(line_id),CURRENT,KEPT)).fetchall()
+            works,_checks=prep.line_effect_record_ids(db,line_id)
+            created={row['id']:row['created'] for row in db.execute(
+                'SELECT id,created FROM jobs WHERE id IN ('+','.join('?' for _ in works)+')',works)} if works else {}
+            reads={}
+            if works:
+                for row in db.execute('SELECT job_id,detail FROM tool_events WHERE tool=? AND job_id IN ('
+                                      +','.join('?' for _ in works)+') ORDER BY id',(el.READ_EVENT,*works)):
+                    try:detail=json.loads(row['detail'] or '{}')
+                    except (TypeError,ValueError):continue
+                    read=detail.get('evidence') if isinstance(detail.get('evidence'),dict) else detail
+                    if isinstance(read,dict) and read.get('line_id')==line_id and isinstance(read.get('version'),int):
+                        reads.setdefault(row['job_id'],read['version'])
+        groups,group_of,key=[],{},None
+        for row in stored:
+            try:brief=el.validate(json.loads(row['source']))
+            except (el.LineRefusal,TypeError,ValueError):continue
+            strategy=json.dumps([[rule['text'] for rule in brief['rules']] if field=='rules' else brief[field]
+                                 for field in self.STRATEGY_FIELDS],ensure_ascii=False)
+            if strategy!=key:
+                groups.append({'from_version':row['version'],'to_version':row['version'],'since':row['at'],
+                               'rehearsal':brief['rehearsal'],'works':[]})
+                key=strategy
+            groups[-1]['to_version']=row['version']
+            group_of[row['version']]=len(groups)-1
+        if not groups:return []
+        def at(when):
+            return max((index for index,group in enumerate(groups) if group['since']<=when),default=0)
+        outcomes={item['work_id']:item['outcome'] for item in self.line_outcomes(line_id,exclude=exclude,limit=None)}
+        # Every Work of the line counts toward its group's changes, a deleted schedule's included (its Works and
+        # Evidence stay, as in the line totals); only a run with a visible outcome counts as a run (#1333 review).
+        for work in works:
+            index=group_of.get(reads[work]) if work in reads else None
+            groups[at(created.get(work,0)) if index is None else index]['works'].append(work)
+        out=[]
+        for index,group in enumerate(groups):
+            until=groups[index+1]['since'] if index+1<len(groups) else None
+            effects=self.line_effects(line_id,works=group['works'],window=(group['since'],until))
+            counts={key:effects[key] for key in self.VERSION_EFFECTS}
+            labels=[outcomes[work] for work in group['works'] if work in outcomes]
+            if not labels and not any(counts.values()):continue
+            out.append({**{key:group[key] for key in ('from_version','to_version','since','rehearsal')},
+                        'runs':len(labels),'outcomes':{label:labels.count(label) for label in
+                                                       (el.OUTCOME_DELIVERED,el.OUTCOME_KEPT,el.OUTCOME_FAILED,el.OUTCOME_OPEN)},
+                        'effects':counts})
+        return out[::-1][:self.LINE_VERSIONS_SHOWN]
+
+    def line_versions_text(self, versions, timezone_name=None):
+        """The account's per-version block, or ``''`` when fewer than two strategies have anything to compare."""
+        if len(versions)<2:return ''
+        lines=[msg('lines.versions_heading')]
+        for item in versions:
+            span=str(item['from_version']) if item['from_version']==item['to_version'] else \
+                f"{item['from_version']}-{item['to_version']}"
+            lines.append(msg('lines.version_result',versions=span,since=prep.local_text(item['since'],timezone_name),
+                             mode=msg('lines.version_rehearsal' if item['rehearsal'] else 'lines.version_live'),
+                             runs=item['runs'],**item['outcomes'],**item['effects']))
+        return '\n'.join(lines)
 
     def line_effects_text(self, effects, *, account=False):
         """The run's fact lines from ``line_effects``, or ``''``.
@@ -3395,7 +3477,8 @@ class PreparationsService:
         outcomes=self.line_outcomes(brief['line_id'])
         text=self.current_line_text(brief)+'\n'+el.outcomes_text(outcomes,self.service.home_zone())
         effects=self.line_effects_text(self.line_effects(brief['line_id']),account=True)
-        return text+('\n'+effects if effects else '')
+        versions=self.line_versions_text(self.line_versions(brief['line_id']),self.service.home_zone())
+        return text+''.join('\n'+part for part in (effects,versions) if part)
 
     def _line_restart(self, job, args):
         service=self.service
@@ -3446,6 +3529,9 @@ class PreparationsService:
             if check_counts:lead+='\n'+check_counts
             effects=self.line_effects_text(self.line_effects(row['line_id']),account=True)
             if effects:lead+='\n'+effects
+            # #1333: and how each strategy version did, so the report can compare them from the records.
+            versions=self.line_versions_text(self.line_versions(row['line_id'],exclude=job['id']),row.get('timezone'))
+            if versions:lead+='\n'+versions
         else:
             lead=msg('lines.run_input')
             # #938 (D2): a run that may continue its line in pieces is told how, in one general sentence.

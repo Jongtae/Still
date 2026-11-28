@@ -2861,13 +2861,23 @@ def external_effect_events(store, work_id, *, attributed_to=None, db=None):
 #: The tool events ``classify_effect_rows`` reads: Still's own effect ledger of API and connector changes.
 EFFECT_LEDGER_ROW_TOOLS=('connector_permission','connector_read','api_dispatch')
 
-def effect_rows(db, ids):
- """The effect-ledger tool events of the Works or check records ``ids``, in order."""
+def _window_sql(window):
+ """``(sql, params)`` bounding ``tool_events.created`` to ``window`` = ``(since, until)``; either end may be None."""
+ if not window:return '',[]
+ since,until=window
+ sql,params='',[]
+ if since is not None:sql+=' AND created>=?';params.append(since)
+ if until is not None:sql+=' AND created<?';params.append(until)
+ return sql,params
+
+def effect_rows(db, ids, *, window=None):
+ """The effect-ledger tool events of the Works or check records ``ids``, in order (written within ``window``)."""
  ids=list(ids)
  if not ids:return []
+ bound,params=_window_sql(window)
  return db.execute("SELECT id,job_id,tool,status,detail FROM tool_events WHERE job_id IN ("+','.join('?' for _ in ids)+
-                   ") AND tool IN ("+','.join('?' for _ in EFFECT_LEDGER_ROW_TOOLS)+") ORDER BY id",
-                   [*ids,*EFFECT_LEDGER_ROW_TOOLS]).fetchall()
+                   ") AND tool IN ("+','.join('?' for _ in EFFECT_LEDGER_ROW_TOOLS)+")"+bound+" ORDER BY id",
+                   [*ids,*EFFECT_LEDGER_ROW_TOOLS,*params]).fetchall()
 
 def classify_effect_rows(rows, *, attributed_to=None):
  """``(observed, claims)`` of effect-ledger rows (``effect_rows``): what ``external_effect_events`` returns."""
@@ -3041,11 +3051,13 @@ def _effect_call_history(db,work_id):
  """Classify recorded calls once per Work, preserving running-event target fields."""
  return effect_call_history_of(db,effect_record_ids(db,work_id))
 
-def effect_call_history_of(db,ids):
- """``_effect_call_history`` over the given Works and check records (#1252: every Work of one line)."""
+def effect_call_history_of(db,ids,*,window=None):
+ """``_effect_call_history`` over the given Works and check records (#1252: every Work of one line), within ``window``."""
  ids=list(ids)
  if not ids:return [],[]
- rows=db.execute("SELECT job_id,tool,status,detail FROM tool_events WHERE job_id IN ("+','.join('?' for _ in ids)+") ORDER BY id",ids)
+ bound,params=_window_sql(window)
+ rows=db.execute("SELECT job_id,tool,status,detail FROM tool_events WHERE job_id IN ("+','.join('?' for _ in ids)+")"+bound+" ORDER BY id",
+                 [*ids,*params])
  calls,arguments,unscoped={},{},[]
  for row in rows:
   try:detail=json.loads(row['detail'] or '{}')
