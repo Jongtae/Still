@@ -535,19 +535,21 @@ ENTRUSTED_LINE_ARGUMENTS={
                  'at most 1000 characters, in plain words. It is the line\'s plan, not a log: what a run observed or did '
                  '(figures, prices, times checked) goes in that run\'s own answer, whose start later runs receive. Change it only '
                  'when what later runs should do changes. Run-written matters become dated notes after the owner’s day ends.'),
- 'about':'For decide, a short label for what the decision concerns.',
+ 'about':'For decide, a short label for what the decision concerns. decide needs about, claim, expectation and settle_after.',
  'claim':'For decide, the judgment you made.',
  'expectation':'For decide, the result you expect to observe.',
  'settle_after':'For decide, a future time to check the outcome, as epoch seconds or ISO 8601 (UTC by default).',
  'check':'For decide, an optional note about how to check the outcome.',
  'lessons_applied':'For decide, optional current lesson refs or IDs, separated by spaces or commas.',
  'decision':'For settle, the ID of a due decision of this line.',
- 'outcome':'For settle, the outcome you observed. Use with matched.',
+ 'outcome':'For settle, the outcome you observed. Use with matched; settle needs both unless unsettleable.',
  'matched':'For settle, whether the observed outcome matched the expectation: yes, no or unclear.',
- 'observed_at':'For settle, optional source time in epoch seconds or ISO 8601 (UTC by default). Defaults to now.',
+ 'observed_at':('For settle, optional source time in epoch seconds or ISO 8601 (UTC by default), between when the '
+                'decision was made and now. Defaults to now.'),
  'unsettleable':'For settle, use this reason alone if you could not check the outcome. The decision ends after three failed attempts.',
  'lessons':('For learn, a JSON list of up to five operations with op add, edit, agree or downvote. '
-            'Include text for add or edit, an existing lesson id for edit, agree or downvote, and optional why. '
+            'Include text (at most 200 characters) for add or edit, an existing lesson id for edit, agree or downvote, '
+            'and optional why (at most 200 characters). '
             'Every operation needs a decisions array citing settled decisions of this line.'),
 }
 #: #774 step 2: ask the owner, in the paired Telegram chat, for a current position.
