@@ -49,7 +49,7 @@ class IntradayMethodContent(unittest.TestCase):
         self.assertEqual((record['status'], record['licence']), (['supported_as_is'], 'AGPL-3.0-only'))
         self.assertEqual(sorted(record['files']), ['SKILL.md', GATE], 'text only: no scripts Still would refuse')
         frontmatter, _body = parse_frontmatter(self.text)
-        self.assertEqual(frontmatter['metadata']['version'], '2')
+        self.assertEqual(frontmatter['metadata']['version'], '3')
         listed = {row['name']: row for row in reference_skills()}
         # #1291: pinned to one exact commit and its content digest.
         self.assertRegex(listed[NAME]['address'], rf'^github\.com/{REPO}/tree/[0-9a-f]{{40}}/skills/{NAME}$')
@@ -68,7 +68,7 @@ class IntradayMethodContent(unittest.TestCase):
     def test_it_teaches_the_rules_the_live_runs_lacked(self):
         for phrase in ('**Act only on closed bars.**', '**Stale data stops the run.**', '**Hysteresis:**',
                        '**Persistence:**', '**Carry it forward:**', 'limit order', 'Never use a market order to enter',
-                       'VWAP + 1 × ATR(14)', '**No upward re-pricing.**', 'never use a wider stop than the owner\'s',
+                       'anchor + 1 × ATR(14)', '**Anchor the entry to the level the signal refers to.**', '**No upward re-pricing.**', 'never use a wider stop than the owner\'s',
                        '**Time exit:**', 'quantity = floor(risk per trade ÷ (entry price − stop price))',
                        "within the owner's budget", '**Daily loss stop:**', 'observe-only',
                        'The condition check only does what the plan states', '**Finish inside the run\'s time.**',
@@ -90,6 +90,8 @@ class IntradayMethodContent(unittest.TestCase):
                        '`settle_after`', '`lessons_applied`', '**Learn by day type and method.**',
                        'Do not write a lesson from one outcome', 'Say in passing which day judgment and method you used'):
             self.assertIn(phrase, self.text)
+        # #1342 dev-day replays: a VWAP-tied limit and ceiling blocked every trend pullback.
+        self.assertNotIn('lowest of the last close, VWAP and EMA(20)', self.text)
         self.assertNotIn('`subject`', self.text, 'the decide argument is about, not subject')
         self.assertLess(self.text.index('## 3. Judge the day'), self.text.index('## 6. Signals by method'))
 
