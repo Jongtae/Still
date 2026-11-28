@@ -535,6 +535,10 @@ ENTRUSTED_LINE_ARGUMENTS={
                  'at most 1000 characters, in plain words. It is the line\'s plan, not a log: what a run observed or did '
                  '(figures, prices, times checked) goes in that run\'s own answer, whose start later runs receive. Change it only '
                  'when what later runs should do changes. Run-written matters become dated notes after the owner’s day ends.'),
+ # #1274: generic; names no task or service.
+ 'rehearsal':('For open or revise. true: the line runs in rehearsal. Its external changes are recorded as rehearsed, '
+              'not sent. Use it when the owner asks to try the line out first. false takes the line live, and only '
+              'the owner\'s own message asking for exactly that does it. Otherwise propose it to the owner.'),
  'about':'For decide, a short label for what the decision concerns.',
  'claim':'For decide, the judgment you made.',
  'expectation':'For decide, the result you expect to observe.',
@@ -721,7 +725,7 @@ DEFINITIONS=[
         'drop_rule':STRING,'open_matters':STRING,'expected_version':STRING,'version':STRING,'account_every_days':STRING,
         'about':STRING,'claim':STRING,'expectation':STRING,'settle_after':STRING,'check':STRING,
         'lessons_applied':STRING,'decision':STRING,'outcome':STRING,'matched':{'type':'string','enum':['yes','no','unclear']},
-        'observed_at':STRING,'unsettleable':STRING,'lessons':STRING},ENTRUSTED_LINE_ARGUMENTS),['action']),
+        'observed_at':STRING,'unsettleable':STRING,'lessons':STRING,'rehearsal':{'type':'boolean'}},ENTRUSTED_LINE_ARGUMENTS),['action']),
  schema('tell_owner',TELL_OWNER_DESCRIPTION,{'text':STRING},['text']),
  schema('ask_location',ASK_LOCATION_DESCRIPTION,described({'reason':STRING,'button_label':STRING,'mode':{'type':'string','enum':['ask','with_answer']}},ASK_LOCATION_ARGUMENTS),['reason']),
  schema('skill_load',SKILL_LOAD_DESCRIPTION,{'skill':STRING,'part':{'type':'string','enum':['full','header']}},['skill']),
@@ -3072,6 +3076,30 @@ def unknown_effect_holds(targets,target):
 
 EFFECT_ROUTE_TEXT = 'This Work already recorded a change that cannot be safely distinguished on this route. Check the result and continue only separately authorized work.'
 
+#: #1274: the refusal code of an external change a line in rehearsal records instead of sending.
+EFFECT_REHEARSAL='effect_rehearsal'
+
+def line_rehearsal(db, work_id):
+ """#1274: whether ``work_id`` runs for a line in rehearsal, read in the caller's transaction.
+
+ A Work of any row of the line (a piece, the account, a check's run) and its retries and continuations.
+ An unreadable request chain is not a rehearsal: the other guards refuse it on their own.
+ """
+ from .entrusted_lines import current_brief
+ from .preparations import CHECK_RECORD_PREFIX, line_of_works, preparation_lineage
+ if isinstance(work_id,str) and work_id.startswith(CHECK_RECORD_PREFIX):
+  # A condition check's own dispatch: its record names the row it checks for.
+  lineage=preparation_lineage(db,work_id[len(CHECK_RECORD_PREFIX):])
+  line_id=lineage['line_id'] if lineage else None
+ else:
+  try:line_id=line_of_works(db,WorkLedger.request_chain(db,work_id))
+  except ValueError:return False
+ brief=current_brief(db,line_id) if line_id else None
+ return bool(brief and brief['rehearsal'])
+
+def rehearsal_error():
+ return ToolError(msg('lines.rehearsal_not_sent'),EFFECT_REHEARSAL)
+
 def effect_fence_error(refusal):
  return ToolError('Resolve the recorded unknown dispatch before making another change.'
                   if refusal=='effect_unknown' else EFFECT_ROUTE_TEXT,refusal)
@@ -3714,11 +3742,21 @@ def recorded_evidence(detail):
  evidence=detail.get('evidence') if isinstance(detail.get('evidence'),dict) else {}
  return {**evidence,'needs_setup':True} if owner_wait(evidence) else evidence
 
-def refused_rows(detail):
- """A recorded code run's refused requests: from its Evidence, or (a run cut off) its failure record (#1250)."""
+def _refused_effect_rows(detail):
  detail=detail if isinstance(detail,dict) else {}
  rows=recorded_evidence(detail).get('refused_effects') or detail.get('refused_effects')
  return [row for row in rows if isinstance(row,dict)] if isinstance(rows,list) else []
+
+def refused_rows(detail):
+ """A recorded code run's refused requests: from its Evidence, or (a run cut off) its failure record (#1250).
+
+ Not a request a line in rehearsal recorded instead of sending (``rehearsed_rows``, #1274).
+ """
+ return [row for row in _refused_effect_rows(detail) if not row.get('rehearsal')]
+
+def rehearsed_rows(detail):
+ """#1274: a recorded code run's requests that a line in rehearsal recorded instead of sending."""
+ return [row for row in _refused_effect_rows(detail) if row.get('rehearsal')]
 
 def refused_state_change(action, detail):
  """Whether a recorded code run had a state-changing request Still refused before sending it (#1250).
@@ -4381,14 +4419,17 @@ class Capabilities:
    saved=take() if callable(take) else None
    if saved is not None:
     saved.budget=self.budget;saved.approvals=self.browser_approvals;saved.judgments=self.judgments
-    saved.mutation_refusal=self._browser_mutation_refusal
+    saved.mutation_refusal=self._browser_mutation_refusal;saved.rehearsal=self._line_rehearsal
     self._browser_session=saved
     return saved
    # #174: the Work's judgments, asked only whether a mutate press the payment floor missed could charge.
    self._browser_session=BrowserSession(self.browser,work_id=self.job_id,budget=self.budget,
                                         approvals=self.browser_approvals,judgments=self.judgments,
-                                        mutation_refusal=self._browser_mutation_refusal)
+                                        mutation_refusal=self._browser_mutation_refusal,
+                                        rehearsal=self._line_rehearsal)
   return self._browser_session
+ def _line_rehearsal(self):
+  with self.store.db() as db:return line_rehearsal(db,self.job_id)
  def _browser_mutation_refusal(self,url):
   host=_url_host({'url':url})
   with self.store.db() as db:
@@ -5124,6 +5165,11 @@ class Capabilities:
      settings_draft_only = bool(refusal)
     elif refusal:
      raise effect_fence_error(refusal)
+    # #1274: a line in rehearsal records the change it would make instead of making it.  A browser step is
+    # gated by its own declared effect in the session; a settings change is the owner's local Still state.
+    if action not in BROWSER_ACTIONS and action!='settings_change':
+     with self.store.db() as db:
+      if line_rehearsal(db,self.job_id):raise not_run(rehearsal_error())
    # #606 T1: every route's attempt, Stop and deadline check happens here.  #620: a browser step
    # spends its attempt in the session, once it reaches the browser (one counter, no refused step spent).
    if tool['host_action'] in BROWSER_ACTIONS:self.budget.check()

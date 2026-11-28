@@ -46,7 +46,7 @@ STATE_ACTIVE, STATE_STOPPED = 'active', 'stopped'
 STATES = (STATE_ACTIVE, STATE_STOPPED)
 #: The whole brief format.  Nothing here names a subject, an authority or an amount.
 FIELDS = ('title', 'task', 'rules', 'report_promise', 'open_matters', 'open_matters_run_day', 'state',
-          'account_every_days')
+          'account_every_days', 'rehearsal')
 RULE_FIELDS = ('text', 'from', 'at', 'basis')
 DAY_RULE_EVENT = 'line_day_rule'
 #: #1249: how many earlier day rules a brief shows as past strategies.
@@ -138,13 +138,17 @@ def validate(brief):
     state = brief.get('state', STATE_ACTIVE)
     if state not in STATES:
         raise LineRefusal('line_invalid')
+    # #1274: a line in rehearsal records its external changes instead of sending them; only the owner ends it.
+    rehearsal = brief.get('rehearsal', False)
+    if not isinstance(rehearsal, bool):
+        raise LineRefusal('line_invalid_rehearsal')
     return {'title': normalize_title(brief.get('title')),
             'task': _text(brief.get('task'), TASK_CHARS, 'line_invalid_task', True),
             'rules': validate_rules(brief.get('rules') or []),
             'report_promise': _text(brief.get('report_promise'), PROMISE_CHARS, 'line_invalid_promise', True),
             'open_matters': _text(brief.get('open_matters'), OPEN_CHARS, 'line_invalid_open'),
             'open_matters_run_day': run_day,
-            'state': state, 'account_every_days': days}
+            'state': state, 'account_every_days': days, 'rehearsal': rehearsal}
 
 
 def validate_rules(rules):
@@ -199,8 +203,8 @@ def decode(row):
             'change': stats.get('change'), 'written_in': row.get('work_id'), **brief}
 
 
-def line_state(db, line_id):
-    """``active``, ``stopped`` or None (forgotten, missing or unreadable), inside the caller's transaction."""
+def current_brief(db, line_id):
+    """The current brief fields of ``line_id``, or None (forgotten, missing or unreadable), inside the caller's transaction."""
     try:
         row = db.execute('SELECT source FROM procedure_versions WHERE slot=? AND state=?', (slot(line_id), CURRENT)).fetchone()
     except sqlite3.OperationalError:
@@ -208,9 +212,15 @@ def line_state(db, line_id):
     if row is None:
         return None
     try:
-        return validate(json.loads(row['source']))['state']
+        return validate(json.loads(row['source']))
     except (LineRefusal, TypeError, ValueError):
         return None
+
+
+def line_state(db, line_id):
+    """``active``, ``stopped`` or None (forgotten, missing or unreadable), inside the caller's transaction."""
+    brief = current_brief(db, line_id)
+    return brief['state'] if brief else None
 
 
 class EntrustedLines:
@@ -261,12 +271,13 @@ class EntrustedLines:
             row = db.execute('SELECT MIN(created) AS at FROM procedure_versions WHERE slot=?', (slot(line_id),)).fetchone()
         return row['at'] if row else None
 
-    def open(self, work_id, *, task, report_promise, title='', rules=(), open_matters='', account_every_days=ACCOUNT_DAYS):
+    def open(self, work_id, *, task, report_promise, title='', rules=(), open_matters='', account_every_days=ACCOUNT_DAYS,
+             rehearsal=False):
         """A new line with its first brief version; returns the brief."""
         now = self.clock()
         brief = {'title': title, 'task': task, 'report_promise': report_promise, 'open_matters': open_matters,
                  'rules': [{'text': text, 'from': work_id, 'at': now} for text in rules or ()],
-                 'state': STATE_ACTIVE, 'account_every_days': account_every_days}
+                 'state': STATE_ACTIVE, 'account_every_days': account_every_days, 'rehearsal': rehearsal}
         source = encode(brief)
         line_id = uuid.uuid4().hex[:16]
         with self.store.db() as db:
@@ -585,7 +596,8 @@ def public_brief(brief, *, day=None):
     """A brief as a tool result shows it: its id, version and fields (rule sources as Work ids)."""
     return {'line_id': brief['line_id'], 'version': brief['version'], 'state': brief['state'], 'title': line_name(brief),
             'task': brief['task'], 'report_promise': brief['report_promise'], **open_matters_for_day(brief, day),
-            'rules': [rule['text'] for rule in brief['rules']], 'account_every_days': brief['account_every_days']}
+            'rules': [rule['text'] for rule in brief['rules']], 'account_every_days': brief['account_every_days'],
+            'rehearsal': brief.get('rehearsal', False)}
 
 
 def brief_text(brief, lang='ko', *, day=None, day_rules=(), past_day_rules=()):
@@ -602,7 +614,8 @@ def brief_text(brief, lang='ko', *, day=None, day_rules=(), past_day_rules=()):
                days=brief['account_every_days'])
     if 'previous_run_notes' in matters:
         text += '\n' + msg('lines.previous_run_notes', lang, **matters['previous_run_notes'])
-    return text
+    # #1274: a line in rehearsal says so first, wherever its brief is read (runs, accounts, the closing report).
+    return msg('lines.rehearsal_mode', lang) + '\n' + text if brief.get('rehearsal') else text
 
 
 def outcomes_text(outcomes, timezone_name=None, lang='ko'):
@@ -639,7 +652,7 @@ def entry_text(entry, lang='ko'):
                following=following) + checks
 
 
-def change_text(brief, *, rule='', drop=None, changes=None, days=None, today=False, replace=None):
+def change_text(brief, *, rule='', drop=None, changes=None, days=None, today=False, replace=None, rehearsal=None):
     """A plain description of one proposed brief change, for the owner-turn judgment."""
     parts = []
     if replace is not None:
@@ -654,4 +667,7 @@ def change_text(brief, *, rule='', drop=None, changes=None, days=None, today=Fal
         parts.append(f'{key}: {brief.get(key)!s} -> {value}')
     if days is not None:
         parts.append(f"account every {brief['account_every_days']} days -> {days} days")
+    if rehearsal is not None:
+        parts.append('rehearsal (external changes recorded, not sent) -> ' + ('on' if rehearsal else
+                     'off: the line goes live and its external changes are sent'))
     return '; '.join(parts)
