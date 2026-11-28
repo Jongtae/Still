@@ -8407,8 +8407,17 @@ class AgentService:
         row=self.store.config('budget_continue:'+str(work_id),{},db=db)
         return row if isinstance(row,dict) else {}
 
+    @staticmethod
+    def scheduled_run(job):
+        """#1352: a preparation's run (or its continuation), which ends at its budget like other unattended Work.
+
+        A Continue offer would hold the row ``running`` until the owner answered or a day passed: its partial
+        result unsettled, its next slot unscheduled.  The run settles instead; the owner can ask again.
+        """
+        return bool(job and prep.preparation_of(job.get('request_key')))
+
     def budget_continue_current(self, job, row):
-        if row.get('state')!='offered':return False
+        if row.get('state')!='offered' or self.scheduled_run(job):return False
         try:ledger=WorkLedger._validate(self.store.config(row.get('ledger_key')))
         except (ValueError,TypeError,KeyError):return False
         if ledger['active'] or ledger['epoch']!=row.get('epoch'):return False
@@ -8475,6 +8484,7 @@ class AgentService:
         from .agent_runtime import read_state_text
         job=self.store.job(run.job['id'])
         if not job or not ws.is_resumable_continuation(job['status']) or self.work_stopped(job['id']):return False
+        if self.scheduled_run(job):return False
         with self.store.db() as db:
             rows=db.execute('SELECT tool,status,detail FROM tool_events WHERE job_id=? AND created>=? ORDER BY id',
                             (job['id'],run.claimed_at)).fetchall()
