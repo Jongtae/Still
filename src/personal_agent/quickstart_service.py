@@ -5567,17 +5567,18 @@ class AgentService:
         recorded tool failure (a sign-in wait).  The Work's technical cause, its tool events and
         the judgment's facts keep every refusal as recorded.
         """
-        from .agent_runtime import FAILED_CALL_STATES, trail_steps
+        from .agent_runtime import FAILED_CALL_STATES, RECOVERED, step_recovery, trail_steps
         with self.store.db() as db:
             rows=db.execute('SELECT tool,status,detail FROM tool_events WHERE job_id=? AND id>? ORDER BY id',
                             (job_id,since or 0)).fetchall()
         steps=trail_steps((row['tool'],row['status'],row['detail']) for row in rows if row['tool'] not in self.LOCAL_NON_TOOL_EVENTS)
+        # #1351: "corrected" is ``step_recovery``'s mark, the one rule the cause and the judgment read too.
+        marks=step_recovery(steps)
         corrected,bare,held=set(),set(),set()
         for index,(tool,action,state,detail,reason) in enumerate(steps):
             if state not in FAILED_CALL_STATES:continue
             if not worker_directed_refusal(detail):held.add((tool,reason));continue
-            redone=any(other==action and result=='succeeded' for _t,other,result,_d,_r in steps[index+1:])
-            (corrected if redone else bare).add((tool,reason))
+            (corrected if marks.get(index)==RECOVERED else bare).add((tool,reason))
         named=[]
         for tool,reason in refusals:
             if (tool,reason) in held or (tool,reason) not in corrected|bare:named.append((tool,reason))

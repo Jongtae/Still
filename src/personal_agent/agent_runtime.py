@@ -3847,7 +3847,14 @@ def step_recovery(steps):
  incomplete or budget-cut call, one whose effect is unknown, and (for ``ROUTED_AROUND``) one that
  waits for the owner (``requires``) are never marked.  A mark is an observed fact, never a success
  by itself and never a reason to run anything again.
+
+ #1351: a call Still refused as written before running it (``worker_directed_refusal``) is
+ corrected with other arguments by definition, so its recovery is not the same invocation: it is
+ ``RECOVERED`` when the next call of the same action that is not itself such a refusal succeeded
+ (a retry prompt, as tool-calling frameworks treat an argument error).  A refusal followed by a
+ call of its action that ran and failed, or by none, stays open.
  """
+ from .conversation_projection import worker_directed_refusal
  found={};free=_state_free_actions()
  for index,(_tool,action,state,detail,_reason) in enumerate(steps):
   detail=detail if isinstance(detail,dict) else {}
@@ -3856,6 +3863,11 @@ def step_recovery(steps):
   if any(other==action and result=='succeeded' and same_invocation(detail,done)
          for _t,other,result,done,_r in steps[index+1:]):
    found[index]=RECOVERED;continue
+  if worker_directed_refusal(detail):
+   corrected=next(((result,done) for _t,other,result,done,_r in steps[index+1:] if other==action and not (
+    result in FAILED_CALL_STATES and worker_directed_refusal(done))),None)
+   if corrected is not None and corrected[0]=='succeeded':
+    found[index]=RECOVERED;continue
   unrun=state=='missed' or unrun_page_step(action,detail)
   if (unrun or action in free) and not detail.get('requires') \
      and any(result=='succeeded' and other not in INTERNAL_STATE_ACTIONS for other,result in later):
